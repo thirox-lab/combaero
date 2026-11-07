@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-07
+
+### Fixed
+
+- **hybr no longer turns a nearly singular Jacobian into NaN iterates (#1027).** This is the hybr twin of #1020. MINPACK's hybrj dogleg treats a pivot as singular only when it is exactly zero.
+  - **Before:** on stress effusion 105, the Jacobian hybr requested at its 48th evaluation had a pivot of 7.6e-309. An effusion plate's crossflow Cd had underflowed, and its row was the only one that set chamber ln__b1's pressure level. The Gauss-Newton step overflowed, the dogleg step and the trust radius became NaN, and hybr's last 8 evaluations were all NaN. The LM fallback recovered, so the result was right, but hybr's tail was wasted. Effusion 103 had the same 8 NaN iterates.
+  - **Now:** hybr gets the same Jacobian LM has had since #1020, with entries below machine epsilon times their column's largest set to zero. The dogleg's zero-pivot guard then applies. Stress effusion 0:200 has no NaN iterates (16 before), and every case still converges. The model's residuals and Jacobian are unchanged.
+
+- **The zero-fuel smoothing no longer under-burns at every equivalence ratio (#1037).** `smooth_phi0` (on by default in the Python `cb.complete_combustion`, the network combustor and the fuel controller's T_ad) smooths the O2 demand a at zero fuel.
+  - **Before:** the softplus `(ln(1 + e^(k0 a)) - ln2) / k0` tends to `a - ln2/k0`, so 3.5e-5 mol O2 per mol of mixture stayed unburnt at every lean phi: T_ad 0.33-0.58 K low (CH4/air at 300 K: -0.47 K at Phi 0.02, -0.34 K at Phi 1; H2 -0.48 to -0.58 K). The Python and C++ README quick starts printed 2326.66 K and 2326.99 K for the same mixture. The products Jacobian at exactly zero fuel also missed the burnt share (one-sided slope 100% off).
+  - **Now:** `n_req = (ln(1 + e^(k0 a)) - ln2 sech(k0 a)) / k0`. It keeps n_req(0) = 0, the same slope 1/2 at zero fuel and the same transition width (about 1/k0), is infinitely smooth for a > 0, and equals a to round-off once k0 a > ~40. T_ad with the smoothing on is now identical to the unsmoothed value from Phi 0.02 to 2 (CH4, H2, n-heptane, NH3). k0 and every signature are unchanged.
+
+- **The GUI no longer turns an infinite number into a null that the solver refuses (#1038).** A network file with an overflowing literal such as `"pressure_ratio": 1e999` parses as Infinity. Typing `Infinity` or `1e999` into a numeric field also gave Infinity, because the field checked the value while typing but not when it lost focus. Save then wrote `null`, the reloaded file passed the GUI's own checks, which read null as the default, and Solve refused it with "Input should be a valid number".
+  - **Load** refuses a file that holds a non-finite number, names the node and field in the note above the canvas, and leaves the canvas as it was.
+  - **Numeric fields** reject a non-finite value when they lose focus and go back to the previous value, as they do for text.
+  - **Save** refuses to write a non-finite number and says which one, so it never writes `null` for a number.
+  - **The pre-Solve check** refuses an explicit `null` in a field the backend types as a plain number with a default: compressor/turbine pressure ratio and efficiency, the tee's angle, loss factor, design share and psi, the ejector's recovery efficiency, and the discrete loss's zeta and zeta0. Previously it read null as the default. A python test keeps this list in step with the backend schema.
+
+- **The Inspector shows an in-pipe orifice's refusal before Solve, whichever pipe causes it (#1039).** An orifice whose bore is wider than its downstream pipe (the one that sets beta in reverse flow, #788) was refused at Solve, but the Inspector compared the bore only with the upstream pipe and showed no note. It now shows the solver's own reason from the resolve preview whenever the orifice is unresolved, naming the pipe. That reason replaces the old upstream-only note, so the upstream case is reported once, not twice.
+
 ## [0.11.0] - 2026-11-07
 
 **Upgrading from 0.10.** No public function or argument was removed or renamed. 0.11 adds `FannoChannelFlow::M_exit_root`, `OrificeElement.closed` and `MomentumChamberNode.pipe_area_warnings()`, and it is stricter about geometry:
@@ -6676,7 +6696,8 @@ continuation retries; geometry inheritance and autosave in the GUI.
 - State property units mismatch in example runner
 - Solver stability under degenerate initial conditions
 
-[Unreleased]: https://github.com/thirox-lab/combaero/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/thirox-lab/combaero/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/thirox-lab/combaero/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/thirox-lab/combaero/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/thirox-lab/combaero/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/thirox-lab/combaero/compare/v0.8.0...v0.9.0
