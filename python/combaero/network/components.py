@@ -3191,7 +3191,7 @@ def _element_reference_block(
     rho = cs.thermo.rho
     v = (abs(m_dot)) / ((rho) * (area)) if area > 0 and rho > 0 else 0.0
     mu = cs.transport.mu
-    re = (v) * (Dh) / (mu) if (Dh and Dh > 0 and v > 0 and mu > 0) else 0.0
+    re = (rho) * (v) * (Dh) / (mu) if (Dh and Dh > 0 and v > 0 and mu > 0) else 0.0
     return {
         "ref_location": location,
         "velocity": v,
@@ -3859,7 +3859,7 @@ class MomentumChamberNode(NetworkNode):
             else 0.0
         )
         diameter = self.Dh if self.Dh is not None else math.sqrt(4.0 * self.area / math.pi)
-        re = (u) * (diameter) / (cs.transport.mu) if u > 0 and cs.transport.mu > 0 else 0.0
+        re = (rho) * (u) * (diameter) / (cs.transport.mu) if u > 0 and cs.transport.mu > 0 else 0.0
         mach = u / cs.thermo.a if cs.thermo.a > 0 else 0.0
         Tt, Pt = (state.Tt, state.Pt)
 
@@ -4565,7 +4565,7 @@ class CombustorNode(NetworkNode):
         rho = cs.thermo.rho
         u = (abs(m_dot_total)) / ((rho) * (self.area)) if rho > 0 and self.area > 0 else 0.0
         diameter = self.Dh if self.Dh is not None else math.sqrt(4.0 * self.area / math.pi)
-        re = (u) * (diameter) / (cs.transport.mu) if u > 0 and cs.transport.mu > 0 else 0.0
+        re = (rho) * (u) * (diameter) / (cs.transport.mu) if u > 0 and cs.transport.mu > 0 else 0.0
         mach = u / cs.thermo.a if cs.thermo.a > 0 else 0.0
         Tt, Pt = (state.Tt, state.Pt)
 
