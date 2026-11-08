@@ -5861,7 +5861,7 @@ documents:
   verdict: 'Screened 2026-11-08. Does NOT plug the gas-side h gap (#476) it was wanted for: no surface
     temperature, heat flux or h was measured, only preliminary LRS gas-temperature images, plotted, at high
     BR (5-10) with low jet Re and a single 2-row plate. Nothing to score. Value: (a) the rig definition for the
-    follow-on papers (Grasso, Snyder & Cetegen 2022 JHT, wanted; the IR companion announced for IJHMT) --
+    follow-on papers (Grasso, Snyder & Cetegen 2022 JHT, held; the IR companion announced for IJHMT) --
     those, not this thesis, would hold the hot-side h; (b) its literature review is a pointer list of hot
     effusion experiments. A liner case (crossflow along the plate), not a front plate facing burners.'
   read_for:
@@ -5870,6 +5870,205 @@ documents:
   issues:
   - 476
   records: []
+  notes: 'Journal version of the LRS work: Grasso, Snyder & Cetegen 2022, J. Heat Transfer 144(1) 012301
+    (held, screened 2026-11-08). It reports a DIFFERENT coupon (14 x 12 holes, 25 deg, d 0.56 mm, plus a
+    6.35 mm anchoring jet) and CO2 coolant only, and still no surface temperature or h. The IR companion this
+    thesis announced for IJHMT is not cited there; it remains the #476 lead.'
+
+- file: sources/heat_transfer/film/Grasso_Snyder_Cetegen_2022_JHT_144_012301_effusion_LRS_gas_temperature.pdf
+  sha256: '1950046548f1c6e34c3b123a38669f72028ff470d23f00439a19d8f4a4cbdd0b'
+  citation: Grasso, G. S., Snyder, K. R., Cetegen, B. M. (2022). Application of planar laser Rayleigh scattering
+    for measurement of gas temperature distributions in effusion jet cooled panels exposed to high temperatures.
+    ASME J. Heat Transfer 144(1), 012301. doi:10.1115/1.4052509
+  topic:
+  - effusion
+  - film
+  content: 'Paywalled (ASME), 11 pp. UConn rig: swirl preburner, premixed propane-air phi 0.87, vitiated
+    crossflow 1500 K +- 1 %, 7.6 m/s +- 3 % (bulk about 7.5 m/s; Fig. 4 PIV and radiation-corrected R-type
+    profiles, boundary layer about 5 mm, gas 1300 -> 1500 K across it), atmospheric, 3.81 x 7.62 cm test
+    section. Effusion coupon on one side wall (crossflow along it): laser drilled, 14 x 12 holes, nominal 25 deg
+    streamwise, d 0.56 mm; pitches, plate thickness and material NOT printed (Fig. 3 sketch only); a 6.35 mm
+    anchoring jet downstream. Coolant CO2 (air also run, not reported) at 490-505 K; DR not stated (about 4.5
+    by ideal gas). BR 1.12, 2.22, 3.35, 5.55, 7.8, 11.1, global, from a flow test with Cd-corrected hole area.
+    Planar laser Rayleigh gas temperature parallel to the plate at 2, 2.75, 3.5 mm (about 3.6-6.3 d), 250
+    images per case at 1 Hz; temperature pegged per image to the upstream thermocouple and the anchoring-jet
+    thermocouple (two-point solve for C and I_BG, Eqs. 11-13). Uncertainty +3.5/-2.5 % (+35/-37.5 K), from
+    ref. 28. Plotted only: mean T (Fig. 8), instantaneous (Fig. 9), RMS (Fig. 10), gas-phase FE maps (Fig.
+    11), spanwise-averaged FE vs x/d, all BR x 3 heights (Fig. 13), spanwise slices (Fig. 14), spatial RMS
+    (Fig. 15). FE = (T_CF - T_xy)/(T_CF - T_coolant) with T_xy the GAS temperature at height h. A sapphire
+    window allows back-side IR imaging of the plate; no IR data are reported.'
+  status: screened
+  verdict: 'Screened 2026-11-08. Does NOT plug #476: no surface temperature, heat flux or h anywhere, only gas
+    temperature, its RMS and a gas-phase film effectiveness at 2-3.5 mm above the plate. That FE is a
+    mixing measure at a height (3.6-6.3 d), not an adiabatic wall effectiveness: it is zero where the film is
+    thinner than the sheet height and cannot be scored against eta_aw kernels. The temperature pegging
+    calibrates each image on two points of known T and composition; how the Rayleigh cross section is set in
+    the CO2 / product mixing layer, where composition is unknown, is not stated, so film temperatures carry
+    an unquantified composition bias beyond the quoted band. Not the Poettgen 2020 plate (that was 2 rows, 20
+    holes, 30 deg, 2.29 mm Inconel 625); this is a 14 x 12, 25 deg, 0.56 mm coupon with no pitch or thickness
+    printed. Does not cite or name the IR heat transfer companion. A liner-type crossflow, not a front plate.
+    Nothing to score for anything combaero ships (no model of ours predicts gas temperature at a height);
+    qualitative only: film onset moves upstream (from hole column 4-5 to 3) as BR rises 3.35 -> 11.1.'
+  read_for:
+  - '#476 gas-side h on an effusion plate in a 1500 K vitiated crossflow -- not here (gas temperature only, IR not reported)'
+  - can-annular front plate with several burners -- not here (side-wall plate in a crossflow)
+  issues:
+  - 476
+  records: []
+  notes: 'No figure worth digitising for combaero. Uncertainty method is in ref. 28: Dayton, Poettgen,
+    Linevitch, Cetegen 2019, Phys. Fluids 31(12) 125104 (jet in hot crossflow, near field). The #476 target
+    remains the UConn IR companion announced in Poettgen 2020 (IJHMT); neither document gives a citation.
+    Arrived 2026-11-08 in sources/new/oa_swirl_1108/ as ht_144_01_012301.pdf.'
+
+- file: sources/heat_transfer/film/Grasso_Snyder_Cetegen_2022_JHT_144_012301_effusion_LRS_gas_temperature_supplementary.zip
+  sha256: 'd687a906be05cd2beb6dca59f4f0a1ffc0609bddea809e6eb6bfa74bc23f47d8'
+  citation: 'Grasso, G. S., Snyder, K. R., Cetegen, B. M. (2022). Supplementary material to ASME J. Heat Transfer
+    144(1), 012301 (HT-21-1304): Supplementary_Material_HT-21-1304.pdf/.docx and _F001.tiff.'
+  topic:
+  - effusion
+  content: 'Two background figures only: Fig. S1 progression of Ni superalloy and cooled gas temperature limits
+    (after Padture 2016), Fig. S2 sketches of film/effusion cooling approaches; the .tiff is a 14.8 MB raster
+    of S1. No data.'
+  status: screened
+  verdict: 'Screened 2026-11-08. Nothing usable: background illustrations, no measurements.'
+  read_for:
+  - completeness of the Grasso 2022 holding
+  issues: []
+  records: []
+
+- file: sources/heat_transfer/film/Andreini_2017_IJTS_121_75_effusion_angle_three_sector_swirl_PSP.pdf
+  sha256: '911fccc97c53a56b413b46710235ff45ea69780145525735ce8796a8bfb0e585'
+  citation: Andreini, A., Becchi, R., Facchini, B., Picchi, A., Peschiulli, A. (2017). The effect of effusion
+    holes inclination angle on the adiabatic film cooling effectiveness in a three-sector gas turbine combustor
+    rig with a realistic swirling flow. Int. J. Thermal Sciences 121, 75-88. doi:10.1016/j.ijthermalsci.2017.07.003
+    (University of Florence FLORE accepted-manuscript preprint, 28 pp.)
+  topic:
+  - effusion
+  - film
+  content: 'Open access accepted manuscript (LEMCOTEC), text layer. Planar three-sector non-reacting rig at
+    ambient p and T, three GE-Avio PERM radial double-swirl injectors (SN 0.75 design, 0.77 by CFD,
+    expansion ratio 2.5), swirler dp/P 3.5 %, Re_main 160000 on Dh (Dh/d 260). Effusion plate is the LINER
+    (inner wall, mainstream along it); the dome carries only a 5 mm starter slot (W = 0 or 3 %). Three plates,
+    cylindrical holes only, alpha 20, 30, 90 deg; 1184 holes, 23 staggered rows, d 1.65 mm, Sx/d 7.64
+    (streamwise), Sy/d 6, porosity 1.17 % (Fig. 2); plate thickness / L/d NOT printed. Plate dp/P 1, 2, 3 %,
+    Re_eff 0-4000, DR 1 (N2 tracer), local BR from PIV wall-plane velocity 1.5 to 4-5 (Fig. 12, plotted). PSP
+    adiabatic effectiveness maps (Fig. 10, 13), laterally averaged eta vs x/Sx for 3 angles x 3 dp plus slot
+    (Fig. 11), lateral profiles at x/Sx 1.5, 6.5, 15.5 (Fig. 14), PIV (Figs. 6-9), and Fig. 15: L''Ecuyer-Soechting
+    and Colban 2011 correlations with Sellers superposition vs the swirl data AND vs same-hardware data with
+    the swirlers removed (uniform mainstream, BR 2.0, 20 and 30 deg only). Plate flow check: Cd about 0.67 for
+    20 and 30 deg, about 0.75 for 90 deg (text only, no Re or dp dependence). Uncertainty: eta 10 % at 0.2,
+    3 % above 0.8 (Kline-McClintock); flows 5-6 %; PIV 3 %. Everything plotted, nothing tabulated except
+    Table 1 (test matrix).'
+  status: screened
+  verdict: 'Screened 2026-11-08. Gives what the wanted question asked, as plots: adiabatic eta under real
+    swirl at three hole angles and three plate dp. Swirl puts the eta minimum at the swirl-jet stagnation
+    (x/Sx about 7, local BR 4-5) and reverse flow under the corner vortex; downstream of x/Sx 9-10 the eta growth
+    rate matches flat-plate superposition. 20 deg beats 30 deg by about 30 % (averaged); 90 deg is only competitive
+    in the corner region. Authors'' own check (Fig. 15): L''Ecuyer-Soechting and Colban + Sellers match the
+    uniform-mainstream plate and fail upstream of rows 6-7 under swirl. Does NOT give: a plate facing the
+    burners (liner only; the dome has a slot, not effusion), any gas-side h, any shaped hole, DR above 1, plate
+    thickness/L/d, tabulated data. Cd: two plate-level values (0.67 slant, 0.75 normal) without L/d or Re --
+    a qualitative angle trend only, weaker than Hay 1983 / Gritsch 1998. Accuracy use (cross-source, after
+    digitising): the uniform-mainstream BR 2.0 curves of Fig. 15 are a multi-row cylindrical-hole set for the
+    film kernels combaero ships with superposition (L''Ecuyer-type, Colban as applied to round holes, which has no
+    angle term); the swirl curves are a bound on how far upstream of the swirl stagnation those kernels can be
+    trusted, needing the plotted BR(x) of Fig. 12 as input. Not an overall-effectiveness or in-hole check
+    (adiabatic, ambient).'
+  read_for:
+  - 'can-annular front plate with several burners -- not here (liner downstream of three swirlers, dome slot only)'
+  - 'effusion adiabatic effectiveness under swirl vs flat-plate kernels and hole angle (wanted 2026-11-08) -- here, plotted'
+  issues: []
+  records: []
+  notes: 'Digitising candidates: Fig. 15 (uniform-mainstream 20/30 deg data at BR 2.0 plus the swirl data and
+    the two correlations, the one figure that separates swirl from kernel error); Fig. 11 (laterally averaged
+    eta, 3 angles x 3 dp, slot on/off); Fig. 12 (reference BR vs x/Sx, needed to drive any kernel). The 30 deg
+    plate is the one of Andreini et al. 2015 JEGTP 138 031506 (ref. 28; also heat transfer coefficient in
+    Andreini et al. 2014 J. Turbomach. 137 031012, ref. 27 -- the latter is the Florence swirl-rig HTC
+    measurement and a lead for #476). Arrived 2026-11-08 in sources/new/oa_swirl_1108/ as
+    LEMCOTEC_Journal2016_pre-print.pdf.'
+
+- file: sources/heat_transfer/film/Lenzi_2020_Energies_13_4993_effusion_cyl_vs_shaped_swirl_TRPIV.pdf
+  sha256: '556c99c7e1bab36de74b607bf170ec2b1516c745f21fce2142139ae0bb18d7df'
+  citation: Lenzi, T., Picchi, A., Bacci, T., Andreini, A., Facchini, B. (2020). Unsteady flow field
+    characterization of effusion cooling systems with swirling main flow - comparison between cylindrical
+    and shaped holes. Energies 13(19), 4993. doi:10.3390/en13194993
+  topic:
+  - effusion
+  - film
+  content: 'Open access (CC BY), 15 pp. Florence single-sector planar non-reacting rig, ambient, one radial
+    swirler, swirler dp/P 3.5 %, Re_main 515000, M 0.22. Effusion plate on the BOTTOM WALL (liner) downstream
+    of the dome; the swirl jet impinges ahead of row 1 at x/Dref 0.3. Two plates, 55 holes, 10 staggered rows:
+    cylindrical and laid-back fan-shaped 7-7-7 (Schroeder & Thole), both d 6.08 mm, alpha 20 deg, L/d 6, T/d
+    2.1, Sx/d 8, Sz/d 8, porosity 5 % (table in Fig. 1; the shaped metering length, read off the sketch, is
+    about 3.5 D). Plate dp/P 1 to 3.5 %, coolant jet Re 22900 at 3.5 %; BR, DR not stated (air/air, DR about
+    1). TR-PIV (0.5-3 kHz, 1500 pairs) on xy, zy, xz planes up to row 7: mean velocity, RMS, vorticity, K-H
+    and CRVP structures, instantaneous streamlines and PDFs of jet-maximum height (Fig. 6). Velocity
+    uncertainty 4 %. No temperature, effectiveness or heat transfer data; no Cd.'
+  status: screened
+  verdict: 'Screened 2026-11-08. Flow field only, as the wanted entry expected, and answers its question
+    qualitatively: shaped (7-7-7) jets stay attached and stable from row 1 at both dp/P 1 and 3.5 % with
+    weaker vorticity and RMS; cylindrical jets are crushed to the wall and oscillate to row 3 at 1 % and lift
+    off from row 3 at 3.5 %; both rows shift laterally with the swirl (more for shaped, lower momentum), so
+    staggered rows interact. The authors say flat-plate correlations "could be completely ineffective" near
+    the dome. Does NOT give: a front plate (liner only), any gas-side h, any effectiveness, any Cd. No usable
+    accuracy set for Colban 2011 or any kernel combaero ships -- qualitative support only for treating the
+    shaped-hole kernel as less swirl-sensitive in jet trajectory than round holes, and a reason to expect
+    the first 3-4 rows behind a swirl stagnation to depart from flat-plate kernels.'
+  read_for:
+  - 'can-annular front plate with several burners -- not here (single swirler, liner plate)'
+  - 'whether shaped-hole jets stay attached under swirl (bounds on the Colban 2011 kernel) -- here, qualitative only'
+  issues: []
+  records: []
+  notes: 'No figure worth digitising (flow-field contours and PDFs, no thermal quantity). The promised
+    thermal follow-up on the same plates is the lead. Continuation of Lenzi et al. 2020 J. Turbomach. 142
+    061008 (cylindrical holes, same rig). Arrived 2026-11-08 in sources/new/oa_swirl_1108/ as
+    energies-13-04993.pdf.'
+
+- file: sources/heat_transfer/film/Lu_2025_CSTE_68_105938_effusion_fan_shaped_premixed_swirl_flame.pdf
+  sha256: '4daa090d5ba3ded705ce375cc02e0c498aef44475b94c76c94f1914bdf7cdd1e'
+  citation: Lu, X., Ji, Y., Ge, B., Zang, S. (2025). Influence of premixed swirl-stabilized flame on the cooling
+    performance of an effusion-cooled combustor liner. Case Studies in Thermal Engineering 68, 105938.
+    doi:10.1016/j.csite.2025.105938
+  topic:
+  - effusion
+  - film
+  content: 'Open access (CC BY-NC-ND), 15 pp. SJTU three-nozzle lean-premixed CH4-air rig, atmospheric, phi 0.6,
+    swirl number 0.86 (geometric), nozzle pitch 48 mm, main dp 8.5 %, m_main 0.114 kg/s, T_in 302.3 K. Combustor
+    400 x 288 x 106 mm; the effusion plate is the bottom LINER, parallel to the nozzle axes (Fig. 2-3), not the
+    dome. Stainless plate t 2.4 mm, 787 holes, 25 staggered rows, d 0.6 mm (t/d 4), Sx/d 6 (spanwise), Sy/d
+    9.2 (streamwise); cylindrical vs fan-shaped (10 deg lateral expansion, 1.2 mm cylindrical metering
+    length). Inclination printed as 25 deg in the text but 45 deg in Table 1 (unresolved). Coolant 334.7 K,
+    1.33-3.32 g/s, BR 1.6, 2.4, 3.2, 4.0 (on the 0.6 mm round area for both shapes, main cross-section
+    velocity). Overall effectiveness from cold-side IR (Bi < 0.01), T_main a centreline thermocouple average
+    whose value is NOT printed; uncertainty 0.017 in eta. Plotted only: maps (Figs. 11-12), spanwise-averaged
+    eta vs Y/D for 2 shapes x 4 BR (Fig. 13), std-dev and gradient vs BR (Fig. 14). RANS CFD (realizable k-eps,
+    2-step EDC/FR, DO) for flame structure, near-wall pressure (Fig. 15) and per-row coolant mass split
+    (Fig. 16). Data declared confidential.'
+  status: screened
+  verdict: 'Screened 2026-11-08. Answers the wanted question qualitatively: under a reacting premixed swirl
+    flame the eta pattern follows the near-wall gas temperature, not the film -- eta PEAKS where the unburnt
+    swirl jet impinges (Y/D about 1) and is lowest in the hot corner recirculation and at the liner tail,
+    the reverse of non-reacting swirl. Fan-shaped beats cylindrical by up to 0.051 in eta (more at low BR)
+    and is more uniform, which the CFD attributes to shaped holes being more back-pressure sensitive and
+    shifting coolant away from the impingement zone. Does NOT give: a front plate (liner only), any gas-side
+    h (only CFD), any measured Cd or hole mass split (CFD only), T_main or the near-wall gas temperature, or
+    an unambiguous hole angle. Not a usable accuracy set for EffusionPlateElement overall effectiveness or
+    in-hole heat pickup: the driving temperature is unprinted and spatially non-uniform (unburnt mixture at
+    the wall), so a 1-D plate model cannot be given the boundary condition the data respond to. Qualitative
+    only: the shaped-hole gain survives under flame at about +0.05 in overall eta.'
+  read_for:
+  - 'can-annular front plate with several burners -- not here (liner beside three nozzles)'
+  - 'reacting overall effectiveness, cylindrical vs fan-shaped (wanted 2026-11-08) -- here, qualitative only'
+  issues: []
+  records: []
+  notes: 'Fig. 13 (spanwise eta, 2 shapes x 4 BR) is the only digitising candidate, and only for the
+    fan/cylindrical difference vs BR, since absolute eta lacks its T_main. Its reference list confirms the
+    paywalled leads: ref. 29 Ji, Ge, Zang 2022 ATE 213, 118735 (non-reacting conjugate, three-sector; the
+    wanted entry, article number now set); ref. 20 Ji, Ge, Zang 2022 ATE 216, 119101 (reacting, realistic
+    swirl); ref. 30 Lu, Jia, Ji, Ge, Zang 2024 IJTS 203, 109164 (hole configurations under swirl impact,
+    non-reacting -- likely the paper meant by the wanted "Lu et al. 2025 IJHFF 112" entry, whose citation is
+    as recalled); ref. 21 Ahmed, Ramakrishnan, Ekkad 2021 JTSEA 14(2) (can combustor liner, reacting).
+    Arrived 2026-11-08 in sources/new/oa_swirl_1108/ as 1-s2.0-S2214157X25001984-main.pdf.'
 wanted:
 - citation: 'Venneman, W. F. (1959, 1960). Flow coefficients and jet deflection angles for combustor-liner air-entry
     holes, Parts I and II. General Electric Company, Schenectady, NY; and Marshall, L. A. (1958). Aerodynamic
@@ -6225,41 +6424,11 @@ wanted:
 # Effusion under burner swirl and in hot vitiated crossflow (added 2026-11-08, from the
 # can-annular front-plate question: nothing held measures an effusion plate facing several
 # burners). Open access first, paywalled second. Poettgen 2020 (UConn) was obtained
-# the same day and moved to documents.
-- citation: Andreini, A., Becchi, R., Facchini, B., Picchi, A., Peschiulli, A. (2017). The effect of effusion
-    holes inclination angle on the adiabatic film cooling effectiveness in a three-sector gas turbine combustor
-    rig with a realistic swirling flow. Int. J. Thermal Sciences 121, 75-88. doi:10.1016/j.ijthermalsci.2017.07.003
-  checked: true
-  issues: []
-  priority: later
-  question: 'How much burner swirl degrades adiabatic effectiveness against the flat-plate closures combaero
-    ships, and how the hole inclination angle changes that, measured (PSP) on a three-sector rig with three
-    angles and several pressure drops. The nearest open data to a plate under several burners.'
-  where: Open access preprint, University of Florence repository (flore.unifi.it/handle/2158/1102881);
-    journal version Elsevier (paywalled).
-- citation: Lenzi, T., Picchi, A., Bacci, T., Andreini, A., Facchini, B. (2020). Unsteady flow field
-    characterization of effusion cooling systems with swirling main flow - comparison between cylindrical
-    and shaped holes. Energies 13(19), 4993. doi:10.3390/en13194993
-  checked: true
-  issues: []
-  priority: later
-  question: 'Whether shaped-hole jets stay attached under a swirling main flow where cylindrical ones lift
-    off (TR-PIV): bounds where the shaped-hole film kernel (Colban 2011, flat plate) can be trusted near a
-    burner. Flow field only, no thermal data.'
-  where: Open access, MDPI.
-- citation: Lu, X., Ji, Y., Ge, B., Zang, S. (2025). Influence of premixed swirl-stabilized flame on the
-    cooling performance of an effusion-cooled combustor liner. Case Studies in Thermal Engineering 68, 105938.
-  checked: true
-  issues: []
-  priority: later
-  question: 'Overall effectiveness of cylindrical against fan-shaped effusion under a REACTING premixed swirl
-    flame, including the flame-impingement zone: the reacting counterpart of the non-reacting fan-shaped
-    comparison (Lu et al. 2025, IJHFF, below).'
-  where: Open access, Elsevier (Case Studies in Thermal Engineering).
+# the same day and moved to documents; Andreini 2017, Lenzi 2020, Lu 2025 (CSTE) and Grasso 2022 were
+# screened 2026-11-08 and moved too.
 - citation: Ji, Y., Ge, B., Zang, S. (2022). Conjugate heat transfer characteristics of effusion cooling under
-    realistic swirl flow in a three-sector gas turbine model combustor. Applied Thermal Engineering 213.
-    (article number as recalled)
-  checked: false
+    realistic swirl flow in a three-sector gas turbine model combustor. Applied Thermal Engineering 213, 118735.
+  checked: true
   issues: []
   priority: later
   question: 'Overall (conjugate) effectiveness maps on an effusion plate under three interacting swirl nozzles,
@@ -6285,15 +6454,3 @@ wanted:
     (fan-shaped up to 0.063 higher but less uniform): how much of the flat-plate shaped-hole gain survives
     near a burner.'
   where: Elsevier journal (paywalled).
-- citation: Grasso, S., Snyder, T., Cetegen, B. M. (2022). Application of planar laser Rayleigh scattering for
-    measurement of gas temperature distributions in effusion jet cooled panels exposed to high temperatures.
-    ASME J. Heat Transfer 144(1). doi:10.1115/1.4052509
-  checked: false
-  issues:
-  - 476
-  priority: later
-  question: 'The journal version of the UConn gas-temperature and film-effectiveness maps above an effusion
-    panel at ~1500 K (Poettgen 2020, held, has only the preliminary images). The gas-side h needs the IR
-    half, which the thesis never acquired (COVID shutdown) and the group announced for IJHMT: find out
-    whether that paper appeared -- it, not this one, is what would plug #476.'
-  where: ASME journal (paywalled).
