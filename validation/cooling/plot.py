@@ -88,6 +88,10 @@ AXIS_NAMES = {
     "h_impingement_target": "impingement target-plate h [W/m2K]",
     "eta_overall": "overall cooling effectiveness (Tg-Tw)/(Tg-Tc)",
     "pressure_ratio": "pressure ratio r = p / p0",
+    # Hay et al. (1983): the INVERSE sense of Jobson's r, and on the coolant
+    # total / mainstream static pair -- hence its own name.
+    "pc0_over_pinf": "pressure ratio pc+ / p_inf (coolant total / mainstream static)",
+    "uj_over_uinf": "velocity ratio u_j / u_inf",
     "K_mass_flow": "mass-flow coefficient K = m / (A sqrt(p0 rho0))",
 }
 

@@ -1,0 +1,7 @@
+corner,x,y,u_px,v_px
+lower_left,0.0,0.0,92.7,462.3
+lower_right,2.0,0.0,924.1,464.1
+upper_left,0.0,1.0,97.3,35.5
+upper_right,2.0,1.0,928.7,37.3
+# y-axis tilt from vertical deg,-0.623,,,
+# x-axis tilt from horizontal deg,0.120,,,

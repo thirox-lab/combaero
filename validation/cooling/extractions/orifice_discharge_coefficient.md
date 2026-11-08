@@ -42,6 +42,11 @@ Tracked by #375. Surfaced from #337 (item 24b), under #339.
 | Rohde | **charts only**: `C_d` against a velocity head ratio, one curve per main-duct Mach number. An explicit chart-lookup design procedure, no correlation | **no** -- data and validity statements only |
 | Wu et al. | a closed-form `C_d(Re)` valid to `Re -> 0`, with coefficients fitted **per orifice type** to hydraulic valve data | form yes, constants are for valves |
 
+Later addition (2026-11-08): Hay, Lampard and Benmansour (1983), crossflow on
+**both** sides of the hole at 30 and 90 deg -- data only, unscored, the one
+measured set on a hole-angle term and on crossflow direction. See
+[hay_1983_crossflow_cd.md](hay_1983_crossflow_cd.md).
+
 ---
 
 ## For the reviewer

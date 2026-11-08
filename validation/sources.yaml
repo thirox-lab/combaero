@@ -4251,7 +4251,7 @@ documents:
     1.5 (Table 3). Plotted only (5-12 points per faired curve): Fig. 5 mainstream effect, Fig. 6 coolant effect
     at 90 deg, Figs. 8/12 30 deg, plateau maps Figs. 9, 10, 13, 14, Fig. 15 Cd vs u_j/u_inf. No correlation;
     Fig. 7 agrees with Rohde (TN D-5467) at M_inf 0. Detailed data in Benmansour''s 1981 M.Phil. thesis.'
-  status: screened
+  status: extracted
   verdict: 'Screened 2026-10-28 (#800/#818, #807, #813). The foundational two-sided crossflow Cd study (Thole et
     al. 1997 cite it as such). For #813: Cd referenced to the coolant TOTAL pressure (as Thole et al.), so the
     supply dynamic head is booked once; even so coolant crossflow moves Cd -- 90 deg: -20% at low PR, -6% on
@@ -4265,11 +4265,14 @@ documents:
     L/D of interest (2-10) it had hardly any effect on Cd" (p. 244), and without crossflow at high Re "Cd
     becomes constant at a value ranging between 0.8 and 0.74 depending on L/D" (p. 247), unassigned; only
     Fig. 7 (unlabelled L/D) might hold L/D 2 points. To use:
-    digitise Figs. 6, 5, 15 (and 8, 12).'
+    digitise Figs. 6, 5, 15 (and 8, 12). Digitised 2026-11-08, user-confirmed: Figs. 5, 6, 8, 11,
+    12, 15 (25 series, 174 marks, unscored -- no angle or two-sided crossflow term in combaero, so
+    cross-source accuracy data only); carpet labels of Figs. 9, 10, 13, 14 transcribed (two suspected
+    misprints flagged); Fig. 7 not digitised (symbols over Rohde''s).'
   read_for: ['#813 duct-fed hole Cd reference pressure and coolant-side crossflow', '#800/#818 cross-source check
       of the exit-side grazing Cd', '#807 L/D effect (none usable)']
   issues: [800, 807, 813]
-  records: []
+  records: [validation/cooling/data/hay1983/metadata.yaml, validation/cooling/extractions/hay_1983_crossflow_cd.md]
   notes: Arrived 2026-10-28 as docs/new/243_1_Bensamour_1983.pdf (was on the wanted list). Its detailed data are in
     Benmansour's M.Phil. thesis (Nottingham, 1983), not digitised online; dropped from wanted (user, 2026-10-28) --
     Hay & Lampard 1996 Fig. 4 reprints its inlet-crossflow points.

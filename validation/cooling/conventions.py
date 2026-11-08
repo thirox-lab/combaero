@@ -49,6 +49,14 @@ CONVENTION_NOTES: dict[str, str] = {
     # Discharge coefficient
     "Cd_total": "Cd referenced to duct TOTAL pressure (Rohde 1969)",
     "Cd_static": "Cd referenced to duct STATIC pressure (McGreehan-Schotsch)",
+    "Cd_coolant_total_exit_static": (
+        "Cd of a crossflow-fed hole with ideal flow from the COOLANT "
+        "STAGNATION pressure to the MAINSTREAM (exit) STATIC pressure, "
+        "compressible up to choking, against PR = pc+/p_inf (Hay, Lampard & "
+        "Benmansour 1983, p. 245). Upstream total like Cd_total, but with a "
+        "second crossflow on the exit side and no VHR, so Cd_total's "
+        "conversion does not apply"
+    ),
     # Compressible orifice mass flow (#854)
     "K_reservoir_total": (
         "mass-flow coefficient K = m_dot / (A sqrt(p0 rho0)) on the GEOMETRIC "
@@ -112,6 +120,9 @@ CONVENTION_NOTES: dict[str, str] = {
 SOURCE_PUBLISHES: dict[tuple[str, str], str] = {
     ("rohde1969", "Cd"): "Cd_total",
     ("mcgreehan_schotsch1988", "Cd"): "Cd_static",
+    # Unscored today (no angle or two-sided crossflow term in combaero);
+    # declared so a future set must meet the basis explicitly.
+    ("hay1983", "Cd"): "Cd_coolant_total_exit_static",
     ("jobson1955", "K_mass_flow"): "K_reservoir_total",
     ("han2012", "G"): "G_ribbed_wall",
     ("han_park_lei1984", "G"): "G_ribbed_wall",
