@@ -96,5 +96,5 @@ repos:
         # nodejs.org/dist/index.json as "latest", and a prerelease there
         # (v27.0.0-alpha, 2026-10-29) failed every fresh env build.
         language_version: lts
-        additional_dependencies: ["@biomejs/biome@2.6.4"]
+        additional_dependencies: ["@biomejs/biome@2.6.5"]
         files: ^gui/frontend/
