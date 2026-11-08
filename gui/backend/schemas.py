@@ -467,6 +467,12 @@ class EffusionPlateData(BaseModel):
     wall_conductivity: float = Field(default=20.0, gt=0.0)
     gas_film: Literal["none", "baldauf_sellers"] = "none"
     gas_augmentation: float = Field(default=1.0, gt=0.0)
+    # What gas_augmentation multiplies: the chamber's own h (default) or a
+    # turbulent flat plate restarted gas_start_length [m] upstream of the
+    # panel (a bleed, a starter-film lip, a step). The length is read only
+    # for the flat plate, so switching back keeps it without refusing.
+    gas_baseline: Literal["chamber", "flat_plate"] = "chamber"
+    gas_start_length: float | None = Field(default=None, ge=0.0)
     turbulence_intensity: float = Field(default=0.05, gt=0.0)
     gas_heat_flux: float = 0.0
     # The plate's alloy, for its wall temperature limit only (#998): the hot

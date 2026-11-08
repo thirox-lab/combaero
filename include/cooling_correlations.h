@@ -697,6 +697,99 @@ double effusion_throat_nusselt(double Re, double Pr, double L_over_D);
 double effusion_internal_nusselt(double Re, double Pr, double X_over_L,
                                  double L_over_D);
 
+// -------------------------------------------------------------
+// Turbulent flat plate -- the unblown reference of full-coverage film data
+// -------------------------------------------------------------
+//
+// Crawford, M.E., Choe, H., Kays, W.M. and Moffat, R.J. (1976). "Full-
+// coverage film cooling heat transfer study -- summary of data for normal-
+// hole injection and 30 deg slant-hole injection." NASA CR-2648 (Stanford
+// HMT-19). sources/heat_transfer/film/ (gitignored).
+//
+// The Stanford programme (CR-2642, CR-2648, CR-2786, CR-3219) reports every
+// full-coverage Stanton number against ONE unblown reference, printed under
+// each data table ("Stanton number ratio based on ...", Note 2 of the
+// nomenclature): the turbulent flat-plate boundary layer
+//
+//   St_o Pr^0.4 = 0.0295 Re_x^-0.2 [1 - (xi/(x - x_vo))^0.9]^(-1/9)
+//
+// with Re_x = (x - x_vo) U/nu from the hydrodynamic virtual origin x_vo and
+// xi the unheated starting length. STCR = St/St_o is the measured gas-side
+// augmentation of a blown plate, i.e. the h_f/h_0 an effusion element's
+// `gas_augmentation` stands for -- so this is the baseline a published
+// augmentation ratio is referenced to. Here xi = 0: the thermal boundary
+// layer starts with the velocity one (the unheated-starting-length bracket
+// is 1).
+//
+// LOCAL:  Nu_x = St_o Re_x Pr = 0.0295 Re_x^0.8 Pr^0.6
+//
+// PANEL AVERAGE over x in [x0, x0 + L], integrated in closed form
+// (h_x ~ x^-0.2):
+//
+//   Nu_L = h_bar L / k = (0.0295 / 0.8) Pr^0.6 (Re_x1^0.8 - Re_x0^0.8)
+//        = 0.036875 Pr^0.6 Re_L^0.8 [(1 + s)^0.8 - s^0.8],   s = x0 / L
+//
+// At s = 0 it is the plate-from-the-leading-edge average (0.037 Re_L^0.8 in
+// the textbook Pr^(1/3) form).
+//
+// WHY THIS FORM AND NOT THE TEXTBOOK ONE. The common 0.0296 Re_x^0.8 Pr^(1/3)
+// (Colburn) is not held in the source register, and at combustion-gas Pr
+// ~0.74 it is 8% above this one -- Pr^0.6 against Pr^(1/3). An augmentation
+// ratio only carries over against the reference it was measured on, and
+// St/St_o is the one quantity the held full-coverage data give, so the
+// reference is theirs. The unheated-starting-length bracket is left out: a
+// user rarely knows a separate thermal start, and it only raises h.
+//
+// ENVELOPE. The Stanford data span Re_x 1.5e5 to 5e6 (CR-2786's summary),
+// air (Pr ~0.7), low free-stream turbulence. Below 1.5e5 a real boundary
+// layer may be transitional; the formula is still smooth there and is
+// evaluated, and `extrapolated` says so -- it never refuses.
+namespace crawford1976 {
+
+constexpr double st0_coefficient = 0.0295;
+constexpr double st0_re_exponent = -0.2;
+constexpr double st0_pr_exponent = -0.4;
+constexpr double Re_x_min = 1.5e5;
+constexpr double Re_x_max = 5.0e6;
+
+} // namespace crawford1976
+
+// Local turbulent flat-plate Nusselt number on x, and its derivative.
+//
+//   Re_x : x-Reynolds number from where the boundary layer starts [-], > 0
+//   Pr   : gas Prandtl number [-], > 0
+//
+// Returns (Nu_x, dNu_x/dRe_x) = (0.0295 Re_x^0.8 Pr^0.6, 0.8 Nu_x/Re_x).
+// `status` is set to Extrapolated outside Re_x [1.5e5, 5e6].
+std::tuple<double, double> flat_plate_turbulent_nusselt_and_derivative(
+    double Re_x, double Pr, CorrelationStatus *status = nullptr);
+
+struct FlatPlatePanelNusselt {
+    double Nu = 0.0;          // panel-averaged, on the panel length L [-]
+    double dNu_dRe_L = 0.0;   // d Nu / d Re_L at fixed x0/L [-]
+    double Re_x_start = 0.0;  // Re_x at the panel's leading edge [-]
+    double Re_x_end = 0.0;    // Re_x at its trailing edge [-]
+    bool extrapolated = false;  // any of [Re_x_start, Re_x_end] outside the envelope
+};
+
+// Panel-averaged turbulent flat-plate Nusselt number over [x0, x0 + L].
+//
+//   Re_L           : Reynolds number on the panel length, rho U L / mu [-], > 0
+//   Pr             : gas Prandtl number [-], > 0
+//   x_start_over_L : x0 / L, where the boundary layer starts upstream of the
+//                    panel's leading edge, in panel lengths [-], >= 0
+//
+// h_bar = Nu k / L. `extrapolated` is set when the panel's Re_x range leaves
+// [1.5e5, 5e6] anywhere (always at x0 = 0, where Re_x starts from zero).
+FlatPlatePanelNusselt flat_plate_turbulent_panel_nusselt(double Re_L, double Pr,
+                                                         double x_start_over_L);
+
+// Solver-facing (f, J): (Nu_L, dNu_L/dRe_L) at fixed x0/L. Closed form:
+// Nu_L ~ Re_L^0.8, so the derivative is 0.8 Nu_L / Re_L exactly.
+std::tuple<double, double> flat_plate_turbulent_panel_nusselt_and_derivative(
+    double Re_L, double Pr, double x_start_over_L,
+    CorrelationStatus *status = nullptr);
+
 } // namespace combaero::cooling
 
 #endif // COOLING_CORRELATIONS_H

@@ -695,6 +695,23 @@ The approach term leads at low `Re` (exponent 0.476) and the throat
 overtakes it (0.8); the crossover falls inside a typical effusion plate's
 own operating range, which is why both are needed.
 
+#### Turbulent flat plate (the unblown reference of full-coverage data)
+
+```python
+nu_x, dnu_dre = cb.flat_plate_turbulent_nusselt_and_derivative(Re_x=4e5, Pr=0.71)
+fp = cb.flat_plate_turbulent_panel_nusselt(Re_L=3e4, Pr=0.71, x_start_over_L=1.2)
+fp.Nu, fp.dNu_dRe_L, fp.Re_x_start, fp.Re_x_end, fp.extrapolated
+nu, dnu = cb.flat_plate_turbulent_panel_nusselt_and_derivative(3e4, 0.71, 1.2)
+h_bar = fp.Nu * k / L
+```
+
+NASA CR-2648's St_o, printed under every Stanford full-coverage table as the
+reference of St/St_o: `St_o Pr^0.4 = 0.0295 Re_x^-0.2`, so
+`Nu_x = 0.0295 Re_x^0.8 Pr^0.6`. The panel form integrates it over
+`[x0, x0 + L]`: `Nu_L = (0.0295/0.8) Pr^0.6 Re_L^0.8 [(1+s)^0.8 - s^0.8]`,
+`s = x0/L`, no unheated starting length. `extrapolated` flags a Re_x range
+leaving the data's 1.5e5-5e6 (air, low Tu); never refused.
+
 ##### On the element
 
 `EffusionPlateElement.internal_heat_transfer(state_in)` applies the above to
@@ -724,7 +741,7 @@ The plate IS the wall the coolant passes through, so it owns it: no
 
 | Discharge into | Gas side |
 |---|---|
-| `MomentumChamberNode` (flow) | the chamber's own surface correlation is the unblown `h_gas_unblown` (so the chamber's surface model IS the baseline); which baseline that is, and where, is reported beside it as `h_gas_unblown_model` (e.g. `SmoothModel(gnielinski)`, fully developed) and `h_gas_unblown_Re` / `_Pr` / `_Nu` (#476); its velocity gives `blowing_ratio`; `gas_augmentation` (the caller's, 1.0) scales h. `T_gas` is the approaching MAIN stream when the chamber has one -- its own state is the mixed outlet, diluted by the effused coolant |
+| `MomentumChamberNode` (flow) | by default (`gas_baseline="chamber"`) the chamber's own surface correlation is the unblown `h_gas_unblown` (so the chamber's surface model IS the baseline); with `gas_baseline="flat_plate"` it is a turbulent boundary layer restarted `gas_start_length` upstream of the panel (see below); which baseline that is, and where, is reported beside it as `h_gas_unblown_model` (e.g. `SmoothModel(gnielinski)`, fully developed) and `h_gas_unblown_Re` / `_Pr` / `_Nu` (#476); its velocity gives `blowing_ratio`; `gas_augmentation` (the caller's, 1.0) scales h. `T_gas` is the approaching MAIN stream when the chamber has one -- its own state is the mixed outlet, diluted by the effused coolant |
 | a plenum (state, no flow) | the imposed `gas_heat_flux` [W/m^2], 0 by default (adiabatic) |
 
 **No coolant flow (#998)** (below `cb.MIXER_HEAT_MDOT_FLOOR`, the network's
@@ -760,7 +777,9 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=3.27e-3,
                              gas_augmentation=1.0,        # the caller's
                              gas_film="none",             # or "baldauf_sellers"
                              gas_heat_flux=0.0,           # plenum discharge only
-                             material=None)               # T_wall_limit only (#998)
+                             material=None,               # T_wall_limit only (#998)
+                             gas_baseline="chamber",      # or "flat_plate"
+                             gas_start_length=None)       # [m], flat_plate only
 diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
 ```
 
@@ -777,6 +796,22 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   channel runs through. A channel-fed liner segment is a separate element.
 - With `wall_conductivity` large the wall reduces exactly to
   `overall_effectiveness` below.
+- **Gas-side baseline, opt-in flat plate.** `gas_baseline="flat_plate"` with
+  `gas_start_length` [m] >= 0 (where the hot boundary layer restarts -- a
+  bleed, a starter-film lip, a liner step -- to the panel's leading edge)
+  replaces the chamber's coefficient by `cb.flat_plate_turbulent_panel_nusselt`
+  over x in [x0, x0 + panel_length] at the chamber's static state and
+  velocity; `T_gas`, `U_gas` and the jet ratios stay the chamber's.
+  `h_gas_unblown_model` names it, `h_gas_unblown_x_start` / `_x_end` [m] and
+  `_Re_x_start` / `_Re_x_end` give the range, and
+  `h_gas_unblown_extrapolated` is 1 where Re_x leaves the Stanford data's
+  1.5e5-5e6 (evaluated anyway). Needs `panel_length` and a chamber discharge
+  (refused on a plenum); the chamber forbids `gas_start_length`. This is the
+  baseline published full-coverage St/St_o ratios use, so pick by which one
+  an augmentation you carry over was quoted against. On Behrendt 2008's
+  reacting rig (`validation/cooling/effusion_network_runner.py`, accuracy,
+  cross-source) it moves the mean over-prediction from +22% to +13% at
+  `gas_augmentation` 1.0; nothing here recommends an augmentation.
 
 ##### Duct-fed: the effusion liner (#471)
 

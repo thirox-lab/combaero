@@ -101,3 +101,21 @@ def test_a_plenum_discharge_uses_the_imposed_flux() -> None:
     assert r["gas_side_chamber"] == 0.0
     assert r["q_wall"] == pytest.approx(1.0e5)
     assert r["T_wall_hot"] > r["T_wall_cold"] > 600.0
+
+
+def test_the_flat_plate_gas_baseline_is_exposed_and_the_chamber_stays_default() -> None:
+    """The node carries the element's gas_baseline; its length is read only
+    for the flat plate, so a stored length with the chamber baseline builds."""
+    assert EffusionPlateData().gas_baseline == "chamber"
+    e = build_network_from_schema(NetworkGraphSchema(**_liner())).elements["eff"]
+    assert e.gas_baseline == "chamber" and e.gas_start_length is None
+    kept = build_network_from_schema(
+        NetworkGraphSchema(**_liner({"gas_baseline": "chamber", "gas_start_length": 0.02}))
+    ).elements["eff"]
+    assert kept.gas_baseline == "chamber" and kept.gas_start_length is None
+    g = _liner_in("incompressible")
+    g["nodes"][-1]["data"] = {"gas_baseline": "flat_plate", "gas_start_length": 0.02}
+    r = NetworkRunner.from_dict(g).solve(timeout=120.0)._element_results["eff"].model_dump()
+    assert r["success"]
+    assert r["h_gas_unblown_x_start"] == pytest.approx(0.02)
+    assert r["h_gas_unblown_x_end"] == pytest.approx(0.02 + 0.152)

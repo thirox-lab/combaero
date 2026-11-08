@@ -154,7 +154,8 @@ SOURCE_PUBLISHES: dict[tuple[str, str], str] = {
     ("colban2011", "eta_adiabatic"): "eta_adiabatic",
     ("andrews1988", "eta_overall"): "eta_overall",
     # Reacting 5-10 bar rig (GT2008-51191). T_g is the NEAR-WALL gas at
-    # x/d -10, y/d 4, not a bulk temperature; unscored today.
+    # x/d -10, y/d 4, not a bulk temperature; effusion_network_runner feeds
+    # it as the chamber's main-inlet stream, which the plate's T_gas is.
     ("behrendt2008", "eta_overall"): "eta_overall",
     # The pair that cost -60% when confused. Same lab, same figure number.
     ("andrews1986", "h_hole_length"): "h_hole_internal_area",

@@ -1,10 +1,13 @@
 # Extraction: Behrendt, Lengyel, Hassa and Gerendas (2008), effusion eta_tot in a reacting 5-10 bar flow
 
-**Status: DATA ONLY. Extracted 2026-11-08 from the PDF vector stream; the user
-confirmed it on the overlay review ("looks perfect").** The data are in
-`validation/cooling/data/behrendt2008/`: 9 distinct `eta_tot(x/d)` curves
-(Figs. 6, 9, 10) and the 3 Fig. 8 heat-flux series. Every series has
-`scores: null`. No runner scores it yet; the baseline runner comes in a later PR.
+**Status: SCORED (accuracy, cross-source). Extracted 2026-11-08 from the PDF
+vector stream; the user confirmed it on the overlay review ("looks
+perfect").** The data are in `validation/cooling/data/behrendt2008/`: 9
+distinct `eta_tot(x/d)` curves (Figs. 6, 9, 10) and the 3 Fig. 8 heat-flux
+series. The 9 eta curves are scored by `validation/cooling/effusion_network_runner.py`
+through `EffusionPlateElement` (set `andrews_1986_effusion_internal`, the
+element's coolant side), at both gas-side baselines; see "Scored" below. The
+Fig. 8 series stay `scores: null`.
 
 ## Source, pinned
 
@@ -219,7 +222,84 @@ takes the sink at the supply temperature, so on this set it may over-predict
 the internal cooling. Test that before reading any level error as a
 gas-side gap.
 
+## Scored: EffusionPlateElement, both gas-side baselines (accuracy, cross-source)
+
+`effusion_network_runner.py` builds the rig as a network (gas MassFlowBoundary
+-> MomentumChamberNode, A = 80e3 mm2 -> exit; coolant PressureBoundary at
+p_h (1 + dp_rc), T_c -> the plate -> chamber) and reads the plate's own
+`eta_overall`. The panel is the scored window x/d 18-50 (32 d x 80 mm): the
+element is homogenised and predicts one eta per panel, so it is placed where
+the measurement is; vertices beyond x/d 50 are another window and come back
+unscored. `gas_augmentation`, `internal_Nu_multiplier` and the chamber's
+`Nu_multiplier` are 1.0, `gas_film` none. Nothing is fitted. Pinned by
+`python/tests/test_effusion_network_runner.py`.
+
+- **chamber** (the default): the chamber's SmoothModel(gnielinski), fully
+  developed, Dh = sqrt(4A/pi) = 319 mm.
+- **flat_plate**: `gas_baseline="flat_plate"`, the boundary layer restarted at
+  the bleed (dx/d -21), so x in [39 d, 71 d]; CR-2648's St_o averaged over it.
+  Re_x 1.6-2.9e4 (5 bar) and 3.2-5.9e4 (10 bar) are below the Stanford data's
+  1.5e5, so these rows are out-of-domain by the kernel's own flag.
+
+Plateau means (x/d 18-50), predicted at gas_augmentation 1.0:
+
+| curve | measured | chamber | err | flat plate | err | h0 chamber / flat [W/m2K] |
+|---|---|---|---|---|---|---|
+| E20 dp 2% Tc 540 K | 0.790 | 0.926 | +17.2% | 0.860 | +8.8% | 94 / 193 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.934 | +16.8% | 0.874 | +9.3% | 94 / 193 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.939 | +16.7% | 0.883 | +9.7% | 94 / 193 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.924 | +18.8% | 0.856 | +10.0% | 94 / 193 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.925 | +27.3% | 0.857 | +17.9% | 94 / 193 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.924 | +34.2% | 0.856 | +24.3% | 94 / 193 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.915 | +19.1% | 0.840 | +9.4% | 94 / 193 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.914 | +21.4% | 0.839 | +11.4% | 163 / 334 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.906 | +23.1% | 0.824 | +12.0% | 163 / 334 |
+
+Mean +21.6% (chamber) and +12.5% (flat plate); per vertex (821 points, the
+scorecard rows) +21.7% and +12.6%. No curve is inside the authors' 3%
+band on either baseline. The restarted boundary layer halves the miss and does
+not close it.
+
+Trends, plateau differences (measured / chamber / flat plate):
+
+| trend | measured | chamber | flat plate |
+|---|---|---|---|
+| angle 20 -> 30 deg (TC1 dp 3% Tc 540 K) | -0.073 | -0.010 | -0.017 |
+| T_c 470 -> 580 K (E30 TC1 dp 3%) | -0.090 | +0.000 | +0.000 |
+| dp 2 -> 4% (E20 TC1 Tc 540 K) | +0.015 | +0.013 | +0.023 |
+| p_h 5 -> 10 bar (E30 dp 3%) | -0.025 | -0.010 | -0.017 |
+| p_h 5 -> 10 bar (E30 dp ~2%) | -0.032 | -0.009 | -0.016 |
+
+Every sign is right except T_c, which both miss entirely: the two-resistance
+closure is T_c-invariant to first order. The flat plate raises the gas-side
+weight, so the internal-side trends (dp) grow past the measurement (1.5x)
+and the pressure trend closes from 0.3-0.4x to 0.5-0.7x. The angle effect
+(the authors: 46% less wall-normal jet momentum at 20 deg) stays at 0.1-0.2x:
+the element has no angle-dependent gas side.
+
+Sensitivity (reported, never chosen; `sensitivity()`):
+
+- **Start length moves the score.** Bleed at 10.5 d / 21 d / 42 d: eta 0.850 /
+  0.856 / 0.864 (E30 Tc 470 K); from the sample's own leading edge 0.843.
+- **Duct area (80e3 vs 8e3 mm2, Dh 319 vs 89 mm) moves only the chamber
+  baseline** (-0.02 in eta); the flat plate does not see Dh (identical to 1e-9).
+- **Whole sample as one panel** (x/d 0-143): flat-plate eta +0.009 against the
+  window, a thicker average boundary layer.
+
+**What remains (not fixed here).** A diagnostic inversion of the element's own
+wall (never applied) puts the gas-side h the plateaus need at 1.6-1.8x this
+flat plate on seven curves and 2.3 / 2.7x on the two hot-coolant E30 curves.
+That is the job `gas_augmentation` (the user's) and the missing near-wall
+mixing physics share: a T_c- and angle-dependent film/mixing temperature at
+M 4-6, I 6-14, Tu ~20%. Two further gaps sit on the coolant side and are
+open: Andrews' throat Nu runs ~1.8x the authors' in-hole Eq. (5), and the
+element's coolant flow ~1.4-1.5x the printed M (the printed M are themselves
+approximate, footnote 3). Neither is a tuning target.
+
 ## Review log
 
 - 2026-11-08: extraction, overlay review page; user: "looks perfect".
   Promoted with one copy per duplicated curve and without the clip vertex.
+- 2026-11-08: scored through EffusionPlateElement (effusion_network_runner),
+  chamber and flat-plate gas baselines; the user chose the flat plate as the
+  baseline to add ("flat plate approach now, it is what we hold").

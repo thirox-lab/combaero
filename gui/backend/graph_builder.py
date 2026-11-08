@@ -1495,6 +1495,10 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 turbulence_intensity=data.turbulence_intensity,
                 gas_heat_flux=data.gas_heat_flux,
                 material=data.material or None,
+                gas_baseline=data.gas_baseline,
+                gas_start_length=(
+                    data.gas_start_length if data.gas_baseline == "flat_plate" else None
+                ),
             )
             net.add_element(elem)
         elif elem_type == "film_cooling":

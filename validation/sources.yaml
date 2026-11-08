@@ -1081,7 +1081,7 @@ documents:
     STCR, STHR, F-COL/F-HOT, LOGB, plates 1-36), with St_o = 0.0295 Pr^-0.4 Re_x^-0.2 [1 - (xi/(x -
     x_vo))^0.9]^(-1/9) printed under each table. Example, slant P/D 5, M 0.4 (runs 080174, p. 120): ETA rises
     to 0.58-0.60 by the last blown rows with STCR 0.83-1.04; M 0.6 (p. 121): ETA ~0.55, STCR up to 1.16.'
-  status: screened
+  status: implemented
   verdict: 'Screened 2026-11-02. The summary data report of the Stanford programme, and the first source of the
     30 deg SLANT-hole data, the most combustor-relevant of the series (combustor effusion is ~20-30 deg).
     Findings as printed: slant injection gives a considerably lower St than normal injection; with injectant
@@ -1089,11 +1089,15 @@ documents:
     first three plates), M ~1.2 raises St above the unblown curve; P/D 10 strongly reduces the film-cooling
     effect for both geometries. Uses as for CR-2642 -- STCR as measured gas-side augmentation (#476), ETA over
     11 rows for the superposition question (#387) -- now at 30 deg; still DR ~1, low Tu, low speed, P/D 5/10
-    (combustor effusion is often P/D 5-8), so cross-source accuracy only, labelled so. Tabulated: no digitising.'
+    (combustor effusion is often P/D 5-8), so cross-source accuracy only, labelled so. Tabulated: no digitising.
+    Implemented 2026-11-08: its St_o (Pr^-0.4, xi = 0) is EffusionPlateElement''s flat-plate gas baseline.'
   read_for: ['#476 effusion gas-side augmentation (30 deg slant, tabulated)', '#387 multi-row effectiveness and
-      superposition']
+      superposition', 'the unblown flat-plate reference St_o (printed under every table), implemented 2026-11-08']
   issues: [387, 476]
-  records: []
+  records: [validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md]
+  code: ['include/cooling_correlations.h: crawford1976 St_o, flat_plate_turbulent_nusselt_and_derivative,
+      flat_plate_turbulent_panel_nusselt', 'python/combaero/network/components.py: EffusionPlateElement
+      gas_baseline="flat_plate"']
   notes: 'Fetched 2026-11-02 by the lead from NTRS (19760011294, open access, authorised by the user). A
     duplicate copy from the user was removed. Not checked: the run-by-run table transcription (typed scan).'
 - file: sources/heat_transfer/film/Crawford_Kays_Moffat_1976_NASA_CR-2786_full_coverage_30deg_slant_injection.pdf
@@ -1126,6 +1130,8 @@ documents:
       superposition']
   issues: [387, 476]
   records: []
+  code: ['include/cooling_correlations.h: crawford1976 Re_x_min/max, the flat-plate envelope (its summary''s Re_x
+      1.5e5-5e6)']
   notes: 'Fetched 2026-11-02 from NTRS (19770008401, open access, authorised by the user). Two earlier downloads
     were truncated (HTTP/2 stream reset at ~4-5 MB, no byte-range resume); a fresh `curl --http1.1` fetch got the
     full 14,299,063 bytes in under a minute. Not checked: the Ch. 4 Couette-flow correlation constants and the
@@ -1331,18 +1337,21 @@ documents:
     contour maps Figs. 4, 7 (incl. impingement-backed I20/I30); hot-side heat flux vs dp (Fig. 8, biased by
     the sensor); Table 4 model h_h/h_e/h_c. Uncertainty d eta_r,tot <= 3% relative. M, I from the Martiny
     1997 wall model; ~40% of the coolant fed the module (footnote 3).'
-  status: extracted
+  status: accuracy
   verdict: 'Extracted 2026-11-08 from the PDF vector stream, user-confirmed: 9 distinct eta_tot curves (three
     curves printed twice agree to 1e-5 across independent calibrations; one copy each committed) and the 3
     Fig. 8 heat-flux series (never for scoring). The first reacting 5-10 bar heated-wall eta_overall set: a
     cross-source ACCURACY set for EffusionPlateElement eta_overall plus four trends (angle 20 vs 30 deg
     0.800 vs 0.727; Tc 470/540/580 K 0.778/0.727/0.688; dp 2/3/4% 0.790/0.800/0.805; p_h 5 -> 10 bar 0.778
     -> 0.753 at dp 3%). Never fidelity, never a tuner. For #476: no adiabatic wall temperature, so it does
-    NOT give gas_augmentation (h_h in Table 4 is model output); #476 stays open. Unscored until a runner
-    exists.'
-  read_for: ['#476 gas-side h / augmentation (no)', 'eta_overall accuracy at reacting high-pressure conditions']
+    NOT give gas_augmentation (h_h in Table 4 is model output); #476 stays open. Scored 2026-11-08 through
+    EffusionPlateElement at gas_augmentation 1.0 (accuracy, cross-source): +21.6% mean on the chamber
+    baseline, +12.5% on the flat plate restarted at the bleed (dx/d -21); T_c trend missed by both.'
+  read_for: ['#476 gas-side h / augmentation (no)', 'eta_overall accuracy at reacting high-pressure conditions',
+    'flat-plate gas baseline start length (the BL bleed at dx/d -21)']
   issues: [476]
   records: [validation/cooling/data/behrendt2008/metadata.yaml, validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md]
+  code: ['validation/cooling/effusion_network_runner.py: both gas baselines, plateau window x/d 18-50']
   notes: 'Was on the wanted list (#1070). Its rig paper is Behrendt & Hassa ICAS 2006 (held); its wall model
     is Martiny et al. 97-GT-329 (held). Companion GT2014-26909 (same rig, trenches and CMC) stays wanted.'
 - file: sources/heat_transfer/film/Behrendt_Hassa_2006_ICAS2006-152_combustor_cooling_test_rig.pdf

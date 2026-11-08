@@ -267,6 +267,11 @@
 			"h_gas_unblown_Nu",
 			"h_gas_unblown_Pr",
 			"h_gas_unblown_Re",
+			"h_gas_unblown_Re_x_end",
+			"h_gas_unblown_Re_x_start",
+			"h_gas_unblown_extrapolated",
+			"h_gas_unblown_x_end",
+			"h_gas_unblown_x_start",
 			"h_hole_area",
 			"h_internal_plate_area",
 			"h_plate_area",
@@ -867,7 +872,8 @@
 		"effusion_plate": [
 			"palette",
 			"on a gas-side chamber",
-			"on a gas-side chamber, baldauf_sellers film"
+			"on a gas-side chamber, baldauf_sellers film",
+			"on a gas-side chamber, flat-plate gas baseline"
 		],
 		"ejector": [
 			"palette",
@@ -1085,6 +1091,11 @@
 		"h_gas_unblown_Nu": "-",
 		"h_gas_unblown_Pr": "-",
 		"h_gas_unblown_Re": "-",
+		"h_gas_unblown_Re_x_end": "-",
+		"h_gas_unblown_Re_x_start": "-",
+		"h_gas_unblown_extrapolated": "-",
+		"h_gas_unblown_x_end": "m",
+		"h_gas_unblown_x_start": "m",
 		"h_hole_area": "W/m\u00b2/K",
 		"h_internal_plate_area": "W/m\u00b2/K",
 		"h_plate_area": "W/m\u00b2/K",

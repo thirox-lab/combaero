@@ -142,9 +142,14 @@ docstring, `docs/API_PYTHON.md` and `conventions.py` point here.
 | C | Baldauf, Sellers over 10 rows | 72 | 1.57-3.30 | 0.89-1.88 |
 
 A third baseline, the turbulent flat-plate boundary layer at the panel's
-streamwise position that published `h_f/h_0` ratios use, is not offered: it
-needs an input the element does not have (the panel's x along the liner), and
-#476 closed without it.
+streamwise position that published `h_f/h_0` ratios use, is now offered by the
+element (`gas_baseline="flat_plate"`, CR-2648's St_o, with `gas_start_length`
+the panel's x from where the boundary layer starts). It is NOT applied to
+this rig: 88-GT-290 does not print where the hot-side boundary layer starts
+relative to the plate (only that eta was taken 127 mm downstream of the
+impingement gap's leading edge, p. 3), so any start length would be invented.
+It is scored on Behrendt 2008, whose bleed fixes it
+(extractions/behrendt_2008_effusion_eta_tot.md).
 
 Not applied: the runner reports the rig as the paper describes it.
 Recorded so the absolute `F` values are not over-read. It divides out of
