@@ -5835,6 +5835,35 @@ documents:
     Rudey & Graham Fig. 5), NREC 1344-2 (1980) design manual (ref. 9), Liebert 1978 NASA TP-1190 (alpha_w),
     Marek 1973 NASA TM X-2809 (C_m at pressure), Claus 1981 NASA TP-1722.'
 
+- file: sources/heat_transfer/film/Poettgen_2020_MS_UConn_effusion_jets_vitiated_crossflow_LRS.pdf
+  sha256: '7018942388acbdf62065578b4fe522b47f99ca7c75e3468130f9ce32641e2ba1'
+  citation: Poettgen, B. (2020). Experimental methods for studying mixing and heat transfer characteristics
+    of effusion jets in a vitiated crossflow. MS thesis, University of Connecticut, Master's Theses 1515
+    (major advisor B. M. Cetegen).
+  topic:
+  - effusion
+  - film
+  content: 'Open access, 87 pp., text layer. UConn CGDL rig (the Pratt & Whitney sponsored project): premixed
+    propane-air pilot, vitiated crossflow ~1500 K at 7.6 m/s, atmospheric, rectangular test section.
+    Effusion plate: Inconel 625, 2.29 mm thick, 2 staggered rows, 20 holes laser drilled at 30 deg forward,
+    spanwise pitch 6.35 mm, row pitch 7.62 mm (hole diameter only on Fig. 17, not in the text); plenum fed,
+    coolant air (DR 3.05) or CO2 (DR 4.65) at 500 K, BR 5, 7 and 10, jet Re 205-449. Planar laser Rayleigh
+    gas temperature images (mean, instantaneous, RMS) parallel to the plate at 2-3.5 mm. An IR method for
+    surface temperature through the vitiated flow is developed (window, gas emission, calibration) but NO IR
+    data were taken (COVID-19 lab shutdown, Sec. 5).'
+  status: screened
+  verdict: 'Screened 2026-11-08. Does NOT plug the gas-side h gap (#476) it was wanted for: no surface
+    temperature, heat flux or h was measured, only preliminary LRS gas-temperature images, plotted, at high
+    BR (5-10) with low jet Re and a single 2-row plate. Nothing to score. Value: (a) the rig definition for the
+    follow-on papers (Grasso, Snyder & Cetegen 2022 JHT, wanted; the IR companion announced for IJHMT) --
+    those, not this thesis, would hold the hot-side h; (b) its literature review is a pointer list of hot
+    effusion experiments. A liner case (crossflow along the plate), not a front plate facing burners.'
+  read_for:
+  - '#476 gas-side h / augmentation on an effusion plate in a hot vitiated crossflow -- not here (IR never acquired)'
+  - can-annular front plate with several burners -- not here (crossflow along a side wall)
+  issues:
+  - 476
+  records: []
 wanted:
 - citation: 'Venneman, W. F. (1959, 1960). Flow coefficients and jet deflection angles for combustor-liner air-entry
     holes, Parts I and II. General Electric Company, Schenectady, NY; and Marshall, L. A. (1958). Aerodynamic
@@ -6187,3 +6216,78 @@ wanted:
   question: All three ISO 5167-2 closures (C, expansibility, pressure loss) with derivations and the data behind
     them in one source; an alternative to the three papers above.
   where: Springer book; often through library access.
+# Effusion under burner swirl and in hot vitiated crossflow (added 2026-11-08, from the
+# can-annular front-plate question: nothing held measures an effusion plate facing several
+# burners). Open access first, paywalled second. Poettgen 2020 (UConn) was obtained
+# the same day and moved to documents.
+- citation: Andreini, A., Becchi, R., Facchini, B., Picchi, A., Peschiulli, A. (2017). The effect of effusion
+    holes inclination angle on the adiabatic film cooling effectiveness in a three-sector gas turbine combustor
+    rig with a realistic swirling flow. Int. J. Thermal Sciences 121, 75-88. doi:10.1016/j.ijthermalsci.2017.07.003
+  checked: true
+  issues: []
+  priority: later
+  question: 'How much burner swirl degrades adiabatic effectiveness against the flat-plate closures combaero
+    ships, and how the hole inclination angle changes that, measured (PSP) on a three-sector rig with three
+    angles and several pressure drops. The nearest open data to a plate under several burners.'
+  where: Open access preprint, University of Florence repository (flore.unifi.it/handle/2158/1102881);
+    journal version Elsevier (paywalled).
+- citation: Lenzi, T., Picchi, A., Bacci, T., Andreini, A., Facchini, B. (2020). Unsteady flow field
+    characterization of effusion cooling systems with swirling main flow - comparison between cylindrical
+    and shaped holes. Energies 13(19), 4993. doi:10.3390/en13194993
+  checked: true
+  issues: []
+  priority: later
+  question: 'Whether shaped-hole jets stay attached under a swirling main flow where cylindrical ones lift
+    off (TR-PIV): bounds where the shaped-hole film kernel (Colban 2011, flat plate) can be trusted near a
+    burner. Flow field only, no thermal data.'
+  where: Open access, MDPI.
+- citation: Lu, X., Ji, Y., Ge, B., Zang, S. (2025). Influence of premixed swirl-stabilized flame on the
+    cooling performance of an effusion-cooled combustor liner. Case Studies in Thermal Engineering 68, 105938.
+  checked: true
+  issues: []
+  priority: later
+  question: 'Overall effectiveness of cylindrical against fan-shaped effusion under a REACTING premixed swirl
+    flame, including the flame-impingement zone: the reacting counterpart of the non-reacting fan-shaped
+    comparison (Lu et al. 2025, IJHFF, below).'
+  where: Open access, Elsevier (Case Studies in Thermal Engineering).
+- citation: Ji, Y., Ge, B., Zang, S. (2022). Conjugate heat transfer characteristics of effusion cooling under
+    realistic swirl flow in a three-sector gas turbine model combustor. Applied Thermal Engineering 213.
+    (article number as recalled)
+  checked: false
+  issues: []
+  priority: later
+  question: 'Overall (conjugate) effectiveness maps on an effusion plate under three interacting swirl nozzles,
+    with the pressure drop across nozzle and plate varied, non-reacting: the closest measured case to
+    neighbouring-burner interaction. The authors report that in-hole convection removes much of the heat even
+    where swirl destroys the film -- a check on EffusionPlateElement''s in-hole heat pickup.'
+  where: Elsevier journal (paywalled).
+- citation: Ji, Y., Ge, B., Chi, Z., Zang, S. (2018). Overall cooling effectiveness of effusion cooled annular
+    combustor liner at reacting flow conditions. Applied Thermal Engineering 130, 877-888.
+  checked: true
+  issues: []
+  priority: later
+  question: 'Reacting overall effectiveness on a three-nozzle annular model combustor liner, with the low
+    zones where the swirling flame impinges; the reacting counterpart of Ji et al. 2022.'
+  where: Elsevier journal (paywalled).
+- citation: Lu, X., Ji, Y., Ge, B., Zang, S. (2025). Swirl impact on the overall cooling characteristics of an
+    effusion-cooled combustor liner with cylindrical and fan-shaped holes. Int. J. Heat and Fluid Flow 112.
+    (article number as recalled)
+  checked: false
+  issues: []
+  priority: later
+  question: 'Cylindrical against fan-shaped overall effectiveness under swirl impact at several blowing ratios
+    (fan-shaped up to 0.063 higher but less uniform): how much of the flat-plate shaped-hole gain survives
+    near a burner.'
+  where: Elsevier journal (paywalled).
+- citation: Grasso, S., Snyder, T., Cetegen, B. M. (2022). Application of planar laser Rayleigh scattering for
+    measurement of gas temperature distributions in effusion jet cooled panels exposed to high temperatures.
+    ASME J. Heat Transfer 144(1). doi:10.1115/1.4052509
+  checked: false
+  issues:
+  - 476
+  priority: later
+  question: 'The journal version of the UConn gas-temperature and film-effectiveness maps above an effusion
+    panel at ~1500 K (Poettgen 2020, held, has only the preliminary images). The gas-side h needs the IR
+    half, which the thesis never acquired (COVID shutdown) and the group announced for IJHMT: find out
+    whether that paper appeared -- it, not this one, is what would plug #476.'
+  where: ASME journal (paywalled).
