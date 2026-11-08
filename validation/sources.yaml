@@ -7,7 +7,8 @@
 #   uv run scripts/sources.py list --status unscreened
 #   uv run scripts/sources.py list --wanted            documents we lack, by priority
 #   uv run scripts/sources.py check             schema + unregistered local docs
-#   uv run scripts/sources.py new sources/x.pdf stub entry for a new document
+#   uv run scripts/sources.py new sources/x.pdf stub entry for a new document (with its sha256)
+#   uv run scripts/sources.py hash --write      fill missing sha256 values
 #
 # A new document gets an entry when it is screened; a verdict, issue or record
 # is added here in the same PR that makes it. `read_for` lists the QUESTIONS a
@@ -19,12 +20,15 @@
 # its own data), accuracy (cross-source set), extracted (data in the repo, not
 # scored), screened (verdict recorded, not used), unscreened.
 # Citations are taken from the document itself; "?" marks what it does not show.
+# sha256 is the file's content hash: `check` verifies it wherever sources/ is
+# present, so a restored backup is proven byte-identical (#1057).
 #
 # Built 2026-10-25 from the documents, the extraction records, the issues and
 # the project memory.
 
 documents:
 - file: sources/ejector/19680008095.pdf
+  sha256: '5fbb4ea26d725af5f20cfe4a599c8ee33a5d17c8947e7fdfc0128e982855fed8'
   citation: Sanger, N. L. (1968). Noncavitating performance of two low-area-ratio water jet pumps having
     throat lengths of 7.25 diameters. NASA TN D-4445, Lewis Research Center, March 1968.
   id: NASA TN D-4445 (NTRS 19680008095)
@@ -45,6 +49,7 @@ documents:
   notes: Filename is the NTRS accession number. Companion TN D-4759 (NTRS 19680022488) holds the tabulated
     fidelity points.
 - file: sources/ejector/19680022488.pdf
+  sha256: '3e8ffa97d9318544837f3afbfd751f673fa8d4a95318f3415f8a5a9eea7ab4bd'
   citation: Sanger, N. L. (1968). Noncavitating and cavitating performance of two low-area-ratio water
     jet pumps with throat lengths of 5.66 diameters. NASA TN D-4759, Lewis Research Center.
   id: NASA TN D-4759 (NTRS 19680022488)
@@ -64,6 +69,7 @@ documents:
   notes: Fetched from NTRS 2026-10-25 (it was cited as the fidelity source but not held). Filename is
     the NTRS accession number. The cavitation data (figures) are not used.
 - file: sources/ejector/art_10.1007_s40430-025-05536-7.pdf
+  sha256: 'd26a610e6ae54f986ed5983f02d35c3c8227a26e273f4a65373866d2de3950f1'
   citation: Akbarnejad, S., Ziabasharhagh, M. (2025). A novel 1D model for the analysis of double-choked
     ejectors validated by CFD simulations. J. Braz. Soc. Mech. Sci. Eng. 47, 253.
   id: DOI 10.1007/s40430-025-05536-7
@@ -82,6 +88,7 @@ documents:
   notes: Not the same paper as 'Theoretical Model for Predicting Performance of a Gas Ejector.pdf' (Thermal
     Engineering 2025, same authors), which is the one whose tables are digitised.
 - file: sources/ejector/Henry_2007_HEFAT_HF1_supersonic_ejector.pdf
+  sha256: '868a5f11b1723b837b8e9aba842171a3efddf74aac3c087f5f45d65231d6f4db'
   citation: 'Henry, F., Leclaire, S., Hemidi, A., Seynhaeve, J.-M., Bartosiewicz, Y. (2007). Analysis
     of supersonic ejector operation: experimental validation and two-phase aspects. HEFAT2007, 5th Int.
     Conf. on Heat Transfer, Fluid Mechanics and Thermodynamics, Sun City, South Africa, paper HF1.'
@@ -100,6 +107,7 @@ documents:
   notes: Renamed 2026-10-25 from Bartosiewicz_ejector_2004.pdf (the name predated the confirmed citation).
     The Fig. 5 scan and traces are henry2007_fig5.png and henry2007_fig5_p=4/5/6bar.
 - file: sources/ejector/Bouhanguel2011_flow_visualization_air_ejector.pdf
+  sha256: '646887e5798f97f6caa5bd584752be517804106cc94ca778b5eb65c5cd192299'
   citation: Bouhanguel, A., Desevaux, P., Gavignet, E. (2011). Flow visualization in supersonic ejectors
     using laser tomography techniques. Int. J. Refrigeration 34, 1633-1640.
   topic: [ejector]
@@ -115,6 +123,7 @@ documents:
   records: [validation/ejector/bouhanguel2011_regime_check.py, python/tests/test_ejector_bouhanguel2011.py,
     validation/ejector/README.md]
 - file: sources/ejector/Chen2013_1D_model_critical_subcritical.pdf
+  sha256: '736775c452662e2bdf14623f99c66eec725ec7d2be925b76284ab148b240b3ec'
   citation: Chen, W., Liu, M., Chong, D., Yan, J., Little, A. B., Bartosiewicz, Y. (2013). A 1D model
     to predict ejector performance at critical and sub-critical operational regimes. Int. J. Refrigeration
     36, 1750-1761.
@@ -131,6 +140,7 @@ documents:
   records: [validation/ejector/data/chen2013_figs.py, validation/ejector/printed_chain_check.py, python/tests/test_ejector_chen2013.py,
     validation/ejector/README.md]
 - file: sources/ejector/Development_of_an_Analytical_Method_for.pdf
+  sha256: 'e89642800fd81ae6003de3561973b0014dfcd8f0d94a60af2cca7de60068fe70'
   citation: Kracik, J., Dvorak, V. (2016). Development of an analytical method for predicting flow in
     a supersonic air ejector. EPJ Web of Conferences 114, 02059.
   id: DOI 10.1051/epjconf/201611402059
@@ -148,6 +158,7 @@ documents:
   records: [validation/ejector/README.md, validation/ejector/models/huang1999.py, validation/ejector/anchor_scorecard.py]
   code: ['include/ejector.h: Kracik & Dvorak Eq 9 q(lambda), ejector_critical_back_pressure', python/combaero/network/_ejector_huang1999.py]
 - file: sources/ejector/Ejectors_for_Efficient_Refrigeration.pdf
+  sha256: '8310cad068473836183151b93fb4c29882dbbbb8c9c4af6d5d3739c9db0315d9'
   citation: 'Grazzini, G., Milazzo, A., Mazzelli, F. (2018). Ejectors for Efficient Refrigeration: Design,
     Applications and Computational Fluid Dynamics. Springer International Publishing.'
   id: ISBN 978-3-319-75243-3
@@ -163,6 +174,7 @@ documents:
   notes: No text layer on the cover pages; citation from the copyright page.
 - file: sources/ejector/Galndo;Gl;Dolz - Numercal Optmzaton of an Ejector for Waste Heat Recovery Used to
     Cool Down the I....pdf
+  sha256: 'ee9facc38913c73edba48fca9983439a0b514a79f647fbf18c7ea217c77f81fd'
   citation: Galindo, J., Gil, A., Dolz, V., Ponce-Mora, A. (2020). Numerical optimization of an ejector
     for waste heat recovery used to cool down the intake air in an internal combustion engine. J. Thermal
     Science and Engineering Applications 12(5), 1-13.
@@ -178,6 +190,7 @@ documents:
   issues: [263]
   records: [validation/ejector/OPERATING_REGIMES_DESIGN.md]
 - file: sources/ejector/Huang_1d_analysis_ejector.pdf
+  sha256: 'b68e5564354155765077ed5f197cde4dca33a389703c3fb590cb14e3430748e6'
   citation: Huang, B. J., Chang, J. M., Wang, C. P., Petrenko, V. A. (1999). A 1-D analysis of ejector
     performance. Int. J. Refrigeration 22, 354-364.
   topic: [ejector]
@@ -195,6 +208,7 @@ documents:
     validation/ejector/data/huang1999_reference_data.h, validation/ejector/printed_chain_check.py]
   code: ['include/ejector.h: Huang 1999 Eqs 1-8, Eq 19', python/combaero/network/_ejector_huang1999.py]
 - file: sources/ejector/Liao2008_gas_ejector_dissertation.pdf
+  sha256: '50fa62b98b70a60c556092e57a41f7e989e48c12d3690b0ac17b5594303cf0a1'
   citation: Liao, C. (2008). Gas ejector modeling for design and analysis. PhD dissertation, Texas A&M
     University.
   topic: [ejector]
@@ -208,6 +222,7 @@ documents:
   issues: [670]
   records: [validation/ejector/README.md]
 - file: sources/ejector/Lienhard_One dimensional.pdf
+  sha256: 'ec27babdf3036a68853ede73b6c9ca9ba24c7b1bfc007b0a90e02d9f3237be06'
   citation: McGovern, R. K., Bulusu, K. V., Antar, M. A., Lienhard V, J. H. (?). One-dimensional model
     of an optimal ejector and parametric study of ejector efficiency. ? (conference paper; venue and year
     not printed on the first pages).
@@ -223,6 +238,7 @@ documents:
   issues: [252]
   records: [validation/ejector/README.md, validation/ejector/models/huang1999.py]
 - file: sources/ejector/Lucas2012_CO2_ejector_cycle.pdf
+  sha256: '6ee623b91f1deed23808fd9e60531d40197be37345e1ff5c2b13aa040682dbac'
   citation: Lucas, C., Koehler, J. (2012). Experimental investigation of the COP improvement of a refrigeration
     cycle by use of an ejector. Int. J. Refrigeration 35, 1595-1603.
   topic: [ejector]
@@ -236,6 +252,7 @@ documents:
   issues: [670]
   records: [validation/ejector/data/lucas2012_choke_check.py, validation/ejector/README.md]
 - file: sources/ejector/MazzelliMilazzo2015_IJR_preprint.pdf
+  sha256: '33ab4a8b61f82cc3bbfb8e07c47efd5f095c27bf537c3cb20f3f3205857360cc'
   citation: Mazzelli, F., Milazzo, A. (2015). Performance analysis of a supersonic ejector cycle working
     with R245fa. Int. J. Refrigeration 49, 79-92.
   id: DOI 10.1016/j.ijrefrig.2014.09.020
@@ -252,6 +269,7 @@ documents:
     python/tests/test_ejector_mazzelli2015.py]
   notes: Accepted-manuscript (FLORE repository) version.
 - file: sources/ejector/Theoretical Model for Predicting Performance of a Gas Ejector.pdf
+  sha256: 'a976c0b2df24bfb986ca538b001985f045b58aa6b4c759e3c697515299047642'
   citation: Akbarnejad, S., Ziabasharhagh, M. (2025). Development of a theoretical model for predicting
     performance of a gas ejector in different boundary conditions and working fluids. Thermal Engineering
     72(1), 8-16.
@@ -267,6 +285,7 @@ documents:
   records: [validation/ejector/data/akbarnejad2025_tables.py, validation/ejector/anchor_scorecard.py,
     python/tests/test_ejector_anchor_scorecard.py]
 - file: sources/ejector/Theoretical_and_Experimental_Activity_on_Ejector_R.pdf
+  sha256: '78bc4600c66293106dc940f16ca0bf4bef16b6ee803614f0db86273ab1dafd62'
   citation: Milazzo, A., Rocchetti, A., Eames, I. W. (2014). Theoretical and experimental activity on
     ejector refrigeration. Energy Procedia 45, 1245-1254 (ATI2013).
   topic: [ejector]
@@ -279,6 +298,7 @@ documents:
   issues: [697, 698]
   records: [validation/ejector/data/mazzelli2015_tables.py]
 - file: sources/heat_transfer/ALKHAMIS-THESIS.pdf
+  sha256: '14494e96d3f1d4747d933807d386cd479979fa5a20142c84bafffe358c1ae779'
   citation: Alkhamis, N. Y. (2009). Heat transfer and pressure drop measurement for square channels with
     V-shape ribs at high Reynolds numbers. M.S. thesis, Texas A&M University.
   topic: [rib]
@@ -294,6 +314,7 @@ documents:
   notes: Thesis version of Alkhamis_2011_JHT_133_111901_vshaped.pdf. Verdict recorded in memory project_rib_source_provenance.md
     only.
 - file: sources/heat_transfer/Alkhamis_2011_JHT_133_111901_vshaped.pdf
+  sha256: 'd1d7a6504b9096be8fd0a2c1844062bf245bb4b2be72dd8ea62f70eb20b16150'
   citation: Alkhamis, N. Y., Rallabandi, A. P., Han, J.-C. (2011). Heat transfer and pressure drop correlations
     for square channels with V-shaped ribs at high Reynolds numbers. ASME J. Heat Transfer 133(11), 111901.
   id: doi:10.1115/1.4004207
@@ -313,6 +334,7 @@ documents:
     2026-10-01); renamed to this name. Same Texas A&M group as ALKHAMIS-THESIS.pdf (the thesis behind
     it).
 - file: sources/heat_transfer/ALZAHRANI-DISSERTATION-2023.pdf
+  sha256: 'f0d7ce99abf8e161257ed69ec25a7620b2ec10d7e91e72167768daf0bc3a0de8'
   citation: Alzahrani, Y. S. M. (2023). A parametric study for jet impingement heat transfer enhancement
     using different roughness elements. Ph.D. dissertation, Texas A&M University.
   topic: [impingement, pin_fin, rib]
@@ -328,6 +350,7 @@ documents:
   issues: []
   records: []
 - file: sources/heat_transfer/CR4396/19910021175.pdf
+  sha256: '3def813e7ddfa71ba6d07f5cb7e970e9bba3c41eac3d9fcf8de2cf261bc5b25c'
   citation: 'Hajek, T. J., Wagner, J. H., Johnson, B. V., Higgins, A. W., Steuber, G. D. (1991). Effects
     of rotation on coolant passage heat transfer, Volume I: Coolant passages with smooth walls. NASA Contractor
     Report 4396, Vol. I, contract NAS3-23691, Pratt & Whitney. 140 pp.'
@@ -344,6 +367,7 @@ documents:
   records: []
   notes: Vol. I of the report whose Vol. II (CR4396/19940011518.pdf) is scored. NTRS accession 19910021175.
 - file: sources/heat_transfer/CR4396/19940011518.pdf
+  sha256: 'e3e24eb825e5b57b2142e6e3bb2b57a7dc7b1e4a07e79345a246b30e5b81ac89'
   citation: 'Johnson, B. V., Wagner, J. H., Steuber, G. D. (1993). Effects of rotation on coolant passage
     heat transfer, Volume II: Coolant passages with trips normal and skewed to the flow. NASA Contractor
     Report 4396, Vol. II, contract NAS3-23691, Pratt & Whitney. 124 pp.'
@@ -364,6 +388,7 @@ documents:
   code: ['validation/cooling/conventions.py: Kays-Perkins to Dittus-Boelter conversion (0.873)']
   notes: A text-identical copy at docs/heat_transfer/19940011518.pdf was deleted 2026-10-25.
 - file: sources/heat_transfer/dimples/045312_1_online.pdf
+  sha256: '997d936ff72f2931ee9e4fff37814b2b68c6ec0beb7e5cdd86b1528ba8a94d2f'
   citation: Wang, F., Chen, L., Liu, K., Tang, H., Ren, Y. (2022). Heat transfer and flow friction characteristics
     of dimple-type heat exchanger in axial piston pump. AIP Advances 12, 045312.
   id: doi:10.1063/5.0087958
@@ -379,6 +404,7 @@ documents:
   notes: 'Dimples declared out of scope until measured air data with varying depth arrive (user decision
     2026-10-23 on #336).'
 - file: sources/heat_transfer/dimples/1-s2.0-S0017931024014674-main.pdf
+  sha256: '16c76ffd314885b0079c576b3d1c52c458d14f08063687f2b016d3e4bd717a91'
   citation: Alrefaey, K., Khaled, O., Swift, J., Kempers, R. (2025). Experimental investigation of the
     thermal-hydraulic performance of hook-shaped fins and dimples. International Journal of Heat and Mass
     Transfer 240, 126640.
@@ -392,6 +418,7 @@ documents:
   issues: [336]
   records: []
 - file: sources/heat_transfer/dimples/applsci-09-02900.pdf
+  sha256: '8c9dce7e33df276cc2bca635869837374166ac61914073fe05f4c859cc40c15e'
   citation: Jing, Q., Xie, Y., Zhang, D. (2019). Effects of channel outlet configuration and dimple/protrusion
     arrangement on the blade trailing edge cooling performance. Applied Sciences 9, 2900.
   id: doi:10.3390/app9142900
@@ -405,6 +432,7 @@ documents:
   issues: [336]
   records: []
 - file: sources/heat_transfer/dimples/applsci-12-12965-v2.pdf
+  sha256: '95bf20d8a7d4b022e2d4c86b4cbb1899479442c53de64d27cbcdbc6ccded1ddc'
   citation: Wang, Z., Wang, Y., Zhang, J., Li, S., Xu, Y. (2022). Numerical simulation of heat transfer
     performance of a dimpled tubular heat exchanger. Applied Sciences 12, 12965.
   id: doi:10.3390/app122412965
@@ -418,6 +446,7 @@ documents:
   issues: [336]
   records: []
 - file: sources/heat_transfer/dimples/v003t09a080-97-gt-437.pdf
+  sha256: 'b2074cd9c77dd84112bc83f296860e966c9d38c6487d4ddbed91069fc49f71f1'
   citation: Chyu, M. K., Yu, Y., Ding, H., Downs, J. P., Soechting, F. O. (1997). Concavity enhanced heat
     transfer in an internal cooling passage. ASME Turbo Expo, Orlando, paper 97-GT-437.
   id: ASME 97-GT-437
@@ -435,6 +464,7 @@ documents:
   records: []
   notes: Figs. 5-7 not digitised. Dimples out of scope until further data (user, 2026-10-23).
 - file: sources/heat_transfer/energies-14-00039-v2.pdf
+  sha256: '7a563823f48d8dba32ad73df98d99232f33f2f3f112d3b60c2cfe030512415a5'
   citation: Ekkad, S. V., Singh, P. (2021). Detailed heat transfer measurements for rotating turbulent
     flows in gas turbine systems. Energies 14, 39.
   id: doi:10.3390/en14010039
@@ -449,6 +479,7 @@ documents:
   issues: []
   records: []
 - file: sources/heat_transfer/film/1-s2.0-S1876610214001489-main.pdf
+  sha256: 'fd85fb456ad7f5701a6c24d672e650f3859d082242a73d6607e762c67009e8b6'
   citation: 'Andrei, L., Andreini, A., Bianchini, C., Caciolli, G., Facchini, B., Mazzei, L., Picchi,
     A., Turrini, F. (2014). Effusion cooling plates for combustor liners: experimental and numerical investigations
     on the effect of density ratio. Energy Procedia 45, 1402-1411.'
@@ -469,6 +500,7 @@ documents:
   notes: 'Curves extracted exactly from the PDF vector stream, not digitised. Memory: project_andrei2014_is_extrapolation.md,
     project_film_effusion_thermal.md.'
 - file: sources/heat_transfer/film/14_Pa_129.pdf
+  sha256: '174688c4450efa934866e41cb6226a8fc2e3cf759ea763be5fef217e38a9e762'
   citation: Celano, M. P., Silvestri, S., Kirchberger, C., Schlieben, G., Suslov, D. I., Haidn, O. J.
     (2016). Gaseous film cooling investigation in a model single element GCH4-GOX combustion chamber.
     Trans. JSASS Aerospace Tech. Japan 14(ists30), Pa_129-Pa_137.
@@ -484,6 +516,7 @@ documents:
   notes: 'Inventory-level screening only (#386 comments 1 and 3: ''Different application -- read with
     care'').'
 - file: sources/heat_transfer/film/19670008176.pdf
+  sha256: '3affcdb480629a70655a120d31e2959b38135c52372041025076c68b3b874c15'
   citation: Lucas, J. G., Golladay, R. L. (1967). Gaseous-film cooling of a rocket motor with injection
     near the throat. NASA TN D-3836, Lewis Research Center.
   id: NASA TN D-3836
@@ -498,6 +531,7 @@ documents:
   records: []
   notes: 'Identified by file name in #386 comment 1. Inventory-level screening only.'
 - file: sources/heat_transfer/film/2006-Colban-JT-1j1ca3g.pdf
+  sha256: 'fbcf4935b0613f4787712613a22260aea4e31673b05df0cbe86b74da0cf1a6b9'
   citation: Colban, W., Gratton, A., Thole, K. A., Haendler, M. (2006). Heat transfer and film-cooling
     measurements on a stator vane with fan-shaped cooling holes. ASME J. Turbomach. 128(?), ?.
   id: doi:10.1115/1.2098789; ASME GT2005-68258
@@ -514,6 +548,7 @@ documents:
   records: []
   notes: 'Title-level triage in #386 comment 3; no evidence it was read in depth.'
 - file: sources/heat_transfer/film/2011-Colban-JT-1fygyl9.pdf
+  sha256: '16ea9906fe51b3bbc8f24dcdbd533d20b64b81b8ecfa2898d0fb17fa13d3d998'
   citation: Colban, W. F., Thole, K. A., Bogard, D. (2011). A film-cooling correlation for shaped holes
     on a flat-plate surface. ASME J. Turbomach. 133(1), 011002.
   id: doi:10.1115/1.4002064
@@ -529,6 +564,7 @@ documents:
   records: [validation/cooling/extractions/colban_2011_shaped_film.md, validation/cooling/data/colban2011/metadata.yaml]
   code: ['include/cooling_correlations.h: film_effectiveness_colban_2011, film_effectiveness_colban_2011_and_derivatives']
 - file: sources/heat_transfer/film/601_1_Cho_2001.pdf
+  sha256: 'a7aefd79a191f749162e0b71a81ffc62d19c44602d2ac17dba0b24be111bf078'
   citation: Cho, H. H., Rhee, D. H. (2001). Local heat/mass transfer measurement on the effusion plate
     in impingement/effusion cooling systems. ASME J. Turbomach. 123(3), 601-608.
   id: doi:10.1115/1.1344904; ASME 2000-GT-252
@@ -546,6 +582,7 @@ documents:
   notes: 'Same study as JAKO200027542986867.pdf (Korean version, same Table 2 digits). Mentioned in validation/cooling/extractions/hollworth_dagan_1980_vented_target.md.
     Memory: project_impingement_effusion_sources_468.md. End page 608 from #468 (p.1 shows only 601).'
 - file: sources/heat_transfer/film/686_1_Baldauf_Film_2002.pdf
+  sha256: 'd5814c7cd7a9906980af4a600e50555052ad489577a38e9f540c697586e601dc'
   citation: Baldauf, S., Scheurlen, M., Schulz, A., Wittig, S. (2002). Correlation of film-cooling effectiveness
     from thermographic measurements at enginelike conditions. ASME J. Turbomach. 124(4), 686-698.
   id: doi:10.1115/1.1504443; ASME 2002-GT-30180
@@ -565,6 +602,7 @@ documents:
     end page 698 from the repo record (title page is partly image). Web page copy next to it: ''Correlation
     of Film-Cooling Effectiveness From Thermographic Measurements at Enginelike Conditions |.html''.'
 - file: sources/heat_transfer/film/A_Low_Order_Flow_Network_Model_for_Doubl.pdf
+  sha256: '3c8ce0d9627f7b21ae0afbd2ede8fa111a5d83ebcad5f95cf24626ba812ee322'
   citation: van de Noort, M., Ireland, P. (2022). A low order flow network model for double-wall effusion
     cooling systems. Int. J. Turbomach. Propuls. Power 7(1), 5.
   id: doi:10.3390/ijtpp7010005
@@ -581,6 +619,7 @@ documents:
   records: [validation/cooling/extractions/effusion_plate_flow.md]
   code: ['python/combaero/network/components.py: EffusionPlateElement docstring']
 - file: sources/heat_transfer/film/AGARDAG328.pdf
+  sha256: '948e17786d71f8b2b8f028a0eef8bcc7cd3c621a379ea637b9329cd87d87254b'
   citation: Hirsch, C. (ed.) (1993). Advanced methods for cascade testing. AGARDograph 328, AGARD, Neuilly-sur-Seine.
   id: AGARD-AG-328
   topic: [other]
@@ -594,6 +633,7 @@ documents:
   records: []
   notes: '#468 mentions AGARD CP-527 (a different AGARD volume), not this file.'
 - file: sources/heat_transfer/film/Andrews_88-GT-290.pdf
+  sha256: '41a1189ec64cb69516ee6927810fd32d3af0c63913fbbb834663bb1372cd5dd6'
   citation: 'Andrews, G. E., Asere, A. A., Hussain, C. I., Mkpadi, M. C., Nazari, A. (1988). Impingement/effusion
     cooling: overall wall heat transfer. ASME 88-GT-290, Gas Turbine and Aeroengine Congress, Amsterdam.'
   id: ASME 88-GT-290
@@ -616,6 +656,7 @@ documents:
     inside keep their andrews_86-GT-290_ prefix) and andrews_88-GT-290_fig_10.png. Title from the repo record
     (not in p.1 text layer). Local only (gitignored).'
 - file: sources/heat_transfer/film/Ballal_Lefebvre_1973_Cranfield_SME4_film_cooled_wall_T.pdf
+  sha256: '45ffc138c106cb352606bf35a3ce5b70354f6d5fb22eb5f7e67d56430107c625'
   citation: Ballal, D. R., Lefebvre, A. H. (1973). A proposed method for calculating film-cooled wall temperatures
     in gas turbine combustion chambers. Cranfield Institute of Technology, Report SME No. 4, June 1973 (the
     report version of ASME Paper 72-WA/HT-24, same title and authors).
@@ -661,6 +702,7 @@ documents:
       score, the book worked examples']
   notes: Arrived 2026-11-02 in sources/new/ (from the user). Fig. 1 digitised 2026-11-03 (user sign-off, two overlay passes; scans and overlays local only).
 - file: sources/heat_transfer/film/Seban_1960_JHT_82_303_tangential_slot_film_h_and_eta.pdf
+  sha256: '30c6875770f648e93c974d23f8dc4081066873b32a45df19b0c5684d3d271ab6'
   citation: Seban, R. A. (1960). Heat transfer and effectiveness for a turbulent boundary layer with tangential
     fluid injection. ASME J. Heat Transfer 82(4), 303-313 (November 1960; ASME Paper 59-A-177).
   topic: [film]
@@ -713,6 +755,7 @@ documents:
     Eq. 15, which Seban notes is subject to the same question as Jakob''s effectiveness. Companions not held:
     Seban & Back 1962, J. Heat Transfer 84, 45-54 and 235-242.'
 - file: sources/heat_transfer/film/Caciolli_PhD_Florence_XXV_combustor_aerothermal.pdf
+  sha256: '6f57f8519e7610c4ee691c685f725076b4d80eca238fcca0d9765c20090d4446'
   citation: Caciolli, G. (cycle XXV, 2010-2012). A close investigation on the aerothermal behaviour of modern
     aeroengine combustors. PhD thesis, University of Florence, DIEF (tutor B. Facchini; defence year not printed).
   topic: [film, combustion]
@@ -750,6 +793,7 @@ documents:
     Odgers 78-GT-90; Ceccherini 2009 PhD (Therm1D). The Ch. 4 data are likely also in an Andreini/Caciolli
     journal paper (not verified).'
 - file: sources/heat_transfer/film/Sargison_2001_DPhil_Oxford_console_film_cooling.pdf
+  sha256: '8746dee927f792a6ec5d8a1aa9df039d21f1c289b62a96afae872f8d960ee3a5'
   citation: Sargison, J. E. (2001). Development of a novel film cooling hole geometry. DPhil thesis, University
     of Oxford, Department of Engineering Science (Hilary Term 2001).
   topic: [film, orifice]
@@ -780,6 +824,7 @@ documents:
   notes: Arrived 2026-11-02 in sources/new/ as ThesisJES%5B1%5D.pdf (from the user). Journal versions exist
     (Sargison et al. 2002, J. Turbomach. 124, console papers), not held.
 - file: sources/heat_transfer/film/Goldstein_Eckert_Eriksen_Ramsey_1969_NASA_CR-72612_inclined_holes_eta.pdf
+  sha256: '7ee7e38b7ca7368c0741e1b9448b4352bae0bbb6ff8804d6356dc2e28339e8a6'
   citation: Goldstein, R. J., Eckert, E. R. G., Eriksen, V. L., Ramsey, J. W. (1969). Film cooling following
     injection through inclined circular tubes. NASA CR-72612 (HTL TR 91), University of Minnesota, summary report.
   id: NASA CR-72612
@@ -801,6 +846,7 @@ documents:
   records: []
   notes: Fetched 2026-11-03 at the user's request (NTRS link).
 - file: sources/heat_transfer/film/Eriksen_1971_NASA_CR-72991_holes_eta_and_h.pdf
+  sha256: '7a270c580d6a623982d4036570a0c45ef87938f85114b6d6b74a7eab714faab0'
   citation: Eriksen, V. L. (1971). Film cooling effectiveness and heat transfer with injection through holes. NASA
     CR-72991 (HTL TR 102), University of Minnesota (PhD thesis work, adviser R. J. Goldstein).
   id: NASA CR-72991
@@ -825,6 +871,7 @@ documents:
   notes: 'Fetched 2026-11-03 at the user''s request (NTRS link). Table II transcribed 2026-11-03 (user sign-off;
     0 read disagreements; block B''s printed Re_D 0.44e5 is a misprint for 0.22e5, per Fig. 68 and the text).'
 - file: sources/heat_transfer/film/Ammari_1989_PhD_Nottingham_film_cooled_h_over_h0_density_acceleration.pdf
+  sha256: '2654a923a19a67fdfd1d7a32604af3c49fc3117bae9f7bb574ca0e376141a584'
   citation: Ammari, H. D. (1989). The heat transfer coefficient on film cooled surfaces. PhD thesis, University
     of Nottingham, August 1989.
   id: Ammari 1989 PhD (Nottingham)
@@ -859,6 +906,7 @@ documents:
     version (as recalled, not held): Ammari, Hay & Lampard 1990, J. Turbomach. 112, 444-450. Figures worth
     digitising if implemented: 8.25/8.27 (90 deg), 8.29/8.30 (35 deg), 8.31/8.32 (acceleration).'
 - file: sources/heat_transfer/film/Hassan_2013_PhD_Concordia_micro_tangential_jet_film.pdf
+  sha256: '94471265a390605f492ae76150b546d1a88eb94ad1b8059aa2b5d77a6735da6a'
   citation: Hassan, O. (2013). Thermal and flow field investigations of a micro-tangential-jet film cooling
     scheme on gas turbine components. PhD thesis, Concordia University, Montreal (June 2013).
   topic: [film]
@@ -894,6 +942,7 @@ documents:
     ref. 69; companion ref. 70, Tu effect, 133, 041023) -- gives the hole geometry and higher-DR data. Not checked:
     the thesis''s stated uncertainties (the values are missing from the text layer).'
 - file: sources/heat_transfer/film/Schneider_2015_NASA_TM-2015-218738_Coolit_cooling_flow_factor.pdf
+  sha256: '3d23ef351a321328db836f3173620745808b7125e11330c57f0b8bf7ede8453d'
   citation: Schneider, S. J. (2015). Analysis of turbine blade relative cooling flow factor used in the subroutine
     Coolit based on film cooling correlations. NASA/TM-2015-218738 (E-19070), Glenn Research Center.
   id: NASA/TM-2015-218738 (NTRS 20150011643)
@@ -924,6 +973,7 @@ documents:
     noted, not wanted unless an issue needs them): Gauntner 1980 NASA TM-81453 (the Coolit algorithm); Esgar,
     Colladay & Kaufman 1970 NASA TN D-5992 (turbine air-cooling capabilities and limits).'
 - file: sources/heat_transfer/film/Wambersie_Ireland_2023_ETC2023-295_transpiration_film_correlations.pdf
+  sha256: '9888a6c052b15d5f29dbd2ec896484276a6a267632ee7f35b3c36551b34257bf'
   citation: Wambersie, A., Ireland, P. T. (2023). Transpiration cooling film effectiveness correlations for turbine
     blade applications. Proc. 15th European Turbomachinery Conference, ETC2023-295, Budapest.
   topic: [film, review]
@@ -953,6 +1003,7 @@ documents:
     high-resolution data and model; open access) is another lead it cites -- already held (the
     c32eeeb88f... entry below, the murray2018 accuracy set). Wambersie et al. 2021 now held (next entry).
 - file: sources/heat_transfer/film/Wambersie_Wong_Ireland_Mayo_2021_IJTPP_6_16_transpiration_panel_film.pdf
+  sha256: '881c6db6da7de1ff09327f71dca0ac46177904e76760bc73e6724816c5e61d40'
   citation: Wambersie, A., Wong, H., Ireland, P., Mayo, I. (2021). Experiments of transpiration cooling inspired
     panel cooling on a turbine blade yielding film effectiveness levels over 95%. Int. J. Turbomach. Propuls.
     Power 6(2), 16.
@@ -981,6 +1032,7 @@ documents:
   notes: Fetched 2026-11-02 from Oxford ORA (uuid:4a84aefb-dfa5-4994-ae6e-fa3ebd544af4); the MDPI PDF URL
     returned 403 to an automated fetch. Extended version of an ETC 2021 paper.
 - file: sources/heat_transfer/film/Choe_Kays_Moffat_1976_NASA_CR-2642_full_coverage_normal_injection.pdf
+  sha256: '57728a4758abff9be8f6742279fc63f648e1eb96bba5ab1a5f16fe921182bc10'
   citation: Choe, H., Kays, W. M., Moffat, R. J. (1976). Turbulent boundary layer on a full-coverage film-cooled
     surface -- an experimental heat transfer study with normal injection. NASA CR-2642 (Stanford Report HMT-22),
     January 1976, NAS 3-14336.
@@ -1014,6 +1066,7 @@ documents:
     (summary, normal + 30 deg slant), CR-2786 (30 deg slant), CR-3103 (compound angle, Kim et al. 1979, not
     held), CR-3104 (Yavuzkurt et al. 1979, hydrodynamics, not held), CR-3219 (1980 summary).'
 - file: sources/heat_transfer/film/Crawford_Choe_Kays_Moffat_1976_NASA_CR-2648_full_coverage_normal_and_30deg_slant_summary.pdf
+  sha256: '255099c7bdb01add4d9253e24acaf628e387e5ed56e6168293c8c3e3539733d9'
   citation: Crawford, M. E., Choe, H., Kays, W. M., Moffat, R. J. (1976). Full-coverage film cooling heat transfer
     study -- summary of data for normal-hole injection and 30 deg slant-hole injection. NASA CR-2648 (Stanford
     Report HMT-19), March 1976, NAS 3-14336.
@@ -1044,6 +1097,7 @@ documents:
   notes: 'Fetched 2026-11-02 by the lead from NTRS (19760011294, open access, authorised by the user). A
     duplicate copy from the user was removed. Not checked: the run-by-run table transcription (typed scan).'
 - file: sources/heat_transfer/film/Crawford_Kays_Moffat_1976_NASA_CR-2786_full_coverage_30deg_slant_injection.pdf
+  sha256: '80ac8795f6e9e2055889021a7f2f22b719acf11ca291062309491be8f072d093'
   citation: Crawford, M. E., Kays, W. M., Moffat, R. J. (1976). Heat transfer to a full-coverage film-cooled
     surface with 30 deg slant-hole injection. NASA CR-2786 (Stanford Report HMT-25), December 1976, NAS 3-14336.
   id: NASA CR-2786 (NTRS 19770008401)
@@ -1077,6 +1131,7 @@ documents:
     full 14,299,063 bytes in under a minute. Not checked: the Ch. 4 Couette-flow correlation constants and the
     Appendix I transcription.'
 - file: sources/heat_transfer/film/Crawford_Kays_Moffat_1980_NASA_CR-3219_full_coverage_three_geometries_STANCOOL.pdf
+  sha256: 'eb5ed2a162c6ab9f199082f8e24be637eb64afb93f6f6e8d8014d5a7d1a02558'
   citation: Crawford, M. E., Kays, W. M., Moffat, R. J. (1980). Full-coverage film cooling on flat, isothermal
     surfaces -- a summary report on data and predictions. NASA CR-3219 (Stanford Report HMT-23), January 1980,
     NAS 3-14336.
@@ -1108,6 +1163,7 @@ documents:
     CR-3104 (turbulence structure, HMT-27); Crawford & Kays 1976 NASA CR-2742 (STAN5). Not checked: the Ch. IV
     local data and the STANCOOL constants table.'
 - file: sources/heat_transfer/film/Kirollos_Povey_2015_JEGTP_137_122608_energy_based_film_superposition.pdf
+  sha256: '8c8bb898e53f70e1400826c481f58d60ebfccc18daf76c1ebdf7bd200c551423'
   citation: Kirollos, B., Povey, T. (2015). An energy-based method for predicting the additive effect of multiple
     film cooling rows. ASME J. Eng. Gas Turbines Power 137(12), 122608.
   id: doi:10.1115/1.4030907
@@ -1134,6 +1190,7 @@ documents:
   notes: Arrived 2026-11-02 in sources/new/ (from the user). The former wanted entry gave the article number as
     122607; the page prints 122608.
 - file: sources/heat_transfer/film/Lee_Cho_2008_AIAA-2008-5175_ramjet_multislot_film.pdf
+  sha256: 'cdec73809fc48e40b4c7d1421d891fb3285d4a2c8582a10c88440f5436391c26'
   citation: Lee, K. W., Song, J., Oh, M. G., Yu, M. S., Cho, H. H., Ham, H. C., Hwang, K. Y. (2008). Heat transfer
     measurement on slot film cooling of ramjet combustor. 44th AIAA/ASME/SAE/ASEE Joint Propulsion Conference,
     AIAA 2008-5175.
@@ -1157,6 +1214,7 @@ documents:
   notes: Arrived 2026-11-02 in sources/new/ (from the user). Its references cite Folayan & Whitelaw and
     Sivasegaram (the lip-thickness data behind Ballal-Lefebvre Figs. 3/4).
 - file: sources/heat_transfer/film/c32eeeb88f403f5f28556753359153c1b85b.pdf
+  sha256: 'ea8722a9d8b14034b895245e8f3fa39318f00c0ec2f48f9c87c3602d83e66cd2'
   citation: Murray, A. V., Ireland, P. T., Wong, T. H., Tang, S. W., Rawlinson, A. J. (2018). High resolution
     experimental and computational methods for modelling multiple row effusion cooling performance. Int.
     J. Turbomach. Propuls. Power 3(1), 4.
@@ -1175,6 +1233,7 @@ documents:
   notes: 'Local digitised folder murray_2018_fig6_data/ and murray_2018_fig6.png next to the PDFs. Local
     only (gitignored): sources/heat_transfer/film/murray_2018_fig6_data/.'
 - file: sources/heat_transfer/film/Effusion_Cooling_In_Gas_Turbine_Combusti.pdf
+  sha256: 'f316d168fbb8aced53033d2daf88ef38b33d6ff8b7e5f85b87ab55cf7c723a6b'
   citation: 'Yellu Kumar, K. R., Qayoum, A., Saleem, S., Qayoum, F. (2020). Effusion cooling in gas turbine
     combustion chambers - a comprehensive review. IOP Conf. Ser.: Mater. Sci. Eng. 804, 012003.'
   id: doi:10.1088/1757-899X/804/1/012003
@@ -1187,6 +1246,7 @@ documents:
   issues: [386, 387]
   records: []
 - file: sources/heat_transfer/film/FLOW_AND_HEAT_TRANSFER_IN_A_RIB-ROUGHENED_TRAILING.pdf
+  sha256: '04a4feb8e7552c3756a5f68cd37e936ec3646bb759c657d0fe78af50c1063452'
   citation: Xue, F., Taslim, M. E. (2019). Flow and heat transfer in a rib-roughened trailing-edge cooling
     channel with crossover impingement. Int. J. Gas Turbine, Propulsion and Power Systems 10(1), ?.
   topic: [rib, impingement]
@@ -1200,6 +1260,7 @@ documents:
   records: []
   notes: Rib/impingement paper filed under film/.
 - file: sources/heat_transfer/film/han_1991_590_vol_113.pdf
+  sha256: 'c509e0129a9118552cf5f1a5eeb7a03674697277c219859909fcfc62c54d66e2'
   citation: Han, J. C., Zhang, Y. M., Lee, C. P. (1991). Augmented heat transfer in square channels with
     parallel, crossed, and V-shaped angled ribs. ASME J. Heat Transfer 113(3), 590-596.
   topic: [rib]
@@ -1215,6 +1276,7 @@ documents:
   code: ['include/rib_correlation.h: han_zhang_lee_1991']
   notes: Rib paper filed under film/ by mistake (the record says so). Not the conference twin of 91-GT-3.
 - file: sources/heat_transfer/film/Heat-Transfer-and-Friction-Studies-in-a-Tilted-and-Rib-Roughened-Trailing-Edge-Cooling-Cavity-With-and-Without-the-Trailing-Edge-Cooling-Holes.pdf
+  sha256: 'ce6a8938fb534f66737e71a24284973bd4f52b2cc57f35f1f1bb8c8299600401'
   citation: Taslim, M. E., Halabi, J. S. (2014). Heat transfer and friction studies in a tilted and rib-roughened
     trailing-edge cooling cavity with and without the trailing-edge cooling holes. Int. J. Rotating Machinery
     2014, 710450 (14 pp.).
@@ -1230,6 +1292,7 @@ documents:
   records: []
   notes: Rib paper filed under film/.
 - file: sources/heat_transfer/film/Jackowski_2021_Energies_14_4843_impingement_effusion_double_wall.pdf
+  sha256: '724736344c7fc4b9b0183ee052274f762f169b3a039bea93c6aba3cfb2a2fce9'
   citation: 'Jackowski, T., Elfner, M., Bauer, H.-J. (2021). Experimental study of impingement effusion-cooled
     double-wall combustor liners: thermal analysis. Energies 14(16), 4843.'
   id: doi:10.3390/en14164843
@@ -1246,6 +1309,7 @@ documents:
   notes: 'Memory: reference_impingement_sources_2026_10_20.md. Jackowski 2016 (network model) cited in
     docs/archive/REVIEW_NETWORK_GUI.md is a different paper.'
 - file: sources/heat_transfer/film/JAKO200027542986867.pdf
+  sha256: 'ba86d1c43fc1816d2f184e124ca820067b95fbc1cd19e4cc78d14447c3eef54c'
   citation: Rhee, D. H., Cho, H. H. (2000). Heat transfer characteristics on effusion plate in impingement/effusion
     cooling for combustor (in Korean). Trans. KSME B 24(3), 435-442.
   topic: [impingement, effusion]
@@ -1261,6 +1325,7 @@ documents:
     the #468 comment) says the equivalence could not be confirmed; #468 comment of 2026-10-25 and memory
     later confirm it from Table 2 digits. Local only (gitignored): sources/heat_transfer/film/rhee_cho_2000_KSME_B_24_3_effusion_plate_heat_transfer.md.'
 - file: sources/heat_transfer/film/JAKO200211920878407.pdf
+  sha256: 'a6c1094dc6fff91a1fb676b8a897867caf1b3b1f45897fdd12db733991bade47'
   citation: Choi, J. H., Rhee, D. H., Cho, H. H. (2002). The effects of impingement hole arrangements
     on heat transfer of an impingement/effusion cooling system (in Korean). Trans. KSME B 26(1), 101-109.
   topic: [impingement, effusion]
@@ -1276,6 +1341,7 @@ documents:
   notes: 'No text layer (scan). Local Claude-written summary .md next to the PDF (not cross-checked).
     Local only (gitignored): sources/heat_transfer/film/choi_rhee_cho_2002_KSME_B_26_1_impingement_hole_arrangement.md.'
 - file: sources/heat_transfer/film/Jet Impingement Heat Transfer Ch06-P020039.pdf
+  sha256: '1f17dbe73ff1508aae8459fd2f05454e7c51b75f370571edef9a076f8b9a3883'
   citation: 'Zuckerman, N., Lior, N. (2006). Jet impingement heat transfer: physics, correlations, and
     numerical modeling. Advances in Heat Transfer 39, 565-631.'
   id: doi:10.1016/S0065-2717(06)39006-5
@@ -1290,6 +1356,7 @@ documents:
   records: []
   notes: 'Page range from the #468 comment (pp. 565-631); p.1 shows only Vol. 39.'
 - file: sources/heat_transfer/film/Kim_Lee_2017_JKSAS_45_4_supersonic_slot_film_Mach3.pdf
+  sha256: 'fcef3866861adeefc27e36aa90f305c43297245e06f8aadf464c385f0c228252'
   citation: Kim, M., Lee, D. M. (2017). An experimental study of film cooling characteristics at supersonic
     free stream conditions (in Korean). J. Korean Society for Aeronautical and Space Sciences 45(4), 342-348.
   id: doi:10.5139/JKSAS.2017.45.4.342
@@ -1313,6 +1380,7 @@ documents:
   notes: Arrived 2026-10-25 as docs/new/An Experimental Study of Film Cooling Characteristics at Supersonic
     Free Stream Conditions.pdf. Agency for Defense Development (IR window cooling).
 - file: sources/heat_transfer/film/Modelling_and_Simulation_of_Effusion_Cooling-A_Rev.pdf
+  sha256: 'cf99f716333794a339130633eac03fce251d3593d3405444a8e1433be41f7e13'
   citation: Xia, H., Chen, X., Ellis, C. D. (2024). Modelling and simulation of effusion cooling - a review
     of recent progress. Energies 17, 4480.
   id: doi:10.3390/en17174480
@@ -1326,6 +1394,7 @@ documents:
   records: []
   notes: Cited in docs/archive/REVIEW_NETWORK_GUI.md and CHANGELOG.md; memory project_film_effusion_thermal.md.
 - file: sources/heat_transfer/film/oct23/19710020365.pdf
+  sha256: '5c33bb1ec69da6f1934f6f4428ebbe7f0ca5bd28dca7106838464aab7aaa57f1'
   citation: Juhasz, A. J., Marek, C. J. (1971). Combustor liner film cooling in the presence of high free-stream
     turbulence. NASA TN D-6360, Lewis Research Center.
   id: NASA TN D-6360
@@ -1341,6 +1410,7 @@ documents:
   code: ['include/cooling_correlations.h: slot_film_effectiveness_marek_tacina_1975 comment (cp ratio)']
   notes: No text layer on p.1 (scan). Summarised by NASA Tech Brief B72-10326 (oct23/19720000325.pdf).
 - file: sources/heat_transfer/film/oct23/19720000325.pdf
+  sha256: '6b91502cf9b07acdaf02717d5e126fd093dfa14df62fef3d4e0c09db6bc332ca'
   citation: NASA Lewis Research Center (1972). Turbulent mixing film cooling correlation. NASA Tech Brief
     B72-10326, December 1972.
   id: NASA Tech Brief B72-10326
@@ -1354,6 +1424,7 @@ documents:
   records: []
   notes: Duplicate content of D-6360 (oct23/19710020365.pdf).
 - file: sources/heat_transfer/film/oct23/19730008203.pdf
+  sha256: '8c7ca5435ee49ea7a3226e2f35a734e916573801e51a5847fa6f7ef11c34c7f0'
   citation: Marek, C. J., Juhasz, A. J. (1973). Simultaneous film and convection cooling of a plate inserted
     in the exhaust stream of a gas turbine combustor. NASA TN D-7156, Lewis Research Center.
   id: NASA TN D-7156
@@ -1372,6 +1443,7 @@ documents:
   records: [validation/cooling/extractions/marek_juhasz_1973_d7156.md, validation/cooling/data/marek_juhasz1973/,
     validation/cooling/marek_juhasz_network_runner.py, python/tests/test_marek_juhasz_d7156_network.py]
 - file: sources/heat_transfer/film/oct23/19750017021.pdf
+  sha256: 'df0ab9189e094850292760675763f793c97bfa6fc4127cb9612e6e7382c11bfc'
   citation: Marek, C. J., Tacina, R. R. (1975). Effect of free-stream turbulence on film cooling. NASA
     TN D-7958, Lewis Research Center.
   id: NASA TN D-7958
@@ -1390,6 +1462,7 @@ documents:
     No text layer on p.1 (scan). Element design and Tu closure (stage 2) pending. Simon 1986 (NASA TP-2655,
     held) re-correlates this report's data with a wall-jet model (lateral Tu, M, T ratio, coolant Tu).
 - file: sources/heat_transfer/film/Simon_1986_NASA_TP-2655_slot_film_jet_model_turbulence.pdf
+  sha256: '3671431a228d575f1b649e2235769fd2ddbf7855b453cdbffaf7e0f507afc507'
   citation: Simon, F. F. (1986). Jet model for slot film cooling with effect of free-stream and coolant
     turbulence. NASA Technical Paper 2655 (E-2961), Lewis Research Center, October 1986.
   id: NASA TP-2655 (NTRS 19870008601)
@@ -1447,6 +1520,7 @@ documents:
     Gas Turbines Power 108, 361, film initial region), Ko & Liu 1980 (AIAA J. 18, 907), Marek 1973 (NASA TM
     X-2809, film effectiveness independent of pressure 1-20 atm), Juhasz & Marek 1971 (TN D-6360).'
 - file: sources/heat_transfer/film/Hatch_Papell_1959_NASA_TN_D-130_slot_film_heat_sink_model.pdf
+  sha256: 'abcb2711122db9d81a3fef65499d0a3854ba1b14e9004467cd89fd69e7f3af56'
   citation: Hatch, J. E., Papell, S. S. (1959). Use of a theoretical flow model to correlate data for film cooling
     or heating an adiabatic wall by tangential injection of gases of different fluid properties. NASA TN D-130,
     Lewis Research Center, November 1959.
@@ -1486,6 +1560,7 @@ documents:
   notes: Fetched 2026-11-02 from NTRS (19890068390, public). Sequel Papell 1960 TN D-299 (held). Air data
     primary Papell & Trout 1959 NASA TN D-9 (on NTRS, not fetched).
 - file: sources/heat_transfer/film/Papell_1960_NASA_TN_D-299_angled_slots_normal_holes.pdf
+  sha256: 'a10562c650de859aecaf57087974e8decc2b3a7782bc0ed6966ff908586142cf'
   citation: Papell, S. S. (1960). Effect on gaseous film cooling of coolant injection through angled slots and
     normal holes. NASA TN D-299 (E-689), Lewis Research Center, September 1960.
   id: NASA TN D-299 (NTRS 19980231068)
@@ -1511,6 +1586,7 @@ documents:
   records: []
   notes: Fetched 2026-11-02 from NTRS (19980231068, public).
 - file: sources/heat_transfer/film/oct23/19770014416.pdf
+  sha256: 'd868d0aa8deff329ed1fffc246498fdee7730cbea5c371531717efde2d7c792c'
   citation: Rousar, D. C., Ewen, R. L. (1977). Combustion effects on film cooling. NASA CR-135052, Aerojet
     Liquid Rocket Co., Sacramento.
   id: NASA CR-135052
@@ -1524,6 +1600,7 @@ documents:
   issues: [714]
   records: []
 - file: sources/heat_transfer/film/oct23/20170001731.pdf
+  sha256: 'e182c4216ae40c877bcd6d81208707e127ca2e2378a2f88fda7c389da8696d36'
   citation: Eldridge, J. I., Shyam, V., Wroblewski, A. C., Zhu, D., Cuy, M. D., Wolfe, D. E. (2016). Cooling
     effectiveness measurements for air film cooling of thermal barrier coated surfaces in a burner rig
     environment using phosphor thermometry. AIAA Aviation 2016, Washington, D.C. (presentation slides,
@@ -1537,6 +1614,7 @@ documents:
   issues: [714]
   records: []
 - file: sources/heat_transfer/film/oct23/Double Wall Cooling Of An Effusion Plate With Simultaneous Cross.pdf
+  sha256: '43ee62a8b15f69dd266e0e2e8608f884e48fb42829eebae4c1ba552e3bf11859'
   citation: Click, A. (2018). Double wall cooling of an effusion plate with simultaneous cross flow and
     impingement jet array internal cooling. Honors Capstone Projects and Theses 253, University of Alabama
     in Huntsville.
@@ -1553,6 +1631,7 @@ documents:
   notes: Thesis copies figure data from Vanga et al. GT2018-77036. Its reference list (p. 43) led to Cho
     & Rhee 2001.
 - file: sources/heat_transfer/film/Overall Effectiveness Superposition Theory for a Film Cooled Lead.pdf
+  sha256: '33f2542132d84628daae031acbba250a19afe73c86d44c8f515b6158d439430f'
   citation: Hopkins, B. W. (2023). Overall effectiveness superposition theory for a film cooled leading
     edge. MS thesis AFIT-ENY-MS-23-M-276, Air Force Institute of Technology (Theses and Dissertations
     7021).
@@ -1568,6 +1647,7 @@ documents:
   records: []
   notes: Inventory-level screening (#386 comment 3).
 - file: sources/heat_transfer/film/processes-13-00143-v2.pdf
+  sha256: '1ea66fa16ad7109c2d7a80465502183f0079d439c76a5faea9a79871397e021e'
   citation: Gao, Z., Qiu, T., Liu, P., Ding, S., Li, Z., Cheng, R., Yuan, Q. (2025). A study on the film
     superposition method for the multi-row film cooling of the turbine outer ring. Processes 13, 143.
   id: doi:10.3390/pr13010143
@@ -1584,6 +1664,7 @@ documents:
   notes: A byte-identical copy, A_Study_on_the_Film_Superposition_Method_for_the_M.pdf, was deleted 2026-10-25;
     this is the file name the code cites.
 - file: sources/heat_transfer/film/Taslim_Spring_1987_AIAA-87-2009_turbulated_passages_aspect_ratio.pdf
+  sha256: 'a41e9b9a1a241a572b1c3734c5cabfde5cf4e9457e67d1e2f4011a40a2b08015'
   citation: 'Taslim, M. E., Spring, S. D. (1987). Friction factors and heat transfer coefficients in turbulated
     cooling passages of different aspect ratios, Part I: experimental results. AIAA-87-2009, 23rd Joint
     Propulsion Conference, San Diego.'
@@ -1603,6 +1684,7 @@ documents:
     (renamed from taslim-spring-2012_data/; the CSVs inside keep their taslim-spring-2012_ prefix) with SEALED
     prediction files; AIAA-87-2009_quality_sample.png. Local only (gitignored).'
 - file: sources/heat_transfer/film/The Review of Studies on Heat Transfer in Impinging Jet.pdf
+  sha256: '0531f842e05ffe02f14cfc7a40c4c735589e59ca62712c690ec0437d28a3e073'
   citation: Hong, S. K., Cho, H. H. (2005). The review of studies on heat transfer in impinging jet. Int.
     J. Air-Conditioning and Refrigeration 13(4), 196-205.
   topic: [impingement, review]
@@ -1617,6 +1699,7 @@ documents:
   notes: 'No text layer (scan). Screening recorded only in memory project_impingement_effusion_sources_468.md
     (2026-10-25); not found in #468 comments.'
 - file: sources/heat_transfer/film/V004T09A022-86-GT-225.pdf
+  sha256: '15fdb50dcb4bed6d29f0dde161797b82444a0304d8b87cf65f358fec4c605c9e'
   citation: 'Andrews, G. E., Alikhanizadeh, M., Asere, A. A., Hussain, C. I., Khoshkbar Azari, M. S.,
     Mkpadi, M. C. (1986). Small diameter film cooling holes: wall convective heat transfer. ASME 86-GT-225.'
   id: ASME 86-GT-225
@@ -1635,6 +1718,7 @@ documents:
   notes: 'Local digitised folders andrews_1986_fig8_data/, andrews_1986_fig10_data/ and PNG crops (andrews_86-GT-225_fig_8_pp6.png,
     _fig10_pp6.png). Local only (gitignored): sources/heat_transfer/film/andrews_1986_fig8_data/, sources/heat_transfer/film/andrews_1986_fig10_data/.'
 - file: sources/heat_transfer/film/v004t09a045-95-gt-274.pdf
+  sha256: '9e8acacd46c3893a49866c4d84dc57c06864a0de793581c6dc4b6c7832257c20'
   citation: Andrews, G. E., Khalifa, I. M., Asere, A. A., Bazdidi-Tehrani, F. (1995). Full coverage effusion
     film cooling with inclined holes. ASME 95-GT-274.
   id: ASME 95-GT-274
@@ -1649,6 +1733,7 @@ documents:
   records: []
   notes: Inventory-level screening only.
 - file: sources/heat_transfer/flohrshuetz/flohrshuetz_isoda_1982.pdf
+  sha256: '14fd5b2a847e86f6ff70a77d1823f4152815972eaf168558bf50ffdd564bb4c8'
   citation: Florschuetz, L. W., Isoda, Y. (1982). Flow distributions and discharge coefficient effects
     for jet array impingement with initial crossflow. ASME Paper 82-GT-156.
   id: ASME 82-GT-156
@@ -1666,6 +1751,7 @@ documents:
   records: []
   notes: Same study as NASA CR-3630 (flow part).
 - file: sources/heat_transfer/flohrshuetz/flohrshuetz_truman_metzger_1981.pdf
+  sha256: 'c6bbcd2f71f1db15dcee2b48478230d0e667d90615d4f178d435f45083e62064'
   citation: Florschuetz, L. W., Truman, C. R., Metzger, D. E. (1981). Streamwise flow and heat transfer
     distributions for jet array impingement with crossflow. ASME J. Heat Transfer 103, 337-342.
   topic: [impingement]
@@ -1688,6 +1774,7 @@ documents:
     (rc_XX_* CSVs) plus page-*.png, page4_ultra-4.png, row*_*.png, flohrshuetz_truman_1981_fig_{3,5,6,7}.png
     and d154_*.png scans next to it (the user's own paper copy; scans gitignored).
 - file: sources/heat_transfer/flohrshuetz/Hussain_2021_Energies_14_6458_jet_impingement_review.pdf
+  sha256: 'a348818f7f8e5db921a331b5b12b1a1cd9cfa24252c72c120d18fa7dffc11bf1'
   citation: 'Hussain, L., Khan, M. M., Masud, M., Ahmed, F., Rehman, Z., Amanowicz, L., Rajski, K. (2021).
     Heat transfer augmentation through different jet impingement techniques: a state-of-the-art review.
     Energies 14, 6458.'
@@ -1704,6 +1791,7 @@ documents:
   notes: Verdict recorded in memory reference_impingement_sources_2026_10_20.md only. CC BY 4.0. Misfiled
     under flohrshuetz/ (not a Florschuetz paper).
 - file: sources/heat_transfer/flohrshuetz/NASA_CR-3373_Florschuetz_Metzger_Truman_1981_jet_array_crossflow.pdf
+  sha256: '1e07ec8785ea07862c7506dc3098cb12ac525caaebf36e2d89965f49a0be114d'
   citation: Florschuetz, L. W., Metzger, D. E., Truman, C. R. (1981). Jet array impingement with crossflow
     -- correlation of streamwise resolved flow and heat transfer distributions. NASA Contractor Report
     3373, grant NSG-3075, Arizona State University. January 1981.
@@ -1722,6 +1810,7 @@ documents:
   code: ['include/impingement_correlation.h: PRESSURE RANGE (#474) comment cites conclusion 1']
   notes: Same study as flohrshuetz_truman_metzger_1981.pdf (journal version). Fetched from NTRS 2026-10-20.
 - file: sources/heat_transfer/flohrshuetz/NASA_CR-3630_Florschuetz_Metzger_Su_1982_initial_crossflow.pdf
+  sha256: 'aaa77cd0908149f0c15db035954c1af9c62474caeb37e7005d2838034f6cb924'
   citation: Florschuetz, L. W., Metzger, D. E., Su, C. C., Isoda, Y., Tseng, H. H. (1982). Jet array impingement
     flow distributions and heat transfer characteristics -- effects of initial crossflow and nonuniform
     array geometry. NASA Contractor Report 3630, grant NSG-3075, Arizona State University. November 1982.
@@ -1757,6 +1846,7 @@ documents:
     like for like with D.1 only below the break points; P/P0 is the measured quantity. Table D.1 prints P/P0 to two decimals: P/P0 fidelity is floored at +/-0.005. Measurement
     uncertainty (Appendix B, Section 4.4.1): Gj/Gj_mean about +/-2%, Gc/Gj +/-2 to 4%.'
 - file: sources/heat_transfer/flohrshuetz/NASA_CR-3936_Florschuetz_Su_1985_crossflow_temperature.pdf
+  sha256: 'b6835a422fa91b5975599f42acbec76f35f65acd752277d74751138fcd2b2186'
   citation: Florschuetz, L. W., Su, C. C. (1985). Heat transfer characteristics within an array of impinging
     jets -- effects of crossflow temperature relative to jet temperature. NASA Contractor Report 3936,
     grant NSG-3075. October 1985.
@@ -1778,6 +1868,7 @@ documents:
   notes: 'Journal version Florschuetz & Su (1987) JHT 109 (per #467). Conference summary: NTRS_19860002044.
     Open: digitise the Fig. 6.9-6.20 error bars for a measurement band.'
 - file: sources/heat_transfer/flohrshuetz/NTRS_19850002659_Florschuetz_Metzger_1982_initial_crossflow_conf.pdf
+  sha256: 'e0ca0cabb1651a599abf500e40762a51f8b140d514b73e1da71667e817ffdd73'
   citation: Florschuetz, L. W., Metzger, D. E. (?). Jet array impingement flow distributions and heat
     transfer characteristics -- effects of initial crossflow and nonuniform array geometry. NASA conference
     publication, NTRS 19850002659, ?, 13 pp.
@@ -1794,6 +1885,7 @@ documents:
   notes: 'Same study as NASA CR-3630. Listed as ''also filed'' in a #467 comment, no verdict. Year 1982
     is from the file name only; the PDF''s first page shows none.'
 - file: sources/heat_transfer/flohrshuetz/NTRS_19860002044_Florschuetz_Metzger_1983_jet_array_HT_conf.pdf
+  sha256: '791d53378320c3f0132fc97c0b6f5a9368635ce3ef7eb3113196eaec2252fca6'
   citation: Florschuetz, L. W., Metzger, D. E. (?). Jet array impingement heat transfer [title partly
     garbled in scan] . NASA conference publication, NTRS 19860002044, ?, 12 pp.
   id: NTRS 19860002044
@@ -1810,6 +1902,7 @@ documents:
   notes: 'Same study as NASA CR-3936. Listed as ''also filed'' in a #467 comment, no verdict. Year 1983
     is from the file name only.'
 - file: sources/heat_transfer/flohrshuetz/Untuc_2023_ApplSci_13_11260_jet_array_protrusions_CFD.pdf
+  sha256: 'b017fa91408b51212451de9d7acae022b3a20b89fc3287c093c18684bd92f6cf'
   citation: Untuc, A. H., Unverdi, S. O. (2023). Heat transfer enhancement by mitigating the adverse effects
     of crossflow in a multi-jet impingement cooling system in hexagonal configuration by coaxial cylindrical
     protrusion-guide vane pairs. Applied Sciences 13, 11260.
@@ -1826,6 +1919,7 @@ documents:
   notes: Verdict recorded in memory reference_impingement_sources_2026_10_20.md only. CC BY 4.0. Misfiled
     under flohrshuetz/ (not a Florschuetz paper).
 - file: sources/heat_transfer/han/Gas_Turbine_Heat_Transfer_and_Cooling_Te.pdf
+  sha256: '2eec06393b88b18e2f8acf236a48b1a3929131262a0b4f1702c8f8e3822f6aff'
   citation: Han, J.-C., Dutta, S., Ekkad, S. (2013). Gas turbine heat transfer and cooling technology,
     2nd edition. CRC Press / Taylor & Francis, Boca Raton.
   id: ISBN 978-1-4665-6490-9 (eBook)
@@ -1853,6 +1947,7 @@ documents:
     equations and figures, han_ribs.md and han_impingement.md (text extractions), clarification_4_sided_f_han.md.
     Fig. 4.46 and 4.51 are scored with fidelity on Han''s own data in han2012.'
 - file: sources/heat_transfer/han/han_91_GT_3.pdf
+  sha256: '5ad1db0412e10a7c8da3459498a125cb2697e0ae80e2ec6582441daa8fbe5529'
   citation: Han, J. C., Zhang, Y. M., Lee, C. P. (1991). Influence of surface heat flux ratio on heat
     transfer augmentation in square channels with parallel, crossed and V-shaped angled ribs. ASME paper
     91-GT-3.
@@ -1872,6 +1967,7 @@ documents:
   notes: NOT the conference twin of Han, Zhang & Lee 1991 JHT 113, 590 (that PDF is misfiled at sources/heat_transfer/film/han_1991_590_vol_113.pdf);
     91-GT-3 is the heat-flux-ratio companion. Cited in validation/cooling/runner.py comments.
 - file: sources/heat_transfer/han/Han_Ou_Park_Lei_1989_IJHMT_32_1619_narrow.pdf
+  sha256: '58cc453f8a3d890ca5190680f37b917ce9fda3f38121c8e5a386e6684be5a1e1'
   citation: Han, J. C., Ou, S., Park, J. S., Lei, C. K. (1989). Augmented heat transfer in rectangular
     channels of narrow aspect ratios with rib turbulators. International Journal of Heat and Mass Transfer
     32(9), 1619-1630.
@@ -1895,6 +1991,7 @@ documents:
     this project''s fit to the book''s Fig. 4.48a, and include/rib_correlation.h says R has no printed
     equation; #402 found Eq. 8 here and closed with the three-regime W/H exponent rework not done.'
 - file: sources/heat_transfer/han/Han_Park_1988_IJHMT_31_183_angled.pdf
+  sha256: '04e29b2f26f94489bdc9e52077394bd6fc19b874fa60ae73dc1e0661e59e54c2'
   citation: Han, J. C., Park, J. S. (1988). Developing heat transfer in rectangular channels with rib
     turbulators. International Journal of Heat and Mass Transfer 31(1), 183-195.
   topic: [rib]
@@ -1913,6 +2010,7 @@ documents:
   notes: Renamed 2026-10-01 from han/han_park_1998.pdf (year off by a decade). Also the acknowledgement
     that names grant NAS3-24227 (link to NASA CR-4015).
 - file: sources/heat_transfer/hollworth/393_1_Hollworth_1980_part_II.pdf
+  sha256: '4a1503fac06acb54b89c0ab9b9badb9905b2091bc6740e1206132bb604d67442'
   citation: 'Hollworth, B. R., Lehmann, G., Rosiczkowski, J. (1983). Arrays of impinging jets with spent
     fluid removal through vent holes on the target surface, Part 2: Local heat transfer. ASME J. Eng.
     Power 105, 393-402.'
@@ -1930,6 +2028,7 @@ documents:
     Part II (80-GT-43), but the PDF itself is Hollworth, Lehmann & Rosiczkowski, J. Eng. Power 105 (April
     1983) 393-402; a later #468 comment cites it correctly. Companion of 994_1_Hollworth_1980_part_I.pdf.'
 - file: sources/heat_transfer/hollworth/994_1_Hollworth_1980_part_I.pdf
+  sha256: '2ca092d613a89ce87183e29193be60463bd10674032f198c1368b868286691f6'
   citation: 'Hollworth, B. R., Dagan, L. (1980). Arrays of impinging jets with spent fluid removal through
     vent holes on the target surface, Part 1: Average heat transfer. ASME J. Eng. Power 102(4), 994-999.'
   id: ASME 80-GT-42
@@ -1949,6 +2048,7 @@ documents:
   notes: 'Fig. 8 overplots ~5 Re per Z, so any fidelity score on it is an upper bound resting on ~5-6
     clean stations per X. Data test: python/tests/test_hollworth_dagan_data.py.'
 - file: sources/heat_transfer/impingement/Chougule_Parishwad_Nadgire_2013_WCECS_multijet_pinfin_heatsink_effusion_slots.pdf
+  sha256: 'a8c442e765ed04bd72562edfa7c9ad4fd40f9cb41feda98c8866513324cb923b'
   citation: 'Chougule, N. K., Parishwad, G. V., Nadgire, A. R. (2013). Numerical investigation of multijet
     air impingement on pin fin heat sink with effusion slots. Proc. World Congress on Engineering and
     Computer Science (WCECS 2013) Vol. II, San Francisco, pp. 935-939.'
@@ -1969,6 +2069,7 @@ documents:
   records: []
   notes: Arrived as docs/new/WCECS2013_pp935-939.pdf. Cites Rhee, Yoon & Cho 2003 (now registered).
 - file: sources/heat_transfer/impingement/Rachdi_2025_SciRep_15_3023_slot_jet_array_CFD.pdf
+  sha256: 'f3a9ed1e0d1b322b001d13c4aade0fea3310fa834200987df2c8bf0817aebee6'
   citation: 'Rachdi, Z., Hnaien, N., Eladeb, A., Alshammari, B. M., Kolsi, L., Dhahri, H. (2025). CFD analysis
     of heat transfer enhancement in impinging jet array by varying number of jets and spacing. Scientific
     Reports 15, 3023.'
@@ -1988,6 +2089,7 @@ documents:
   records: []
   notes: Arrived as docs/new/41598_2025_Article_86360.pdf. Data not public (on request).
 - file: sources/heat_transfer/impingement/Rhee_Yoon_Cho_2003_IJHMT_46_1049_array_jets_effusion_in_injection_plate.pdf
+  sha256: 'f29c17f76e13a5b82b8c30e9bf77ec37e40e92b7e311286c4af78502fa2109ac'
   citation: 'Rhee, D.-H., Yoon, P.-H., Cho, H. H. (2003). Local heat/mass transfer and flow characteristics
     of array impinging jets with effusion holes ejecting spent air. Int. J. Heat Mass Transfer 46, 1049-1061.'
   id: doi:10.1016/S0017-9310(02)00363-0
@@ -2012,6 +2114,7 @@ documents:
     (b), jet-plate venting, matches Huber & Viskanta 1994 (J. Heat Transfer 116, 570) -- not modelled in
     combaero.
 - file: sources/heat_transfer/impingement/Choi_Rhee_Cho_2001_KSME_spring_D_impingement_hole_arrangement_conf.pdf
+  sha256: 'd8b5f1c0cce3f66cee252e090394f17603c25a0aa37903d1cb5c1f6ff2a0009e'
   citation: Choi, J. H., Rhee, D. H., Cho, H. H. (2001). The effects of impingement hole size on heat transfer
     of an impingement/effusion cooling system (in Korean; the Korean title says hole arrangement). Proc. KSME
     2001 Spring Annual Meeting D, pp. 489-496 (KSME 01S479).
@@ -2031,6 +2134,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
 - file: sources/heat_transfer/impingement/Hong_Cho_2006_KSME_B_30_12_impingement_effusion_circular_guide.pdf
+  sha256: 'b681157e2dbb5a552a06c800e4043f778d475c2f09348ebede59d9055395810f'
   citation: Hong, S. K., Cho, H. H. (2006). Heat/mass transfer for impingement/effusion cooling system with
     circular guide (in Korean). Trans. KSME B 30(12), 1147-1154.
   topic:
@@ -2048,6 +2152,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
 - file: sources/heat_transfer/impingement/Hong_Cho_2007_JFluidMach_10_3_rotating_impingement_effusion.pdf
+  sha256: 'f58f8e7bb7cf10466cfa9d7e6deb957ae8610b12dadb007915ac22b48c7c12f7'
   citation: Hong, S. K., Cho, H. H. (2007). Heat/mass transfer characteristics for variation of injection hole
     in rotating impingement/effusion cooling system (in Korean). J. Fluid Machinery 10(3), 25-32.
   topic:
@@ -2064,6 +2169,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
 - file: sources/heat_transfer/impingement/Hong_Rhee_Cho_2005_JFluidMach_8_4_impingement_effusion_rectangular_fins.pdf
+  sha256: '040f1bb083aef619d0accb38d06703485f7e51509da904aff29b4452327a012b'
   citation: Hong, S. K., Rhee, D. H., Cho, H. H. (2005). Heat/mass transfer characteristics in impingement/effusion
     cooling system with rectangular fins for combustor liner cooling (in Korean). J. Fluid Machinery 8(4),
     39-47.
@@ -2081,6 +2187,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
 - file: sources/heat_transfer/impingement/Hong_Rhee_Cho_2005_KSME_B_29_7_impingement_effusion_pin_fins_crossflow.pdf
+  sha256: '4c7f8f9b7ca5515aa507c1baaf633d8e3525b9561934f102a8e56d21386cfa26'
   citation: Hong, S. K., Rhee, D. H., Cho, H. H. (2005). Heat/mass transfer on effusion plate with circular
     pin fins for impingement/effusion cooling system with initial crossflow (in Korean). Trans. KSME B 29(7),
     828-836.
@@ -2100,6 +2207,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
 - file: sources/heat_transfer/impingement/Nam_Rhee_Choi_Cho_2003_KSME_spring_impingement_effusion_crossflow.pdf
+  sha256: '604f95a24194af30871da199b391e2183616035e02eaa1f3c69f71c0a4a9256c'
   citation: Nam, Y. W., Rhee, D. H., Choi, J. H., Cho, H. H. (2003). Effect of crossflow on heat (mass) transfer
     of an impingement/effusion cooling system (in Korean). Proc. KSME 2003 Spring Annual Meeting, pp. 2219-2226.
   topic:
@@ -2122,6 +2230,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search. Some text layer (3 kB), mostly Korean.
 - file: sources/heat_transfer/impingement/Rhee_Nam_Cho_2004_KSME_B_28_3_impingement_effusion_ribs_crossflow.pdf
+  sha256: '15efb49a4cc0e3bf3515f78e9f657dea2bfbad70c70afd6ee0b6e1599f1cba7e'
   citation: Rhee, D. H., Nam, Y. W., Cho, H. H. (2004). Heat/mass transfer characteristics on rib-roughened
     surface for impingement/effusion cooling system with initial crossflow (in Korean). Trans. KSME B 28(3),
     338-348.
@@ -2141,6 +2250,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
 - file: sources/heat_transfer/NASA_CR-3837_1984.pdf
+  sha256: '2be0a67b3cc6e5adade3591d3a65eceef1bfdd37eed7def528d755a5689391e0'
   citation: Han, J. C., Park, J. S., Lei, C. K. (1984). Heat transfer and pressure drop in blade cooling
     channels with turbulence promoters. NASA Contractor Report 3837, grant NAG3-311. November 1984.
   id: NASA CR-3837
@@ -2158,6 +2268,7 @@ documents:
   notes: Journal version Han, Park & Lei (1985) J. Eng. Gas Turbines Power 107, 628-635. Worked example
     in docs/VALIDATION_POLICY.md.
 - file: sources/heat_transfer/NASA_CR-4015_1986.pdf
+  sha256: 'f736f57e4d0ecb488d1593089d25cb37d23864446dd8b1828c1852f1724921c0'
   citation: Han, J. C., Park, J. S., Ibrahim, M. Y. (1986). Measurement of heat transfer and pressure
     drop in rectangular channels with turbulence promoters. NASA Contractor Report 4015 (AVSCOM TR 86-C-25),
     contract NAS3-24227. September 1986.
@@ -2176,6 +2287,7 @@ documents:
   notes: Used only as cross_check evidence for han2012 class labels (runs 22/23/26 quoted). NTRS accession
     19870007570.
 - file: sources/heat_transfer/pin_fin/Armstrong_Winstanley_1988_JTurbomach_110_94.pdf
+  sha256: 'ed2ce79e02feec0194fd3806bd56eeb0ebb1dc757514863d644d4a8c97fa41c2'
   citation: Armstrong, J., Winstanley, D. (1988). A review of staggered array pin fin heat transfer for
     turbine cooling applications. ASME Journal of Turbomachinery 110(1), 94-103.
   id: ASME 87-GT-201
@@ -2196,6 +2308,7 @@ documents:
       converters, fin efficiency']
   notes: Text layer unreliable; equations read from page images.
 - file: sources/heat_transfer/pin_fin/Chyu_1990_JHT_112_926_fillet.pdf
+  sha256: '102101dee9f2c39a6888c0a037dc1e9d7fac983ba6034badc876c06d4447167d'
   citation: Chyu, M. K. (1990). Heat transfer and pressure drop for short pin-fin arrays with pin-endwall
     fillet. ASME Journal of Heat Transfer 112, 926-932.
   topic: [pin_fin]
@@ -2213,6 +2326,7 @@ documents:
   notes: 'Fig. 6 points are unscored on purpose (the friction set was fitted to them); staggered series
     is a cross-source check for #335 PR C.'
 - file: sources/heat_transfer/pin_fin/Lawson_Thrift_Thole_Kohli_2011_IJHMT_54.pdf
+  sha256: 'ef2549407a514e89c92b9d028990165db5de58f20c4c01adbcf328b8d773f121'
   citation: Lawson, S. A., Thrift, A. A., Thole, K. A., Kohli, A. (2011). Heat transfer from multiple
     row arrays of low aspect ratio pin fins. International Journal of Heat and Mass Transfer 54, 4099-4109.
   topic: [pin_fin]
@@ -2231,6 +2345,7 @@ documents:
   notes: 'Earlier mis-cited on #335 as ''Lawson, Thrift, Wright & Thole''; file renamed. Figs. 15/16 (~40
     clean points) on the digitising list for #335 PR C.'
 - file: sources/heat_transfer/pin_fin/Lawson_2007_MS_thesis_VirginiaTech_multiple_row.pdf
+  sha256: '0ee07abad68b7d51b0f9c58d5f8d861c1191a409324c525084c4b75fd0a9f7da'
   citation: Lawson, S. A. (2007). Heat transfer from multiple row arrays of low aspect ratio pin fins. MS
     thesis, Virginia Polytechnic Institute and State University, Blacksburg (chair K. A. Thole), February
     8, 2007.
@@ -2255,6 +2370,7 @@ documents:
   notes: Open access, VTechWorks handle 10919/31190 (file EntireThesisDraft9.pdf, the later of two uploads;
     106 pp.). In Copyright (rightsstatements InC). Fetched 2026-11-02 at the user's request.
 - file: sources/heat_transfer/pin_fin/Thrift_2007_MS_thesis_VirginiaTech_pressure_loss.pdf
+  sha256: '7981e4814f3b22d96ff93a24ccd5c7067207a2f5953e7272b689160bca1793e1'
   citation: Thrift, A. A. (2007). Aerodynamic force and pressure loss measurements on low aspect ratio pin
     fin arrays. MS thesis, Virginia Polytechnic Institute and State University, Blacksburg (chair K. A. Thole),
     February 9, 2007.
@@ -2279,6 +2395,7 @@ documents:
   notes: Open access, VTechWorks handle 10919/31189 (Thesis_ETD2.pdf, 113 pp.). In Copyright. Fetched 2026-11-02
     at the user's request.
 - file: sources/heat_transfer/pin_fin/Lyall_2006_MS_thesis_VirginiaTech_single_row.pdf
+  sha256: '6f4a09b4f59d895a7afd2e23e4ba14a20b4cfa98194bd9dc6b41da8b35432c21'
   citation: Lyall, M. E. (2006). Heat transfer from low aspect ratio pin fins. MS thesis, Virginia Polytechnic
     Institute and State University, Blacksburg.
   topic: [pin_fin]
@@ -2297,6 +2414,7 @@ documents:
   notes: Open access, VTechWorks handle 10919/33470. Supplies a box, not coefficients, hence screened
     rather than implemented.
 - file: sources/heat_transfer/pin_fin/NASA_CR-120882_Faulkner_1971_Book1.pdf
+  sha256: '6f02c255a37486f17504c7c6b5b3dcf3f911a7974035363cdee57d15781f4bd1'
   citation: 'Faulkner, F. E. (1971). Analytical investigation of chord size and cooling methods on turbine
     blade cooling requirements, Book 1: Sections 1 through 8 and Appendixes A through I. NASA CR-120882
     (AiResearch 71-7487).'
@@ -2314,6 +2432,7 @@ documents:
   code: ['include/pin_fin_correlation.h: listed under not-carried (long pins)']
   notes: NTRS 19730009082. OCR misreads C2 as 5.094; read from images.
 - file: sources/heat_transfer/pin_fin/NASA_CR-120882_Faulkner_1971_Book2.pdf
+  sha256: '9cdce2ceef918bf17273e1040932c75afcb072f9224032b59e2222a3aa293d48'
   citation: 'Faulkner, F. E. (1971). Analytical investigation of chord size and cooling methods on turbine
     blade cooling requirements, Book 2: Appendixes J through M. NASA CR-120882 (AiResearch 71-7487).'
   id: NASA CR-120882
@@ -2327,6 +2446,7 @@ documents:
   records: []
   notes: Same report as Book 1; all recorded use (#335) is Book 1 Appendix D.
 - file: sources/heat_transfer/pin_fin/NASA_CR-120883_Damerow_1972.pdf
+  sha256: '121b7d977e3731c839a568ab4198445d6455e169b63da656ff55040b5dffc21f'
   citation: Damerow, W. P., Murtaugh, J. P., Burggraf, F. (1972). Experimental and analytical investigation
     of the coolant flow characteristics in cooled turbine airfoils. NASA CR-120883 (GE R72AEG165).
   id: NASA CR-120883
@@ -2345,6 +2465,7 @@ documents:
   records: [validation/cooling/extractions/pin_fin_sources.md]
   code: ['include/pin_fin_correlation.h: damerow_1972_staggered_friction']
 - file: sources/heat_transfer/pin_fin/NASA_TM-81696_VanFossen.pdf
+  sha256: '9189f4b8da2b65716e746306c5ae3d8bdd1293c389e0c04b708d37cb90ddaa06'
   citation: VanFossen, G. J. (1981). Heat transfer coefficients for staggered arrays of short pin fins.
     NASA TM-81696 (prepared for the 26th ASME Gas Turbine Conference, Houston, March 1981).
   id: NASA TM-81696
@@ -2361,6 +2482,7 @@ documents:
   code: ['include/pin_fin_correlation.h: vanfossen_1982_staggered_nu']
   notes: 'Journal version J. Eng. Power 104 (1982), 268. A byte-identical copy, pin_fin/NTRS_19810004791_VanFossen_1981_staggered_short_pin_fins.pdf, was deleted 2026-10-25.'
 - file: sources/heat_transfer/pin_fin/NASA_TM-83005_Brigham_VanFossen_1983.pdf
+  sha256: '40dead7214e0280cf1827bb8dae631c84fc3fa439a5321e0eaea926c53e51a7d'
   citation: Brigham, B. A., Van Fossen, G. J. (1983). Length to diameter ratio and row number effects
     in short pin fin heat transfer. NASA TM-83005 (prepared for the 28th ASME Gas Turbine Conference,
     Phoenix, March 1983).
@@ -2380,6 +2502,7 @@ documents:
   notes: 'Journal version J. Eng. Gas Turbines Power 106 (1984), 241. A byte-identical misnamed copy, pin_fin/NTRS_19830006160_Simoneau_VanFossen_1982_LD_row_effects.pdf,
     was deleted 2026-10-25.'
 - file: sources/heat_transfer/pin_fin/NASA_TM-83801_Brigham_1984_convergence.pdf
+  sha256: '1e01c4d4504e86450491688c638ebdce58f5c7fbad8c491fae21390f5e6ad281'
   citation: Brigham, B. A. (1984). The effect of channel convergence on heat transfer in a passage with
     short pin fins. NASA TM-83801.
   id: NASA TM-83801
@@ -2395,6 +2518,7 @@ documents:
   code: ['include/pin_fin_correlation.h: listed under not-carried (convergence)']
   notes: NTRS 19850001996.
 - file: sources/heat_transfer/pin_fin/NTRS-19820011619_Simoneau_VanFossen_1982.pdf
+  sha256: 'd37c36ba27992adef651ec0fef32f0e6da38475adf974d4a125d61170de6655d'
   citation: Simoneau, R. J., Van Fossen, G. J., Jr. (1982). Effect of location in an array on heat transfer
     to a cylinder in crossflow. NASA TM-82797 (prepared for the 3rd Joint Thermophysics, Fluids, Plasma
     and Heat Transfer Conference, St. Louis, June 1982).
@@ -2413,6 +2537,7 @@ documents:
   notes: 'NTRS 19820011619; journal version J. Heat Transfer 106 (1984), 42 per #335 (not shown in the
     document). Partly illegible.'
 - file: sources/heat_transfer/pin_fin/Oda_Takeishi_2009_JTST_4_507_liner_ribs.pdf
+  sha256: '717e239c60c74173b75e5d92a4f19b27e12c4cef71cf9d1bc869b984fbcf1c74'
   citation: Oda, Y., Takeishi, K., Motoda, Y., Sugimoto, S., Miyake, Y. (2009). Heat transfer characteristics
     of pin-fin arrays with ribs to cool combustor liners. Journal of Thermal Science and Technology 4(4),
     507-517.
@@ -2429,6 +2554,7 @@ documents:
   issues: [335]
   records: []
 - file: sources/heat_transfer/pin_fin/Uzol_Camci_JHT_preprint_circular_elliptical.pdf
+  sha256: '4fd1c546b64865dac37ffa7bc60b4769df47974ecaf7275888627852adf08288'
   citation: Uzol, O., Camci, C. (?). Endwall heat transfer, total pressure loss and wake flow field characteristics
     of circular and elliptical pin fin arrays. Preprint submitted to ASME Journal of Heat Transfer; journal
     volume/pages ?.
@@ -2445,6 +2571,7 @@ documents:
   records: [validation/cooling/extractions/pin_fin_sources.md]
   notes: Year not printed in the preprint; Lyall 2006 dates it 2005.
 - file: sources/heat_transfer/pin_fin/Xu_Zhang_Duan_Lei_Wu_2021_Crystals_11_977_pin_shapes.pdf
+  sha256: 'a8a4cc383a2e2b9ff94e13b9d17e2a37eeb5e9e3695bfc9fbbc379f9357e0493'
   citation: Xu, J., Zhang, K., Duan, J., Lei, J., Wu, J. (2021). Systematic comparison on convective heat
     transfer characteristics of several pin fins for turbine cooling. Crystals 11, 977.
   id: doi:10.3390/cryst11080977
@@ -2459,6 +2586,7 @@ documents:
   issues: [335]
   records: []
 - file: sources/heat_transfer/RALLABANDI-DISSERTATION.pdf
+  sha256: 'd8513ff0d3e0c8f3033b1f99bf2bc73ef9129b6a2c1f737784ef3b73019aef00'
   citation: Rallabandi, A. P. (2010). Parametric study of turbine blade internal cooling and film cooling.
     Ph.D. dissertation, Texas A&M University.
   topic: [rib, film, pin_fin]
@@ -2473,6 +2601,7 @@ documents:
   records: []
   notes: Thesis version of Rallabandi_2009_JHT_131_071703_angled.pdf.
 - file: sources/heat_transfer/Rallabandi_2009_JHT_131_071703_angled.pdf
+  sha256: '790f206ae8805a2583ecf9a68e8cfc7ee47748f7a8606b740342250439777925'
   citation: Rallabandi, A. P., Yang, H., Han, J.-C. (2009). Heat transfer and pressure drop correlations
     for square channels with 45 deg ribs at high Reynolds numbers. ASME J. Heat Transfer 131(7), 071703.
   id: doi:10.1115/1.3090818
@@ -2489,6 +2618,7 @@ documents:
   code: ['include/rib_correlation.h: rallabandi_2009_high_re']
   notes: 'Dissertation version: RALLABANDI-DISSERTATION.pdf.'
 - file: sources/heat_transfer/ribs_lau_1990.pdf
+  sha256: '56c65f5a0adadbe59ee78758b9f046d921ef6b4b89a1683638164bf0e5f091a1'
   citation: Lau, S. C., Kukreja, R. T., McMillin, R. D. (1990). Effects of V-shaped rib arrays on turbulent
     heat transfer and friction of fully developed flow in a square channel. Int. J. Heat Mass Transfer
     ?(?), 1605-?.
@@ -2504,6 +2634,7 @@ documents:
   records: [validation/cooling/extractions/lau_1990_v_ribs.md, validation/cooling/data/lau1990/metadata.yaml]
   notes: Volume and end page not printed in the PDF text; the extraction record gives IJHMT 34(7), 1605-1616.
 - file: sources/heat_transfer/Forsyth_McGilvray_Gillespie_2017_ExpFluids_58_5_ribbed_developing_flow.pdf
+  sha256: '0fca4466edbe1d5f5d50030c4b38d2abe98d7048afa8e932096293ec161b17fb'
   citation: 'Forsyth, P., McGilvray, M., Gillespie, D. R. H. (2017). Secondary flow and heat transfer coefficient
     distributions in the developing flow region of ribbed turbine blade cooling passages. Experiments in Fluids
     58, 5. doi:10.1007/s00348-016-2286-6 (first presented as ASME GT2014-26737).'
@@ -2550,6 +2681,7 @@ documents:
     conference version GT2014-26737 (not held). Nu0 = 200 is computed here (Dittus-Boelter, Pr 0.71), not printed.
     Fig. 14 values are read by eye from a 110 dpi page image, not digitised.
 - file: sources/heat_transfer/Webb_Eckert_Goldstein_1971_IJHMT_14_pp601-617.pdf
+  sha256: 'c3a63dc7edd1932adc675b563bb78f758f326570df9c8c66c7c8598ae9c03b5c'
   citation: Webb, R. L., Eckert, E. R. G., Goldstein, R. J. (1971). Heat transfer and friction in tubes
     with repeated-rib roughness. Int. J. Heat Mass Transfer 14, 601-617.
   topic: [rib]
@@ -2565,6 +2697,7 @@ documents:
   notes: Parent of Webb_Eckert_Goldstein_1972_IJHMT_15_pp180-184 (which generalises it). Note the repo
     cites the 1972 paper, never this 1971 one.
 - file: sources/heat_transfer/Webb_Eckert_Goldstein_1972_IJHMT_15_pp180-184_0017931072901792.pdf
+  sha256: '94b4fef760092955610474dd28070972932c19874b90b94afe27090572e0a33d'
   citation: Webb, R. L., Eckert, E. R. G., Goldstein, R. J. (1972). Generalized heat transfer and friction
     correlations for tubes with repeated-rib roughness. Int. J. Heat Mass Transfer 15, 180-184.
   id: doi:10.1016/0017-9310(72)90179-2
@@ -2580,6 +2713,7 @@ documents:
   notes: Issue/volume number recorded as 15(1) in han_ribbed.md; the PDF shows Vol. 15 pp. 180-184 only.
     Sequel to Webb_Eckert_Goldstein_1971_IJHMT_14_pp601-617.pdf.
 - file: sources/jet_mixing/Holdeman_1996_NASA_TM-107185_multiple_jets_confined_crossflow_cylindrical.pdf
+  sha256: '137c3f1cf401917e165e64823567db87296b6f12b2739e40cfe636cff8190b87'
   citation: Holdeman, J. D., Liscinsky, D. S., Oechsle, V. L., Samuelsen, G. S., Smith, C. E. (1996). Mixing
     of multiple jets with a confined subsonic crossflow in a cylindrical duct. NASA TM-107185 / ASME 96-GT-482.
   id: NASA TM-107185; ASME 96-GT-482 (NTRS 19960023955)
@@ -2602,6 +2736,7 @@ documents:
   notes: Arrived 2026-10-25 twice (the NASA file and a CORE-repository copy with a cover page; the CORE copy
     was deleted). Author list from the TM cover; check against p. 1.
 - file: sources/jet_mixing/Holdeman_Clisset_Moder_2011_NASA_TM-2011-215980_spreadsheet_opposed_slanted_slots.pdf
+  sha256: 'f9db3ff5760520542c60a24ab947fe559e4f107194adb6c01759d1977af0d68f'
   citation: 'Holdeman, J. D., Clisset, J. R., Moder, J. P. (2011). Spreadsheet calculation of jets in crossflow:
     opposed rows of slots slanted at 45 deg. NASA/TM-2011-215980.'
   id: NASA/TM-2011-215980 (NTRS 20120011165)
@@ -2621,6 +2756,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 as docs/new/20120011165_2012010834.pdf.
 - file: sources/jet_mixing/Kroll_Sowa_Samuelsen_1993_NASA_TM-105984_round_jets_heated_crossflow_can.pdf
+  sha256: '70deb8c28cfc941303f25c83764c69afb8071b80da8fe5df7c11b7bf7a89f0ef'
   citation: Kroll, J. T., Sowa, W. A., Samuelsen, G. S. (1993). Optimization of circular orifice jets mixing
     into a heated cross flow in a cylindrical duct. NASA TM-105984 / AIAA-93-0249.
   id: NASA TM-105984; AIAA-93-0249 (NTRS 19930006170)
@@ -2640,6 +2776,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 as docs/new/19930006170.pdf.
 - file: sources/jet_mixing/Leong_Samuelsen_1995_NASA_TM-106975_jet_mixing_reacting_crossflow.pdf
+  sha256: 'ce0994492568a11fbe378770ca498ca20508f9268fe05ca20335b3750728fddf'
   citation: Leong, M. Y., Samuelsen, G. S. (1995). Jet mixing in a reacting cylindrical crossflow. NASA TM-106975
     / AIAA-95-3109.
   id: NASA TM-106975; AIAA-95-3109 (NTRS 19950024432)
@@ -2658,6 +2795,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 as docs/new/19950024432.pdf.
 - file: sources/jet_mixing/Salewski_2006_PhD_Lund_LES_jets_sprays_crossflow.pdf
+  sha256: 'bff2a9052b4cf426c385ab3aa5100cb8541b9d7692ae6fbfe1f7d62cac84b766'
   citation: Salewski, M. (2006). LES of jets and sprays injected into crossflow. Doctoral thesis (compilation),
     Fluid Mechanics, Lund Institute of Technology.
   topic:
@@ -2673,6 +2811,7 @@ documents:
   records: []
   notes: Arrived 2026-10-25 as docs/new/thesis.pdf (120 pp.).
 - file: sources/junction/a-unified-method-for-estimating-pressure-losses-at-vascular-3elbvn7sno.pdf
+  sha256: '8501635e89d5311e87fb054d695bbfcabf2b73c60d4776a6250094be7c057f65'
   citation: Mynard, J. P., Valen-Sendstad, K. (?). A unified method for estimating pressure losses at
     vascular junctions. Int. J. Numer. Meth. Biomed. Engng. ?, 1-24.
   id: DOI 10.1002/cnm (full DOI not printed)
@@ -2692,6 +2831,7 @@ documents:
   notes: Preprint in the journal template; the header shows the template year 2010 and a placeholder DOI.
     The repo cites it as Mynard 2015 (module name keeps 'mynard2010').
 - file: sources/junction/bassett.pdf
+  sha256: 'ae377b774d0d1c00947dde74d88fafc3fdb2e2c64a214dc6151771768d3cc7fc'
   citation: 'Bassett, M. D., Winterbone, D. E., Pearson, R. J. (2001). Calculation of steady flow pressure
     loss coefficients for pipe junctions. Proc. IMechE Part C: J. Mechanical Engineering Science 215(8),
     861-?.'
@@ -2711,6 +2851,7 @@ documents:
       Junction Elements (Bassett 2001)']
   notes: A byte-identical copy at docs/bassett/bassett.pdf was deleted 2026-10-25.
 - file: sources/junction/compressible_junction_model.pdf
+  sha256: '1e0bf30fa28c2847e69dfebcb5321e71d3ffaca1d123627b100f3c821d475ed3'
   citation: '? (2026). Compressible extension of the Unified0D/Bassett T-junction model for 1D network
     solvers. Working notes, 27 May 2026.'
   topic: [junction, tee]
@@ -2723,6 +2864,7 @@ documents:
   records: []
   notes: Internal design note, not literature. Superseded by v2 and v3.
 - file: sources/junction/compressible_junction_model_v2.pdf
+  sha256: 'db45ea8a3459876f374f46430e8d16a8f4a343e08d04bf6015b00e47e0e4fa40'
   citation: '? (2026). Compressible extension of the Unified0D/Bassett T-junction model for 1D network
     solvers (v2, corrected). Working notes, 29 May 2026.'
   topic: [junction, tee]
@@ -2738,6 +2880,7 @@ documents:
   notes: Internal design note, not literature. Superseded by compressible_junction_model_v3.pdf (same
     date).
 - file: sources/junction/compressible_junction_model_v3.pdf
+  sha256: 'c7afc35b0ce3f10f4666b383eaa776ef8a4587fa0bef9c4cdd72b9d6e8cbb595'
   citation: '? (2026). Compressible extension of the Unified0D/Bassett T-junction model for 1D network
     solvers (v3, branching-tee residual structure). Working notes, 29 May 2026.'
   topic: [junction, tee]
@@ -2753,6 +2896,7 @@ documents:
   records: [validation/junction/MPCE_CPP_PORT_DESIGN.md]
   notes: Internal design note, not literature. Latest of three versions.
 - file: sources/junction/gardel1957_part1.pdf
+  sha256: '7e7ce04db446b5fb7ee73cc8c896d40fab7978451ab398045602482edaf43525'
   citation: Gardel, A. (1957). Les pertes de charges dans les ecoulements au travers de branchements en
     te. Bulletin technique de la Suisse romande 83(9), ?.
   id: DOI 10.5169/seals-62781
@@ -2768,6 +2912,7 @@ documents:
   records: [validation/junction/data/gardel1970/README.md]
   notes: Only part 1 is in sources/.
 - file: sources/junction/gardel_1970.pdf
+  sha256: '72b9c69e29712bfa3b3673ded55c7ba33e7b7a049e40421740e7d434d74d8c6f'
   citation: Gardel, A., Rechsteiner, G. F. (1970). Les pertes de charge dans les branchements en Te des
     conduites de section circulaire. Bulletin technique de la Suisse romande 96(25), 363-391.
   id: DOI 10.5169/seals-70882
@@ -2782,6 +2927,7 @@ documents:
   issues: [532, 533, 534, 535, 537, 538]
   records: [validation/junction/data/gardel1970/, validation/junction/gardel1970_score.py, python/tests/test_junction_gardel1970.py]
 - file: sources/junction/hager1984.pdf
+  sha256: 'f9d5c2b24644afde39deab821b49ee91ef691d20c0baedf5389042ea1c970039'
   citation: 'Hager, W. H. (1984). An approximate treatment of flow in branches and bends. Proc. IMechE
     Part C: J. Mechanical Engineering Science 198(1), 63-?.'
   id: DOI 10.1243/PIME_PROC_1984_198_088_02
@@ -2798,6 +2944,7 @@ documents:
   records: [validation/junction/data/hager1984/, validation/junction/models/hager1984.py]
   code: ['include/tee_junction.h: Hager 3/4 factor']
 - file: sources/junction/Idelchik.pdf
+  sha256: '9301eca8c5637365255c9e91b78fd88585c6e40676ce1af20ee8f9709ebebcd3'
   citation: 'Idel''chik, I. E. (1966). Handbook of Hydraulic Resistance: Coefficients of Local Resistance
     and of Friction. Israel Program for Scientific Translations, Jerusalem (translated from the 1960 Russian
     edition, Gosenergoizdat, Moscow-Leningrad), for the U.S. AEC and NSF.'
@@ -2821,6 +2968,7 @@ documents:
   notes: Filed under junction/ for historical reasons but covers the whole handbook. Diagrams 4-9..4-16
     (conduit-to-conduit and in-pipe orifices) not implemented; diagram 4-11 tau left.
 - file: sources/junction/momentum cv implementation guide.pdf
+  sha256: '493c24df4aeae14d7c061291b0391358b893b4e80d73b583d4b4ef848bb66508'
   citation: '? (?). Momentum-CV junction element for combaero -- implementation guide. Project design
     note.'
   topic: [junction, tee]
@@ -2838,6 +2986,7 @@ documents:
       momentum-CV junction machinery']
   notes: Internal design note; supersedes the K-based tee closure in compressible_junction_model_v3.pdf.
 - file: "sources/junction/Perez-Garci\u0301a-2010.pdf"
+  sha256: '3fc740711b76e87f02f3cf36d3cdd152620e572cfa8e09dfa8b0b8b6d2c7a966'
   citation: Perez-Garcia, J., Sanmiguel-Rojas, E., Viedma, A. (?). New coefficient to characterize energy
     losses in compressible flow at T-junctions. ? (accepted manuscript; journal and year not printed on
     the first pages).
@@ -2853,6 +3002,7 @@ documents:
   records: [validation/junction/data/perez_garcia2010/, validation/junction/models/perez_garcia2010.py]
   notes: Filename gives 2010; the document shows no year.
 - file: sources/junction/stigler_2010.pdf
+  sha256: 'c0710c684bcf18ddfb51b399e1739780c5ffc6850557688ceca5576c4b26e96e'
   citation: 'Stigler, J. (2010). T-part as an element of the pipe-line system. The introduction of the
     mathematical model of the fluid flow in T-part for the arbitrary angle of the adjacent branch. IOP
     Conf. Ser.: Earth Environ. Sci. 12, 012102.'
@@ -2866,6 +3016,7 @@ documents:
   records: [validation/junction/README.md]
   notes: A byte-identical copy at docs/bassett/stigler_2010.pdf was deleted 2026-10-25.
 - file: sources/junction/tb1283/OBJ.pdf
+  sha256: '6ffb88314a613a19b1670bd9ddddf16df46e1dbdccfc0cfe620383039b5c6fef'
   citation: Blaisdell, F. W., Manson, P. W. (1963). Loss of energy at sharp-edged pipe junctions in water
     conveyance systems. USDA Agricultural Research Service, Technical Bulletin No. 1283, August 1963.
   id: USDA Tech. Bull. 1283
@@ -2884,6 +3035,7 @@ documents:
   code: ['include/ideal_junction.h: merge = Blaisdell & Manson''s theory', python/combaero/network/ideal_tee_element.py]
   notes: The 600 dpi scan used as the primary read for Table 12. Same work as tb1283/tb1283.pdf. The one-page HathiTrust PDF of p. 145 (uva-x030348647-149-...pdf) was deleted 2026-10-25; the HathiTrust page TIFFs (uva.x030348647-seq_*.tif) remain.
 - file: sources/junction/tb1283/tb1283.pdf
+  sha256: '6a09db492a1e57bb9ca954c57382fa376d31c32437e758a9c3fe72a10eea6e51'
   citation: Blaisdell, F. W., Manson, P. W. (1963). Loss of energy at sharp-edged pipe junctions in water
     conveyance systems. USDA Agricultural Research Service, Technical Bulletin No. 1283.
   id: USDA Tech. Bull. 1283
@@ -2899,6 +3051,7 @@ documents:
   notes: Duplicate (different scan) of tb1283/OBJ.pdf; the Table 12 README names OBJ.pdf and HathiTrust
     TIFFs as its reads, not this file explicitly.
 - file: sources/junction/torregrosa-2017-07-00480.pdf
+  sha256: 'ae35da80379505ac02df8fc347997e8a6bfb96fa853a79c85069972c9bdc20e1'
   citation: 'Torregrosa, A. J., Broatch, A., Garcia-Cuevas, L. M., Hernandez, M. (2017). A study of the
     transient response of duct junctions: measurements and gas-dynamic modeling with a staggered mesh
     finite volume approach. Appl. Sci. 7, 480.'
@@ -2913,6 +3066,7 @@ documents:
   issues: [183, 272, 300]
   records: [validation/junction/README.md]
 - file: sources/junction/wang-et-al-2014-an-experimental-study-of-compressible-combining-flow-at-45-t-junctions.pdf
+  sha256: 'f6aaeedadc48925014dda38644a6990c8debebf5907ec86d597433d186d33f16'
   citation: 'Wang, W., Lu, Z., Deng, K., Qu, S. (2015). An experimental study of compressible combining
     flow at 45 T-junctions. Proc. IMechE Part C: J. Mechanical Engineering Science 229(9), 1600-1610.'
   id: DOI 10.1177/0954406214546678
@@ -2929,6 +3083,7 @@ documents:
   records: [validation/junction/data/wang2014/, validation/junction/models/wang2014.py, validation/junction/network_runner.py]
   notes: Online 2014 (filename), issue 2015 (vol. 229).
 - file: sources/combustor_network/grobman_1959_NASA_Memo_11-26-58E.pdf
+  sha256: 'dff48e6baee6b3a74a445212ebd930cdb4e058a28aa88875315d8a25d8844ad2'
   citation: Grobman, J. S. (1959). Comparison of calculated and experimental total-pressure loss and airflow
     distribution in tubular turbojet combustors with tapered liners. NASA Memo 11-26-58E, Lewis Research
     Center, January 1959.
@@ -2975,6 +3130,7 @@ documents:
     cylindrical-liner squares are unpublished NACA data with no geometry -- not usable. Figure scans are
     small; render at 300 dpi before digitising.'
 - file: sources/combustor_network/dittrich_1957_NACA_RM_E56I17_parallel_walled_combustor_loss.pdf
+  sha256: '25092921a2345200c6b37997bb3bc97e6985c111703fabe9101b7c83042fe6c7'
   citation: Dittrich, R. T. (1957). Comparison of experimental with theoretical total-pressure loss in
     parallel-walled turbojet combustors. NACA RM E56I17, Lewis Flight Propulsion Laboratory, January 9, 1957.
   id: NACA RM E56I17, NTRS 19930089548
@@ -3023,6 +3179,7 @@ documents:
     held. NREC 1968 Figs. 29-31 reprint its faired curves on a different geometry. Digitising targets if scored:
     Fig. 4(a)/(e)/(i) first; render at 200 dpi or more.'
 - file: sources/combustor_network/graves_grobman_1958_NACA_Report_1373.pdf
+  sha256: '5c4f9c65ee09e7f3caa288e635d3c4bfc2e1c156e91b44bfdfddcf684c8dd0b7'
   citation: Graves, C. C., Grobman, J. S. (1958). Theoretical analysis of total-pressure loss and airflow distribution
     for tubular turbojet combustors with constant annulus and liner cross-sectional areas. NACA Report 1373.
   id: NACA Report 1373 (supersedes RM E56I04)
@@ -3048,6 +3205,7 @@ documents:
   records: []
   notes: Same content as RM E56I04; the RM scan has one figure per page and is the better one to digitise.
 - file: sources/combustor_network/graves_grobman_1956_NACA_RM_E56I04.pdf
+  sha256: '01fd12f6b0befcb632bb4b8607cd4da4aabde77b7a20b7a4a1f6a1ca1bd4b59f'
   citation: Graves, C. C., Grobman, J. S. (1957). Theoretical analysis of total-pressure loss and airflow distribution
     for tubular turbojet combustors with constant annulus and liner cross-sectional areas. NACA RM E56I04
     (Confidential, declassified).
@@ -3064,6 +3222,7 @@ documents:
   records: []
   notes: Dated 1956 in the filename (report number); Grobman 1959 cites it as 1957.
 - file: sources/combustor_network/dittrich_graves_1956_NACA_TN_3663.pdf
+  sha256: '135051388a2674a80dedc179ecfa00c1c33dbfbb2875d71a43d5deb5573c87a7'
   citation: Dittrich, R. T., Graves, C. C. (1956). Discharge coefficients for combustor-liner air-entry holes
     I -- circular holes with parallel flow. NACA TN 3663, Lewis Flight Propulsion Laboratory, April 1956.
   id: NACA TN 3663
@@ -3130,6 +3289,7 @@ documents:
     not committed). Fig. 6(j): at A_h/A_d 0.60 the hole swallows the whole approach flow at Phi 10, capping
     C_p at 0.53 -- a duct-blockage effect a single-hole Cd cannot carry.'
 - file: sources/combustor_network/dittrich_1958_NACA_TN_3924.pdf
+  sha256: '78ede1a827edc8ee56b27fd534d97ad3768e402937be0145d7366a9b924fff43'
   citation: Dittrich, R. T. (1958). Discharge coefficients for combustor-liner air-entry holes II -- flush
     rectangular holes, step louvers, and scoops. NACA TN 3924, Lewis Flight Propulsion Laboratory, April 1958.
   id: NACA TN 3924
@@ -3194,6 +3354,7 @@ documents:
     louver/scoop closure Figs. 13(b) (B-1/B-2, B-8 via Fig. 7) and 13(c)/(d) plus Fig. 12 (zero-flow Phi vs h)
     and Fig. 9 (delta* vs Phi). Render at 130 dpi or more; several figures are rotated 90 deg in the scan.'
 - file: sources/combustor_network/kaddah_1964_Cranfield_DAE_thesis_vol1_liner_hole_Cd_deflection.pdf
+  sha256: 'dbdc2c043580ea4730e694bc6aed5ffa7ebdc769292848a31c94b4da9895627a'
   citation: Kaddah, K. Sh. (1964). Discharge coefficient and jet deflection studies for combustor liner
     air-entry holes. Thesis for the Diploma of Advanced Engineering, Department of Aircraft Propulsion, The
     College of Aeronautics, Cranfield, June 1964 (supervisors A. H. Lefebvre and E. R. Norster). Volume 1
@@ -3250,6 +3411,7 @@ documents:
     Vol. 2 figures only re-plot these tables, so nothing needs digitising. Rig and duct are Gandamihardja''s
     (1962, ref. 7, Cranfield). Design drawings were a separate document (not held).'
 - file: sources/combustor_network/kaddah_1964_Cranfield_DAE_thesis_vol2_figures.pdf
+  sha256: '64f541b010f9368547b96e6bb4e9e0e5d6fd0cd632a5becd11d1037d83d455c0'
   citation: Kaddah, K. Sh. (1964). Discharge coefficient and jet deflection studies for combustor liner
     air-entry holes. Thesis for the Diploma of Advanced Engineering, The College of Aeronautics, Cranfield,
     June 1964. Volume 2 (figures and photographic plates).
@@ -3268,6 +3430,7 @@ documents:
   records: []
   notes: Copyrighted thesis (Cranfield; scan supplied by the user). 90 MB.
 - file: sources/combustor_network/nrec_1968_NASA_CR-72374_vol1_annular_combustor_program.pdf
+  sha256: '2990d1ce5050957f0cd875d72065c7f220ea3f1b6dfa27211e1a1e3a1460eee3'
   citation: 'Northern Research and Engineering Corporation (1968). Computer program for the analysis of annular
     combustors. Volume I: Calculation procedures. NREC Report 1111-1, NASA CR-72374, Contract NAS3-9402,
     January 29, 1968 (directed by D. M. Dix; Bewsher, Croissant, Hoggett, Monahan, Brassert, Duffield;
@@ -3334,6 +3497,7 @@ documents:
     TN 3663 (32), TN 3924 (33), Knight-Walker R&M 2987 (34), Rosenthal ARL ME Note 235 (35), Dittrich RM
     E56I17 (74). Figures worth a 300 dpi render: none, RM E56I17 (held) has the measured points behind Figs. 29-31 (PDF pp. 206-208).'
 - file: sources/combustor_network/nrec_1968_NASA_CR-72375_vol2_operating_manual.pdf
+  sha256: 'ff6148e5d0c99e58f9220cbb0940f18d9ece9ac62572ed106024f8141e3d1006'
   citation: 'Northern Research and Engineering Corporation (1968). Computer program for the analysis of annular
     combustors. Volume II: Operating manual. NREC Report 1111-2, NASA CR-72375, Contract NAS3-9402, January 29,
     1968.'
@@ -3373,6 +3537,7 @@ documents:
     then pairs of (loss factor, Cd[, phi]) per card. Its own references (p. 44): TN 3663, Kaddah 1964, Venneman
     Part I 1959, TN 3924, Marshall R58AGT558 1958, Venneman Part II 1960.'
 - file: sources/lefebvre/Lefebvre_1985_AFWAL-TR-84-2104_fuel_properties_combustion.pdf
+  sha256: '7e025f84fe0339c5219493021be1add372ac9b290606c2a43ebcd7ca3f7896b1'
   citation: 'Lefebvre, A. H. (1985). Influence of fuel properties on gas turbine combustion performance.
     AFWAL-TR-84-2104, Purdue University (Thermal Science and Propulsion Center), final report, January 1985.
     DTIC AD-A151464, approved for public release.'
@@ -3412,6 +3577,7 @@ documents:
     gives a 12.9/13.9 % H ratio of 1.39 against 1.16 for (13.9/12.9)^2, cf. the NASA JT8D 0.34 MPa flux ratio of
     1.56: a lead only, not a validated L.'
 - file: sources/lefebvre/GAS_Turbine_Combustion_THIRD_EDITION_Alt.pdf
+  sha256: '5ebd41481dd24e15c33fff5d3e30bee6dc1046e7e90e06fea5c9c5332c67bf93'
   citation: 'Lefebvre, A. H., Ballal, D. R. (2010). Gas Turbine Combustion: Alternative Fuels and Emissions,
     3rd ed. CRC Press, Boca Raton.'
   id: ISBN 978-1-4200-8605-8 (ebook)
@@ -3494,6 +3660,7 @@ documents:
     method, Eqs. 4.30/4.31 and Eq. 8.15 (Lefebvre's own); figures reprinted from theses (Kaddah, Freeman,
     Norster, Sridhara) carry their author as `after:` if digitised.
 - file: sources/heat_transfer/han_wright2006_DOE_handbook_4.2.2.2_internal_cooling.pdf
+  sha256: 'd6efeda25682482202ca7846d8cbc4b13d23c8d02d0830b298f41e71620bcde0'
   citation: 'Han, J.-C., Wright, L. M. (2006). Enhanced internal cooling of turbine blades and vanes. In:
     The Gas Turbine Handbook (R. Dennis, ed.), Sec. 4.2.2.2, pp. 321-352. U.S. DOE National Energy Technology
     Laboratory.'
@@ -3517,6 +3684,7 @@ documents:
   notes: Arrived 2026-10-27 as docs/new/4-2-2-2.pdf. Same handbook as sources/heat_transfer/cunha2006_DOE_handbook_4.4_heat_transfer_analysis.pdf. The rib correlation figures are images; HDE 2013 (sources/heat_transfer/han/)
     carries the same material in more detail.
 - file: sources/heat_transfer/cunha2006_DOE_handbook_4.4_heat_transfer_analysis.pdf
+  sha256: '7050a9059f1a3ac11d1893dd6a3f7163115b1ace09637eda9bb0bdd8bd0b2a5d'
   citation: 'Cunha, F. J. (2006). Heat transfer analysis. In: The Gas Turbine Handbook (R. Dennis, ed.),
     Sec. 4.4, pp. 389-410. U.S. DOE National Energy Technology Laboratory.'
   id: NETL Gas Turbine Handbook 4.4
@@ -3537,6 +3705,7 @@ documents:
   records: []
   notes: Arrived 2026-10-27 as docs/new/4-4.pdf. Same handbook as sources/heat_transfer/han_wright2006_DOE_handbook_4.2.2.2_internal_cooling.pdf.
 - file: sources/flow_network/kukutla2017_impingement_film_nozzle_network.pdf
+  sha256: '12e78ec0cafe15844b9a7bc3ec503a0aa7122ae59b95ed76c263adaeb9794e83'
   citation: 'Kukutla, P. R., Prasad, B. V. S. S. S. (2017). Coupled flow network model and CFD analysis
     for a combined impingement and film cooled gas turbine nozzle guide vane. AMSE J. Modelling B 86(1),
     250-270.'
@@ -3556,6 +3725,7 @@ documents:
   records: []
   notes: Arrived 2026-10-27 as docs/new/86.01_18.pdf.
 - file: sources/flow_network/alizadeh2012_GTINDIA2012-9644_blade_cooling_network.pdf
+  sha256: 'dd1eb7513ec47bc3fdcbf26c9cc5a5fda92b41ccfac7e665c909b6f165f49620'
   citation: 'Alizadeh, M., Izadi, A., Fathi, A., Khaledi, H. (2012). Flow and heat transfer analysis of
     turbine blade cooling passages using network method. Proc. ASME Gas Turbine India Conference, GTINDIA2012-9644,
     Mumbai.'
@@ -3578,6 +3748,7 @@ documents:
   records: []
   notes: Arrived 2026-10-27 as docs/new/ASMEConference2012-9644.pdf.
 - file: sources/flow_network/meitner2004_NASA_TM-2004-211885.pdf
+  sha256: '59c9fa83615f5a5437da465517944ea07af4c15dba3b37edce72128be6524457'
   citation: 'Meitner, P. L. (2004). Procedure for determining one-dimensional flow distributions in arbitrarily
     connected passages without the influence of pumping. NASA/TM-2004-211885, ARL-TR-3213 (also ASME GT2003-38061).'
   id: NASA-TM-2004-211885
@@ -3597,6 +3768,7 @@ documents:
   records: []
   notes: Fetched from NTRS 20040082327 (public) on 2026-10-27 during the docs/new screening.
 - file: sources/flow_network/meitner1990_NASA_TP-2985_CPF_coolant_passage_flow_code.pdf
+  sha256: '37daa369c0a8ea3a5d2df0de04b261a447d98d8a7bad22e1dbf4e481c44bc68c'
   citation: Meitner, P. L. (1990). Computer code for predicting coolant flow and heat transfer in turbomachinery.
     NASA Technical Paper 2985, AVSCOM Technical Report 89-C-008 (E-5186), Lewis Research Center, September 1990.
   id: NASA TP-2985 (NTRS 19900018406)
@@ -3629,6 +3801,7 @@ documents:
     wanted entry said "AVSCOM TP"). Its ref. 5, the preliminary CPF report, is Kumar, Roelke & Meitner 1989,
     NASA TM-102079 (NTRS 19890013491, not fetched).
 - file: sources/combustor_network/andreini2007_CEAS-2007-026_liner_temperature.pdf
+  sha256: '6d6bc2604a031aebfcba5f4fe17978b3c45854ba5028a572046dd1eee48cfd79'
   citation: 'Andreini, A., Carcasci, C., Ceccherini, A., Facchini, B., Surace, M., Coutandin, D., Gori,
     S., Peschiulli, A. (2007). Combustor liner temperature prediction: a preliminary tool development and
     its application on effusion cooling systems. 1st CEAS European Air and Space Conference, CEAS-2007-026,
@@ -3653,6 +3826,7 @@ documents:
   notes: Arrived 2026-10-27 as docs/new/ceas-2007-026.pdf. PDF metadata creation date is wrong (1999); the conference is 2007.
     Its validation plate is Andreini et al. ICAS 2006 (held, screened 2026-11-02).
 - file: sources/heat_transfer/film/Andreini_et_al_2006_ICAS2006-5.8.3_effusion_liner_THALIE.pdf
+  sha256: '3af4975fa9b09d91b38ff5c5189264fd9fd96e0e69b62a50110ca9e79b99d440'
   citation: Andreini, A., Champion, J. L., Facchini, B., Mercier, E., Surace, M. (2006). Advanced liner cooling
     numerical analysis for low emission combustors. 25th ICAS Congress, Hamburg, paper ICAS 2006-5.8.3.
   id: ICAS 2006-5.8.3 (icas.org archive 181.PDF)
@@ -3688,6 +3862,7 @@ documents:
     of the paper; the CNRS/Poitiers group's own papers on it might carry the hole angle and wall temperatures
     (not searched).
 - file: sources/radiation/bordbar_et_al_2021_IJHMT_173_121207_pressure_dependent_WSGG.pdf
+  sha256: '164641ef7c531fb1e35c3c9e94350010b10b844e4a2a02008375b605689b448a'
   citation: 'Bordbar, H., Coelho, F. R., Fraga, G. C., Franca, F. H. R., Hostikka, S. (2021). Pressure-dependent
     weighted-sum-of-gray-gases models for heterogeneous CO2-H2O mixtures at sub- and super-atmospheric pressure.
     Int. J. Heat Mass Transfer 173, 121207.'
@@ -3713,6 +3888,7 @@ documents:
   records: []
   notes: Arrived 2026-10-28 as docs/new/Pressure-dependent-weighted-sum-of-gray-gases-model_2021_International-Journ.pdf.
 - file: sources/radiation/bordbar_et_al_2021_IJHMT_173_121207_supplementary_mmc1_mmc2.zip
+  sha256: '8d7cb10e8895f90282741e613ec96ded864eac805a3af1a997f08307024034eb'
   citation: 'Bordbar, H., Coelho, F. R., Fraga, G. C., Franca, F. H. R., Hostikka, S. (2021). Supplementary
     material to Int. J. Heat Mass Transfer 173, 121207: mmc1 (Appendix A, WSGG model constants, 11 pp.) and mmc2
     (MATLAB function, sample script and coefficient files Final_PWSGG_Model_Coef_Pt001-010.dat).'
@@ -3740,6 +3916,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/ScienceDirect_files_28Oct2026_13-20-09.809.zip (outer zip holding mmc1.pdf
     and mmc2.zip). Extracted for reading into tmp/bordbar2021_supp/ (gitignored); no code executed.
 - file: sources/radiation/bordbar_wecel_hyppanen_2014_CNF_161_2435_LBL_WSGG_H2O_CO2.pdf
+  sha256: 'a68f5e260220b477e33f87e07752bd9e5035ffd25f46fbbed42d27e6c2077183'
   citation: 'Bordbar, M. H., Wecel, G., Hyppanen, T. (2014). A line by line based weighted sum of gray gases model
     for inhomogeneous CO2-H2O mixture in oxy-fired combustion. Combustion and Flame 161, 2435-2445.'
   id: doi:10.1016/j.combustflame.2014.03.013
@@ -3767,6 +3944,7 @@ documents:
     signs in Table 1 (and elsewhere, e.g. "1  YCO2"); transcribe the coefficients from the rendered page.
     The authors offer the coefficients as a data file with Matlab code on request.
 - file: sources/combustor_network/topal2014_CONV14_1D_heat_transfer_combustor.pdf
+  sha256: '13e51d74cb04d819b7dbc75fbb580dbdbd7507e6ca6c8f5b053008424da0b926'
   citation: 'Topal, A., Catori, C., Cagan, L., Uslu, S., Turan, O., Piskin, A. (2014). One-dimensional
     heat transfer analysis and experimental investigation of a gas turbine combustor. CONV-14 Int. Symp.
     on Convective Heat and Mass Transfer, Turkey, paper CONV-14-123.'
@@ -3806,6 +3984,7 @@ documents:
   records: []
   notes: Arrived 2026-10-27 as docs/new/CONV14_1D-HT-GTCC-r1.pdf. A second copy arrived 2026-11-02 (next entry).
 - file: sources/combustor_network/gouws2006_SAJS_combustor_network_solver.pdf
+  sha256: 'b574b1defe1b6436cbc51610b567bf4bb9e7c073725a63a0dc7ad837894df0d9'
   citation: 'Gouws, J. J., Morris, R. M., Visser, J. A. (2006). Modelling of a gas turbine combustor using
     a network solver. S. Afr. J. Science 102, 533-536 (with online supplementary Tables 2-4).'
   id: S. Afr. J. Sci. 102:533
@@ -3827,6 +4006,7 @@ documents:
   records: []
   notes: Arrived 2026-10-27 as docs/new/EJC96482.pdf.
 - file: sources/combustor_network/varol2015_reverse_flow_combustor_network_rev2.pdf
+  sha256: 'e7b74917e7a7958cd529112da2705172819e5514c3f979f735839695fb53f2ab'
   citation: 'Varol, G., Sarikaya, G., Tuncer, O. (2015). One dimensional network model for a reverse flow
     combustor. AIAA paper, Istanbul Technical University (venue and number not printed; filename suggests
     the 2015 AIAA Joint Propulsion Conference).'
@@ -3874,6 +4054,7 @@ documents:
     introduction reworded, Tables 1-5 number for number identical). The damaged copy was deleted 2026-11-07
     at the user''s request.'
 - file: sources/heat_transfer/panduranga2013_turbine_rotor_blade_thermal.pdf
+  sha256: '25ce30186730412abd245cb7ef28b4f569423d86da5243c9a4c39502cbda4742'
   citation: 'Panduranga, B. P., Suresh, B., Purushotham, H. R. (2013). Thermal analysis of a turbine rotor
     blade. Int. Conf. on Advanced Materials, Manufacturing, Management and Thermal Sciences (AMMMT 2013),
     SIT Tumkur, ISBN 978-81-926304-0-3.'
@@ -3890,6 +4071,7 @@ documents:
   records: []
   notes: Arrived 2026-10-27 as docs/new/THERMAL_ANALYSIS_OF_A_TURBINE_ROTOR_BLAD.pdf.
 - file: sources/orifices/lichtarowicz-et-al-1965-discharge-coefficients-for-incompressible-non-cavitating-flow-through-long-orifices.pdf
+  sha256: 'f668c11f692421e4d4e9464cfd22388080d28bacfa1bff0f5c8c485645b03319'
   citation: Lichtarowicz, A., Duggins, R. K., Markland, E. (1965). Discharge coefficients for incompressible
     non-cavitating flow through long orifices. J. Mechanical Engineering Science 7(2), 210-219.
   topic: [orifice]
@@ -3903,6 +4085,7 @@ documents:
   records: [validation/cooling/extractions/lichtarowicz_1965_long_orifice.md, python/tests/test_orifice_lichtarowicz.py]
   code: ['include/orifice.h: namespace lichtarowicz, Lichtarowicz1965']
 - file: sources/orifices/mcgreehan_schotsch_1988.pdf
+  sha256: 'e75675eed6a7170d86144a20f76b6e1def1ee2d6efb3dcf611233f9d72e2ebe2'
   citation: McGreehan, W. F., Schotsch, M. J. (1988). Flow characteristics of long orifices with rotation
     and corner radiusing. ASME J. Turbomachinery 110(2), 213-217.
   id: ASME 87-GT-162
@@ -3920,6 +4103,7 @@ documents:
   records: [validation/cooling/extractions/orifice_discharge_coefficient.md, validation/cooling/data/mcgreehan_schotsch1988/]
   code: ['include/orifice.h: orifice::mcgreehan_schotsch, McGreehanSchotsch1988']
 - file: sources/orifices/thole_gritsch_schulz_wittig_1997_JFE_119_533_entrance_crossflow.pdf
+  sha256: 'c532f40d661817f718cecbe3304b53ef711d30a08de08e17a34d9a55e423eb53'
   citation: 'Thole, K. A., Gritsch, M., Schulz, A., Wittig, S. (1997). Effect of a crossflow at the entrance to a
     film-cooling hole. ASME J. Fluids Engineering 119, 533-540.'
   id: J. Fluids Eng. 119 (Sept. 1997)
@@ -3946,6 +4130,7 @@ documents:
     Schulz & Wittig 1997 ASME 97-GT-165 (expanded exits; held since 2026-11-02 as its journal version, J.
     Turbomach. 120, 557, next entry) and Leylek & Zerkle 1994 (entrance separation).
 - file: sources/orifices/gritsch_schulz_wittig_1998_JT_120_557_expanded_exit_hole_cd.pdf
+  sha256: '56ebb4c9396735175648de5489391c45c8fc014ea7db4852d5586b4e014a870a'
   citation: 'Gritsch, M., Schulz, A., Wittig, S. (1998). Discharge coefficient measurements of film-cooling holes
     with expanded exits. ASME J. Turbomachinery 120(3), 557-563 (ASME 97-GT-165).'
   id: ASME 97-GT-165
@@ -4001,6 +4186,7 @@ documents:
     et al. 1998 J. Turbomach. 120, 327 (flowfields); Hay & Lampard 1995 ASME 95-GT-15 (flared-hole Cd, Ma_m <= 0.3).
     Not checked: the per-curve point counts are approximate (counted off 110 dpi page images); no digitisation done.'
 - file: sources/orifices/yan_et_al_2026_aerospace_13_555_rotating_inclined_orifice_cd.pdf
+  sha256: 'ab6641885b81b686896f76d95fa09d0f87f66df785e4b189eb2b16328ed8a91e'
   citation: 'Yan, J., Wei, S., Mao, J., Yang, Z., Han, F., Wang, L. (2026). A model for accurate prediction of
     discharge coefficients in rotating orifices with different wall inclination angles. Aerospace 13, 555.
     doi:10.3390/aerospace13060555'
@@ -4020,6 +4206,7 @@ documents:
   records: []
   notes: Arrived 2026-10-28 as docs/new/aerospace-13-00555-v2.pdf.
 - file: sources/orifices/hay_lampard_1996_ASME_96-GT-492_cooling_hole_cd_review.pdf
+  sha256: '710140f0d62581d7367df4ce1744dfd0767dd5f6d64ac5f0e2dcb0439e1d783a'
   citation: 'Hay, N., Lampard, D. (1996). Discharge coefficient of turbine cooling holes: a review. ASME 96-GT-492
     (Proc. ASME Turbo Expo 1996, Vol. 4, V004T09A056).'
   id: ASME 96-GT-492
@@ -4048,6 +4235,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/v004t09a056-96-gt-492.pdf (suggested by the user for its Fig. 4). Cites the
     Benmansour thesis as 1983 (reference list) and 1981 (Fig. 4 legend).
 - file: sources/orifices/hay_lampard_benmansour_1983_JEP_105_243_crossflow_cd.pdf
+  sha256: '926756f5b110907d7bda7e3a59cae643ca804221031ef51f840b79571c4692e7'
   citation: 'Hay, N., Lampard, D., Benmansour, S. (1983). Effect of crossflows on the discharge coefficient of film
     cooling holes. ASME J. Engineering for Power 105(2), 243-248 (ASME 82-GT-147).'
   id: ASME 82-GT-147
@@ -4086,6 +4274,7 @@ documents:
     Benmansour's M.Phil. thesis (Nottingham, 1983), not digitised online; dropped from wanted (user, 2026-10-28) --
     Hay & Lampard 1996 Fig. 4 reprints its inlet-crossflow points.
 - file: sources/orifices/rogers_hersh_1976_NASA_CR-2681_grazing_flow_orifice_resistance.pdf
+  sha256: '34ce33b9882f01a5323669848b241fd09ca53becbfe999d5e258f94cfd1ec9b0'
   citation: 'Rogers, T., Hersh, A. S. (1976). Effect of grazing flow on steady-state resistance of isolated
     square-edged orifices. NASA CR-2681 (NAS3-17858), Hersh Acoustical Engineering.'
   id: NASA-CR-2681
@@ -4124,6 +4313,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/19760015890.pdf (NTRS 19760015890). Primary data (Hersh Acoustical
     Engineering wind tunnel); cites TN 3663 for suction Cd without comparing numbers.
 - file: sources/orifices/hersh_walker_1979_NASA_CR-3177_grazing_flow_helmholtz_impedance.pdf
+  sha256: 'b7456f04d106893e98af26344bf7d6076888a4996079416f315b74b90eb3c69d'
   citation: 'Hersh, A. S., Walker, B. (1979). Effect of grazing flow on the acoustic impedance of Helmholtz
     resonators consisting of single and clustered orifices. NASA CR-3177 (NAS3-19745).'
   id: NASA-CR-3177
@@ -4148,6 +4338,7 @@ documents:
   records: []
   notes: Arrived 2026-10-28 as docs/new/19790023885.pdf (NTRS 19790023885). Acoustic follow-on to CR-2681.
 - file: sources/orifices/Rohde_NASA_TN_D-5467.pdf
+  sha256: '69498a1428ea74083c48ed25b0e38049dc537e2ea5c7ab2a0fb50ce4a1b680aa'
   citation: Rohde, J. E., Richards, H. T., Metger, G. W. (1969). Discharge coefficients for thick plate
     orifices with approach flow perpendicular and inclined to the orifice axis. NASA TN D-5467, Lewis
     Research Center, October 1969.
@@ -4164,6 +4355,7 @@ documents:
   records: [validation/cooling/data/rohde1969/, validation/cooling/data/mcgreehan_schotsch1988/fig6_rohde_td0p51.csv,
     validation/cooling/extractions/orifice_discharge_coefficient.md, python/tests/test_orifice_validation.py]
 - file: sources/orifices/wu_burton_schoenau_2002_orifces.pdf
+  sha256: 'ffe8ebf9ba3a03ffbd14393c67adb24c8e1b3136df8e11e20809cfeac609344c'
   citation: Wu, D., Burton, R., Schoenau, G. (2002). An empirical discharge coefficient model for orifice
     flow. Int. J. Fluid Power 3(3), 13-18.
   topic: [orifice]
@@ -4178,6 +4370,7 @@ documents:
   records: [validation/cooling/extractions/orifice_discharge_coefficient.md]
   code: ['src/orifice.cpp: comment, deliberately not implemented']
 - file: sources/vatistas/vatistas_doi_10.1007_BF00198434.pdf
+  sha256: 'cd283eab4f01b7ba7b265d0350008446bc623011285f589c946ee774c6b04fb1'
   citation: Vatistas, G. H., Kozel, V., Mih, W. C. (1991). A simpler model for concentrated vortices.
     Experiments in Fluids 11, 73-76.
   id: DOI 10.1007/BF00198434
@@ -4194,6 +4387,7 @@ documents:
   code: [include/vatistas.h, src/vatistas.cpp, python/combaero/vortex.py]
   notes: PDF page 1 begins with the end of the preceding article (Mao & Hanratty) in the same issue.
 - file: sources/heat_transfer/impingement/AlDabagh_Andrews_1990_JTurbomach_112_467_impingement_effusion_hole_number.pdf
+  sha256: '7b6f1582b753cfc432e11432015f3eff18ef89dc348c19bebef66cbfe0ecb0f8'
   citation: 'Al Dabagh, A. M., Andrews, G. E., Abdul Husain, R. A. A., Husain, C. I., Nazari, A., Wu, J. (1990).
     Impingement/effusion cooling: the influence of the number of impingement holes and pressure loss on the
     heat transfer coefficient. ASME J. Turbomachinery 112(3), 467-476.'
@@ -4233,6 +4427,7 @@ documents:
     an OCR layer; equations and figure labels read off the page images. Fig. 11-16 are log-log scans of fair
     quality, digitisable.'
 - file: sources/junction/bajura_jones_1976_JFE_98_654_flow_distribution_manifolds.pdf
+  sha256: 'f8477c578ac82939d6d4e5acd456bf178bd8e3989a047c13fc7238a8e7ff4dd5'
   citation: Bajura, R. A., Jones, E. H., Jr. (1976). Flow distribution manifolds. ASME J. Fluids Eng. 98(4),
     654-665.
   id: ASME 76-FE-7
@@ -4271,6 +4466,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/654_1_Bajura_1976.pdf (moved here from the wanted list). Scan with an
     OCR layer (garbled in the equations); read from the page images.
 - file: sources/junction/acrivos_babcock_pigford_1959.pdf
+  sha256: '0e21a55dd332791605262b1c339ba407302ec44b223980d00fca9137685841aa'
   citation: Acrivos, A., Babcock, B. D., Pigford, R. L. (1959). Flow distributions in manifolds. Chemical
     Engineering Science 10(1-2), 112-124.
   id: DOI 10.1016/0009-2509(59)80030-0
@@ -4340,6 +4536,7 @@ documents:
     (irrigation lateral), no data. Worth a 300 dpi render and digitisation: Fig. 3 (k vs bleed ratio, both series) and Fig. 12 (port
     flows and wall pressures).'
 - file: sources/heat_transfer/turbulence/VanFossen_Ching_1994_NASA_TM-106503_stagnation_length_scale.pdf
+  sha256: '2bc2d57eaf63521fa485699de627d45b29ad3c80f4de8e92fa712147765ac636'
   citation: Van Fossen, G. J., Ching, C. Y. (1994). Measurements of the influence of integral length scale
     on stagnation region heat transfer. NASA TM-106503 (prepared for the 5th Symposium on Transport Phenomena
     and Dynamics of Rotating Machinery, Kaanapali, May 1994).
@@ -4363,6 +4560,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/19940020701.pdf (NTRS accession number). Scan with an OCR layer; Eq.
     11 is an image (its constants are printed only on Fig. 10).
 - file: sources/heat_transfer/turbulence/Lang_2023_RWTH_diss_turbulent_decay_compressor_cascade.pdf
+  sha256: '707691669d26018da0ed26e671fcecfe5b19d128aef49d8e2bec32fe6d6530fb'
   citation: Lang, H. M. (2023). Einfluss der turbulenten Abklingrate auf die Umstroemung eines Verdichtergitters
     (Impact of the turbulent decay on a compressor cascade flow). Dr.-Ing. dissertation, RWTH Aachen University.
   topic: [other]
@@ -4391,6 +4589,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/987434.pdf (the number is likely the RWTH publications record id,
     unverified). Oral examination 10 Nov 2023; the PDF is dated 2024. German text, English abstract p. ii.
 - file: sources/jet_mixing/Holdeman_Smith_Clisset_Lear_2005_NASA_TM-2005-213137_spreadsheet_row_of_jets.pdf
+  sha256: '009e4d946bf458511cf0abb5a95ddafd6647b552e39c618e1e1c9e65e0953d88'
   citation: 'Holdeman, J. D., Smith, T. D., Clisset, J. R., Lear, W. E. (2005). A spreadsheet for the mixing of
     a row of jets with a confined crossflow. NASA/TM-2005-213137.'
   id: NASA/TM-2005-213137
@@ -4417,6 +4616,7 @@ documents:
   notes: Arrived 2026-10-28 as docs/new/A_Spreadsheet_for_the_Mixing_of_a_Row_of.pdf. 91 pp.; text layer
     clean.
 - file: sources/heat_transfer/film/Lawson_2011_PhD_PennState_particle_deposition_film_cooling.pdf
+  sha256: '913940237fe58b950beaa32e4894161f1f348ae45abd1841bdc8e3ddbd8fb945'
   citation: Lawson, S. A. (2011). Simulations of multi-phase particle deposition on film-cooled turbine sections.
     PhD dissertation, The Pennsylvania State University.
   topic: [film]
@@ -4438,6 +4638,7 @@ documents:
     unwanted.
 
 - file: sources/materials/haynes_230_alloy_brochure_H-3000.pdf
+  sha256: 'b15f5f029fec42d30eeb22aaa2758021813c19c325f6675537a3d680e4218355'
   citation: Haynes International (2021). HAYNES 230 alloy (UNS N06230), product brochure H-3000O.
   topic: [other]
   content: Composition, physical properties (density, electrical resistivity, thermal diffusivity, thermal
@@ -4460,6 +4661,7 @@ documents:
   notes: Supplied by the user 2026-10-28 (the haynesintl.com PDF links return 403 to automated fetches). Melting range 1301-1371 C gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/combustion/gordon_mcbride_1994_NASA_RP-1311_part1_analysis.pdf
+  sha256: '6241ca2eece86c36edf82bc400039bc83f137223ebf1db7e3eb0186e6b23d097'
   citation: Gordon, S., McBride, B. J. (1994). Computer program for calculation of complex chemical equilibrium
     compositions and applications. I. Analysis. NASA RP-1311.
   id: NTRS 19950013764
@@ -4479,6 +4681,7 @@ documents:
   notes: Fetched from NTRS (open, government public use) 2026-10-29.
 
 - file: sources/materials/zhu_2000_NASA_TM-2000-210237_TBC_thermophysical_properties.pdf
+  sha256: '5a6b90426191793212f5d9c59863bcc5e7207d40cac9be7e190ca8bdfe4cf107'
   citation: Zhu, D., Miller, R. A. (2000). Thermophysical and thermomechanical properties of thermal barrier coating
     systems. NASA/TM-2000-210237.
   id: NTRS 20000083966
@@ -4506,6 +4709,7 @@ documents:
   notes: Arrived 2026-10-29 in docs/new as 20000083966.pdf (NTRS accession); title and authors checked on NTRS.
 
 - file: sources/materials/haynes_hastelloy_x_alloy_brochure.pdf
+  sha256: 'fc6c0197fc5ea63c961327981b3fd8d1cfa8685851967f98d7149b4b0a54ed56'
   citation: Haynes International. HASTELLOY X (UNS N06002) alloy, product brochure (web edition, accessed 2026-10-29).
   topic: [other]
   content: Composition, physical properties (thermal conductivity, specific heat, expansion, modulus, ...)
@@ -4521,6 +4725,7 @@ documents:
   notes: Supplied by the user 2026-10-29 (the manufacturer's site blocks automated downloads). Melting range 1260-1355 C gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/materials/haynes_188_alloy_brochure.pdf
+  sha256: 'eb39651df305b4b173d9c92dd63fe1b0477107ca20a157d4622c5cd96b27d9a8'
   citation: Haynes International. HAYNES 188 (UNS R30188) alloy, product brochure (web edition, accessed 2026-10-29).
   topic: [other]
   content: Composition, physical properties (thermal conductivity, specific heat, expansion, modulus, ...)
@@ -4535,6 +4740,7 @@ documents:
   notes: Supplied by the user 2026-10-29 (the manufacturer's site blocks automated downloads). Melting range 1315-1410 C gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/materials/haynes_263_alloy_brochure.pdf
+  sha256: 'fba0c806baa8490e0a055b8bcbae3a732df6b7192334c876eaec26f98cbb17a7'
   citation: Haynes International. HAYNES 263 (UNS N07263) alloy, product brochure (web edition, accessed 2026-10-29).
   topic: [other]
   content: Composition, physical properties (thermal conductivity, specific heat, expansion, modulus, ...)
@@ -4549,6 +4755,7 @@ documents:
   notes: Supplied by the user 2026-10-29 (the manufacturer's site blocks automated downloads). Melting range 1300-1355 C gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/materials/zhu_miller_1999_NASA_TM-1999-209069_TBC_conductivity_modulus.pdf
+  sha256: '79aed5531e86157e30412f0ef517f46b0fcfa836553be86bcdaaecd7201bd369'
   citation: Zhu, D., Miller, R. A. (1999). Thermal conductivity and elastic modulus evolution of thermal barrier
     coatings under high heat flux conditions. NASA/TM-1999-209069.
   id: NTRS 19990047263
@@ -4567,6 +4774,7 @@ documents:
   notes: Arrived 2026-10-29 in docs/new twice (19990047263.pdf and zhu1999.pdf, same report); title and authors
     checked on NTRS.
 - file: sources/materials/zhu_miller_nagaraj_bruce_2000_NASA_TM-2000-210238_EBPVD_conductivity.pdf
+  sha256: 'df62baae1eb2f754955a3158da57118b05b276a9a1f63b8a360b924dea3aa1e3'
   citation: Zhu, D., Miller, R. A., Nagaraj, B. A., Bruce, R. W. (2000). Thermal conductivity of EB-PVD thermal
     barrier coatings evaluated by a steady-state laser heat flux technique. NASA/TM-2000-210238 (E-12357);
     International Conference on Metallurgical Coatings and Thin Films, San Diego, April 2000.
@@ -4600,6 +4808,7 @@ documents:
   records: []
   notes: Fetched 2026-11-02 from NTRS (20000088491, public).
 - file: sources/materials/planques_2017_OxidMet_88_133_plasma_TBC_property_survey.pdf
+  sha256: '13135fd51721ff182dd8704e6f1ad86046e49bdb42b17387f3dbe56d867ebf92'
   citation: Planques, P., Vidal, V., Lours, P., Proton, V., Crabos, F., Huez, J., Viguier, B. (2017). Mechanical and
     thermo-physical properties of plasma-sprayed thermal barrier coatings -- a literature survey. Oxidation of
     Metals 88(1-2), 133-143.
@@ -4618,6 +4827,7 @@ documents:
   notes: Arrived 2026-10-29 in docs/new; HAL open-archive copy.
 
 - file: sources/materials/hastelloy_x_sheet_760C_datasheet_compilation.pdf
+  sha256: 'f306eb9f94550ec38ac72a46ce42e0d46d989c6942120d07babf4ba1e87153b1'
   citation: 'Haynes Hastelloy X alloy, sheet, tested at 760 C (1400 F). Data sheet, "data provided by the
     manufacturer, Haynes International, Inc." (web compilation, accessed 2026-10-29).'
   topic: [other]
@@ -4636,6 +4846,7 @@ documents:
   notes: Supplied by the user 2026-10-29.
 
 - file: sources/materials/haynes_25_alloy_brochure.pdf
+  sha256: '89b48730661c9bb526c906257b35c609a2bb6b17a6c778044d2284e8c1fdc563'
   citation: Haynes International. HAYNES 25 (L-605, UNS R30605) alloy, product brochure (web edition, accessed
     2026-10-29).
   topic: [other]
@@ -4651,6 +4862,7 @@ documents:
   notes: Supplied by the user 2026-10-29. Melting range 1330-1410 C gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/materials/special_metals_inconel_625.pdf
+  sha256: 'f5379cccfe1fe760ebdc20e3f590e709e5acd1c0063d212d4ae5fd6568496d98'
   citation: Special Metals Corporation. INCONEL alloy 625, product data sheet (2013).
   topic: [other]
   content: Composition, physical constants, Table 3 thermal and electrical properties (-250 to 2000 F),
@@ -4674,6 +4886,7 @@ documents:
   code: [src/materials.cpp, include/materials.h]
   notes: Supplied by the user 2026-10-29. Melting range 1290-1350 C (Table 2) gives T_solidus, the cap of the issue 882 k(T) envelope.
 - file: sources/materials/haynes_625_alloy_brochure.pdf
+  sha256: '510ee0d3e80a0f4137b26fb21b2d2bb2d08afb539481a8af2639bbe181104c3c'
   citation: Haynes International. HAYNES 625 (UNS N06625) alloy, product brochure (web edition, 29 pp., generated
     2026-11-02).
   topic: [other]
@@ -4710,6 +4923,7 @@ documents:
     Not checked: the mechanical, corrosion and fabrication sections; the expansion and modulus columns against
     Special Metals Table 3/4.'
 - file: sources/materials/Du_2025_MaterDes_251_113333_binder_jet_IN625_LFA.pdf
+  sha256: 'e36244f727bca1c957f589241790d28dc6641d9e7ebde61282f218a35389c5ba'
   citation: Du, W., Hayes, J., Myers, A., Barua, B., Yu, X., Singh, D. (2025). Development of a high-temperature
     Inconel 625 heat exchanger by model design and binder jetting additive manufacturing. Materials & Design 251,
     113333.
@@ -4746,6 +4960,7 @@ documents:
     Fig. 11 lie above Battelle from ~300 C, provenance unstated). Not checked: the HX model and test sections.'
 
 - file: sources/materials/special_metals_nimonic_75_SMC-058.pdf
+  sha256: 'f8a4e1b215531f213d1e024a6680b05b9656a73d948663c0b969cd499a2e11ed'
   citation: Special Metals Corporation. NIMONIC alloy 75, publication SMC-058 (2004).
   topic: [other]
   content: Composition, physical constants at room temperature, elevated-temperature tensile and creep charts.
@@ -4758,6 +4973,7 @@ documents:
   notes: Supplied by the user 2026-10-29. Melting range 1340-1380 C gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/materials/virgamet_nimonic_75_alloy_N75.pdf
+  sha256: 'e1e9c423b532ec8460d5f3cdd5bc2d55371479d99358c56e22dc68cf7a5d626a'
   citation: 'Virgamet. Nimonic 75, Alloy N75, 2.4630, 2.4951 - nickel alloy, product data page (web, accessed
     2026-10-29).'
   topic: [other]
@@ -4773,6 +4989,7 @@ documents:
   code: [src/materials.cpp, include/materials.h]
   notes: Supplied by the user 2026-10-29.
 - file: sources/materials/powell_ho_liley_1966_NSRDS-NBS-8_thermal_conductivity.pdf
+  sha256: '28da1098d002abb2e5049ace60e35bddda5fa0b6da55d1cfb80f3c5f4644403b'
   citation: 'Powell, R. W., Ho, C. Y. and Liley, P. E. Thermal Conductivity of Selected Materials. NSRDS-NBS 8,
     National Bureau of Standards, 1966.'
   topic: [other]
@@ -4790,6 +5007,7 @@ documents:
   code: [src/materials.cpp, include/materials.h]
   notes: Supplied by the user 2026-10-29. Table 2b is page 16 (pdf 23), Table 14 page 72 (pdf 79), both rotated.
 - file: sources/materials/suedwestfalen_1.4923_X22CrMoV12-1_datasheet.pdf
+  sha256: '92b037fdb416ead5c21f5e0851a16d820437492bd5d39a69e68f9fd39c8cbe28'
   citation: Edelstahlwerke Suedwestfalen GmbH. 1.4923 X22CrMoV12-1, material data sheet, revision 4923-0 (2001).
   topic: [other]
   content: Composition, physical properties (conductivity at 20 and 650 C, specific heat, expansion), heat
@@ -4803,6 +5021,7 @@ documents:
   code: [src/materials.cpp, include/materials.h]
   notes: Supplied by the user 2026-10-29. Publisher identified from the page logo.
 - file: sources/materials/cleveland_cliffs_armco_17-4_ph_datasheet.pdf
+  sha256: '76f2f2bf15daf3f4c9a3d8a3b3d2037d338e0d0b51edfe87d6fae2ddc8e8be1f'
   citation: Cleveland-Cliffs. ARMCO 17-4 PH stainless steel, product data bulletin (10/2022).
   topic: [other]
   content: Composition, heat treatments, mechanical and physical properties (Table 17), corrosion, fabrication.
@@ -4814,6 +5033,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29.
 - file: sources/materials/cleveland_cliffs_armco_15-5_ph_datasheet.pdf
+  sha256: '5dc0116a1405330df9b393655db42adaa1cd3671f9d2f5b28b2a2b40f7599f2f'
   citation: Cleveland-Cliffs. ARMCO 15-5 PH stainless steel, product data bulletin (07/2022).
   topic: [other]
   content: Composition, heat treatments, mechanical and physical properties (Table 18), corrosion, fabrication.
@@ -4825,6 +5045,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29.
 - file: sources/materials/nist_cryogenic_al6061_t6.pdf
+  sha256: 'b5ea5641ea1ace5d25d3b184dbd1000a143fc8f786bdfa5b3aaf6d76bf511946'
   citation: 'NIST Cryogenics Technologies Group. Material Properties: Aluminum 6061-T6 (UNS AA96061), web page
     (no longer updated; accessed 2026-10-29).'
   topic: [other]
@@ -4841,6 +5062,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29.
 - file: sources/materials/nist_cryogenic_304_stainless.pdf
+  sha256: 'e947b8824c29a1bc6d19040477545857c715fd5cd266356aedc27144f4d372dc'
   citation: 'NIST Cryogenics Technologies Group. Material Properties: 304 Stainless (UNS S30400), web page
     (accessed 2026-10-29).'
   topic: [other]
@@ -4856,6 +5078,7 @@ documents:
     "Stainless Steel 304" -> sources/materials/nist_cryogenics/Stainless_Steel_304.json (page
     https://trc.nist.gov/cryogenics/materials/304Stainless/304Stainless_rev.htm, data 4-300 K).'
 - file: sources/materials/nist_cryogenic_310_stainless.pdf
+  sha256: 'c2e851846e12f55efaa342f6caf86902aaddbf8b1caab902eaae91d67856a976'
   citation: 'NIST Cryogenics Technologies Group. Material Properties: 310 Stainless (UNS S31000), web page
     (accessed 2026-10-29).'
   topic: [other]
@@ -4868,6 +5091,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29.
 - file: sources/materials/ho_chu_1977_CINDAS-45_DTIC-ADA129160_AISI_stainless_resistivity_conductivity.pdf
+  sha256: '673829d489356e2b8f4891a08c0cce10c69ad1628954f5f08f918d52bfd6209a'
   citation: 'Ho, C. Y., Chu, T. K. (1977). Electrical resistivity and thermal conductivity of nine selected AISI
     stainless steels. CINDAS Report 45, Purdue University, prepared for the American Iron and Steel Institute.
     DTIC ADA129160 (distribution unlimited).'
@@ -4894,6 +5118,7 @@ documents:
     (https://archive.org/download/DTIC_ADA129160/DTIC_ADA129160.pdf); apps.dtic.mil returns 403 to scripts.
     Other tables (303, 316, 317, 321, 347, 410, 430) are there if those steels are needed.'
 - file: sources/materials/kim_1975_ANL-75-55_stainless_steel_thermophysical_properties.pdf
+  sha256: '5a5566a64a1843379507c39ac90b7aafc8522519698f4dd11e5148e1e7e6ad29'
   citation: 'Kim, C. S. (1975). Thermophysical properties of stainless steels. ANL-75-55, Argonne National
     Laboratory. doi:10.2172/4152287.'
   topic: [other]
@@ -4910,6 +5135,7 @@ documents:
   records: []
   notes: Fetched 2026-11-03 from OSTI (https://www.osti.gov/servlets/purl/4152287), public.
 - file: sources/materials/cleveland_cliffs_304_304L_product_data_bulletin_2021.pdf
+  sha256: 'a03ff8b78715ac7aaf64de6e7823df58527582bcf12338ad17bca58fb05c99d6'
   citation: Cleveland-Cliffs (2021). 304/304L stainless steel, product data bulletin (05/2021).
   topic: [other]
   content: 'Composition, physical properties (density 8.03 g/cm3, conductivity 16.2 W/m K at 100 C and 21.4
@@ -4924,6 +5150,7 @@ documents:
   notes: Fetched 2026-11-03 from the Cleveland-Cliffs document CDN (public link).
 
 - file: sources/materials/asm_handbook_vol2_1990_nonferrous_alloys.pdf
+  sha256: '7efd4c375d6891da3f6bb8961dfdb929c06f9fc334c41b5f5999bd8abbc07b42'
   citation: 'ASM International. Metals Handbook, 10th ed., Vol. 2: Properties and Selection: Nonferrous Alloys and
     Special-Purpose Materials, 1990.'
   topic: [other]
@@ -4940,6 +5167,7 @@ documents:
     Aluminum Alloys". Melting range 1083 C (C10100/C10200 solidus), for copper gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/combustor_network/gouws_2007_MEng_UP_T56_network_solver_cfd.pdf
+  sha256: 'a8a0138dcd0d5c7b8fc7664e8cf6480f21b145ad10fcdb111eda8095ddd737d1'
   citation: Gouws, J. J. (2007). Combining a one-dimensional empirical and network solver with computational
     fluid dynamics to investigate possible modifications to a commercial gas turbine combustor. M.Eng.
     dissertation, University of Pretoria.
@@ -4960,6 +5188,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29 (moved here from the wanted list).
 - file: sources/combustor_network/meyers_et_al_2012_PIMechE_A_226_892_can_combustor_piv.pdf
+  sha256: '74082304a9d8e8514ee662829221bacabbb785d7d9bb881f6a5833d720d838bd'
   citation: Meyers, B. C., Snedden, G. C., Meyer, J. P., Roos, T. H., Mahmood, G. I. (2012). Three-component
     particle image velocimetry in a generic can-type gas turbine combustor. Proc. IMechE Part A, J. Power and
     Energy 226(7), 892-906. doi:10.1177/0957650912454780
@@ -4978,6 +5207,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29.
 - file: sources/orifices/adkins_gueroui_1986_JEGTP_108_491_liner_hole_cd.pdf
+  sha256: '0b98222b79e98bbb58936b8a60b503c73bd9d7ff6421f6933d0ddf516b07c3b1'
   citation: Adkins, R. C., Gueroui, D. (1986). An improved method for accurate prediction of mass flows
     through combustor liner holes. ASME J. Eng. Gas Turbines Power 108(3), 491-497 (86-GT-149).
   topic: [orifice]
@@ -4993,6 +5223,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29 (moved here from the wanted list).
 - file: sources/heat_transfer/turbulence/roach_1987_IJHFF_8_82_grid_turbulence.pdf
+  sha256: 'd379ce74d94d2bb45fe70c6efc3a61c3c23ceee45b26b9ee80427dc8151a11ba'
   citation: Roach, P. E. (1987). The generation of nearly isotropic turbulence by means of grids. Int. J. Heat
     Fluid Flow 8(2), 82-92.
   topic: [film]
@@ -5006,6 +5237,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-29 (moved here from the wanted list).
 - file: sources/orifices/iso_5167-2_2003_orifice_plates.pdf
+  sha256: '0d3b1873d7c98adb3fabcae6ead8520fe5449ce2d0ffc55ad22b779ac615cbad'
   citation: 'ISO 5167-2:2003. Measurement of fluid flow by means of pressure differential devices inserted in
     circular cross-section conduits running full -- Part 2: Orifice plates. International Organization for
     Standardization.'
@@ -5028,6 +5260,7 @@ documents:
   notes: Supplied by the user 2026-10-29 (moved here from the wanted list). The 2022 edition was only available
     as the free preview (stops in 5.2) and was not kept.
 - file: sources/orifices/reader-harris_sattary_1996_rhg_equation_iso5167-1.pdf
+  sha256: '64382580bf9957b0ac88b64d67b5f7046e82602b1596faea203989c74943336d'
   citation: 'Reader-Harris, M. J., Sattary, J. A. (1996). The orifice plate discharge coefficient equation --
     the equation for ISO 5167-1. National Engineering Laboratory, East Kilbride (paper 24, 14th North Sea Flow
     Measurement Workshop).'
@@ -5061,6 +5294,7 @@ documents:
   notes: Supplied by the user 2026-10-31 (moved here from the wanted list). NEL report scan, 23 pages.
 
 - file: sources/orifices/reader-harris_2022_iso5167_past_and_present.pdf
+  sha256: '8f232ecd1954718c72e8af34bf7ce565240298c632a5bf5619d030030085022f'
   citation: 'Reader-Harris, M. (2022). ISO 5167: Past and Present. Global Flow Measurement Workshop, 25-27
     October 2022, Technical Paper. TUV SUD National Engineering Laboratory (NEL).'
   topic: [orifice]
@@ -5080,6 +5314,7 @@ documents:
   code: [python/combaero/network/components.py, gui/backend/schemas.py]
   notes: Its ref. [1], Stolz 1988, is now held (next entry).
 - file: sources/orifices/stolz_1988_NSFMW_paper_3.1_first_revision_of_ISO_5167.pdf
+  sha256: '8969c9cbab0587024a2743ae557cb4c4d3af49268e65ad29f6ed2a9bc90f2b9f'
   citation: Stolz, J. (1988). The first revision of ISO 5167. North Sea Flow Measurement Workshop 1988, 18-20
     October 1988, National Engineering Laboratory, East Kilbride, Glasgow, Paper 3.1.
   id: NSFMW 1988 paper 3.1 (NFOGM archive item 1988-10)
@@ -5113,6 +5348,7 @@ documents:
     coefficient" (item 11) and Hobbs, "The NEL orifice plate project" (item 16), not fetched.
 
 - file: sources/orifices/jobson_1955_PIMechE_169_767_compressible_orifice.pdf
+  sha256: 'f227c5da0afadc1d30a5677aa13c30500c9aece91586bb7c937ab74082cbf1dd'
   citation: Jobson, D. A. (1955). On the flow of a compressible fluid through orifices. Proc. Instn Mech. Engrs
     169, 767-776. doi:10.1243/PIME_PROC_1955_169_077_02
   topic: [orifice]
@@ -5156,6 +5392,7 @@ documents:
 # the document. priority: now (blocks or settles an open item) or later
 # (only when that work resumes).
 - file: sources/heat_transfer/vanes/hylton1983_NASA_CR-168015_C3X_MarkII_vane_heat_transfer.pdf
+  sha256: 'd4710a042ddcd4a3a3dfe70f6d7130cfa6a060a1ac2bc358f994dae54f95cd02'
   citation: Hylton, L. D., Mihelc, M. S., Turner, E. R., Nealy, D. A., York, R. E. (1983). Analytical and
     experimental evaluation of the heat transfer distribution over the surfaces of turbine vanes. NASA
     CR-168015 (Allison, contract NAS3-22761).
@@ -5187,6 +5424,7 @@ documents:
   notes: Fetched from NTRS (open, government public use) 2026-10-31. OCR is poor; transcribe from page images
     (run 149 = PDF p.191-192, run 158 = p.201-202).
 - file: sources/heat_transfer/vanes/hylton1988_NASA_CR-182133_C3X_film_cooled_vane.pdf
+  sha256: 'f352ac918e7b3ba64598b968dd86485860cd772ee45fd2be732aff1208a4498c'
   citation: Hylton, L. D., Nirmalan, V., Sultanian, B. K., Kaufman, R. M. (1988). The effects of leading edge
     and downstream film cooling on turbine vane heat transfer. NASA CR-182133 (Allison EDR 13481, contract
     NAS3-24619).
@@ -5201,6 +5439,7 @@ documents:
   records: []
   notes: Fetched from NTRS (open, government public use) 2026-10-31.
 - file: sources/heat_transfer/vanes/dring_blair_1987_NASA_CR-4079_UTRC_rotating_rig_vol1_final.pdf
+  sha256: 'd5340461bb3e101ab5562587001998bbf6f7f1555f8c987a804683572911e7f4'
   citation: Dring, R. P., Blair, M. F., Joslyn, H. D., Power, G. D., Verdon, J. M. (1987). The effects of inlet
     turbulence and rotor/stator interactions on the aerodynamics and heat transfer of a large-scale rotating
     turbine model, Volume I -- Final report. NASA CR-4079 (UTRC R86-956480-1, contract NAS3-23717).
@@ -5237,6 +5476,7 @@ documents:
     19880014572) not fetched. The grid-out inlet Tu is mis-OCR''d in the text layer and was not read from the
     page image.'
 - file: sources/heat_transfer/vanes/dring_blair_1988_NASA_CR-179467_UTRC_rotating_rig_vol2_heat_transfer_15pct.pdf
+  sha256: 'f99a5b4d094652077b846a62b7938f6a6a265366ed901ae82e584d93267d5501'
   citation: Dring, R. P., Blair, M. F., Joslyn, H. D. (1986, released May 1988). The effects of inlet turbulence
     and rotor/stator interactions on the aerodynamics and heat transfer of a large-scale rotating turbine model,
     Volume II -- Heat transfer data tabulation, 15% axial spacing. NASA CR-179467 (UTRC R86-956480-2).
@@ -5255,6 +5495,7 @@ documents:
   records: []
   notes: Fetched 2026-11-02 from NTRS (public). Vol. I is CR-4079 (held).
 - file: sources/materials/gatech_gen3csp/Measurement-Uncertainty.pdf
+  sha256: 'e685a3aaabf2043661ba4a17e3f0814ccd4d544f8409fd5a213d4776cc0c4bd6'
   citation: Gunawan, A. (?). Uncertainty analysis and error propagation methodology for reporting
     thermophysical properties measurement of Gen3 CSP materials. Georgia Institute of Technology, Gen3 CSP
     thermophysical property database (gen3csp.gatech.edu).
@@ -5281,6 +5522,7 @@ documents:
   notes: 'Fetched 2026-10-31 via the WordPress media API and the /compare/ page (scripts/gen3csp.py, skill
     materials-data); xlsx are not published for every material, the compare page carries the data inline.'
 - file: sources/materials/gatech_gen3csp/Measurement-Acceptance-Criteria.pdf
+  sha256: '45ed4941ef067577953de4c44bde420a88281ba33ce24e258958c4585845c315'
   citation: 'Georgia Institute of Technology (?). Measurement acceptance criteria: standards, principles, and
     required documentation. Gen3 CSP thermophysical property database.'
   topic: [other]
@@ -5295,6 +5537,7 @@ documents:
   records: []
   notes: Fetched with Measurement-Uncertainty.pdf 2026-10-31.
 - file: sources/materials/rolled_alloys_310_datasheet.pdf
+  sha256: 'fdcb494c6e5a41a64912e1edd37ee1463aa4c9615051d22182cb92b59ecf96d5'
   citation: Rolled Alloys (?). 310 stainless steel (UNS S31008/S31009, W.Nr. 1.4845), data sheet.
   topic: [other]
   content: Composition, specifications, physical properties including thermal conductivity vs temperature
@@ -5307,6 +5550,7 @@ documents:
   notes: Supplied by the user 2026-10-31. Melting range 2470-2555 F, 1354-1402 C, for ss310 gives T_solidus, the cap of the issue 882 k(T) envelope.
 
 - file: sources/materials/thyssenkrupp_1.4845_310S_datasheet.pdf
+  sha256: 'cc3b2c83b866a056bc48dbc1b682aac0ced61a22404732ba8311714d7e108925'
   citation: thyssenkrupp Materials (UK) (?). Stainless steel 1.4845, material data sheet.
   topic: [other]
   content: Composition, application, mechanical and physical properties; thermal conductivity 15 W/m K at 20 C
@@ -5318,6 +5562,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-31.
 - file: sources/materials/pawel_williams_1985_ORNL-TM-9616_alloy_physical_properties.pdf
+  sha256: '5fccd291fa51eeed58a9dd4b72335ab91fa0db9f527094dca198d9ff18af567b'
   citation: Pawel, R. E., Williams, R. K. (1985). Survey of physical property data for several alloys.
     ORNL/TM-9616, Oak Ridge National Laboratory.
   topic: [other]
@@ -5331,6 +5576,7 @@ documents:
   records: []
   notes: Supplied by the user 2026-10-31 (public OSTI report).
 - file: sources/materials/special_metals_inconel_718.pdf
+  sha256: '6c9c60dc272cb4f7275091e02779879760afcb1801fc9bd04fbfca239907da90'
   citation: Special Metals Corporation (?). INCONEL alloy 718 (UNS N07718/W.Nr. 2.4668), technical bulletin.
   topic: [other]
   content: Composition, Table 2 physical constants (density, melting range 1260-1336 C, specific heat at 21 C),
@@ -5348,6 +5594,7 @@ documents:
   code: [src/materials.cpp, include/materials.h]
   notes: Fetched from specialmetals.com 2026-10-31 (public technical bulletin).
 - file: sources/radiation/Rudey_Graham_1984_NASA-TM-83341_combustor_turbine_heat_transfer_review.pdf
+  sha256: '7ecdf0cc13b43cc565c0a46d00eebc458285b44a82f4bb305841fbf713591bfe'
   citation: 'Rudey, R. A., Graham, R. W. (1984). A review of NASA combustor and turbine heat transfer research.
     NASA TM-83341, prepared for the 29th ASME International Gas Turbine Conference, Amsterdam, 3-7 June 1984.'
   id: NASA-TM-83341 (NTRS 19840006078, N84-14146)
@@ -5379,6 +5626,7 @@ documents:
   notes: Arrived 2026-11-02 in sources/new/radiation/ as 19840006078.pdf. Ref. 2 (AIAA 84-0443) and ref. 3 (TM-83436)
     are the primaries; NTRS 19840005120 (TM-83538) and 19830020966 (TM-83436) have PDF downloads.
 - file: sources/radiation/Howell_Menguc_Daun_Siegel_2021_TRHT7_online_appendices.pdf
+  sha256: 'bc8fb9f388606d277f66309e390a06db8a9e0f6c374beadf59950cf4e77dcbcf'
   citation: 'Howell, J. R., Menguc, M. P., Daun, K., Siegel, R. (2021). On-line appendices to Thermal Radiation
     Heat Transfer, 7th ed., Taylor and Francis / CRC Press (appendix file dated 2024-07-05).'
   id: TRHT 7th ed. on-line appendices A-R
@@ -5411,6 +5659,7 @@ documents:
   notes: Arrived 2026-11-02 in sources/new/radiation/ as "On-line appxs 7th ed 7-5-2024.pdf". Copyrighted
     though freely posted; keep in sources/ only.
 - file: sources/radiation/Liu_et_al_2020_Fuel_281_118555_radiation_turbulent_flames_review.pdf
+  sha256: 'ed950d96aafc4cbeeb90764cb8857551ec7de8721b919b43e8db1732aa21781a'
   citation: 'Liu, F., Consalvi, J.-L., Coelho, P. J., Andre, F., Gu, M., Solovjov, V., Webb, B. W. (2020). The
     impact of radiative heat transfer in combustion processes and its modeling -- with a focus on turbulent
     flames. Fuel 281, 118555.'
@@ -5435,6 +5684,7 @@ documents:
   records: []
   notes: Arrived 2026-11-02 in sources/new/radiation/ as JFUE2020_FinalVersion.pdf.
 - file: sources/radiation/Fu_et_al_2026_ATE_307_133288_ammonia_flame_radiation_review.pdf
+  sha256: '1300aa35d62276003aa0c258c431bae9b7dcdf88eb43bb4af851576cc6a1058f'
   citation: 'Fu, Z., Davies, J., Mashruk, S., Alnajideen, M., Xiao, H., Valera-Medina, A. (2026). Combustion
     radiation in ammonia-based fuels: progress and challenges. Applied Thermal Engineering 307, 133288.'
   id: doi:10.1016/j.applthermaleng.2026.133288
@@ -5457,6 +5707,7 @@ documents:
   records: []
   notes: Arrived 2026-11-02 in sources/new/radiation/ as 1-s2.0-S1359431126035969-main.pdf.
 - file: sources/radiation/Geigle_et_al_2015_PCI_35_3373_soot_pressurized_swirl_flames.pdf
+  sha256: '29c24ec48e2c20b0c4c018a340e22a4a42559552a40d2fca69eb7d1c923dd3f6'
   citation: 'Geigle, K. P., Koehler, M., O''Loughlin, W., Meier, W. (2015). Investigation of soot formation in
     pressurized swirl flames by laser measurements of temperature, flame structures and soot concentrations.
     Proc. Combust. Inst. 35, 3373-3380.'
@@ -5479,6 +5730,7 @@ documents:
   records: []
   notes: Arrived 2026-11-02 in sources/new/radiation/ as 2015_geigle_pci_final_author.pdf.
 - file: sources/radiation/Humenik_Claus_Neely_1983_NASA_TM-83436_tubular_can_flame_radiation.pdf
+  sha256: 'ce209877ec2a085025c11516484026e9f389b807957656ff47de1dbc4fc55e5b'
   citation: 'Humenik, F. M., Claus, R. W., Neely, G. M. (1983). Parametric study of flame radiation
     characteristics of a tubular-can combustor. NASA TM-83436, prepared for the ASME Joint Power Generation
     Conference, Indianapolis, 25-29 September 1983 (ASME 83-JPGC-GT-11).'
@@ -5526,6 +5778,7 @@ documents:
     take-off points (269 kPa 400 K, 1740 kPa 715 K) are outside Table I here, so that figure draws on
     another series. ERBS is defined in Seng 1982, NASA TM-82883.'
 - file: sources/radiation/Claus_Neely_Humenik_1984_NASA_TM-83538_flame_radiation_liner_heat_transfer.pdf
+  sha256: '7b45e554d2f2c4e681db3cc742db8b1d90abbfcd7a2b828703e8588bea64144b'
   citation: 'Claus, R. W., Neely, G. M., Humenik, F. M. (1984). Flame radiation and liner heat transfer in a
     tubular-can combustor. NASA TM-83538, prepared for the 22nd AIAA Aerospace Sciences Meeting, Reno, 9-12
     January 1984 (AIAA 84-0443).'

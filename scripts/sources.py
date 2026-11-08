@@ -15,6 +15,7 @@ conclude?" and "what else covers this?".
     uv run scripts/sources.py check                       # schema + local sources
     uv run scripts/sources.py check --sources <main checkout>/sources
     uv run scripts/sources.py new sources/x/new_paper.pdf # print a stub entry
+    uv run scripts/sources.py hash --sources <main checkout>/sources [--write]
 
 The file has two lists: `documents` (what is local) and `wanted` (what we do
 not hold and the open question each would settle, with a priority). `find`
@@ -23,12 +24,19 @@ searches both.
 `check` validates the register (schema, statuses, that every record and
 code path it names exists, that every `file:` is under sources/) and,
 where sources/ is present, lists local documents with no entry, entries
-whose file is missing, and any file there git would track.
+whose file is missing, and any file there git would track, and verifies
+each entry's `sha256` against its file (#1057). The documents are backed
+up outside git; the hashes in git are how a restore is proven complete and
+byte-identical. A document replaced on purpose (a better scan) gets its new
+hash in the same PR, so the swap is reviewable. `hash --write` fills
+missing hashes; it never overwrites a mismatch.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -83,7 +91,9 @@ REQUIRED = (
     "read_for",
     "issues",
     "records",
+    "sha256",
 )
+SHA256 = re.compile(r"[0-9a-f]{64}")
 OPTIONAL = ("id", "code", "notes")
 WANTED_KEYS = ("citation", "checked", "issues", "priority", "question", "where")
 PRIORITIES = {
@@ -154,6 +164,9 @@ def problems(entries: list[dict[str, Any]]) -> list[str]:
         if f in seen:
             out.append(f"{where}: duplicate file")
         seen.add(f)
+        sha = e.get("sha256")
+        if not isinstance(sha, str) or not SHA256.fullmatch(sha):
+            out.append(f"{where}: sha256 must be 64 lowercase hex digits")
         if e.get("status") not in STATUSES:
             out.append(f"{where}: status '{e.get('status')}' not one of {sorted(STATUSES)}")
         topics = e.get("topic") or []
@@ -223,6 +236,61 @@ def tracked_documents(sources: Path, files: list[str]) -> list[str]:
         return []
     ignored = set(r.stdout.split("\0"))
     return [f for f in files if f not in ignored]
+
+
+def file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def hash_problems(entries: list[dict[str, Any]], sources: Path) -> list[str]:
+    """Entries whose local file does not match the recorded sha256, and
+    files recorded under two entries (the same document twice). Entries
+    whose file is not under `sources` are skipped (`check` reports them)."""
+    out: list[str] = []
+    by_hash: dict[str, str] = {}
+    for e in entries:
+        f = str(e.get("file", ""))
+        path = sources / f.removeprefix(PREFIX)
+        if not path.is_file():
+            continue
+        actual = file_sha256(path)
+        want = e.get("sha256")
+        if want and want != actual:
+            out.append(f"{f}: sha256 {actual} does not match the register's {want}")
+        if actual in by_hash:
+            out.append(f"{f}: same content as {by_hash[actual]}")
+        by_hash.setdefault(actual, f)
+    return out
+
+
+def write_hashes(text: str, hashes: dict[str, str]) -> str:
+    """Insert `sha256:` after the `file:` value of each entry in `hashes`
+    (file -> hex), editing the text so the register's comments and quoting
+    are kept. The value is read with YAML: names may hold spaces, be
+    quoted with escapes, or wrap onto continuation lines."""
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        out.append(lines[i])
+        if not lines[i].startswith("- file:"):
+            i += 1
+            continue
+        j = i + 1  # continuation lines of a wrapped value are indented past the keys
+        while j < len(lines) and lines[j].startswith("   "):
+            j += 1
+        out += lines[i + 1 : j]
+        f = yaml.safe_load("".join(lines[i:j]))[0]["file"]
+        if f in hashes:
+            # Quoted: an all-digit hash would load as an int, one with a
+            # single "e" among digits as a float.
+            out.append(f"  sha256: '{hashes[f]}'\n")
+        i = j
+    return "".join(out)
 
 
 def show(e: dict[str, Any], long: bool = False) -> str:
@@ -300,6 +368,10 @@ def cmd_check(args: argparse.Namespace) -> int:
                 print(f"unregistered: {f}")
         for f in sorted(listed - set(local)):
             print(f"not found locally: {f}")
+        bad = hash_problems(entries, sources)
+        for p in bad:
+            print(f"error: {p}")
+        errs += bad
         exposed = tracked_documents(sources, files)
         for f in exposed:
             print(f"error: not gitignored (copyrighted, would be committed): {f}")
@@ -320,7 +392,35 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if errs else 0
 
 
+def cmd_hash(args: argparse.Namespace) -> int:
+    sources = Path(args.sources) if args.sources else SOURCES
+    missing: dict[str, str] = {}
+    absent = 0
+    for e in load():
+        if e.get("sha256"):
+            continue
+        path = sources / str(e["file"]).removeprefix(PREFIX)
+        if path.is_file():
+            missing[e["file"]] = file_sha256(path)
+        else:
+            absent += 1
+            print(f"not found locally: {e['file']}")
+    bad = hash_problems(load(), sources)
+    for p in bad:
+        print(f"error: {p}")
+    if args.write and missing:
+        REGISTER.write_text(write_hashes(REGISTER.read_text(), missing))
+    verb = "written" if args.write else "missing (--write to fill)"
+    print(f"{len(missing)} hash(es) {verb}; {absent} entr(ies) without a local file")
+    return 1 if bad or absent else 0
+
+
 def cmd_new(args: argparse.Namespace) -> int:
+    sources = Path(args.sources) if args.sources else SOURCES
+    path = sources / args.file.removeprefix(PREFIX)
+    if not path.is_file():
+        print(f"error: {path} not found (pass --sources <main checkout>/sources)")
+        return 1
     stub = {
         "file": args.file,
         "citation": "?",
@@ -331,6 +431,7 @@ def cmd_new(args: argparse.Namespace) -> int:
         "read_for": [],
         "issues": [],
         "records": [],
+        "sha256": file_sha256(path),
     }
     print(yaml.safe_dump([stub], sort_keys=False, allow_unicode=True), end="")
     return 0
@@ -357,7 +458,12 @@ def main() -> int:
     c.set_defaults(fn=cmd_check)
     n = sub.add_parser("new", help="print a stub entry for a new document")
     n.add_argument("file")
+    n.add_argument("--sources", help="the sources/ directory holding it (default: this checkout's)")
     n.set_defaults(fn=cmd_new)
+    h = sub.add_parser("hash", help="report (or --write) missing sha256 values")
+    h.add_argument("--sources", help="the sources/ directory to hash (default: this checkout's)")
+    h.add_argument("--write", action="store_true", help="fill missing hashes into the register")
+    h.set_defaults(fn=cmd_hash)
     args = ap.parse_args()
     return args.fn(args)
 

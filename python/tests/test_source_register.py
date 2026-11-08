@@ -85,3 +85,81 @@ def test_the_wanted_check_catches_what_it_should() -> None:
     assert any("belongs in 'documents'" in p for p in found)
     assert any("'checked' is true or false" in p for p in found)
     assert any("list of integers" in p for p in found)
+
+
+def test_a_missing_or_malformed_hash_is_reported() -> None:
+    """Falsified (#1057): an entry without sha256, or with one that is not
+    64 lowercase hex digits (or loaded as a number), is a schema error -- caught in CI, where
+    sources/ is absent."""
+    good = sources.load()[0]
+    no_hash = {k: v for k, v in good.items() if k != "sha256"}
+    found = sources.problems(
+        [
+            {**no_hash, "file": "sources/a.pdf"},
+            {**good, "file": "sources/b.pdf", "sha256": good["sha256"].upper()},
+            {**good, "file": "sources/c.pdf", "sha256": good["sha256"][:-1]},
+            {**good, "file": "sources/d.pdf", "sha256": 1234},
+        ]
+    )
+    assert sum("sha256 must be" in p for p in found) == 4
+
+
+def test_the_hash_check_catches_a_changed_file(tmp_path: Path) -> None:
+    """Falsified (#1057): one changed byte in a document, and the same
+    document under two names, are each reported; an intact file and an
+    absent one (reported by `check` as not found locally) are not."""
+    root = tmp_path / "sources"
+    (root / "x").mkdir(parents=True)
+    (root / "x" / "a.pdf").write_bytes(b"%PDF-1.4 original")
+    (root / "x" / "b.pdf").write_bytes(b"%PDF-1.4 other")
+    good = sources.file_sha256(root / "x" / "a.pdf")
+    entries = [
+        {"file": "sources/x/a.pdf", "sha256": good},
+        {"file": "sources/x/b.pdf", "sha256": sources.file_sha256(root / "x" / "b.pdf")},
+        {"file": "sources/x/gone.pdf", "sha256": good},
+    ]
+    assert sources.hash_problems(entries, root) == []
+
+    (root / "x" / "a.pdf").write_bytes(b"%PDF-1.4 originaL")
+    found = sources.hash_problems(entries, root)
+    assert len(found) == 1
+    assert found[0].startswith("sources/x/a.pdf: sha256 ")
+
+    (root / "x" / "a.pdf").write_bytes(b"%PDF-1.4 other")
+    entries[0]["sha256"] = sources.file_sha256(root / "x" / "a.pdf")
+    found = sources.hash_problems(entries, root)
+    assert found == ["sources/x/b.pdf: same content as sources/x/a.pdf"]
+
+
+def test_write_hashes_keeps_the_text_and_reads_awkward_names() -> None:
+    """Names with spaces, a value wrapped onto a continuation line, and a
+    quoted name with an escape all get their hash; comments and every
+    other line are kept as they were."""
+    text = (
+        "# header comment\n"
+        "documents:\n"
+        "- file: sources/x/with space.pdf\n"
+        "  citation: A\n"
+        "- file: sources/x/long name wrapped onto\n"
+        "    the next line.pdf\n"
+        "  citation: B\n"
+        '- file: "sources/x/Garci\\u0301a.pdf"\n'
+        "  citation: C\n"
+        "- file: sources/x/already.pdf\n"
+        "  sha256: '" + "0" * 64 + "'\n"
+        "  citation: D\n"
+    )
+    names = [
+        "sources/x/with space.pdf",
+        "sources/x/long name wrapped onto the next line.pdf",
+        "sources/x/Garci" + chr(0x301) + "a.pdf",  # combining acute, as on disk
+    ]
+    hashes = {n: f"{i:064x}" for i, n in enumerate(names, start=1)}
+    new = sources.write_hashes(text, hashes)
+    docs = sources.yaml.safe_load(new)["documents"]
+    assert [d["sha256"] for d in docs] == [hashes[n] for n in names] + ["0" * 64]
+    assert [d["citation"] for d in docs] == ["A", "B", "C", "D"]
+    assert [ln for ln in new.splitlines() if "sha256" not in ln] == text.splitlines()[:-3] + [
+        "- file: sources/x/already.pdf",
+        "  citation: D",
+    ]
