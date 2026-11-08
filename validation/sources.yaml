@@ -1302,12 +1302,21 @@ documents:
     (Figs 5/6) PLOTTED; no correlation.'
   status: screened
   verdict: 'Accuracy-only source for #468 vented-target coolant-side Nu (no correlation, so never fidelity);
-    unusable for a Re exponent (FE-inverse, std 30-70%). Not yet digitised.'
-  read_for: ['#468 vented-target closure', '#468 Re exponent']
-  issues: [468]
+    unusable for a Re exponent (FE-inverse, std 30-70%). Not yet digitised. HOT SIDE (re-read 2026-11-08 for
+    #476): IR on both faces, FE heat flux; hot-side Nu_D 2-6 along y/D (Fig. 7, std in Table A1) and total
+    effectiveness phi = (T_inf - T_w)/(T_inf - T_c,int) (Figs 5/6). Does NOT give gas_augmentation: the
+    authors state no adiabatic wall temperature can be derived on either side, and their Nu "cover[s] the
+    full cooling solution" (referenced to T_inf, not T_aw), so h_f and eta_aw are not separable. Usable as a
+    cross-source ACCURACY check of the coupled wall (EffusionPlateElement eta_overall, q_wall), with caveats:
+    electrically heated air along a liner (no combustion, no swirl, not a front plate); laidback fan-shaped
+    holes, which the plate has no option for; a double wall with coolant crossflow in the cavity, so an
+    impingement-to-effusion network rather than a plenum-fed plate.'
+  read_for: ['#468 vented-target closure', '#468 Re exponent', '#476 gas-side h', 'eta_overall accuracy']
+  issues: [468, 476]
   records: []
   notes: 'Memory: reference_impingement_sources_2026_10_20.md. Jackowski 2016 (network model) cited in
-    docs/archive/REVIEW_NETWORK_GUI.md is a different paper.'
+    docs/archive/REVIEW_NETWORK_GUI.md is a different paper. A companion KIT/DLR study, Jackowski et al. 2016
+    GT2016-56598 (effusion liner tiles with modern cooling concepts, with Behrendt), is not held.'
 - file: sources/heat_transfer/film/JAKO200027542986867.pdf
   sha256: 'ba86d1c43fc1816d2f184e124ca820067b95fbc1cd19e4cc78d14447c3eef54c'
   citation: Rhee, D. H., Cho, H. H. (2000). Heat transfer characteristics on effusion plate in impingement/effusion
@@ -6454,3 +6463,40 @@ wanted:
     (fan-shaped up to 0.063 higher but less uniform): how much of the flat-plate shaped-hole gain survives
     near a burner.'
   where: Elsevier journal (paywalled).
+# DLR Cologne high-pressure combustor cooling rig (added 2026-11-08, after the #476 hot-side
+# question): effusion liner samples in a reacting hot-gas flow at up to 10 bar and flame
+# temperatures up to 2000 K. The user found no full texts on DLR elib; all three paywalled.
+- citation: 'Behrendt, T., Hassa, C. (2008). A test rig for investigations of gas turbine combustor cooling
+    concepts under realistic operating conditions. Proc. IMechE Part G: J. Aerospace Engineering 222(2),
+    169-177. doi:10.1243/09544100JAERO288'
+  checked: true
+  issues:
+  - 476
+  priority: later
+  question: 'The rig definition and the measured hot-gas velocity and temperature profiles at the sample leading
+    edge (p up to 10 bar, T_F up to 2000 K). No cooling results of its own; needed to set the gas-side boundary
+    of the two follow-on papers below for an eta_overall accuracy check.'
+  where: SAGE journal (paywalled); not on DLR elib (checked by the user, 2026-11-08).
+- citation: Behrendt, T., Lengyel, T., Hassa, C., Gerendas, M. (2008). Characterization of advanced combustor
+    cooling concepts under realistic operating conditions. ASME Turbo Expo 2008, GT2008-51191, Vol. 4, 1801-1814.
+    doi:10.1115/GT2008-51191
+  checked: true
+  issues:
+  - 476
+  priority: later
+  question: 'Total cooling effectiveness of effusion and other liner concepts, by IR thermography, in a reacting
+    flow at realistic pressure and temperature, with the coolant properties varied: a cross-source ACCURACY check
+    of EffusionPlateElement eta_overall at combustor conditions (Jackowski 2021 is electrically heated air). For
+    #476 only if it prints the wall heat flux, or both face temperatures with the gas temperature, so that a
+    gas-side h follows; unknown from the abstract. A liner case, not a front plate facing burners.'
+  where: ASME Digital Collection (paywalled); not on DLR elib (checked by the user, 2026-11-08).
+- citation: Behrendt, T., Richter, S., Soehngen, P. (2014). Characterization of advanced combustor cooling concepts
+    for metallic walls and oxide ceramic matrix composites in a reacting flow. ASME Turbo Expo 2014, GT2014-26909,
+    Vol. 5C. doi:10.1115/GT2014-26909
+  checked: true
+  issues:
+  - 476
+  priority: later
+  question: 'Plain single-skin effusion against lateral trenches and 90 deg hole turns, total cooling
+    effectiveness in a reacting flow on the same rig: a second reacting eta_overall set for the plain plate.'
+  where: ASME Digital Collection (paywalled).
