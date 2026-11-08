@@ -16,15 +16,20 @@ uv run scripts/sources.py find impingement effusion   # entries matching ALL ter
 uv run scripts/sources.py list --status unscreened
 uv run scripts/sources.py list --topic film --long
 uv run scripts/sources.py list --wanted [--priority now]   # documents we lack, the question each settles
-uv run scripts/sources.py check --sources ../../sources   # schema; unregistered or trackable local files
-uv run scripts/sources.py new sources/x/paper.pdf     # stub entry to fill in
+uv run scripts/sources.py check --sources ../../sources   # schema; unregistered or trackable local files; sha256
+uv run scripts/sources.py new sources/x/paper.pdf --sources ../../sources   # stub entry (with its sha256) to fill in
+uv run scripts/sources.py hash --sources ../../sources [--write]           # missing hashes; --write fills them
 uv run --no-project scripts/check_no_sources.py --all # no copyrighted file is tracked (pre-commit + CI)
 uv run --no-project scripts/migrate_docs_to_sources.py [--root DIR] [--apply]  # one-shot docs/ -> sources/ move (#846)
 ```
 
 `python/tests/test_source_register.py` keeps the register valid in CI (the
 documents themselves are not there, so CI checks the schema and that every
-record and code path it names exists).
+record and code path it names exists, and that every entry has a sha256).
+Each entry's `sha256` is the document's fingerprint in git: `sources/` is
+backed up outside git, and `check` against a restored `sources/` proves every
+file came back byte-identical (#1057). A mismatch is an error; replacing a
+document on purpose (a better scan) updates its hash in the same PR.
 
 ### gen3csp.py, nist_cryo.py
 
