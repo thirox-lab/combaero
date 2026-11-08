@@ -1,0 +1,803 @@
+# Behrendt, Lengyel, Hassa & Gerendas (2008) -- total cooling effectiveness of
+# effusion liner samples in a REACTING hot-gas flow at 5 and 10 bar.
+#
+# WHY THIS SOURCE. Every other effusion set here is atmospheric and
+# non-reacting: Andrei 2014 is adiabatic PSP, Andrews 88-GT-290 a transient
+# heated plate, Jackowski 2021 electrically heated air. This is the first
+# heated-wall overall-effectiveness set measured behind a kerosene combustor
+# (DLR Cologne high-pressure cooling rig), at p_h 5 and 10 bar, near-wall gas
+# 1530-1570 K, with the coolant temperature, pressure drop and hole angle
+# varied one at a time. It is a cross-source ACCURACY set for
+# EffusionPlateElement's eta_overall at combustor conditions, never fidelity
+# (no correlation of the authors' to reproduce) and never a tuner
+# (docs/VALIDATION_POLICY.md). Record:
+# validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md.
+#
+# WHAT eta_tot IS. TOTAL (overall) effectiveness on a conducting Nimonic 75
+# wall, NOT adiabatic film effectiveness -- the authors say so (p. 1807: "the
+# wall samples were not adiabatic ... the total cooling effectiveness is
+# given here and not the film cooling effectiveness"). Eq. (2):
+#     eta_tot(x/d, z/d) = (T_h(x/d=-10, z/d) - T_w(x/d, z/d)) / (T_h(x/d=-10, z/d) - T_c)
+# T_w by IR thermography (InGaAs, 0.9-1.7 um, background-radiation corrected,
+# anchored on embedded thermocouples); T_h is the NEAR-WALL gas temperature
+# measured at x/d -10, y/d 4 (not a bulk or flame temperature); T_c the
+# nominal coolant temperature measured y/d ~15 behind the sample. Laterally
+# averaged over -17.1 < z/d < 8.6 (three lateral periods). Declared as
+# eta_overall in conventions.py; a model scored against it must use the
+# near-wall T_h as its gas temperature.
+#
+# UNCERTAINTY. The authors state a maximum measuring uncertainty
+# d eta_r,tot <= 3% (p. 1807), RELATIVE (the subscript r; their dp-effect
+# "2...3%" in the same notation is 0.790 -> 0.805 on Fig. 9). The schema's
+# band is relative too, so `uncertainty: 0.03` on every eta series is the
+# authors' number unchanged -- a measurement statement, constant over the
+# source, never derived from a model's error. It is a worst-case bound
+# (T_h fluctuation +/-25 K, thermocouple depth 7 K, emissivity scatter
+# +/-12 K), not one sigma.
+#
+# EXTRACTED FROM THE PDF VECTOR STREAM, NOT DIGITISED. Each curve is one
+# stroked polyline (PyMuPDF get_drawings), mapped to data by a least-squares
+# fit on every labelled major tick (labels from the page text layer):
+# residuals <= 1e-3 x/d and <= 4e-7 eta on every figure, all minor-tick
+# spacings uniform to < 0.01 pt (linear axes). Rasterised independently by
+# poppler for the overlay review; user-confirmed 2026-11-08 ("looks perfect").
+#
+# ONE COPY OF EACH CURVE. Three curves are printed twice, with independent
+# calibrations, and agree to 1e-5 in eta_tot -- that agreement is the
+# extraction's cross-check, and only one copy is committed:
+#   Fig. 5 E20            == Fig. 9 dp 3%        (1.05e-5, 85 abscissae) -> Fig. 9
+#   Fig. 5 E30            == Fig. 6 Tc 540 K     (1.0e-5, 93)            -> Fig. 6
+#   Fig. 6 Tc 470 K       == Fig. 10 5 bar dp 3% (9e-7, 116)             -> Fig. 6
+# Rule: keep the copy in the earliest one-parameter SWEEP figure (6, 9, 10);
+# Fig. 5 only compares two sweep members. So Fig. 5 has no series of its own
+# and no redraw, and the Fig. 10 redraw lacks its 5 bar dp 3% curve (it is
+# fig6_eta_tot_E30_Tc470.csv). 9 distinct eta curves, 12 series with Fig. 8.
+#
+# THE CLIPPED LAST VERTEX IS DROPPED. Every polyline ends on the right frame
+# (x/d 50 or 58): the plotting program's clip point, not a measured station.
+# It is not in the CSVs. Vertices are otherwise the plotted points, spacing
+# 0.340 x/d (E30) and 0.367 x/d (E20); curves start at x/d 18.1 because the
+# authors exclude x/d < 16 (starter-film dominated in an engine).
+#
+# GEOMETRY (Behrendt et al. 2008 pp. 1803-1804, and the ICAS 2006 rig paper):
+#   hole diameter d   ~0.70 mm  INFERRED, not printed: l/d 143 with l = 100 mm
+#                     and b/d 114 with b = 80 mm (ICAS 2006). Confirmed: Eq. (5)
+#                     (Hausen) at that d reproduces Table 4's h_e -- Nu 16.3
+#                     vs 16.8 at Re_e 4600, 34 vs 35.3 at 9650.
+#   wall              t/d 2, NIMONIC 75 (2.4951)
+#   hole angle        20 deg (E20) or 30 deg (E30), no compound angle;
+#                     L/d = (t/d)/sin(beta) = 5.85 / 4.0, derived
+#   pitch             sx/d 5 streamwise, sz/d 8.6 lateral, rows staggered,
+#                     pattern repeats every 5 rows
+#   upstream          NO starter film; boundary-layer bleed at dx/d -21
+# The impingement-backed samples I20/I30 are in the paper (Fig. 4) but not
+# plotted as profiles; not extracted.
+#
+# CONDITIONS per series are in `geometry` (as hay1983 does): p_h, near-wall
+# T_h (1567 K TC1, 1532 K TC2) and u_h (29.7 / 29.1 m/s, LDA), Table 2;
+# T_c, dp_r,c, M and I as printed in each legend. Note: the paper's TC1/TC2
+# are NOT the ICAS 2006 paper's TC1-TC4 labels.
+#
+# KNOWN INPUT CAVEATS -- read before scoring anything against this set:
+#   * M and I are the authors' MODEL estimates (the coupled 1-D wall model of
+#     Martiny et al. 97-GT-329, cD from Martiny 1999), not measured: the hole
+#     exit temperature is 40-70 K above T_c and could not be measured.
+#   * About 40% of the preheated cooling air cooled the module around the
+#     sample (footnote 3, p. 1811); the split was measured only cold, so the
+#     sample's coolant mass flow, hence M, is approximate.
+#   * Free-stream turbulence Tu 19-24% (ICAS 2006), swirling combustor exit
+#     flow, laterally non-uniform T_h (Fig. 3: 1436-1570 K).
+#   * Fig. 8 heat flux is BIASED: the Vatell sensor replaces two cooling holes
+#     and shifts the heat exchange toward the coolant side (authors, p. 1811).
+#     Committed as measured data, never for scoring.
+#
+# `scores: null` everywhere: no scoring set or runner yet (a later PR).
+
+paper:
+  name: behrendt2008
+  citation: >-
+    Behrendt, T., Lengyel, T., Hassa, C. and Gerendas, M. (2008).
+    "Characterization of advanced combustor cooling concepts under realistic
+    operating conditions." ASME Turbo Expo 2008, GT2008-51191, Vol. 4,
+    1801-1814. DOI 10.1115/GT2008-51191.
+  secondary: false
+
+files:
+  - path: fig6_eta_tot_E30_Tc470.csv
+    after: null
+    page: 1810
+    item: "Figure 6, green solid curve (legend: Tc=470K, dp_r,c=3.0%, M=5.6, I=10.5)"
+    series: "E30 5 bar Tc 470 K dp 3.0% M 5.6 I 10.5; TC1, eta_tot vs x/d"
+    figure: "6"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 470.0
+      dp_rc_pct: 3.0
+      M: 5.6
+      I: 10.5
+    alpha_deg: 30.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      x_limits: [0.0, 58.0]
+      y_axis_type: linear
+      y_ticks: [0.65, 0.70, 0.75, 0.80]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 58.0]
+      plot_y_limits: [0.65, 0.83]
+      expected_points: 118
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 119 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 6 calibration on every labelled major tick: max residual 8.7e-15 in x/d (6 ticks)
+      and 3.2e-07 in eta (4 ticks); all 30 x and 19 y tick spacings uniform to 0.0009 pt
+      (linear axes). The last drawn vertex, on the right frame at x/d 58, is the plotting
+      program's clip point and is DROPPED; 118 points remain, x/d 18.1 to the last station.
+      Plateau (x/d 18.1-49.7, trapezoid) mean 0.7780, range 0.7697-0.7882. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header. Same
+      curve as Figure 10 green solid (p_h 5 bar, Tc 470 K, dp 3.0%): the two figures'
+      independent calibrations agree to 9e-7 in eta_tot over 116 common abscissae. Committed
+      from Figure 6; Figure 10's copy is the cross-check, so the Figure 10 redraw omits it.
+
+  - path: fig6_eta_tot_E30_Tc540.csv
+    after: null
+    page: 1810
+    item: "Figure 6, blue solid curve (legend: Tc=540K, dp_r,c=3.1%, M=5.3, I=10.8)"
+    series: "E30 5 bar Tc 540 K dp 3.1% M 5.3 I 10.8; TC1, eta_tot vs x/d"
+    figure: "6"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 540.0
+      dp_rc_pct: 3.1
+      M: 5.3
+      I: 10.8
+    alpha_deg: 30.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      x_limits: [0.0, 58.0]
+      y_axis_type: linear
+      y_ticks: [0.65, 0.70, 0.75, 0.80]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 58.0]
+      plot_y_limits: [0.65, 0.83]
+      expected_points: 117
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 118 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 6 calibration on every labelled major tick: max residual 8.7e-15 in x/d (6 ticks)
+      and 3.2e-07 in eta (4 ticks); all 30 x and 19 y tick spacings uniform to 0.0009 pt
+      (linear axes). The last drawn vertex, on the right frame at x/d 58, is the plotting
+      program's clip point and is DROPPED; 117 points remain, x/d 18.1 to the last station.
+      Plateau (x/d 18.1-49.8, trapezoid) mean 0.7266, range 0.7168-0.7391. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header. Same
+      curve as Figure 5 red (E30): agreement 1.0e-5 in eta_tot over 93 common abscissae,
+      independent calibrations. Committed from Figure 6, which draws it to x/d 58 where Figure
+      5 stops at 50.
+
+  - path: fig6_eta_tot_E30_Tc580.csv
+    after: null
+    page: 1810
+    item: "Figure 6, red solid curve (legend: Tc=580K, dp_r,c=3.0%, M=5.0, I=10.3)"
+    series: "E30 5 bar Tc 580 K dp 3.0% M 5.0 I 10.3; TC1, eta_tot vs x/d"
+    figure: "6"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 580.0
+      dp_rc_pct: 3.0
+      M: 5.0
+      I: 10.3
+    alpha_deg: 30.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      x_limits: [0.0, 58.0]
+      y_axis_type: linear
+      y_ticks: [0.65, 0.70, 0.75, 0.80]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 58.0]
+      plot_y_limits: [0.65, 0.83]
+      expected_points: 117
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 118 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 6 calibration on every labelled major tick: max residual 8.7e-15 in x/d (6 ticks)
+      and 3.2e-07 in eta (4 ticks); all 30 x and 19 y tick spacings uniform to 0.0009 pt
+      (linear axes). The last drawn vertex, on the right frame at x/d 58, is the plotting
+      program's clip point and is DROPPED; 117 points remain, x/d 18.1 to the last station.
+      Plateau (x/d 18.1-49.8, trapezoid) mean 0.6883, range 0.6798-0.7008. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header.
+
+  - path: fig9_eta_tot_E20_dp2.csv
+    after: null
+    page: 1812
+    item: "Figure 9, red solid curve (legend: dp_r,c=2%, M=4.1, I=6.5)"
+    series: "E20 5 bar Tc 540 K dp 2% M 4.1 I 6.5; TC1, eta_tot vs x/d"
+    figure: "9"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 20.0
+      t_over_d: 2.0
+      L_over_d: 5.85
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 540.0
+      dp_rc_pct: 2.0
+      M: 4.1
+      I: 6.5
+    alpha_deg: 20.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.72, 0.74, 0.76, 0.78, 0.80, 0.82, 0.84]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 50.0]
+      plot_y_limits: [0.72, 0.85]
+      expected_points: 85
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 86 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 9 calibration on every labelled major tick: max residual 7.5e-05 in x/d (6 ticks)
+      and 3.6e-07 in eta (7 ticks); all 26 x and 27 y tick spacings uniform to 0.0009 pt
+      (linear axes). The last drawn vertex, on the right frame at x/d 50, is the plotting
+      program's clip point and is DROPPED; 85 points remain, x/d 18.2 to the last station.
+      Plateau (x/d 18.2-49.7, trapezoid) mean 0.7900, range 0.7824-0.8053. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header.
+
+  - path: fig9_eta_tot_E20_dp3.csv
+    after: null
+    page: 1812
+    item: "Figure 9, blue solid curve (legend: dp_r,c=3%, M=5.2, I=10.3)"
+    series: "E20 5 bar Tc 540 K dp 3% M 5.2 I 10.3; TC1, eta_tot vs x/d"
+    figure: "9"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 20.0
+      t_over_d: 2.0
+      L_over_d: 5.85
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 540.0
+      dp_rc_pct: 3.0
+      M: 5.2
+      I: 10.3
+    alpha_deg: 20.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.72, 0.74, 0.76, 0.78, 0.80, 0.82, 0.84]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 50.0]
+      plot_y_limits: [0.72, 0.85]
+      expected_points: 86
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 87 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 9 calibration on every labelled major tick: max residual 7.5e-05 in x/d (6 ticks)
+      and 3.6e-07 in eta (7 ticks); all 26 x and 27 y tick spacings uniform to 0.0009 pt
+      (linear axes). The last drawn vertex, on the right frame at x/d 50, is the plotting
+      program's clip point and is DROPPED; 86 points remain, x/d 18.2 to the last station.
+      Plateau (x/d 18.2-49.7, trapezoid) mean 0.7996, range 0.7912-0.8152. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header. Same
+      curve as Figure 5 green (E20): agreement 1.05e-5 in eta_tot over 85 common abscissae,
+      independent calibrations. Committed from Figure 9 (the dp sweep it belongs to); Figure
+      5's copy is the cross-check.
+
+  - path: fig9_eta_tot_E20_dp4.csv
+    after: null
+    page: 1812
+    item: "Figure 9, green solid curve (legend: dp_r,c=4%, M=6.1, I=14.2)"
+    series: "E20 5 bar Tc 540 K dp 4% M 6.1 I 14.2; TC1, eta_tot vs x/d"
+    figure: "9"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 20.0
+      t_over_d: 2.0
+      L_over_d: 5.85
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 540.0
+      dp_rc_pct: 4.0
+      M: 6.1
+      I: 14.2
+    alpha_deg: 20.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.72, 0.74, 0.76, 0.78, 0.80, 0.82, 0.84]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 50.0]
+      plot_y_limits: [0.72, 0.85]
+      expected_points: 87
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 88 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 9 calibration on every labelled major tick: max residual 7.5e-05 in x/d (6 ticks)
+      and 3.6e-07 in eta (7 ticks); all 26 x and 27 y tick spacings uniform to 0.0009 pt
+      (linear axes). The last drawn vertex, on the right frame at x/d 50, is the plotting
+      program's clip point and is DROPPED; 87 points remain, x/d 18.2 to the last station.
+      Plateau (x/d 18.2-49.7, trapezoid) mean 0.8051, range 0.7957-0.8222. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header.
+
+  - path: fig10_eta_tot_E30_5bar_dp2.csv
+    after: null
+    page: 1812
+    item: "Figure 10, green dashed curve (legend: ph=5bar, Tc=470K, dp_r,c=2.0%, M=4.5, I=6.7)"
+    series: "E30 5 bar Tc 470 K dp 2.0% M 4.5 I 6.7; TC1, eta_tot vs x/d"
+    figure: "10"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 470.0
+      dp_rc_pct: 2.0
+      M: 4.5
+      I: 6.7
+    alpha_deg: 30.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      x_limits: [0.0, 58.0]
+      y_axis_type: linear
+      y_ticks: [0.70, 0.75, 0.80, 0.85]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 58.0]
+      plot_y_limits: [0.7, 0.85]
+      expected_points: 118
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 119 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 10 calibration on every labelled major tick: max residual 2.0e-04 in x/d (6
+      ticks) and 3.6e-07 in eta (4 ticks); all 30 x and 16 y tick spacings uniform to 0.0008
+      pt (linear axes). The last drawn vertex, on the right frame at x/d 58, is the plotting
+      program's clip point and is DROPPED; 118 points remain, x/d 18.1 to the last station.
+      Plateau (x/d 18.1-49.7, trapezoid) mean 0.7681, range 0.7610-0.7782. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header.
+
+  - path: fig10_eta_tot_E30_10bar_dp3.csv
+    after: null
+    page: 1812
+    item: "Figure 10, red solid curve (legend: ph=10bar, Tc=480K, dp_r,c=3.0%, M=5.8, I=11.7)"
+    series: "E30 10 bar Tc 480 K dp 3.0% M 5.8 I 11.7; TC2, eta_tot vs x/d"
+    figure: "10"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 10.0
+      T_h_K: 1532.0
+      u_h_m_s: 29.1
+      T_c_K: 480.0
+      dp_rc_pct: 3.0
+      M: 5.8
+      I: 11.7
+    alpha_deg: 30.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      x_limits: [0.0, 58.0]
+      y_axis_type: linear
+      y_ticks: [0.70, 0.75, 0.80, 0.85]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 58.0]
+      plot_y_limits: [0.7, 0.85]
+      expected_points: 118
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 119 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 10 calibration on every labelled major tick: max residual 2.0e-04 in x/d (6
+      ticks) and 3.6e-07 in eta (4 ticks); all 30 x and 16 y tick spacings uniform to 0.0008
+      pt (linear axes). The last drawn vertex, on the right frame at x/d 58, is the plotting
+      program's clip point and is DROPPED; 118 points remain, x/d 18.2 to the last station.
+      Plateau (x/d 18.2-49.8, trapezoid) mean 0.7529, range 0.7392-0.7674. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header.
+
+  - path: fig10_eta_tot_E30_10bar_dp2.csv
+    after: null
+    page: 1812
+    item: "Figure 10, red dashed curve (legend: ph=10bar, Tc=480K, dp_r,c=2.1%, M=4.8, I=8.0)"
+    series: "E30 10 bar Tc 480 K dp 2.1% M 4.8 I 8.0; TC2, eta_tot vs x/d"
+    figure: "10"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 10.0
+      T_h_K: 1532.0
+      u_h_m_s: 29.1
+      T_c_K: 480.0
+      dp_rc_pct: 2.1
+      M: 4.8
+      I: 8.0
+    alpha_deg: 30.0
+    x_axis: x_over_d
+    x_scale: 1.0
+    y_axis: eta_overall
+    # Unscored: no scoring set yet; the baseline runner is a later PR.
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # The authors' stated maximum measuring uncertainty, d eta_r,tot <= 3%
+    # RELATIVE (p. 1807; schema bands are relative). A measurement statement,
+    # the same for every series; never derived from a model's error here.
+    uncertainty: 0.03
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+      x_multiplier: 1.0
+      x_limits: [0.0, 58.0]
+      y_axis_type: linear
+      y_ticks: [0.70, 0.75, 0.80, 0.85]
+      y_multiplier: 1.0
+      plot_x_limits: [0.0, 58.0]
+      plot_y_limits: [0.7, 0.85]
+      expected_points: 118
+      monotonic: null
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Extracted from the PDF vector stream (one stroked polyline, 119 vertices, no gaps,
+      x-monotonic), not pixel-digitised; reviewer-confirmed on a poppler overlay 2026-11-08.
+      Figure 10 calibration on every labelled major tick: max residual 2.0e-04 in x/d (6
+      ticks) and 3.6e-07 in eta (4 ticks); all 30 x and 16 y tick spacings uniform to 0.0008
+      pt (linear axes). The last drawn vertex, on the right frame at x/d 58, is the plotting
+      program's clip point and is DROPPED; 118 points remain, x/d 18.2 to the last station.
+      Plateau (x/d 18.2-49.8, trapezoid) mean 0.7358, range 0.7212-0.7510. M and I are the
+      authors' model estimates (Martiny et al. 97-GT-329), not measured; see header.
+
+  - path: fig8_q_TC1_5bar_xd26.csv
+    after: null
+    page: 1811
+    item: "Figure 8, green filled squares, solid line (legend: TC1, ph=5 bar, x/d=26, Tc=470K)"
+    series: "BIASED q: E30 5 bar x/d 26 Tc 470 K; TC1, hot-side q vs dp_r,c"
+    figure: "8"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 470.0
+      x_over_d: 26.0
+      z_over_d: -12.0
+    alpha_deg: 30.0
+    x_axis: dp_rc_percent
+    x_scale: 1.0
+    y_axis: q_hot_side_W_cm2
+    # NOT FOR SCORING, ever: the sensor replaces two cooling holes and biases
+    # the heat exchange toward the coolant side (authors, p. 1811).
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # No band is stated for the Vatell HFM-6 reading; the bias is not a band.
+    uncertainty: null
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
+      y_multiplier: 1.0
+      plot_x_limits: [1.5, 4.5]
+      plot_y_limits: [20.0, 80.0]
+      expected_points: 3
+      monotonic: increasing
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Centres of the 3 square markers in the PDF vector stream; the connecting polyline's
+      vertices coincide with them to 4.1e-04 pt. Reviewer-confirmed on a poppler overlay
+      2026-11-08. Figure 8 calibration on every labelled major tick: max residual 7.3e-06 in
+      dp (7 ticks) and 1.5e-04 W/cm2 (7 ticks); tick spacings uniform to 0.001 pt. The
+      abscissae land on the run settings (2.0/3.0/4.0, 2.1 at TC2) to 5e-6. BIASED by the
+      sensor itself (two holes removed); recorded for completeness, not for scoring.
+
+  - path: fig8_q_TC1_5bar_xd74.csv
+    after: null
+    page: 1811
+    item: "Figure 8, green open squares, dashed line (legend: TC1, ph=5 bar, x/d=74, Tc=470K)"
+    series: "BIASED q: E30 5 bar x/d 74 Tc 470 K; TC1, hot-side q vs dp_r,c"
+    figure: "8"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 5.0
+      T_h_K: 1567.0
+      u_h_m_s: 29.7
+      T_c_K: 470.0
+      x_over_d: 74.0
+      z_over_d: -12.0
+    alpha_deg: 30.0
+    x_axis: dp_rc_percent
+    x_scale: 1.0
+    y_axis: q_hot_side_W_cm2
+    # NOT FOR SCORING, ever: the sensor replaces two cooling holes and biases
+    # the heat exchange toward the coolant side (authors, p. 1811).
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # No band is stated for the Vatell HFM-6 reading; the bias is not a band.
+    uncertainty: null
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
+      y_multiplier: 1.0
+      plot_x_limits: [1.5, 4.5]
+      plot_y_limits: [20.0, 80.0]
+      expected_points: 3
+      monotonic: increasing
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Centres of the 3 square markers in the PDF vector stream; the connecting polyline's
+      vertices coincide with them to 3.6e-04 pt. Reviewer-confirmed on a poppler overlay
+      2026-11-08. Figure 8 calibration on every labelled major tick: max residual 7.3e-06 in
+      dp (7 ticks) and 1.5e-04 W/cm2 (7 ticks); tick spacings uniform to 0.001 pt. The
+      abscissae land on the run settings (2.0/3.0/4.0, 2.1 at TC2) to 5e-6. BIASED by the
+      sensor itself (two holes removed); recorded for completeness, not for scoring.
+
+  - path: fig8_q_TC2_10bar_xd26.csv
+    after: null
+    page: 1811
+    item: "Figure 8, blue filled squares, solid line (legend: TC2, ph=10 bar, x/d=26, Tc=480K)"
+    series: "BIASED q: E30 10 bar x/d 26 Tc 480 K; TC2, hot-side q vs dp_r,c"
+    figure: "8"
+    panel: single
+    geometry:
+      d_mm: 0.70
+      angle_deg: 30.0
+      t_over_d: 2.0
+      L_over_d: 4.0
+      sx_over_d: 5.0
+      sz_over_d: 8.6
+      p_h_bar: 10.0
+      T_h_K: 1532.0
+      u_h_m_s: 29.1
+      T_c_K: 480.0
+      x_over_d: 26.0
+      z_over_d: -12.0
+    alpha_deg: 30.0
+    x_axis: dp_rc_percent
+    x_scale: 1.0
+    y_axis: q_hot_side_W_cm2
+    # NOT FOR SCORING, ever: the sensor replaces two cooling holes and biases
+    # the heat exchange toward the coolant side (authors, p. 1811).
+    scores: null
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    # No band is stated for the Vatell HFM-6 reading; the bias is not a band.
+    uncertainty: null
+    class_confidence: confirmed
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
+      y_multiplier: 1.0
+      plot_x_limits: [1.5, 4.5]
+      plot_y_limits: [20.0, 80.0]
+      expected_points: 3
+      monotonic: increasing
+      printed_curve: null
+      kind: measured
+    cross_check: >-
+      Centres of the 3 square markers in the PDF vector stream; the connecting polyline's
+      vertices coincide with them to 4.1e-04 pt. Reviewer-confirmed on a poppler overlay
+      2026-11-08. Figure 8 calibration on every labelled major tick: max residual 7.3e-06 in
+      dp (7 ticks) and 1.5e-04 W/cm2 (7 ticks); tick spacings uniform to 0.001 pt. The
+      abscissae land on the run settings (2.0/3.0/4.0, 2.1 at TC2) to 5e-6. BIASED by the
+      sensor itself (two holes removed); recorded for completeness, not for scoring.

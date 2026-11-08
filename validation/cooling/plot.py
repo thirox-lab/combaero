@@ -87,6 +87,10 @@ AXIS_NAMES = {
     "h_imp_eff_wall": "imp./effusion wall h on A = X2 - piD2/4 [W/m2K]",
     "h_impingement_target": "impingement target-plate h [W/m2K]",
     "eta_overall": "overall cooling effectiveness (Tg-Tw)/(Tg-Tc)",
+    "x_over_d": "axial coordinate x/d",
+    "dp_rc_percent": "cooling air pressure drop dp_r,c [%]",
+    # Behrendt et al. (2008) Fig. 8: biased by the sensor, never scored.
+    "q_hot_side_W_cm2": "hot-gas-side heat flux q'' [W/cm2]",
     "pressure_ratio": "pressure ratio r = p / p0",
     # Hay et al. (1983): the INVERSE sense of Jobson's r, and on the coolant
     # total / mainstream static pair -- hence its own name.
