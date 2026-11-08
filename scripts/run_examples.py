@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -29,6 +30,12 @@ DEFAULT_TIMEOUT = 120
 SLOW_EXAMPLES: dict[str, int] = {"network_from_grid.py": 300, "hylton1983_c3x_vane.py": 600}
 
 
+def notebook_source(path: Path) -> str:
+    """The code cells of a notebook, joined into one script."""
+    cells = json.loads(path.read_text())["cells"]
+    return "\n\n".join("".join(c["source"]) for c in cells if c["cell_type"] == "code")
+
+
 def run_example(example_path: Path, timeout: int = DEFAULT_TIMEOUT) -> ExampleResult:
     """Run a single example script and return the result."""
     start_time = time.perf_counter()
@@ -37,8 +44,17 @@ def run_example(example_path: Path, timeout: int = DEFAULT_TIMEOUT) -> ExampleRe
         env = os.environ.copy()
         env["COMBAERO_SAVE_PLOTS"] = "1"
 
+        if example_path.suffix == ".ipynb":
+            # A notebook runs as its code cells joined into one script, from
+            # the repository root, with no Jupyter dependency. Cell outputs
+            # are not checked; a cell that raises fails the run. Agg keeps
+            # plt.show() from opening a window.
+            env["MPLBACKEND"] = "Agg"
+            cmd = [sys.executable, "-c", notebook_source(example_path)]
+        else:
+            cmd = [sys.executable, str(example_path)]
         result = subprocess.run(
-            [sys.executable, str(example_path)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -84,9 +100,10 @@ def main() -> None:
         print(f"Error: {examples_dir} not found.")
         sys.exit(1)
 
-    # Discover all .py files, excluding utilities, plus the worked examples
-    # from papers (#793) in papers/.
+    # Discover all .py files, excluding utilities, the notebooks (*.ipynb),
+    # and the worked examples from papers (#793) in papers/
     example_files = sorted([f for f in examples_dir.glob("*.py") if f.name != "plot_utils.py"])
+    example_files += sorted(examples_dir.glob("*.ipynb"))
     example_files += sorted((examples_dir / "papers").glob("*.py"))
 
     print(f"Found {len(example_files)} examples in {examples_dir}")

@@ -2684,6 +2684,8 @@ the Newton-homotopy last retry on, bounded only by the solve's timeout
 (default 30 s, `DEFAULT_SOLVE_TIMEOUT`), and the drawing's incompressible Mach
 limit. A saved drawing solves the same from a script as on the canvas.
 
+A worked notebook, [`python/examples/orifice_flow_from_dp.ipynb`](../python/examples/orifice_flow_from_dp.ipynb), loads the shipped ISO 5167 orifice example and sweeps a table of supply pressures and pressure differences into mass flows.
+
 ### Loading a network
 
 ```python
