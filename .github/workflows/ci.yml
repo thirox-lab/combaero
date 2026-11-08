@@ -257,13 +257,43 @@ jobs:
       - name: Set up CMake
         uses: jwlawson/actions-setup-cmake@v2
 
+      # googletest from a cache, else a git clone with retries, never the
+      # archive zip CMakeLists.txt names: on 2026-11-08 GitHub's archive host
+      # returned 503/504 for hours while git kept working (#1059).
+      - name: Locate googletest
+        shell: bash
+        run: |
+          tmp="$RUNNER_TEMP"
+          if command -v cygpath >/dev/null; then tmp="$(cygpath -m "$tmp")"; fi
+          echo "GTEST_DIR=$tmp/googletest-v1.15.2" >> "$GITHUB_ENV"
+
+      - name: Cache googletest
+        id: gtest-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GTEST_DIR }}
+          key: googletest-v1.15.2
+
+      - name: Fetch googletest
+        if: steps.gtest-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          for i in 1 2 3 4 5; do
+            git -c advice.detachedHead=false clone --quiet --depth 1 --branch v1.15.2 \
+              https://github.com/google/googletest.git "$GTEST_DIR" && exit 0
+            rm -rf "$GTEST_DIR"
+            sleep $((i * 15))
+          done
+          exit 1
+
       - name: Configure (Ninja on Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           cmake -S . -B build \
             -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$GTEST_DIR"
 
       # GCC 14 is what the manylinux_2_28 wheel compiles with (gcc-toolset-14);
       # the runner's default GCC 13 passed an -O3 -Werror warning that failed
@@ -280,7 +310,8 @@ jobs:
         shell: bash
         run: |
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$GTEST_DIR"
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
