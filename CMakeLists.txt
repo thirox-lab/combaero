@@ -25,6 +25,11 @@ set_target_properties(combaero_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # -----------------------------------------------------------------------------
 # Google Test Integration
 # -----------------------------------------------------------------------------
+# OFF for the Python build (pyproject.toml): it needs no tests, and the fetch
+# below made every pip install depend on GitHub's archive host (#1059).
+option(COMBAERO_ENABLE_TESTS "Build the C++ unit tests (fetches googletest)" ON)
+
+if(COMBAERO_ENABLE_TESTS)
 enable_testing()
 
 include(FetchContent)
@@ -53,6 +58,7 @@ foreach(test_source ${TEST_SOURCES})
     target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR})
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+endif()
 
 # -----------------------------------------------------------------------------
 # Optional: Python bindings (enabled explicitly or via scikit-build-core)
