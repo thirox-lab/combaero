@@ -1,0 +1,5 @@
+x,y,class_confidence,note
+1.2199,0.8706,confirmed,"resolved by user review 2026-11-08: real point, open circle on the Ma_m 0.3 curve"
+1.2268,0.7310,confirmed,
+1.2529,0.9524,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3098,0.9748,confirmed,"user review round 3, 2026-11-08: #C lower marker is a circle (Ma_m 0.3); the existing circle point already sat on it, kept (no duplicate)"

@@ -1,0 +1,4 @@
+x,y,class_confidence,note
+1.6358,0.8180,provisional,"user review round 2, 2026-11-08: blob at PR ~1.64; collapsed curves, coincident series by continuity"
+1.8180,0.8141,provisional,"user review round 2, 2026-11-08: blob at PR ~1.81-1.83 (marker count ambiguous, one point per series); collapsed curves, coincident series by continuity"
+1.9635,0.8166,provisional,"user review round 2, 2026-11-08: blob at PR ~1.96 with a pointed top; collapsed curves, coincident series by continuity; square and circle have their own markers at PR 2.0-2.02, so not added here"

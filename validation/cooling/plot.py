@@ -92,6 +92,7 @@ AXIS_NAMES = {
     # total / mainstream static pair -- hence its own name.
     "pc0_over_pinf": "pressure ratio pc+ / p_inf (coolant total / mainstream static)",
     "uj_over_uinf": "velocity ratio u_j / u_inf",
+    "Ma_c": "coolant-channel (internal crossflow) Mach number Ma_c",
     "K_mass_flow": "mass-flow coefficient K = m / (A sqrt(p0 rho0))",
 }
 

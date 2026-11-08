@@ -1,0 +1,11 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.1011,0.3271,triangle,219,515,0.891,,confirmed,
+1.1160,0.5101,triangle,232,362,0.764,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1500,0.6117,triangle,262,277,0.793,,confirmed,
+1.1920,0.7408,triangle,299,169,0.696,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2510,0.7791,triangle,351,137,0.818,,confirmed,
+1.3168,0.8090,triangle,409,112,0.752,,confirmed,
+1.3860,0.8258,triangle,470,98,0.842,,confirmed,
+1.4971,0.8330,triangle,568,92,0.831,,confirmed,
+1.6174,0.8486,triangle,674,79,0.813,,confirmed,
+1.9417,0.8702,triangle,960,61,0.833,,confirmed,

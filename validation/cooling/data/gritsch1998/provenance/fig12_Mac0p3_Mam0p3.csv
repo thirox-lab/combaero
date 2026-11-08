@@ -1,0 +1,11 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0572,0.5530,circle,189,476,0.749,,confirmed,
+1.0606,1.0720,circle,192,150,0.677,,confirmed,
+1.0685,1.1261,circle,199,116,0.604,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0913,1.0975,circle,219,134,0.602,,confirmed,
+1.1288,1.0688,circle,252,152,0.574,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1857,1.0227,circle,302,181,0.565,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2494,1.0005,circle,358,195,0.653,,confirmed,
+1.3108,0.9830,circle,412.0,206.0,,,confirmed,"user review round 2, 2026-11-08: PR ~1.31, missed circle (round outline)"
+1.4291,0.9465,circle,516.0,229.0,,,provisional,"user review round 2, 2026-11-08: PR ~1.43, expected circle below in the cluster; symbol hidden; series by continuity"
+1.7123,0.9228,circle,765.0,244.0,,,provisional,"user review round 3, 2026-11-08: all series collapse here (first PR where Ma_m 1.2 joins); coincident by user review"

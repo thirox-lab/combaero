@@ -4157,7 +4157,7 @@ documents:
     0: 0.80-0.82 nearly flat in PR (Fig. 7); with Ma_c 0.3 Cd > 1, peak ~1.13-1.15 at PR 1.07-1.09 (40% above Ma_c
     0, Fig. 10), plateau ~0.90 at high PR; at Ma_c 0.6 an unstable double-bend regime near PR 1.2-1.4 (Figs. 9,
     13). Layback changes Cd negligibly.'
-  status: screened
+  status: extracted
   verdict: 'Screened 2026-11-02 (#807, #813; was wanted). NO combaero closure is built from it, so nothing here is
     fidelity: every use is cross-source ACCURACY, labelled as such. What it could score: (1) the McGreehan-Schotsch
     Eq. 17 U1/Vi term (orifice::mcgreehan_schotsch::cd, used by EffusionPlateElement when duct-fed via
@@ -4176,15 +4176,18 @@ documents:
     but the plain-hole Cd, so it under-predicts shaped-hole flow by up to ~10% without supply crossflow and by up to
     ~40-50% at Ma_c 0.3 and low PR (Figs. 15-18). A real gap, not closable from this paper (no correlation; the
     1997 ISABE correlation is wanted). Data are plotted only: digitise Figs. 3 and 6 first (cleanest); fidelity on
-    overplotted near-PR-1 points would be an upper bound.'
+    overplotted near-PR-1 points would be an upper bound. Figs. 3-14 digitised (63 series, 500 marks, 465
+    confirmed, 35 provisional collapsed-curve or continuity-deduced marks filed apart; unscored, cross-source
+    accuracy only; Cd on the inlet area, same convention as hay1983). Digitised 2026-11-08, user-confirmed
+    over three review rounds'
   read_for: ['#807/#813 inlet-crossflow Cd of duct-fed holes vs McGreehan-Schotsch U1/Vi', 'exit-side crossflow Cd
       to Ma_m 1.2', shaped-hole (fan, laidback) Cd for FilmCoolingElement hole_type shaped]
   issues: [386, 807, 813]
-  records: []
+  records: [validation/cooling/data/gritsch1998/metadata.yaml, validation/cooling/extractions/gritsch_1998_shaped_hole_cd.md]
   notes: 'Arrived 2026-11-02 in sources/new/ (from the user) as 557_1.pdf; moved from the wanted list. Companion
     papers (not held): Gritsch et al. 1998 J. Turbomach. 120, 549 (adiabatic effectiveness of the same holes); Thole
     et al. 1998 J. Turbomach. 120, 327 (flowfields); Hay & Lampard 1995 ASME 95-GT-15 (flared-hole Cd, Ma_m <= 0.3).
-    Not checked: the per-curve point counts are approximate (counted off 110 dpi page images); no digitisation done.'
+    The per-curve counts above were approximate (110 dpi); the digitised counts are in the metadata.'
 - file: sources/orifices/yan_et_al_2026_aerospace_13_555_rotating_inclined_orifice_cd.pdf
   sha256: 'ab6641885b81b686896f76d95fa09d0f87f66df785e4b189eb2b16328ed8a91e'
   citation: 'Yan, J., Wei, S., Mao, J., Yang, Z., Han, F., Wang, L. (2026). A model for accurate prediction of

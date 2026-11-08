@@ -1,0 +1,9 @@
+x,y,class_confidence,note
+1.2615,0.8864,confirmed,
+1.2649,0.9008,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2731,0.9643,confirmed,"user review round 2, 2026-11-08: #7 is a triangle"
+1.2925,0.9758,confirmed,
+1.3061,0.9700,confirmed,
+1.3402,0.9643,confirmed,
+1.4311,0.9421,confirmed,
+1.5345,0.9277,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

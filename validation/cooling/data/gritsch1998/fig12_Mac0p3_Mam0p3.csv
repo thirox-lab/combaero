@@ -1,0 +1,9 @@
+x,y,class_confidence,note
+1.0572,0.5530,confirmed,
+1.0606,1.0720,confirmed,
+1.0685,1.1261,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0913,1.0975,confirmed,
+1.1288,1.0688,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1857,1.0227,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2494,1.0005,confirmed,
+1.3108,0.9830,confirmed,"user review round 2, 2026-11-08: PR ~1.31, missed circle (round outline)"

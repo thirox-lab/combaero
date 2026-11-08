@@ -1,0 +1,4 @@
+x,y,class_confidence,note
+1.4279,0.9528,provisional,"user review round 2, 2026-11-08: PR ~1.43 cluster: flat-topped square at its upper left; nothing was detected in this cluster"
+1.7123,0.9228,provisional,"user review round 3, 2026-11-08: all series collapse here (first PR where Ma_m 1.2 joins); coincident by user review"
+1.8999,0.9118,provisional,"resolved by user review 2026-11-08: real point (curves connect); series deduced from curve continuity, symbol unreadable; assigned to the Ma_m 0.0 square series as its end point (open box outline)"

@@ -1,0 +1,13 @@
+x,y,class_confidence,note
+0.0013,0.8239,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.0361,0.8708,confirmed,
+0.0779,0.8964,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.1545,0.9560,confirmed,
+0.1879,0.9852,confirmed,
+0.2186,0.9998,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.2506,1.0247,confirmed,
+0.3091,1.0436,confirmed,
+0.3801,1.0557,confirmed,
+0.4317,1.0581,confirmed,
+0.5083,1.0173,confirmed,
+0.5463,0.9726,confirmed,resolved by user review 2026-11-08: missed circle (PR 1.25) end point overlapping the triangle near Ma_c 0.55

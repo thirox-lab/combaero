@@ -1,0 +1,13 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0537,0.9701,square,186,214,0.534,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0549,0.7377,square,187,360,0.729,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0662,1.1611,square,197,94,0.583,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0924,1.1245,square,220,117,0.628,,confirmed,
+1.1368,1.0784,square,259,146,0.689,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1800,1.0370,square,297,172,0.625,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1948,1.0259,square,310,179,0.535,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2425,1.0212,square,352,182,0.757,,confirmed,
+1.3199,0.9671,square,420.0,216.0,,,confirmed,"user review round 2, 2026-11-08: PR ~1.32, missed square"
+1.4279,0.9528,square,515.0,225.0,,,provisional,"user review round 2, 2026-11-08: PR ~1.43 cluster: flat-topped square at its upper left; nothing was detected in this cluster"
+1.7123,0.9228,square,765.0,244.0,,,provisional,"user review round 3, 2026-11-08: all series collapse here (first PR where Ma_m 1.2 joins); coincident by user review"
+1.8999,0.9118,square,930,251,,,provisional,"resolved by user review 2026-11-08: real point (curves connect); series deduced from curve continuity, symbol unreadable; assigned to the Ma_m 0.0 square series as its end point (open box outline)"

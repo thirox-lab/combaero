@@ -1,0 +1,4 @@
+x,y,class_confidence,note
+1.3973,0.8169,provisional,"user review round 2, 2026-11-08: PR 1.4, square and circle completely overlap (like the curves); coincident"
+1.6358,0.8180,provisional,"user review round 2, 2026-11-08: blob at PR ~1.64; collapsed curves, coincident series by continuity; the diamond curve joins here too but has its own marker at PR 1.68, so no diamond added"
+1.8180,0.8141,provisional,"user review round 2, 2026-11-08: blob at PR ~1.81-1.83 (one blob with a lower lobe; marker count ambiguous, one point per series recorded); collapsed curves, coincident series by continuity"

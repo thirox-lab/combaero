@@ -1,0 +1,8 @@
+x,y,class_confidence,note
+1.0205,0.7305,confirmed,
+1.0364,0.7637,confirmed,
+1.0622,0.7788,confirmed,
+1.0855,0.7852,confirmed,resolved by user review 2026-11-08: #12 is a circle (Ma_m 0.3)
+1.1884,0.7970,confirmed,"user review round 2, 2026-11-08: #2 is a circle"
+1.3833,0.8025,confirmed,"user review round 2, 2026-11-08: #8 is a circle"
+1.6223,0.8165,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

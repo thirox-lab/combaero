@@ -1,0 +1,9 @@
+Ma_c,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+0.0453,0.8413,square,219,534,0.764,,confirmed,
+0.0752,0.9114,square,262,425,0.679,,confirmed,
+0.1467,0.9781,square,365,321,0.715,,confirmed,
+0.2023,1.0455,square,445,216,0.673,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.2620,1.0975,square,531,135,0.726,,confirmed,
+0.3128,1.1321,square,604,81,0.750,,confirmed,
+0.3552,1.1018,square,665,128,0.706,,confirmed,
+0.4081,0.9429,square,741,375,0.750,,confirmed,

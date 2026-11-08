@@ -1,0 +1,11 @@
+Ma_c,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+0.1037,0.8653,diamond,304,560,0.664,,confirmed,
+0.1545,0.8915,diamond,377,517,0.724,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.2046,0.9024,diamond,449,499,0.659,,confirmed,
+0.2255,0.9085,diamond,479,489,0.787,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.2548,0.9146,diamond,521,479,0.814,,confirmed,
+0.3126,0.9212,diamond,604,468,0.816,,confirmed,
+0.3788,0.9243,diamond,699,463,0.764,,confirmed,
+0.4255,0.9255,diamond,766,461,0.778,,confirmed,
+0.5105,0.9151,diamond,888,478,0.784,,confirmed,
+0.5509,0.9084,diamond,946,489,0.760,,confirmed,

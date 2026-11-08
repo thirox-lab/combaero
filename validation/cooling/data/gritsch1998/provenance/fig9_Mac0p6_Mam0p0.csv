@@ -1,0 +1,10 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.2108,0.8578,square,320,154,0.779,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2131,0.8867,square,322,136,0.658,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2154,0.9011,square,324,127,0.659,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2507,0.9669,square,355,86,0.670,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3093,0.9924,square,406.5,70.0,,,confirmed,"user review round 3, 2026-11-08: #C upper marker is a square (Ma_m 0.0)"
+1.4259,0.9553,square,509.0,93.0,,,provisional,"resolved by user review 2026-11-08: overlapping neighbour of #27 (PR ~1.43); series deduced from curve continuity, symbol unreadable"
+1.5500,0.9198,square,618,115,,,provisional,resolved by user review 2026-11-08: coincident point where the curves collapse (the auto pass saw one diamond); series by curve continuity
+1.7253,0.9003,square,772.0,127.0,,,provisional,"user review round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity; the diamond curve has its own markers at PR 1.67 and 1.89"
+1.9381,0.8919,square,959,132,0.650,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

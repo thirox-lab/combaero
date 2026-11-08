@@ -1,0 +1,13 @@
+x,y,class_confidence,note
+1.1646,0.1670,confirmed,
+1.1692,0.2267,confirmed,
+1.1817,0.3451,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2021,0.4360,confirmed,
+1.2623,0.5723,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3281,0.6512,confirmed,
+1.3916,0.7015,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.4790,0.7505,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5686,0.7888,confirmed,
+1.6831,0.8103,confirmed,
+1.7875,0.8223,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9270,0.8570,confirmed,

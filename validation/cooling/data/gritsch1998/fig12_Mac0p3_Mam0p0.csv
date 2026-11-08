@@ -1,0 +1,10 @@
+x,y,class_confidence,note
+1.0537,0.9701,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0549,0.7377,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0662,1.1611,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0924,1.1245,confirmed,
+1.1368,1.0784,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1800,1.0370,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1948,1.0259,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2425,1.0212,confirmed,
+1.3199,0.9671,confirmed,"user review round 2, 2026-11-08: PR ~1.32, missed square"

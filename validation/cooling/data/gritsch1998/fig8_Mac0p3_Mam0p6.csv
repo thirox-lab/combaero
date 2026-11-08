@@ -1,0 +1,10 @@
+x,y,class_confidence,note
+1.0760,0.6646,confirmed,
+1.0870,0.8395,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1105,0.9705,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1556,0.9949,confirmed,
+1.1883,0.9931,confirmed,
+1.2166,0.9965,confirmed,
+1.2629,0.9947,confirmed,
+1.3352,0.9858,confirmed,
+1.9474,0.9040,confirmed,resolved by user review 2026-11-08: missed end point of the Ma_m 0.6 triangle series (filled triangle at the curve end)

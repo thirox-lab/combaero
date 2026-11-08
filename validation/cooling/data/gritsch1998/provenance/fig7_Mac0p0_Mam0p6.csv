@@ -1,0 +1,14 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0365,0.5324,triangle,172,335,0.832,,confirmed,
+1.0545,0.6201,triangle,187,266,0.778,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0774,0.6798,triangle,206,219,0.771,,confirmed,
+1.1005,0.7141,triangle,225,192,0.729,,confirmed,
+1.1444,0.7496,triangle,261,164,0.792,,confirmed,
+1.2030,0.7776,triangle,309,142,0.765,,confirmed,
+1.2580,0.7928,triangle,354,130,0.732,,confirmed,
+1.3277,0.7978,triangle,411,126,0.775,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3961,0.8080,triangle,467.0,118.0,,,confirmed,"user review round 2, 2026-11-08: PR 1.4, triangle slightly below the square/circle pair"
+1.5172,0.8079,triangle,566,118,0.680,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.6358,0.8180,triangle,663.0,110.0,,,provisional,"user review round 2, 2026-11-08: blob at PR ~1.64; collapsed curves, coincident series by continuity"
+1.8180,0.8141,triangle,812.0,113.0,,,provisional,"user review round 2, 2026-11-08: blob at PR ~1.81-1.83 (marker count ambiguous, one point per series); collapsed curves, coincident series by continuity"
+1.9635,0.8166,triangle,931.0,111.0,,,provisional,"user review round 2, 2026-11-08: blob at PR ~1.96 with a pointed top; collapsed curves, coincident series by continuity; square and circle have their own markers at PR 2.0-2.02, so not added here"

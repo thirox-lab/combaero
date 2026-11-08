@@ -1,0 +1,4 @@
+x,y,class_confidence,note
+1.2435,0.9345,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2585,1.0076,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3277,0.9797,confirmed,resolved by user review 2026-11-08: #16 is a circle (Ma_m 0.3)

@@ -1,0 +1,9 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.2615,0.8864,triangle,369,287,0.856,,confirmed,
+1.2649,0.9008,triangle,372,272,0.773,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2731,0.9643,triangle,379,206,0.669,,confirmed,"user review round 2, 2026-11-08: #7 is a triangle"
+1.2925,0.9758,triangle,396,194,0.787,,confirmed,
+1.3061,0.9700,triangle,408,200,0.783,,confirmed,
+1.3402,0.9643,triangle,438,206,0.761,,confirmed,
+1.4311,0.9421,triangle,518,229,0.804,,confirmed,
+1.5345,0.9277,triangle,609,244,0.673,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

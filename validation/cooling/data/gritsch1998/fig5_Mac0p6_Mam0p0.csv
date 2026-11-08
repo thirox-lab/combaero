@@ -1,0 +1,13 @@
+x,y,class_confidence,note
+1.2677,0.4554,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2789,0.4936,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2801,0.5050,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2814,0.5126,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2865,0.5889,confirmed,
+1.3248,0.6829,confirmed,
+1.3801,0.7299,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5052,0.7819,confirmed,
+1.6303,0.8061,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.7786,0.8187,confirmed,"user review round 2, 2026-11-08: #17 diamond -> square (wrong series, not a false hit)"
+1.9551,0.8314,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9735,0.8390,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

@@ -1,0 +1,11 @@
+x,y,class_confidence,note
+1.0365,0.5324,confirmed,
+1.0545,0.6201,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0774,0.6798,confirmed,
+1.1005,0.7141,confirmed,
+1.1444,0.7496,confirmed,
+1.2030,0.7776,confirmed,
+1.2580,0.7928,confirmed,
+1.3277,0.7978,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3961,0.8080,confirmed,"user review round 2, 2026-11-08: PR 1.4, triangle slightly below the square/circle pair"
+1.5172,0.8079,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

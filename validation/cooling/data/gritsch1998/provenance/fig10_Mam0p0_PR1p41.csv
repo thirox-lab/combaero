@@ -1,0 +1,11 @@
+Ma_c,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+0.0006,0.8099,triangle,156,651,0.751,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.0431,0.8629,triangle,217,564,0.738,,confirmed,
+0.1399,0.9298,triangle,356,454,0.803,,confirmed,
+0.2012,0.9468,triangle,444,426,0.742,,confirmed,
+0.2569,0.9596,triangle,524,405,0.859,,confirmed,
+0.3098,0.9681,triangle,600,391,0.832,,confirmed,
+0.3857,0.9784,triangle,709,374,0.824,,confirmed,
+0.4324,0.9815,triangle,776,369,0.805,,confirmed,
+0.5132,0.9759,triangle,892,378,0.814,,confirmed,
+0.5512,0.9698,triangle,946.5,388.0,,,confirmed,resolved by user review 2026-11-08: missed triangle (PR 1.41) end point overlapping the circle near Ma_c 0.55 (drawn open)
