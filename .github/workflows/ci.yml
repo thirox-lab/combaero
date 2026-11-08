@@ -219,7 +219,7 @@ jobs:
       - name: Set up Biome
         uses: biomejs/setup-biome@v2
         with:
-          version: 2.6.4
+          version: 2.6.5
 
       - name: Check frontend style (Biome)
         run: biome check gui/frontend/src
