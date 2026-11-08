@@ -1,0 +1,1191 @@
+# Hay, Lampard and Benmansour (1983): discharge coefficient of a row of
+# film-cooling holes with crossflow on BOTH sides -- coolant (inlet) Mach
+# number Mc and mainstream (exit) Mach number Minf varied independently --
+# at hole angles of 30 and 90 deg, coolant duct parallel or perpendicular to
+# the mainstream. Figures 5, 6, 8, 11, 12 and 15; 25 series, 174 marks.
+#
+# WHAT THE DATA TESTS. The only measured data in this project on (i) a HOLE
+# ANGLE term in Cd and (ii) the DIRECTION of the coolant crossflow relative
+# to the hole's lean. No combaero closure carries either, so every series is
+# `scores: null`: it is cross-source ACCURACY data for a future closure (and
+# must be labelled cross-source when scored), never fidelity -- fidelity
+# applies only to a model built from this paper, and none is. Nothing is
+# tuned to it. See extractions/hay_1983_crossflow_cd.md.
+#
+# GEOMETRY. D = 3.5 mm, four holes in one row, S/D = 2.5, L/D = 6 in every
+# published figure (L/D 2 was tested in the parallel rig but not published
+# as data). alpha = angle of the hole axis to the mainstream; in the parallel
+# rig the 30 deg hole leans downstream WITH both streams, in the
+# perpendicular rig the coolant runs at 90 deg to the hole's lean plane.
+# Inlet edge not stated for the test plate (read as sharp from p. 244).
+# Room-temperature air, hole Re 1e4-1e5 (not printed per point).
+#
+# THE CD DEFINITION -- coolant STAGNATION to mainstream STATIC. Ideal flow is
+# "based on the coolant stagnation pressure and mainstream static pressure"
+# (p. 245); the abscissa of Figs. 5-12 is PR = pc+/p_inf on the same pair
+# (x_axis pc0_over_pinf). Fig. 15's abscissa is the velocity ratio u_j/u_inf
+# (x_axis uj_over_uinf). Declared in conventions.py as
+# Cd_coolant_total_exit_static, distinct from Rohde's and McGreehan-Schotsch's.
+#
+# UNCERTAINTY. Table 3 is a real MEASUREMENT band, but it depends on PR: at
+# Minf 0.3, 8-3.5 % for 1.01 < PR < 1.2, 3.5-1.5 % for 1.2-1.5, 1.5 % above
+# 1.5 (one-sided crossflow ~6 / 2.5 / 1.5 %). The schema's `uncertainty` is
+# one scalar per series, which would misstate it either way, so it is null
+# on every series and the band lives here and in the extraction.
+#
+# DIGITISATION (2026-11-08). Automated first pass on the native 300 dpi 1-bit
+# scan, every candidate reviewed, missed marks picked by hand; user-confirmed
+# on scan overlays (scan + calibrated frame + points + numbered suspects) on
+# 2026-11-08 ("all figs okay"). The scan and overlays are not committed.
+# Calibration: axes fitted as lines, ticks as short perpendicular runs, a
+# linear map per axis; every printed tick reproduces to <= 0.0025 (Fig. 15
+# y: 0.0049), so both axes are LINEAR on every figure.
+#
+# WHY THE NUMBERS ARE UNCORRECTED -- THE DRAFTING SLANT. The axes are not
+# perpendicular: the y axis leans -0.35 to -0.95 deg in every panel while the
+# x axis tilts -0.20 to +0.38 deg. A page rotation would tilt both equally,
+# so this is a drafting shear, not scan rotation, and it is NOT removed by a
+# rotation. The map is oblique: constant-PR lines run parallel to the drawn
+# y axis, constant-Cd lines parallel to the drawn x axis. Column x is that
+# reading. Column x_perp is the alternative (constant PR perpendicular to the
+# x axis), kept as the sensitivity: it is +0.002 to +0.008 higher in PR,
+# largest at the top of Figs. 6/8; Cd is unaffected. The loader reads x and y
+# only.
+#
+# CALIBRATION FILES (fig<N>_xticks.csv, fig<N>_yticks.csv, fig<N>_corners.csv)
+# are committed alongside but deliberately NOT listed under `files:`, as in
+# rohde1969/florschuetz1981: they are calibration, not measurement. ticks
+# rows give the printed value, its pixel position, how it was found and the
+# fitted value; NOT-FOUND(pred) ticks (Figs. 11, 12) are predicted, not seen.
+#
+# THIRD CHANNEL. Figs. 5 and 6 both plot the same run (crosses, Minf .31,
+# Mc .29). Digitised independently in the two panels, all 7 marks agree to
+# |dPR| <= 0.010 and |dCd| <= 0.009 (mean ~0.005).
+#
+# CLASS LABELS. fig6_unassigned_open_square is ONE mark whose series is
+# unknown (an open square-like symbol on the Mc .09 curve); it is filed
+# `class_confidence: disputed` -- pooled use only. fig12_filled_squares is
+# `provisional` for one mark (flag #4). Flagged marks (merged with another
+# symbol or a curve, or in the overplotted PR 1.9-2.1 clusters of Figs. 6
+# and 12) are kept and listed in each series' cross_check; their position is
+# a blob centre, biased along the curve where merged. Pointer symbols sit at
+# their blob centroid (the flag body, not the tip).
+#
+# NOT HERE. Fig. 7 (vs Rohde, Minf 0) was not digitised: its symbols are
+# printed over Rohde's and could not be separated. The plateau carpets
+# (Figs. 9, 10, 13, 14) are printed NUMBERS, not points; they are transcribed
+# in the extraction, with two suspected misprints flagged there. Fig. 15's
+# "Prediction" curve is the authors' model, not data. Fig. 11's caption
+# ("at Minf = .3") is a misprint; its legend varies Minf at Mc ~0.29.
+
+paper:
+  name: hay1983
+  citation: >-
+    Hay, N., Lampard, D. and Benmansour, S. (1983). "Effect of Crossflows on
+    the Discharge Coefficient of Film Cooling Holes." ASME J. Engineering for
+    Power 105(2), 243-248. Paper No. 82-GT-147.
+  secondary: false
+
+files:
+  - path: fig5_open_circles.csv
+    after: null
+    page: 245
+    item: "Figure 5, open circle series"
+    series: "Mc 0.29 Minf 0.00 parallel 90deg, open circles"
+    figure: "5"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.00
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 5 calibration: max tick
+      residual 0.0018 in x and 0.0012 in y (linear axes, oblique map; see header). No flagged marks.
+
+  - path: fig5_filled_pointers.csv
+    after: null
+    page: 245
+    item: "Figure 5, filled pointer series"
+    series: "Mc 0.29 Minf 0.12 parallel 90deg, filled pointers"
+    figure: "5"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.12
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 5 calibration: max tick
+      residual 0.0018 in x and 0.0012 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #2 at x 1.5614, Cd 0.8391: pointer touching a gray halftone curve
+      band; #3 at x 1.8972, Cd 0.8288: pointer merged with curve and next to open circle at PR 1.90.
+
+  - path: fig5_crosses.csv
+    after: null
+    page: 245
+    item: "Figure 5, cross series"
+    series: "Mc 0.29 Minf 0.31 parallel 90deg, crosses"
+    figure: "5"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.31
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 5 calibration: max tick
+      residual 0.0018 in x and 0.0012 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #1 at x 1.4891, Cd 0.7617: cross drawn on its curve. Same run as
+      figure 6's crosses (Minf .31, Mc .29), digitised independently: all 7 marks agree to |dPR| <=
+      0.010 and |dCd| <= 0.009 (mean ~0.005).
+
+  - path: fig5_filled_diamonds.csv
+    after: null
+    page: 245
+    item: "Figure 5, filled diamond series"
+    series: "Mc 0.29 Minf 0.52 parallel 90deg, filled diamonds"
+    figure: "5"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.52
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 5
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      5 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 5 calibration: max tick
+      residual 0.0018 in x and 0.0012 in y (linear axes, oblique map; see header). No flagged marks.
+
+  - path: fig6_open_circles.csv
+    after: null
+    page: 245
+    item: "Figure 6, open circle series"
+    series: "Mc 0.00 Minf 0.31 parallel 90deg, open circles"
+    figure: "6"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.00
+      M_inf: 0.31
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 6 calibration: max tick
+      residual 0.0016 in x and 0.0025 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #4 at x 1.7272, Cd 0.7924: open circle under a cross at PR 1.73; #9 at
+      x 1.9433, Cd 0.7903: open circle in the PR 1.9-1.95 cluster.
+
+  - path: fig6_filled_pointers.csv
+    after: null
+    page: 245
+    item: "Figure 6, filled pointer series"
+    series: "Mc 0.09 Minf 0.30 parallel 90deg, filled pointers"
+    figure: "6"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.09
+      M_inf: 0.30
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 6 calibration: max tick
+      residual 0.0016 in x and 0.0025 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #8 at x 1.9367, Cd 0.8023: uncertain pointer in the PR 1.9-1.95
+      cluster; could be curve halftone.
+
+  - path: fig6_filled_squares.csv
+    after: null
+    page: 245
+    item: "Figure 6, filled square series"
+    series: "Mc 0.19 Minf 0.31 parallel 90deg, filled squares"
+    figure: "6"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.19
+      M_inf: 0.31
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 6 calibration: max tick
+      residual 0.0016 in x and 0.0025 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #6 at x 1.8646, Cd 0.7885: square on gray halftone curve band at PR
+      1.87; #10 at x 2.0234, Cd 0.8003: square merged with curve end at PR 2.03.
+
+  - path: fig6_crosses.csv
+    after: null
+    page: 245
+    item: "Figure 6, cross series"
+    series: "Mc 0.29 Minf 0.31 parallel 90deg, crosses"
+    figure: "6"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.31
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 6 calibration: max tick
+      residual 0.0016 in x and 0.0025 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #2 at x 1.6389, Cd 0.7683: cross merged with open square; #5 at x
+      1.7370, Cd 0.8041: cross overlaps open circle (cand 2); #7 at x 1.9202, Cd 0.7942: cross in
+      the PR 1.9-1.95 cluster. Same run as figure 5's crosses (Minf .31, Mc .29), digitised
+      independently: all 7 marks agree to |dPR| <= 0.010 and |dCd| <= 0.009 (mean ~0.005).
+
+  - path: fig6_open_squares.csv
+    after: null
+    page: 245
+    item: "Figure 6, open square series"
+    series: "Mc 0.40 Minf 0.31 parallel 90deg, open squares"
+    figure: "6"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.40
+      M_inf: 0.31
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 6 calibration: max tick
+      residual 0.0016 in x and 0.0025 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #3 at x 1.6584, Cd 0.7694: open square touching cross at PR 1.66.
+
+  - path: fig6_unassigned_open_square.csv
+    after: null
+    page: 245
+    item: "Figure 6, one open square-like mark of unknown series"
+    series: "UNASSIGNED open square-like mark, Minf .31, parallel 90 deg"
+    figure: "6"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      M_inf: 0.31
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    class_confidence: disputed
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 1
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      1 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 6 calibration: max tick
+      residual 0.0016 in x and 0.0025 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #1 at x 1.2271, Cd 0.7445: open square-like symbol on the Mc .09
+      (pointer) curve at PR 1.23, Cd .745: an Mc .40 open square there would sit ~0.15 off its own
+      curve; series unknown, kept apart (UNASSIGNED). DISPUTED -- the symbol reads as an open square
+      (Mc .40) but sits on the Mc .09 curve; an Mc .40 square there would be ~0.15 off its own
+      curve. Pooled use only, never per-class. NEEDS THE Benmansour (1983) M.Phil. thesis tables,
+      which carry the run behind each mark, to assign it.
+
+  - path: fig8_open_circles.csv
+    after: null
+    page: 246
+    item: "Figure 8, open circle series"
+    series: "Mc 0.00 Minf 0.31 parallel 30deg, open circles"
+    figure: "8"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.00
+      M_inf: 0.31
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 8 calibration: max tick
+      residual 0.0007 in x and 0.0016 in y (linear axes, oblique map; see header). No flagged marks.
+
+  - path: fig8_filled_pointers.csv
+    after: null
+    page: 246
+    item: "Figure 8, filled pointer series"
+    series: "Mc 0.10 Minf 0.30 parallel 30deg, filled pointers"
+    figure: "8"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.10
+      M_inf: 0.30
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 8 calibration: max tick
+      residual 0.0007 in x and 0.0016 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #1 at x 1.0207, Cd 0.4921: pointer touching open circle (cand 9); #2
+      at x 1.0566, Cd 0.6091: pointer merged into its curve; centroid biased along the curve; #3 at
+      x 1.0869, Cd 0.6426: pointer merged into its curve; centroid biased along the curve.
+
+  - path: fig8_filled_squares.csv
+    after: null
+    page: 246
+    item: "Figure 8, filled square series"
+    series: "Mc 0.19 Minf 0.30 parallel 30deg, filled squares"
+    figure: "8"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.19
+      M_inf: 0.30
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 8 calibration: max tick
+      residual 0.0007 in x and 0.0016 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #4 at x 2.0566, Cd 0.8725: square merged with curve end at PR 2.07.
+
+  - path: fig8_crosses.csv
+    after: null
+    page: 246
+    item: "Figure 8, cross series"
+    series: "Mc 0.29 Minf 0.31 parallel 30deg, crosses"
+    figure: "8"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.31
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 8 calibration: max tick
+      residual 0.0007 in x and 0.0016 in y (linear axes, oblique map; see header). No flagged marks.
+
+  - path: fig11_open_circles.csv
+    after: null
+    page: 247
+    item: "Figure 11, open circle series"
+    series: "Mc 0.29 Minf 0.00 perpendicular 90deg, open circles"
+    figure: "11"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.00
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 11 calibration: max tick
+      residual 0.0018 in x and 0.0015 in y (linear axes, oblique map; see header). No flagged marks.
+      The figure caption reads 'at Minf = .3'; that is a misprint -- the legend holds Mc ~0.29 and
+      varies Minf (perpendicular twin of figure 5).
+
+  - path: fig11_filled_pointers.csv
+    after: null
+    page: 247
+    item: "Figure 11, filled pointer series"
+    series: "Mc 0.30 Minf 0.11 perpendicular 90deg, filled pointers"
+    figure: "11"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.30
+      M_inf: 0.11
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 11 calibration: max tick
+      residual 0.0018 in x and 0.0015 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #5 at x 1.8573, Cd 0.7904: pointer and cross printed as one blob at PR
+      1.86.
+
+  - path: fig11_crosses.csv
+    after: null
+    page: 247
+    item: "Figure 11, cross series"
+    series: "Mc 0.29 Minf 0.33 perpendicular 90deg, crosses"
+    figure: "11"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.29
+      M_inf: 0.33
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 11 calibration: max tick
+      residual 0.0018 in x and 0.0015 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #4 at x 1.8440, Cd 0.7904: cross and pointer printed as one blob at PR
+      1.85.
+
+  - path: fig11_filled_diamonds.csv
+    after: null
+    page: 247
+    item: "Figure 11, filled diamond series"
+    series: "Mc 0.27 Minf 0.52 perpendicular 90deg, filled diamonds"
+    figure: "11"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.27
+      M_inf: 0.52
+    alpha_deg: 90.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 11 calibration: max tick
+      residual 0.0018 in x and 0.0015 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #1 at x 1.4810, Cd 0.7087: diamond next to gray curve band at PR
+      1.43-1.48 (cand 24, not counted); #2 at x 1.5065, Cd 0.7039: diamond merged with gray curve
+      band; a further gray band at PR 1.53 (cand 22) not counted; #3 at x 1.6409, Cd 0.7331: diamond
+      at PR 1.64 continues into a gray curve band (cand 19, not counted).
+
+  - path: fig12_open_circles.csv
+    after: null
+    page: 247
+    item: "Figure 12, open circle series"
+    series: "Mc 0.00 Minf 0.32 perpendicular 30deg, open circles"
+    figure: "12"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.00
+      M_inf: 0.32
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 12 calibration: max tick
+      residual 0.001 in x and 0.0024 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #2 at x 1.1667, Cd 0.6684: open symbol printed square-like (hole fill
+      1.0) but on the Mc .00 circle curve at PR 1.17; assigned to circles; #3 at x 1.3543, Cd
+      0.6808: open circle touching filled square (cand 22) at PR 1.35; #7 at x 1.9847, Cd 0.7264:
+      open circle in the PR 1.98-2.0 cluster.
+
+  - path: fig12_filled_pointers.csv
+    after: null
+    page: 247
+    item: "Figure 12, filled pointer series"
+    series: "Mc 0.10 Minf 0.31 perpendicular 30deg, filled pointers"
+    figure: "12"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.10
+      M_inf: 0.31
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 12 calibration: max tick
+      residual 0.001 in x and 0.0024 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #1 at x 1.1413, Cd 0.6510: pointer merged with curve start at PR 1.14;
+      #6 at x 1.8116, Cd 0.7297: pointer merged into top curve.
+
+  - path: fig12_filled_squares.csv
+    after: null
+    page: 247
+    item: "Figure 12, filled square series"
+    series: "Mc 0.20 Minf 0.32 perpendicular 30deg, filled squares"
+    figure: "12"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.20
+      M_inf: 0.32
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 12 calibration: max tick
+      residual 0.001 in x and 0.0024 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #4 at x 1.5433, Cd 0.5893: filled square at PR 1.54, Cd .59: ~0.10
+      below the Mc .20 curve, beside the Mc .38 open square; series doubtful; #10 at x 2.1239, Cd
+      0.7148: square merged with curve ends; position = blob centre. PROVISIONAL class: flag #4 (PR
+      1.54, Cd 0.59) may be an Mc .38 open square printed filled; the other 7 marks are not in
+      doubt.
+
+  - path: fig12_crosses.csv
+    after: null
+    page: 247
+    item: "Figure 12, cross series"
+    series: "Mc 0.30 Minf 0.31 perpendicular 30deg, crosses"
+    figure: "12"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.30
+      M_inf: 0.31
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 12 calibration: max tick
+      residual 0.001 in x and 0.0024 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #5 at x 1.5760, Cd 0.7023: cross over three curves; #9 at x 2.0768, Cd
+      0.7322: cross over gray curve band.
+
+  - path: fig12_open_squares.csv
+    after: null
+    page: 247
+    item: "Figure 12, open square series"
+    series: "Mc 0.38 Minf 0.32 perpendicular 30deg, open squares"
+    figure: "12"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.38
+      M_inf: 0.32
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 12 calibration: max tick
+      residual 0.001 in x and 0.0024 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #8 at x 1.9978, Cd 0.7194: open square in the PR 1.98-2.0 cluster.
+
+  - path: fig15_crosses.csv
+    after: null
+    page: 247
+    item: "Figure 15, cross series"
+    series: "Mc 0.00 Minf 0.30 parallel 30deg, crosses"
+    figure: "15"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.00
+      M_inf: 0.30
+    alpha_deg: 30.0
+    x_axis: uj_over_uinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 15 calibration: max tick
+      residual 0.0022 in x and 0.0049 in y (linear axes, oblique map; see header). No flagged marks.
+
+  - path: fig15_filled_pointers.csv
+    after: null
+    page: 247
+    item: "Figure 15, filled pointer series"
+    series: "Mc 0.00 Minf 0.52 parallel 30deg, filled pointers"
+    figure: "15"
+    panel: single
+    geometry:
+      D_mm: 3.5
+      L_over_d: 6.0
+      S_over_D: 2.5
+      n_holes: 4.0
+      Mc: 0.00
+      M_inf: 0.52
+    alpha_deg: 30.0
+    x_axis: uj_over_uinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a hole-angle or two-sided crossflow
+    # term, so no set can score this; accuracy-only data (see header).
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # Table 3's band depends on PR (8-3.5% at 1.01-1.2, 3.5-1.5% at
+    # 1.2-1.5, 1.5% above 1.5, at Minf .3); one scalar would misstate
+    # it, so it is null here and recorded in the header and extraction.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks; reviewer-confirmed on a scan overlay 2026-11-08. Figure 15 calibration: max tick
+      residual 0.0022 in x and 0.0049 in y (linear axes, oblique map; see header). Flagged (kept,
+      position less certain): #1 at x 0.2471, Cd 0.5262: pointer touching cross (cand 9) at
+      u_j/u_inf 0.26.
