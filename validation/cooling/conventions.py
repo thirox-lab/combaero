@@ -55,7 +55,10 @@ CONVENTION_NOTES: dict[str, str] = {
         "compressible up to choking, against PR = pc+/p_inf (Hay, Lampard & "
         "Benmansour 1983, p. 245). Upstream total like Cd_total, but with a "
         "second crossflow on the exit side and no VHR, so Cd_total's "
-        "conversion does not apply"
+        "conversion does not apply. Area basis: Gritsch, Schulz & Wittig "
+        "(1998, p. 559) print pi D^2/4 on the INLET (metering) diameter for "
+        "every hole shape, so their shaped-hole Cd can exceed 1; Hay et al. "
+        "do not print theirs (plain holes, so inlet = exit)"
     ),
     # Compressible orifice mass flow (#854)
     "K_reservoir_total": (
@@ -123,6 +126,8 @@ SOURCE_PUBLISHES: dict[tuple[str, str], str] = {
     # Unscored today (no angle or two-sided crossflow term in combaero);
     # declared so a future set must meet the basis explicitly.
     ("hay1983", "Cd"): "Cd_coolant_total_exit_static",
+    # Same pressure pair, printed isentropic ideal flow, inlet-area basis.
+    ("gritsch1998", "Cd"): "Cd_coolant_total_exit_static",
     ("jobson1955", "K_mass_flow"): "K_reservoir_total",
     ("han2012", "G"): "G_ribbed_wall",
     ("han_park_lei1984", "G"): "G_ribbed_wall",

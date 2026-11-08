@@ -1,0 +1,11 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0578,0.7241,circle,190,333,0.821,,confirmed,
+1.0641,0.9864,circle,196,183,0.750,,confirmed,
+1.0877,1.0930,circle,217,122,0.727,,confirmed,
+1.1340,1.0736,circle,258,133,0.528,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1826,1.0508,circle,301,146,0.519,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2470,1.0288,circle,358.0,158.5,,,confirmed,"user review round 3 (B: lower marker, rounded bottom at y 163 px)"
+1.3188,1.0068,circle,421.5,171.0,,,provisional,"resolved by user review 2026-11-08: two overlapping markers; left one, rounded top -> circle (Ma_m 0.3); series deduced from curve continuity, symbol unreadable"
+1.4380,0.9523,circle,527,202,0.521,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.7408,0.9080,circle,795,227,0.533,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9147,0.8989,circle,949,232,0.505,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

@@ -1,0 +1,9 @@
+x,y,class_confidence,note
+0.0453,0.8413,confirmed,
+0.0752,0.9114,confirmed,
+0.1467,0.9781,confirmed,
+0.2023,1.0455,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.2620,1.0975,confirmed,
+0.3128,1.1321,confirmed,
+0.3552,1.1018,confirmed,
+0.4081,0.9429,confirmed,

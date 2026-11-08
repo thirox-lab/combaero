@@ -1,0 +1,2886 @@
+# Gritsch, Schulz and Wittig (1998): discharge coefficients of 30 deg
+# film-cooling holes -- cylindrical, fan-shaped and laidback fan-shaped --
+# with crossflow on the coolant side (Ma_c 0 / 0.3 / 0.6, coflowing) and on
+# the mainstream side (Ma_m 0 / 0.3 / 0.6 / 1.2). Figures 3-14; 63 series,
+# 500 marks (465 confirmed, 35 provisional).
+#
+# WHAT THE DATA TESTS. A SHAPED-HOLE Cd, and the effect of coolant and
+# mainstream crossflow on it, against the plain cylindrical hole of the same
+# rig. combaero has no shaped-hole Cd: FilmCoolingElement hole_type "shaped"
+# applies the plain-hole Cd on the METERING area, so on this data it would
+# under-predict shaped-hole flow by roughly 4-11 % without crossflow and
+# 20-75 % with coolant crossflow (first look, extraction). Every series is
+# `scores: null`. It is cross-source ACCURACY data for a future shaped-hole
+# closure, to be labelled cross-source when scored; never fidelity (no model
+# is built from this paper) and never a tuner.
+#
+# GEOMETRY. Single scaled-up holes, alpha 30 deg, sharp-edged, smooth;
+# D = 10 mm (the cylindrical hole and the cylindrical INLET section of both
+# shaped holes); L/D = 6 for all three. Shaped holes: cylindrical inlet 2D
+# long; lateral expansion 14 deg (30 mm exit width); laidback adds a 15 deg
+# forward expansion (40 mm exit length). Exit/inlet area ratio 3.0 (fan) and
+# 3.1 (laidback), areas normal to the hole axis. Coolant channel 20 x 60 mm,
+# COFLOWING with the main flow; main channel 90 x 41 mm (32 mm supersonic).
+# Air, Tt_c ~290 K, Tt_c/Tt_m = 1; Re_D to 2.5e5; Tu_c 1 %, Tu_m < 1.5 %.
+# Figs. 3-5 / 7-9 / 11-13: Cd vs PR at Ma_c 0, 0.3, 0.6 (four Ma_m curves
+# each). Figs. 6 / 10 / 14: Cd vs Ma_c at Ma_m 0, four PR levels (legend PRs
+# cylindrical 1.11/1.24/1.42/1.63, fan 1.09/1.25/1.41/1.62, laidback
+# 1.10/1.25/1.40/1.60; geometry key pressure_ratio_pc0_over_pinf).
+#
+# THE CD DEFINITION -- coolant TOTAL to mainstream STATIC, on the INLET area.
+# Cd = m_dot / m_ideal, m_ideal the isentropic 1-D flow from p_tc to p_m
+# printed on p. 559:
+#   m_ideal = p_tc (p_m/p_tc)^((k+1)/2k)
+#             sqrt(2k/((k-1) R T_tc) ((p_tc/p_m)^((k-1)/k) - 1)) pi D^2/4
+# The reference area is pi D^2/4 on the INLET (metering) diameter for ALL
+# THREE holes, so a shaped-hole Cd can exceed 1. p_tc, T_tc 1D upstream of
+# the hole inlet, 2D off the channel centreline; p_m on the side wall 10D
+# upstream of the exit (subsonic) or the top wall opposite the exit (Ma_m
+# 1.2). Same pressure pair as Hay et al. (1983), so declared in
+# conventions.py under the same Cd_coolant_total_exit_static.
+#
+# UNCERTAINTY (Kline-McClintock, the paper's own): flow by orifice 2.5 %; Cd
+# below 2 % in most cases, up to 4.5 % at low PR / low flow. A measurement
+# band, but PR-dependent, so `uncertainty` is null on every series (one
+# scalar would misstate it), as for hay1983.
+#
+# DIGITISATION (2026-11-08). The scan is a 1-bit 300 dpi raster, no vector
+# data. Automated symbol detection by template (gnuplot-style markers: the
+# point is the template origin, a triangle's at 0.69 of its height below the
+# apex), then three user review rounds on scan overlays on 2026-11-08, every
+# figure confirmed; the user's decisions are recorded per point in each
+# CSV's note column. The scan and overlays are not committed.
+#
+# CALIBRATION. Each panel calibrated on its printed dotted grid lines (ticks
+# are 1 px and partly lost), two half-bands per axis, affine fit (absorbs the
+# 0.1-0.2 deg page skew); linear axes. Grid residual max 0.0002-0.0017 per
+# axis. Frame edges read through the fit agree with the numbers printed at
+# those corners to 1-3 px (e.g. Fig. 13: left 1.0008, right 1.9970, top
+# 1.0999, bottom 0.5001). The right frame of every PR panel reads 2.0 -
+# 0.003..0.004 with clean grid fits: the drawn frame, not the scale. +-1 px
+# is +-0.001-0.002 in Cd. calibration_grid.json holds the per-panel fit
+# (grid-line pixel positions, coefficients, residuals, edge checks); it is
+# committed but NOT listed under `files:`, as calibration files are in
+# rohde1969 and hay1983.
+#
+# CSV COLUMNS. x, y, class_confidence, note. The loader reads x and y only;
+# the other two columns carry the per-point review record, verbatim.
+# provenance/ keeps the digitiser's per-point record (marker, pixel position,
+# template match score) for every original series, unlisted.
+#
+# CLASS LABELS -- SPLIT, NOT MIXED. The schema carries class_confidence per
+# series, so each digitised series is filed as a confirmed CSV plus, where it
+# has any, a `_provisional` CSV holding the points whose series was deduced
+# from curve continuity, or that sit where several curves COLLAPSE onto one
+# another (Figs. 7, 9, 12). The collapsed points are kept on the user's
+# instruction -- the collapse is itself data -- and are deliberately the same
+# coordinates in each series that passes through them. Use them pooled or as
+# a record of the collapse, never as read symbols. Values are exactly as
+# digitised; nothing is corrected.
+#
+# NOT HERE. Figs. 15-18 regroup the same 36 PR curves by Ma_m and were not
+# digitised separately. No correlation is printed (the authors' 1997 ISABE
+# correlation is not held).
+
+paper:
+  name: gritsch1998
+  citation: >-
+    Gritsch, M., Schulz, A. and Wittig, S. (1998). "Discharge Coefficient
+    Measurements of Film-Cooling Holes With Expanded Exits." ASME J.
+    Turbomachinery 120(3), 557-563. Paper No. 97-GT-165.
+  secondary: false
+
+files:
+  - path: fig3_Mac0p0_Mam0p0.csv
+    after: null
+    page: 560
+    item: "Figure 3, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.0, cylindrical"
+    figure: "3"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.0
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 11
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      11 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      3 grid calibration: max residual 0.0013 in x and 0.0017 in y (linear axes, affine fit).
+
+  - path: fig3_Mac0p0_Mam0p3.csv
+    after: null
+    page: 560
+    item: "Figure 3, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.0, cylindrical"
+    figure: "3"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.0
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      3 grid calibration: max residual 0.0013 in x and 0.0017 in y (linear axes, affine fit).
+
+  - path: fig3_Mac0p0_Mam0p6.csv
+    after: null
+    page: 560
+    item: "Figure 3, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.0, cylindrical"
+    figure: "3"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.0
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      3 grid calibration: max residual 0.0013 in x and 0.0017 in y (linear axes, affine fit).
+
+  - path: fig3_Mac0p0_Mam1p2.csv
+    after: null
+    page: 560
+    item: "Figure 3, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.0, cylindrical"
+    figure: "3"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.0
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 14
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      14 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      3 grid calibration: max residual 0.0013 in x and 0.0017 in y (linear axes, affine fit).
+
+  - path: fig4_Mac0p3_Mam0p0.csv
+    after: null
+    page: 560
+    item: "Figure 4, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.3, cylindrical"
+    figure: "4"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.3
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 4
+      grid calibration: max residual 0.0006 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig4_Mac0p3_Mam0p3.csv
+    after: null
+    page: 560
+    item: "Figure 4, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.3, cylindrical"
+    figure: "4"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.3
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 4
+      grid calibration: max residual 0.0006 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig4_Mac0p3_Mam0p6.csv
+    after: null
+    page: 560
+    item: "Figure 4, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.3, cylindrical"
+    figure: "4"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.3
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      4 grid calibration: max residual 0.0006 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig4_Mac0p3_Mam1p2.csv
+    after: null
+    page: 560
+    item: "Figure 4, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.3, cylindrical"
+    figure: "4"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.3
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      4 grid calibration: max residual 0.0006 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig5_Mac0p6_Mam0p0.csv
+    after: null
+    page: 560
+    item: "Figure 5, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.6, cylindrical"
+    figure: "5"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.6
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      5 grid calibration: max residual 0.0011 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig5_Mac0p6_Mam0p3.csv
+    after: null
+    page: 560
+    item: "Figure 5, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.6, cylindrical"
+    figure: "5"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.6
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 5
+      grid calibration: max residual 0.0011 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig5_Mac0p6_Mam0p6.csv
+    after: null
+    page: 560
+    item: "Figure 5, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.6, cylindrical"
+    figure: "5"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.6
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 5
+      grid calibration: max residual 0.0011 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig5_Mac0p6_Mam1p2.csv
+    after: null
+    page: 560
+    item: "Figure 5, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.6, cylindrical"
+    figure: "5"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_c: 0.6
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      5 grid calibration: max residual 0.0011 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig6_Mam0p0_PR1p11.csv
+    after: null
+    page: 561
+    item: "Figure 6, PR 1.11 (squares)"
+    series: "PR 1.11 (squares), Ma_m 0.0, cylindrical"
+    figure: "6"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.11
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+      y_multiplier: 1.0
+      expected_points: 13
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      13 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      6 grid calibration: max residual 0.0004 in x and 0.0002 in y (linear axes, affine fit).
+
+  - path: fig6_Mam0p0_PR1p24.csv
+    after: null
+    page: 561
+    item: "Figure 6, PR 1.24 (circles)"
+    series: "PR 1.24 (circles), Ma_m 0.0, cylindrical"
+    figure: "6"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.24
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      6 grid calibration: max residual 0.0004 in x and 0.0002 in y (linear axes, affine fit).
+
+  - path: fig6_Mam0p0_PR1p42.csv
+    after: null
+    page: 561
+    item: "Figure 6, PR 1.42 (triangles)"
+    series: "PR 1.42 (triangles), Ma_m 0.0, cylindrical"
+    figure: "6"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.42
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 6
+      grid calibration: max residual 0.0004 in x and 0.0002 in y (linear axes, affine fit).
+
+  - path: fig6_Mam0p0_PR1p63.csv
+    after: null
+    page: 561
+    item: "Figure 6, PR 1.63 (diamonds)"
+    series: "PR 1.63 (diamonds), Ma_m 0.0, cylindrical"
+    figure: "6"
+    panel: single
+    geometry:
+      hole_type: cylindrical
+      D_mm: 10.0
+      L_over_d: 6.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.63
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+      y_multiplier: 1.0
+      expected_points: 13
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      13 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      6 grid calibration: max residual 0.0004 in x and 0.0002 in y (linear axes, affine fit).
+
+  - path: fig7_Mac0p0_Mam0p0.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit). Its 3
+      provisional mark(s) are filed apart in fig7_Mac0p0_Mam0p0_provisional.csv.
+
+  - path: fig7_Mac0p0_Mam0p0_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 0.0 (squares) PROVISIONAL"
+    series: "Ma_m 0.0 (squares) PROVISIONAL, Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.3973: user review round 2, 2026-11-08: PR 1.4,
+      square and circle completely overlap (like the curves); coincident; x 1.6358: user review
+      round 2, 2026-11-08: blob at PR ~1.64; collapsed curves, coincident series by continuity; the
+      diamond curve joins here too but has its own marker at PR 1.68, so no diamond added; x 1.8180:
+      user review round 2, 2026-11-08: blob at PR ~1.81-1.83 (one blob with a lower lobe; marker
+      count ambiguous, one point per series recorded); collapsed curves, coincident series by
+      continuity.
+
+  - path: fig7_Mac0p0_Mam0p3.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 7
+      grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit). Its 5
+      provisional mark(s) are filed apart in fig7_Mac0p0_Mam0p3_provisional.csv.
+
+  - path: fig7_Mac0p0_Mam0p3_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 0.3 (circles) PROVISIONAL"
+    series: "Ma_m 0.3 (circles) PROVISIONAL, Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 5
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      5 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.3973: user review round 2, 2026-11-08: PR 1.4,
+      square and circle completely overlap (like the curves); coincident; x 1.5122: user review
+      round 2, 2026-11-08: the auto 'diamond' at PR 1.51, Cd 0.82 sits on the square/circle row; the
+      user reads a circle here with a square just right of it; x 1.6358: user review round 2,
+      2026-11-08: blob at PR ~1.64; collapsed curves, coincident series by continuity; x 1.8180:
+      user review round 2, 2026-11-08: blob at PR ~1.81-1.83 (marker count ambiguous, one point per
+      series); collapsed curves, coincident series by continuity; x 2.0027: user review round 2,
+      2026-11-08: round marker on the PR 2.0 grid line beside the PR 2.02 square; collapsed curves,
+      coincident series by continuity.
+
+  - path: fig7_Mac0p0_Mam0p6.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit). Its 3
+      provisional mark(s) are filed apart in fig7_Mac0p0_Mam0p6_provisional.csv.
+
+  - path: fig7_Mac0p0_Mam0p6_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 0.6 (triangles) PROVISIONAL"
+    series: "Ma_m 0.6 (triangles) PROVISIONAL, Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.6358: user review round 2, 2026-11-08: blob at PR
+      ~1.64; collapsed curves, coincident series by continuity; x 1.8180: user review round 2,
+      2026-11-08: blob at PR ~1.81-1.83 (marker count ambiguous, one point per series); collapsed
+      curves, coincident series by continuity; x 1.9635: user review round 2, 2026-11-08: blob at PR
+      ~1.96 with a pointed top; collapsed curves, coincident series by continuity; square and circle
+      have their own markers at PR 2.0-2.02, so not added here.
+
+  - path: fig7_Mac0p0_Mam1p2.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 11
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      11 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit). Its 2
+      provisional mark(s) are filed apart in fig7_Mac0p0_Mam1p2_provisional.csv.
+
+  - path: fig7_Mac0p0_Mam1p2_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 7, Ma_m 1.2 (diamonds) PROVISIONAL"
+    series: "Ma_m 1.2 (diamonds) PROVISIONAL, Ma_c 0.0, fan shaped"
+    figure: "7"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      y_multiplier: 1.0
+      expected_points: 2
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      2 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      7 grid calibration: max residual 0.0010 in x and 0.0008 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.8180: user review round 2, 2026-11-08: blob at PR
+      ~1.81-1.83 (marker count ambiguous, one point per series); collapsed curves, coincident series
+      by continuity; x 1.9635: user review round 2, 2026-11-08: blob at PR ~1.96; collapsed curves,
+      coincident series by continuity.
+
+  - path: fig8_Mac0p3_Mam0p0.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 8
+      grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit). Its 2
+      provisional mark(s) are filed apart in fig8_Mac0p3_Mam0p0_provisional.csv.
+
+  - path: fig8_Mac0p3_Mam0p0_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 0.0 (squares) PROVISIONAL"
+    series: "Ma_m 0.0 (squares) PROVISIONAL, Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 2
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      2 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      8 grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.0650: user review round 3: probably a square, at
+      the line junction (A; square outline x 192-202, y 84-95 px, centre used); x 1.3261: resolved
+      by user review 2026-11-08: two overlapping markers; right one, flat top -> square (Ma_m 0.0);
+      series deduced from curve continuity, symbol unreadable.
+
+  - path: fig8_Mac0p3_Mam0p3.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 8
+      grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit). Its 1
+      provisional mark(s) are filed apart in fig8_Mac0p3_Mam0p3_provisional.csv.
+
+  - path: fig8_Mac0p3_Mam0p3_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 0.3 (circles) PROVISIONAL"
+    series: "Ma_m 0.3 (circles) PROVISIONAL, Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 1
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      1 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      8 grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.3188: resolved by user review 2026-11-08: two
+      overlapping markers; left one, rounded top -> circle (Ma_m 0.3); series deduced from curve
+      continuity, symbol unreadable.
+
+  - path: fig8_Mac0p3_Mam0p6.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 8
+      grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit).
+
+  - path: fig8_Mac0p3_Mam1p2.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 14
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      14 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      8 grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit). Its 1
+      provisional mark(s) are filed apart in fig8_Mac0p3_Mam1p2_provisional.csv.
+
+  - path: fig8_Mac0p3_Mam1p2_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 8, Ma_m 1.2 (diamonds) PROVISIONAL"
+    series: "Ma_m 1.2 (diamonds) PROVISIONAL, Ma_c 0.3, fan shaped"
+    figure: "8"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
+      y_multiplier: 1.0
+      expected_points: 1
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      1 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      8 grid calibration: max residual 0.0006 in x and 0.0009 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.9350: resolved by user review 2026-11-08: real
+      point; series from the pointed (diamond) top outline, partly merged with the curve end
+      cluster.
+
+  - path: fig9_Mac0p6_Mam0p0.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 9
+      grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit). Its 3
+      provisional mark(s) are filed apart in fig9_Mac0p6_Mam0p0_provisional.csv.
+
+  - path: fig9_Mac0p6_Mam0p0_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 0.0 (squares) PROVISIONAL"
+    series: "Ma_m 0.0 (squares) PROVISIONAL, Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      9 grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.4259: resolved by user review 2026-11-08:
+      overlapping neighbour of #27 (PR ~1.43); series deduced from curve continuity, symbol
+      unreadable; x 1.5500: resolved by user review 2026-11-08: coincident point where the curves
+      collapse (the auto pass saw one diamond); series by curve continuity; x 1.7253: user review
+      round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity;
+      the diamond curve has its own markers at PR 1.67 and 1.89.
+
+  - path: fig9_Mac0p6_Mam0p3.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 4
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      4 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 9
+      grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit). Its 3
+      provisional mark(s) are filed apart in fig9_Mac0p6_Mam0p3_provisional.csv.
+
+  - path: fig9_Mac0p6_Mam0p3_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 0.3 (circles) PROVISIONAL"
+    series: "Ma_m 0.3 (circles) PROVISIONAL, Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      9 grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.4180: resolved by user review 2026-11-08: real
+      point inside a 3-marker cluster at PR ~1.42; series deduced from curve continuity, symbol
+      unreadable; x 1.5500: resolved by user review 2026-11-08: coincident point where the curves
+      collapse (the auto pass saw one diamond); series by curve continuity; x 1.7253: user review
+      round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity.
+
+  - path: fig9_Mac0p6_Mam0p6.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 6
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      6 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure 9
+      grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit). Its 3
+      provisional mark(s) are filed apart in fig9_Mac0p6_Mam0p6_provisional.csv.
+
+  - path: fig9_Mac0p6_Mam0p6_provisional.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 0.6 (triangles) PROVISIONAL"
+    series: "Ma_m 0.6 (triangles) PROVISIONAL, Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      9 grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.4305: resolved by user review 2026-11-08:
+      overlapping neighbour of #27 (PR ~1.43); series deduced from curve continuity, symbol
+      unreadable; x 1.5500: resolved by user review 2026-11-08: coincident point where the curves
+      collapse (the auto pass saw one diamond); series by curve continuity; x 1.7253: user review
+      round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity.
+
+  - path: fig9_Mac0p6_Mam1p2.csv
+    after: null
+    page: 561
+    item: "Figure 9, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.6, fan shaped"
+    figure: "9"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.4, 0.6, 0.8, 1.0]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.0494, 1.0504]
+      y_multiplier: 1.0
+      expected_points: 11
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      11 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      9 grid calibration: max residual 0.0006 in x and 0.0010 in y (linear axes, affine fit).
+
+  - path: fig10_Mam0p0_PR1p09.csv
+    after: null
+    page: 562
+    item: "Figure 10, PR 1.09 (squares)"
+    series: "PR 1.09 (squares), Ma_m 0.0, fan shaped"
+    figure: "10"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.09
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 15
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      15 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      10 grid calibration: max residual 0.0003 in x and 0.0005 in y (linear axes, affine fit).
+
+  - path: fig10_Mam0p0_PR1p25.csv
+    after: null
+    page: 562
+    item: "Figure 10, PR 1.25 (circles)"
+    series: "PR 1.25 (circles), Ma_m 0.0, fan shaped"
+    figure: "10"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.25
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      10 grid calibration: max residual 0.0003 in x and 0.0005 in y (linear axes, affine fit).
+
+  - path: fig10_Mam0p0_PR1p41.csv
+    after: null
+    page: 562
+    item: "Figure 10, PR 1.41 (triangles)"
+    series: "PR 1.41 (triangles), Ma_m 0.0, fan shaped"
+    figure: "10"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.41
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      10 grid calibration: max residual 0.0003 in x and 0.0005 in y (linear axes, affine fit).
+
+  - path: fig10_Mam0p0_PR1p62.csv
+    after: null
+    page: 562
+    item: "Figure 10, PR 1.62 (diamonds)"
+    series: "PR 1.62 (diamonds), Ma_m 0.0, fan shaped"
+    figure: "10"
+    panel: single
+    geometry:
+      hole_type: fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      exit_area_ratio: 3.0
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.62
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      10 grid calibration: max residual 0.0003 in x and 0.0005 in y (linear axes, affine fit).
+
+  - path: fig11_Mac0p0_Mam0p0.csv
+    after: null
+    page: 562
+    item: "Figure 11, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.0, laidback fan shaped"
+    figure: "11"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      11 grid calibration: max residual 0.0010 in x and 0.0016 in y (linear axes, affine fit).
+
+  - path: fig11_Mac0p0_Mam0p3.csv
+    after: null
+    page: 562
+    item: "Figure 11, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.0, laidback fan shaped"
+    figure: "11"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      11 grid calibration: max residual 0.0010 in x and 0.0016 in y (linear axes, affine fit).
+
+  - path: fig11_Mac0p0_Mam0p6.csv
+    after: null
+    page: 562
+    item: "Figure 11, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.0, laidback fan shaped"
+    figure: "11"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      11 grid calibration: max residual 0.0010 in x and 0.0016 in y (linear axes, affine fit).
+
+  - path: fig11_Mac0p0_Mam1p2.csv
+    after: null
+    page: 562
+    item: "Figure 11, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.0, laidback fan shaped"
+    figure: "11"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.0
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+      y_multiplier: 1.0
+      expected_points: 13
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      13 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      11 grid calibration: max residual 0.0010 in x and 0.0016 in y (linear axes, affine fit).
+
+  - path: fig12_Mac0p3_Mam0p0.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit). Its 3
+      provisional mark(s) are filed apart in fig12_Mac0p3_Mam0p0_provisional.csv.
+
+  - path: fig12_Mac0p3_Mam0p0_provisional.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 0.0 (squares) PROVISIONAL"
+    series: "Ma_m 0.0 (squares) PROVISIONAL, Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.4279: user review round 2, 2026-11-08: PR ~1.43
+      cluster: flat-topped square at its upper left; nothing was detected in this cluster; x 1.7123:
+      user review round 3, 2026-11-08: all series collapse here (first PR where Ma_m 1.2 joins);
+      coincident by user review; x 1.8999: resolved by user review 2026-11-08: real point (curves
+      connect); series deduced from curve continuity, symbol unreadable; assigned to the Ma_m 0.0
+      square series as its end point (open box outline).
+
+  - path: fig12_Mac0p3_Mam0p3.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit). Its 2
+      provisional mark(s) are filed apart in fig12_Mac0p3_Mam0p3_provisional.csv.
+
+  - path: fig12_Mac0p3_Mam0p3_provisional.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 0.3 (circles) PROVISIONAL"
+    series: "Ma_m 0.3 (circles) PROVISIONAL, Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 2
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      2 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.4291: user review round 2, 2026-11-08: PR ~1.43,
+      expected circle below in the cluster; symbol hidden; series by continuity; x 1.7123: user
+      review round 3, 2026-11-08: all series collapse here (first PR where Ma_m 1.2 joins);
+      coincident by user review.
+
+  - path: fig12_Mac0p3_Mam0p6.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit). Its 1
+      provisional mark(s) are filed apart in fig12_Mac0p3_Mam0p6_provisional.csv.
+
+  - path: fig12_Mac0p3_Mam0p6_provisional.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 0.6 (triangles) PROVISIONAL"
+    series: "Ma_m 0.6 (triangles) PROVISIONAL, Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 1
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      1 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.7123: user review round 3, 2026-11-08: all series
+      collapse here (first PR where Ma_m 1.2 joins); coincident by user review.
+
+  - path: fig12_Mac0p3_Mam1p2.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 13
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      13 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit). Its 1
+      provisional mark(s) are filed apart in fig12_Mac0p3_Mam1p2_provisional.csv.
+
+  - path: fig12_Mac0p3_Mam1p2_provisional.csv
+    after: null
+    page: 562
+    item: "Figure 12, Ma_m 1.2 (diamonds) PROVISIONAL"
+    series: "Ma_m 1.2 (diamonds) PROVISIONAL, Ma_c 0.3, laidback fan shaped"
+    figure: "12"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.3
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.4, 0.6, 0.8, 1.0, 1.2]
+      # Frame edges read through the grid fit (calibration_grid.json);
+      # the lowest marks sit below the last labelled grid line.
+      y_limits: [0.25, 1.2497]
+      y_multiplier: 1.0
+      expected_points: 1
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      1 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      12 grid calibration: max residual 0.0007 in x and 0.0014 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.7123: user review round 3, 2026-11-08: all series
+      collapse here (first PR where Ma_m 1.2 joins); coincident by user review.
+
+  - path: fig13_Mac0p6_Mam0p0.csv
+    after: null
+    page: 562
+    item: "Figure 13, Ma_m 0.0 (squares)"
+    series: "Ma_m 0.0 (squares), Ma_c 0.6, laidback fan shaped"
+    figure: "13"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.0
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1]
+      y_multiplier: 1.0
+      expected_points: 9
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      9 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      13 grid calibration: max residual 0.0009 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig13_Mac0p6_Mam0p3.csv
+    after: null
+    page: 562
+    item: "Figure 13, Ma_m 0.3 (circles)"
+    series: "Ma_m 0.3 (circles), Ma_c 0.6, laidback fan shaped"
+    figure: "13"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      3 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      13 grid calibration: max residual 0.0009 in x and 0.0007 in y (linear axes, affine fit). Its 2
+      provisional mark(s) are filed apart in fig13_Mac0p6_Mam0p3_provisional.csv.
+
+  - path: fig13_Mac0p6_Mam0p3_provisional.csv
+    after: null
+    page: 562
+    item: "Figure 13, Ma_m 0.3 (circles) PROVISIONAL"
+    series: "Ma_m 0.3 (circles) PROVISIONAL, Ma_c 0.6, laidback fan shaped"
+    figure: "13"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.3
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    class_confidence: provisional
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1]
+      y_multiplier: 1.0
+      expected_points: 2
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      2 marks, all provisional; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      13 grid calibration: max residual 0.0009 in x and 0.0007 in y (linear axes, affine fit).
+      PROVISIONAL: series deduced from curve continuity or coincident where the curves collapse
+      (kept on the user's instruction: the collapse is data). Use pooled or as a curve-collapse
+      record, not as a read symbol. Reasons: x 1.2377: user review round 2, 2026-11-08: #2 is most
+      likely a circle; x 1.5231: resolved by user review 2026-11-08: real point; the square and
+      triangle at this PR are already detected beside it, so by continuity the missing third curve
+      is the Ma_m 0.3 circle; series deduced from curve continuity, symbol unreadable.
+
+  - path: fig13_Mac0p6_Mam0p6.csv
+    after: null
+    page: 562
+    item: "Figure 13, Ma_m 0.6 (triangles)"
+    series: "Ma_m 0.6 (triangles), Ma_c 0.6, laidback fan shaped"
+    figure: "13"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 0.6
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      13 grid calibration: max residual 0.0009 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig13_Mac0p6_Mam1p2.csv
+    after: null
+    page: 562
+    item: "Figure 13, Ma_m 1.2 (diamonds)"
+    series: "Ma_m 1.2 (diamonds), Ma_c 0.6, laidback fan shaped"
+    figure: "13"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_c: 0.6
+      Ma_m: 1.2
+    alpha_deg: 30.0
+    x_axis: pc0_over_pinf
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1]
+      y_multiplier: 1.0
+      expected_points: 7
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      7 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      13 grid calibration: max residual 0.0009 in x and 0.0007 in y (linear axes, affine fit).
+
+  - path: fig14_Mam0p0_PR1p10.csv
+    after: null
+    page: 563
+    item: "Figure 14, PR 1.10 (squares)"
+    series: "PR 1.10 (squares), Ma_m 0.0, laidback fan shaped"
+    figure: "14"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.1
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 8
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      8 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      14 grid calibration: max residual 0.0002 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig14_Mam0p0_PR1p25.csv
+    after: null
+    page: 563
+    item: "Figure 14, PR 1.25 (circles)"
+    series: "PR 1.25 (circles), Ma_m 0.0, laidback fan shaped"
+    figure: "14"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.25
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 12
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      12 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      14 grid calibration: max residual 0.0002 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig14_Mam0p0_PR1p40.csv
+    after: null
+    page: 563
+    item: "Figure 14, PR 1.40 (triangles)"
+    series: "PR 1.40 (triangles), Ma_m 0.0, laidback fan shaped"
+    figure: "14"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.4
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 10
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      10 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      14 grid calibration: max residual 0.0002 in x and 0.0004 in y (linear axes, affine fit).
+
+  - path: fig14_Mam0p0_PR1p60.csv
+    after: null
+    page: 563
+    item: "Figure 14, PR 1.60 (diamonds)"
+    series: "PR 1.60 (diamonds), Ma_m 0.0, laidback fan shaped"
+    figure: "14"
+    panel: single
+    geometry:
+      hole_type: laidback_fan_shaped
+      D_mm: 10.0
+      L_over_d: 6.0
+      lateral_expansion_deg: 14.0
+      layback_deg: 15.0
+      exit_area_ratio: 3.1
+      inlet_length_over_d: 2.0
+      Ma_m: 0.0
+      pressure_ratio_pc0_over_pinf: 1.6
+    alpha_deg: 30.0
+    x_axis: Ma_c
+    x_scale: 1.0
+    y_axis: Cd
+    # No combaero closure carries a shaped-hole or crossflow Cd; see header.
+    scores: null
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    # The paper's band is PR-dependent (Cd < 2 % in most cases, up to
+    # 4.5 % at low PR / low flow); one scalar would misstate it.
+    uncertainty: null
+    verification:
+      x_axis_type: linear
+      x_ticks: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+      x_multiplier: 1.0
+      y_axis_type: linear
+      y_ticks: [0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+      y_multiplier: 1.0
+      expected_points: 13
+      monotonic: null
+      printed_curve: null
+    cross_check: >-
+      13 marks, all confirmed; user-reviewed over three rounds on scan overlays, 2026-11-08. Figure
+      14 grid calibration: max residual 0.0002 in x and 0.0004 in y (linear axes, affine fit).

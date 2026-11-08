@@ -1,0 +1,8 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.2199,0.8706,circle,328,146,,,confirmed,"resolved by user review 2026-11-08: real point, open circle on the Ma_m 0.3 curve"
+1.2268,0.7310,circle,334,233,0.684,,confirmed,
+1.2529,0.9524,circle,357,95,0.532,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3098,0.9748,circle,407,81,0.522,,confirmed,"user review round 3, 2026-11-08: #C lower marker is a circle (Ma_m 0.3); the existing circle point already sat on it, kept (no duplicate)"
+1.4180,0.9521,circle,502,95,,,provisional,"resolved by user review 2026-11-08: real point inside a 3-marker cluster at PR ~1.42; series deduced from curve continuity, symbol unreadable"
+1.5500,0.9198,circle,618,115,,,provisional,resolved by user review 2026-11-08: coincident point where the curves collapse (the auto pass saw one diamond); series by curve continuity
+1.7253,0.9003,circle,772.0,127.0,,,provisional,"user review round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity"

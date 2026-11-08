@@ -1,0 +1,12 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0497,0.8255,square,183,275,0.748,,confirmed,
+1.0549,1.0878,square,188,125,0.588,,confirmed,
+1.0650,1.1498,square,197.0,89.5,,,provisional,"user review round 3: probably a square, at the line junction (A; square outline x 192-202, y 84-95 px, centre used)"
+1.0864,1.1402,square,216,95,0.682,,confirmed,
+1.1351,1.0894,square,259,124,0.644,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1837,1.0595,square,302,141,0.522,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2464,1.0332,square,357.5,156.0,,,confirmed,"user review round 3 (B: upper marker, flat top at y 151 px)"
+1.3261,1.0068,square,428.0,171.0,,,provisional,"resolved by user review 2026-11-08: two overlapping markers; right one, flat top -> square (Ma_m 0.0); series deduced from curve continuity, symbol unreadable"
+1.4527,0.9488,square,540,204,0.523,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5849,0.9188,square,657,221,0.520,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9435,0.8936,square,974.5,235.0,,,confirmed,resolved by user review 2026-11-08: missed end point of the Ma_m 0.0 square series (open square at the curve end)

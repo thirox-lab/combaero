@@ -1,0 +1,12 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0101,0.7308,square,139,139,0.647,,confirmed,
+1.0308,0.7265,square,153,143,0.675,,confirmed,
+1.0574,0.7341,square,171,136,0.666,,confirmed,
+1.0765,0.7319,square,184,138,0.638,,confirmed,
+1.1179,0.7406,square,212,130,0.631,,confirmed,
+1.1873,0.7439,square,259,127,0.631,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2744,0.7527,square,318,119,0.581,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5624,0.7660,square,513,107,0.539,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.6938,0.7769,square,602,97,0.518,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.8799,0.7901,square,728,85,0.610,,confirmed,
+2.0674,0.8044,square,855,72,0.671,,confirmed,

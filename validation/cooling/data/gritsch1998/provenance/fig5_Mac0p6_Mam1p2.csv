@@ -1,0 +1,13 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.3302,0.4453,diamond,402,387,0.759,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.4371,0.1340,diamond,490,632,0.781,,confirmed,
+1.4411,0.2343,diamond,493,553,0.780,,confirmed,
+1.4585,0.3373,diamond,507,472,0.818,,confirmed,
+1.4796,0.4211,diamond,524,406,0.768,,confirmed,
+1.5204,0.5227,diamond,557,326,0.701,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5659,0.6015,diamond,594,264,0.686,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.6311,0.6612,diamond,647,217,0.723,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.6998,0.7044,diamond,703,183,0.748,,confirmed,
+1.8078,0.7463,diamond,791,150,0.749,,confirmed,
+1.9206,0.7781,diamond,883,125,0.830,,confirmed,
+2.0150,0.7984,diamond,960,109,0.837,,confirmed,

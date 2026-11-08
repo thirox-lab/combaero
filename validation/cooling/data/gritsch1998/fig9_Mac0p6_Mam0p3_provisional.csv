@@ -1,0 +1,4 @@
+x,y,class_confidence,note
+1.4180,0.9521,provisional,"resolved by user review 2026-11-08: real point inside a 3-marker cluster at PR ~1.42; series deduced from curve continuity, symbol unreadable"
+1.5500,0.9198,provisional,resolved by user review 2026-11-08: coincident point where the curves collapse (the auto pass saw one diamond); series by curve continuity
+1.7253,0.9003,provisional,"user review round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity"

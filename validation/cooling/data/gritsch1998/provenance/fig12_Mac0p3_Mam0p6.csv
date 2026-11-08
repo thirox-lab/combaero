@@ -1,0 +1,11 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0686,0.7457,triangle,199,355,0.872,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0720,0.8905,triangle,202,264,0.754,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.0856,1.0163,triangle,214,185,0.789,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1106,1.0211,triangle,236,182,0.813,,confirmed,
+1.1493,1.0100,triangle,270,189,0.767,,confirmed,
+1.1970,0.9941,triangle,312,199,0.664,,confirmed,
+1.2607,0.9782,triangle,368,209,0.816,,confirmed,
+1.3290,0.9560,triangle,428,223,0.740,,confirmed,
+1.4416,0.9481,triangle,527.0,228.0,,,confirmed,"user review round 2, 2026-11-08: PR ~1.44, triangle slightly to the right of the cluster"
+1.7123,0.9228,triangle,765.0,244.0,,,provisional,"user review round 3, 2026-11-08: all series collapse here (first PR where Ma_m 1.2 joins); coincident by user review"

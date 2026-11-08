@@ -1,0 +1,10 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.2552,0.7855,triangle,359,199,0.777,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2598,0.5705,triangle,363,333,0.716,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2678,0.3860,triangle,370,448,0.791,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2689,0.8978,triangle,371,129,0.713,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2758,0.2239,triangle,377,549,0.865,,confirmed,
+1.3315,0.9395,triangle,426,103,0.825,,confirmed,
+1.4305,0.9505,triangle,513.0,96.0,,,provisional,"resolved by user review 2026-11-08: overlapping neighbour of #27 (PR ~1.43); series deduced from curve continuity, symbol unreadable"
+1.5500,0.9198,triangle,618,115,,,provisional,resolved by user review 2026-11-08: coincident point where the curves collapse (the auto pass saw one diamond); series by curve continuity
+1.7253,0.9003,triangle,772.0,127.0,,,provisional,"user review round 2, 2026-11-08: cluster at PR ~1.73; collapsed curves, coincident series by continuity"

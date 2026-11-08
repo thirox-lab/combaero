@@ -1,0 +1,13 @@
+Ma_c,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+0.0426,0.8304,circle,215,551,0.546,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.1100,0.8721,circle,312,486,0.568,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.1586,0.9183,circle,382,414,0.756,,confirmed,
+0.2100,0.9606,circle,456,348,0.814,,confirmed,
+0.2697,0.9895,circle,542,303,0.808,,confirmed,
+0.3191,1.0074,circle,613,275,0.690,,confirmed,
+0.3642,1.0272,circle,678,244,0.700,,confirmed,
+0.4143,1.0368,circle,750,229,0.733,,confirmed,
+0.4497,1.0399,circle,801,224,0.669,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.4720,1.0348,circle,833,232,0.649,,confirmed,
+0.5394,1.0186,circle,930,257,0.575,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+0.5776,0.9909,circle,985,300,0.659,,confirmed,

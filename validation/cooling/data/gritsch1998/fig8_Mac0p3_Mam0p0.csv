@@ -1,0 +1,10 @@
+x,y,class_confidence,note
+1.0497,0.8255,confirmed,
+1.0549,1.0878,confirmed,
+1.0864,1.1402,confirmed,
+1.1351,1.0894,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1837,1.0595,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2464,1.0332,confirmed,"user review round 3 (B: upper marker, flat top at y 151 px)"
+1.4527,0.9488,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5849,0.9188,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9435,0.8936,confirmed,resolved by user review 2026-11-08: missed end point of the Ma_m 0.0 square series (open square at the curve end)

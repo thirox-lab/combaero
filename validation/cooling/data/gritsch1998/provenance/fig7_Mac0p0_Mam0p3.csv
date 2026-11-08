@@ -1,0 +1,13 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.0199,0.6900,circle,159,211,0.731,,confirmed,
+1.0393,0.7459,circle,175,167,0.690,,confirmed,
+1.0648,0.7827,circle,196,138,0.688,,confirmed,
+1.0892,0.7903,circle,216,132,0.634,,confirmed,
+1.1344,0.8030,circle,253,122,0.525,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2469,0.8131,circle,345,114,0.552,,confirmed,"user review round 2, 2026-11-08: #7 = circle"
+1.3178,0.8105,circle,403,116,0.599,,confirmed,"user review round 2, 2026-11-08: #8 = circle"
+1.3973,0.8169,circle,468.0,111.0,,,provisional,"user review round 2, 2026-11-08: PR 1.4, square and circle completely overlap (like the curves); coincident"
+1.5122,0.8219,circle,562,107,0.548,,provisional,"user review round 2, 2026-11-08: the auto 'diamond' at PR 1.51, Cd 0.82 sits on the square/circle row; the user reads a circle here with a square just right of it"
+1.6358,0.8180,circle,663.0,110.0,,,provisional,"user review round 2, 2026-11-08: blob at PR ~1.64; collapsed curves, coincident series by continuity"
+1.8180,0.8141,circle,812.0,113.0,,,provisional,"user review round 2, 2026-11-08: blob at PR ~1.81-1.83 (marker count ambiguous, one point per series); collapsed curves, coincident series by continuity"
+2.0027,0.8153,circle,963.0,112.0,,,provisional,"user review round 2, 2026-11-08: round marker on the PR 2.0 grid line beside the PR 2.02 square; collapsed curves, coincident series by continuity"

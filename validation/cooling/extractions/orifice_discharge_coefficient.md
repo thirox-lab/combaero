@@ -46,6 +46,11 @@ Later addition (2026-11-08): Hay, Lampard and Benmansour (1983), crossflow on
 **both** sides of the hole at 30 and 90 deg -- data only, unscored, the one
 measured set on a hole-angle term and on crossflow direction. See
 [hay_1983_crossflow_cd.md](hay_1983_crossflow_cd.md).
+Gritsch, Schulz and Wittig (1998) add cylindrical, fan-shaped and laidback
+fan-shaped 30 deg holes with coolant and mainstream crossflow (to Ma_m 1.2),
+Cd on the inlet (metering) area -- data only, unscored, the one measured set
+on a shaped-hole Cd. See
+[gritsch_1998_shaped_hole_cd.md](gritsch_1998_shaped_hole_cd.md).
 
 ---
 

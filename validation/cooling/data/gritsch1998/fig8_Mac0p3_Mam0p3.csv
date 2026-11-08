@@ -1,0 +1,10 @@
+x,y,class_confidence,note
+1.0578,0.7241,confirmed,
+1.0641,0.9864,confirmed,
+1.0877,1.0930,confirmed,
+1.1340,1.0736,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.1826,1.0508,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2470,1.0288,confirmed,"user review round 3 (B: lower marker, rounded bottom at y 163 px)"
+1.4380,0.9523,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.7408,0.9080,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9147,0.8989,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)

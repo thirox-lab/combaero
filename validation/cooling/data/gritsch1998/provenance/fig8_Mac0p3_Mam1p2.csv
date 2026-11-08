@@ -1,0 +1,16 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.1394,0.5404,diamond,262,438,0.753,,confirmed,
+1.1401,0.1907,diamond,262,638,0.727,,confirmed,
+1.1409,0.3393,diamond,263,553,0.777,,confirmed,
+1.1628,0.7309,diamond,283,329,0.710,,confirmed,
+1.1864,0.8130,diamond,304,282,0.656,,confirmed,
+1.2180,0.8532,diamond,332,259,0.723,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2608,0.8793,diamond,370,244,0.748,,confirmed,
+1.3195,0.9054,diamond,422,229,0.822,,confirmed,
+1.3872,0.9227,diamond,482,219,0.844,,confirmed,
+1.4866,0.9365,diamond,570,211,0.522,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5691,0.9258,diamond,643,217,0.562,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.5894,0.9223,diamond,661,219,0.594,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.6143,0.9187,diamond,683,221,0.772,,confirmed,
+1.7509,0.9115,diamond,804,225,0.544,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.9350,0.9111,diamond,967,225,,,provisional,"resolved by user review 2026-11-08: real point; series from the pointed (diamond) top outline, partly merged with the curve end cluster"

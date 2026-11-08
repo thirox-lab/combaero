@@ -1,0 +1,6 @@
+p_tc/p_m,Cd,marker,px,py,ncc,suspect_id,class_confidence,note
+1.2377,0.8989,circle,348,274,0.581,,provisional,"user review round 2, 2026-11-08: #2 is most likely a circle"
+1.2435,0.9345,circle,353,237,0.558,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.2585,1.0076,circle,366,161,0.529,,confirmed,resolved by user review 2026-11-08: flag cleared (user: rest is correct)
+1.3277,0.9797,circle,427,190,,,confirmed,resolved by user review 2026-11-08: #16 is a circle (Ma_m 0.3)
+1.5231,0.9344,circle,599,237,,,provisional,"resolved by user review 2026-11-08: real point; the square and triangle at this PR are already detected beside it, so by continuity the missing third curve is the Ma_m 0.3 circle; series deduced from curve continuity, symbol unreadable"
