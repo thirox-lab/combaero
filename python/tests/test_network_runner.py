@@ -7,6 +7,7 @@ itself is tested in test_results_table.py (#784).
 """
 
 import math
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -386,6 +387,30 @@ def test_sweep_empty_params():
     df = runner.sweep(params, metrics=["chan.m_dot"])
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 0
+
+
+def test_sweep_solves_cold_when_the_warm_seed_fails():
+    # #1054: the previous row's solution carries absolute pressures, so a jump
+    # from 1.5 to 6 bar seeds the 6 bar row far from its root, and the warm
+    # solve stalls (no_progress on every platform at this jump). The row is
+    # solved cold instead, and the row after it continues from it.
+    import gui
+
+    example = Path(gui.__file__).parent / "examples" / "iso5167_orifice_metering.json"
+    runner = NetworkRunner.from_file(example)
+    params = pd.DataFrame(
+        {"supply.Pt": [1.5e5, 6.0e5, 6.0e5], "sink.Pt": [1.4e5, 5.99e5, 5.975e5]},
+        index=["low", "jump", "next"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        df = runner.sweep(params, metrics=["plate.m_dot"])
+    assert df["outputs"]["_solve", "success"].all()
+    assert df.attrs["warm_start"] == {"low": None, "jump": None, "next": "jump"}
+    cold = runner.solve({"supply.Pt": 6.0e5, "sink.Pt": 5.99e5})
+    assert df["outputs"].loc["jump"].xs("m_dot", level="quantity").iloc[0] == pytest.approx(
+        cold.get("plate.m_dot"), rel=1e-6
+    )
 
 
 # ---------------------------------------------------------------------------

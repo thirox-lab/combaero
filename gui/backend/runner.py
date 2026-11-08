@@ -29,6 +29,7 @@ and single results, are in ``gui.backend.results``.
 
 import json
 import math
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -779,6 +780,11 @@ class NetworkRunner:
         override keys in ``<label>.<attribute>`` format) and one case of the
         result.
 
+        Each row first tries the previous converged row's solution as its
+        initial guess; when that does not converge, the row is solved cold,
+        as ``solve()`` would. A row's ``warm_start`` names the case it started
+        from, if any.
+
         Args:
             params: DataFrame whose columns are override keys and whose rows
                 are individual parameter combinations. Its index labels the
@@ -812,17 +818,39 @@ class NetworkRunner:
         _prev_name: Any = None
         for idx, param_row in params.iterrows():
             overrides = {col: param_row[col] for col in params.columns}
+            # Continuation (#1054): the previous row's solution seeds this
+            # one. The seed carries absolute pressures, so a jump in pressure
+            # level can put it far from this row's root; the solver skips its
+            # retries from a given x0, so that fails fast, and the row is
+            # then solved cold, exactly as solve() would, with every retry.
+            result = None
+            if _prev_x is not None:
+                # A failed attempt is not this row's answer: its warnings
+                # (did not converge) would only be noise.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    try:
+                        warm = self.solve(
+                            overrides=overrides,
+                            method=method,
+                            init_strategy=init_strategy,
+                            timeout=timeout,
+                            _x0=_prev_x,
+                        )
+                    except Exception:
+                        warm = None
+                if warm is not None and warm.success:
+                    result = warm
+            from_prev = result is not None
             try:
-                result = self.solve(
-                    overrides=overrides,
-                    method=method,
-                    init_strategy=init_strategy,
-                    timeout=timeout,
-                    _x0=_prev_x,
-                )
+                if result is None:
+                    result = self.solve(
+                        overrides=overrides,
+                        method=method,
+                        init_strategy=init_strategy,
+                        timeout=timeout,
+                    )
             except Exception as exc:
-                import warnings
-
                 warnings.warn(
                     f"NetworkRunner.sweep: solve raised an exception at index {idx}: {exc}",
                     stacklevel=2,
@@ -848,7 +876,7 @@ class NetworkRunner:
                 cases.append(case)
                 continue
             case = _case_from(result, idx, metrics=metrics)
-            case.warm_start = _prev_name if _prev_x is not None else result._warm_start
+            case.warm_start = _prev_name if from_prev else result._warm_start
             cases.append(case)
             if result.success:
                 _prev_x = result._x_solution
