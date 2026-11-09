@@ -3986,6 +3986,50 @@ documents:
   issues: [793]
   records: []
   notes: Arrived 2026-10-28 as docs/new/Pressure-dependent-weighted-sum-of-gray-gases-model_2021_International-Journ.pdf.
+- file: sources/radiation/Ehlme_et_al_2025_ACSOmega_10_2978_WSGG_5000K.pdf
+  sha256: 'fa5184381e25220124827f5c5d21aafa7046d955023e22bb336289c70c6d23f1'
+  citation: 'Ehlme, E., Gunnarsson, A., Normann, F., Andersson, K. (2025). Updated weighted-sum-of-gray-gases
+    model parameters for a wide range of water and carbon dioxide concentrations and temperatures up to 5000 K.
+    ACS Omega 10(3), 2978-2985.'
+  id: doi:10.1021/acsomega.4c09432
+  topic: [radiation]
+  content: 'WSGG (4 gray + 1 clear gas) for H2O-CO2 mixtures and the pure species, fitted to a statistical
+    narrow-band model (SNBM) at 1 atm: T 500-5000 K (Tref 1200 K, 4th-order temperature weights), molar ratio
+    Mr = x_H2O/x_CO2 0.4-4, pL 0.01-60 atm m. Coefficients in the SI (held, next entry). Table 1 lists the
+    ranges of Smith 1982, Johansson 2011 and Bordbar 2014/2020; Table 4 gives mean deviations against SNBM
+    (this model < 20% in most cases; Bordbar 2014 15-27%). Not evaluated at elevated pressure. Licence: CC-BY
+    4.0 (printed on p. 1).'
+  status: screened
+  verdict: 'Screened 2026-11-09 for #1071 (composition-based gas emissivity in place of Lefebvre Eq. 8.11): 1
+    atm only, so it does NOT plug the pressure gap -- at the DLR 2008 rig Eq. 8.11 agrees with the held
+    pressure-dependent Bordbar 2021 WSGG at 5 bar (1.03-1.13x) and overstates it at 10 bar (1.32-1.41x; scratch
+    evaluation, not committed). Its value is the licence: CC-BY 4.0 with the coefficients printed, so unlike
+    Bordbar 2021 (non-redistributable) it could ship as a 1-atm composition-based emissivity, e.g. as the base
+    of a pressure-scaled model or a cross-source check of Eq. 8.11 at 1 atm. Not implemented.'
+  read_for: ['#1071 non-luminous gas emissivity (composition-based)', 'a redistributable WSGG']
+  issues: [1071, 793]
+  records: []
+  notes: 'Arrived 2026-11-09 as sources/new/ao4c09432.pdf with nine other radiation papers; the other nine were
+    screened as of no value and deleted at the user''s request. The registered pressure-capable WSGG remains
+    Bordbar et al. 2021 (licence-restricted).'
+- file: sources/radiation/Ehlme_et_al_2025_ACSOmega_10_2978_WSGG_5000K_SI.pdf
+  sha256: '16180e08817bfd175beb56705bf19e5397eb32496f8bcccff00dd18767648657'
+  citation: 'Ehlme, E., Gunnarsson, A., Normann, F., Andersson, K. (2025). Supporting information to ACS Omega
+    10, 2978-2985 (doi:10.1021/acsomega.4c09432), 4 pp.'
+  id: doi:10.1021/acsomega.4c09432 (SI)
+  topic: [radiation]
+  content: 'Table S1: the mixture model''s absorption coefficients K_j and weight coefficients C_ij (j = 1-4 gray
+    gases, i = 1-4 temperature orders), each given as five constants (a polynomial in the molar ratio Mr).
+    Tables S2/S3: kappa_j and c_ij for pure H2O and pure CO2. Eqs. S1-S3: the extra temperature and Mr profiles
+    of the paper''s test cases.'
+  status: screened
+  verdict: 'Screened 2026-11-09 with the paper (see its entry). The coefficients are complete and printed as
+    text. The SI carries no licence statement of its own; the article is CC-BY 4.0 and ACS distributes the SI
+    free with it -- confirm the SI is covered before committing any coefficient.'
+  read_for: ['#1071 WSGG coefficients']
+  issues: [1071]
+  records: []
+  notes: Arrived 2026-11-09 as sources/new/ao4c09432_si_001.pdf.
 - file: sources/radiation/bordbar_et_al_2021_IJHMT_173_121207_supplementary_mmc1_mmc2.zip
   sha256: '8d7cb10e8895f90282741e613ec96ded864eac805a3af1a997f08307024034eb'
   citation: 'Bordbar, H., Coelho, F. R., Fraga, G. C., Franca, F. H. R., Hostikka, S. (2021). Supplementary
