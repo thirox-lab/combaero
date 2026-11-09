@@ -194,6 +194,7 @@ const NetworkCanvas = () => {
 					wall_conductivity: 20.0,
 					gas_film: "none",
 					gas_augmentation: 1.0,
+					gas_baseline: "chamber",
 					turbulence_intensity: 0.05,
 					gas_heat_flux: 0.0,
 				} as any;

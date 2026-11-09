@@ -91,7 +91,10 @@
 #     and shifts the heat exchange toward the coolant side (authors, p. 1811).
 #     Committed as measured data, never for scoring.
 #
-# `scores: null` everywhere: no scoring set or runner yet (a later PR).
+# SCORED (eta series): validation/cooling/effusion_network_runner.py builds the
+# rig as a network and reads EffusionPlateElement's eta_overall, at both
+# gas-side baselines (`chamber`, `flat_plate` from the bleed). The Fig. 8
+# heat fluxes stay `scores: null`.
 
 paper:
   name: behrendt2008
@@ -128,8 +131,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -190,8 +195,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -252,8 +259,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -311,8 +320,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -369,8 +380,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -430,8 +443,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -488,8 +503,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -547,8 +564,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact
@@ -606,8 +625,10 @@ files:
     x_axis: x_over_d
     x_scale: 1.0
     y_axis: eta_overall
-    # Unscored: no scoring set yet; the baseline runner is a later PR.
-    scores: null
+    # Scored by effusion_network_runner through EffusionPlateElement, whose
+    # coolant side is this set; both gas-side baselines on their own rows.
+    # ACCURACY, cross-source (no closure of the element is this paper's).
+    scores: andrews_1986_effusion_internal
     kind: measured
     extraction: pdf-vector-exact
     confidence: exact

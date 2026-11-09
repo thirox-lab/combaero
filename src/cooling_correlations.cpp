@@ -934,4 +934,67 @@ double effusion_internal_nusselt(double Re, double Pr, double X_over_L,
          + effusion_throat_nusselt(Re, Pr, L_over_D);                 // Eq. 19
 }
 
+namespace {
+
+// Nu_x = St_o Re_x Pr: the Re and Pr exponents of CR-2648's St_o, plus one.
+constexpr double kFlatPlateReExp = 1.0 + crawford1976::st0_re_exponent;
+constexpr double kFlatPlatePrExp = 1.0 + crawford1976::st0_pr_exponent;
+
+void check_flat_plate_inputs(const char *fn, double Re, double Pr) {
+    if (!(Re > 0.0) || !std::isfinite(Re)) {
+        throw std::invalid_argument(std::string(fn) + ": Re must be positive");
+    }
+    if (!(Pr > 0.0) || !std::isfinite(Pr)) {
+        throw std::invalid_argument(std::string(fn) + ": Pr must be positive");
+    }
+}
+
+bool outside_flat_plate_envelope(double Re_x) {
+    return Re_x < crawford1976::Re_x_min || Re_x > crawford1976::Re_x_max;
+}
+
+}  // namespace
+
+std::tuple<double, double> flat_plate_turbulent_nusselt_and_derivative(
+    double Re_x, double Pr, CorrelationStatus *status) {
+    check_flat_plate_inputs("flat_plate_turbulent_nusselt_and_derivative", Re_x, Pr);
+    const double nu = crawford1976::st0_coefficient * std::pow(Re_x, kFlatPlateReExp)
+                    * std::pow(Pr, kFlatPlatePrExp);
+    if (status != nullptr) {
+        *status = outside_flat_plate_envelope(Re_x) ? CorrelationStatus::Extrapolated
+                                                    : CorrelationStatus::Valid;
+    }
+    return {nu, kFlatPlateReExp * nu / Re_x};
+}
+
+FlatPlatePanelNusselt flat_plate_turbulent_panel_nusselt(double Re_L, double Pr,
+                                                         double x_start_over_L) {
+    check_flat_plate_inputs("flat_plate_turbulent_panel_nusselt", Re_L, Pr);
+    if (!(x_start_over_L >= 0.0) || !std::isfinite(x_start_over_L)) {
+        throw std::invalid_argument(
+            "flat_plate_turbulent_panel_nusselt: x_start_over_L must be >= 0");
+    }
+    // The local h ~ x^-0.2 integrated over the panel, on its length.
+    const double s = x_start_over_L;
+    const double bracket = std::pow(1.0 + s, kFlatPlateReExp) - std::pow(s, kFlatPlateReExp);
+    FlatPlatePanelNusselt out;
+    out.Nu = crawford1976::st0_coefficient / kFlatPlateReExp * std::pow(Pr, kFlatPlatePrExp)
+           * std::pow(Re_L, kFlatPlateReExp) * bracket;
+    out.dNu_dRe_L = kFlatPlateReExp * out.Nu / Re_L;
+    out.Re_x_start = Re_L * s;
+    out.Re_x_end = Re_L * (1.0 + s);
+    out.extrapolated = outside_flat_plate_envelope(out.Re_x_start)
+                    || outside_flat_plate_envelope(out.Re_x_end);
+    return out;
+}
+
+std::tuple<double, double> flat_plate_turbulent_panel_nusselt_and_derivative(
+    double Re_L, double Pr, double x_start_over_L, CorrelationStatus *status) {
+    const FlatPlatePanelNusselt r = flat_plate_turbulent_panel_nusselt(Re_L, Pr, x_start_over_L);
+    if (status != nullptr) {
+        *status = r.extrapolated ? CorrelationStatus::Extrapolated : CorrelationStatus::Valid;
+    }
+    return {r.Nu, r.dNu_dRe_L};
+}
+
 }  // namespace combaero::cooling

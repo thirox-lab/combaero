@@ -2098,10 +2098,42 @@ const Inspector = () => {
 								<div className="text-[10px] font-bold text-gray-500 uppercase mt-2">
 									Gas Side
 								</div>
+								<div className="flex flex-col gap-1">
+									<label className="text-xs font-bold text-gray-500 uppercase">
+										Gas h Baseline (h₀)
+									</label>
+									<select
+										className="p-2 border rounded bg-white text-xs border-stone-200"
+										value={d.gas_baseline || "chamber"}
+										onChange={(e) =>
+											set(
+												e.target.value === "flat_plate"
+													? {
+															gas_baseline: "flat_plate",
+															gas_start_length: d.gas_start_length ?? 0.0,
+														}
+													: { gas_baseline: "chamber" },
+											)
+										}
+									>
+										<option value="chamber">
+											Chamber surface (fully developed)
+										</option>
+										<option value="flat_plate">
+											Flat plate, boundary layer restarted upstream
+										</option>
+									</select>
+								</div>
+								{d.gas_baseline === "flat_plate" &&
+									len(
+										"gas_start_length",
+										"BL Start Upstream of Panel (bleed, lip, step)",
+										0.0,
+									)}
 								{num("gas_augmentation", "Gas h Augmentation (user)", 1.0)}
 								{d.result?.h_gas_unblown_model && (
 									<p className="text-[9px] italic text-gray-400 -mt-1">
-										Multiplies the chamber's own h₀ ={" "}
+										Multiplies the unblown h₀ ={" "}
 										{Number(d.result.h_gas_unblown).toFixed(1)} W/m²K:{" "}
 										{d.result.h_gas_unblown_model} at Re{" "}
 										{Number(d.result.h_gas_unblown_Re).toExponential(2)}, Pr{" "}

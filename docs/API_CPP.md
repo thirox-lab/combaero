@@ -1954,6 +1954,29 @@ h_plate = Nu * k / D * A_h / A,   A_h = pi D L,  A = X^2 - pi D^2 / 4
 That factor is 3.46 for Andrews' plate C, so it is not optional. The
 conversion is left to the caller because it needs only geometry.
 
+### Turbulent flat plate (`cooling_correlations.h`)
+
+The unblown reference of the Stanford full-coverage data: NASA CR-2648's
+`St_o Pr^0.4 = 0.0295 Re_x^-0.2` (constants in `cooling::crawford1976`).
+
+```cpp
+// Local: (Nu_x, dNu_x/dRe_x), Nu_x = 0.0295 Re_x^0.8 Pr^0.6.
+std::tuple<double, double> flat_plate_turbulent_nusselt_and_derivative(
+    double Re_x, double Pr, CorrelationStatus* status = nullptr);
+
+// Averaged over x in [x0, x0 + L], on L:
+//   Nu_L = (0.0295/0.8) Pr^0.6 Re_L^0.8 [(1 + s)^0.8 - s^0.8],  s = x0/L
+struct FlatPlatePanelNusselt { double Nu, dNu_dRe_L, Re_x_start, Re_x_end; bool extrapolated; };
+FlatPlatePanelNusselt flat_plate_turbulent_panel_nusselt(double Re_L, double Pr,
+                                                         double x_start_over_L);
+std::tuple<double, double> flat_plate_turbulent_panel_nusselt_and_derivative(
+    double Re_L, double Pr, double x_start_over_L, CorrelationStatus* status = nullptr);
+```
+
+Outside the data's Re_x 1.5e5-5e6 the status (or `extrapolated`) says so and
+the value is still returned; no warning is printed. `EffusionPlateElement`'s
+`gas_baseline="flat_plate"` is the network use.
+
 Scored against Andrews' own Fig. 8 at **-9.9% bias, 11.6% RMSE** (-13.5% /
 14.7% while air's viscosity was 11.8% low, #485), labelled
 **accuracy**: the correlations are the 1986 paper and the data the 1988

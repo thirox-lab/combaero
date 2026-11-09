@@ -7266,6 +7266,54 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "it is not optional.\n\n"
         "Returns: Nu [-]");
 
+  m.def("flat_plate_turbulent_nusselt_and_derivative",
+        [](double Re_x, double Pr) {
+          return combaero::cooling::flat_plate_turbulent_nusselt_and_derivative(
+              Re_x, Pr, nullptr);
+        },
+        py::arg("Re_x"), py::arg("Pr"),
+        "Local turbulent flat-plate Nusselt number on x, and its derivative.\n\n"
+        "The unblown reference of the Stanford full-coverage film-cooling\n"
+        "data (NASA CR-2648, printed under every table):\n"
+        "St_o Pr^0.4 = 0.0295 Re_x^-0.2, so Nu_x = 0.0295 Re_x^0.8 Pr^0.6.\n\n"
+        "  Re_x : x-Reynolds number from where the boundary layer starts [-]\n"
+        "  Pr   : gas Prandtl number [-]\n\n"
+        "Data span Re_x 1.5e5-5e6, air (see flat_plate_turbulent_panel_nusselt\n"
+        "for the flag).\n\n"
+        "Returns: (Nu_x, dNu_x/dRe_x)");
+
+  py::class_<combaero::cooling::FlatPlatePanelNusselt>(m, "FlatPlatePanelNusselt")
+      .def_readonly("Nu", &combaero::cooling::FlatPlatePanelNusselt::Nu)
+      .def_readonly("dNu_dRe_L", &combaero::cooling::FlatPlatePanelNusselt::dNu_dRe_L)
+      .def_readonly("Re_x_start", &combaero::cooling::FlatPlatePanelNusselt::Re_x_start)
+      .def_readonly("Re_x_end", &combaero::cooling::FlatPlatePanelNusselt::Re_x_end)
+      .def_readonly("extrapolated", &combaero::cooling::FlatPlatePanelNusselt::extrapolated);
+
+  m.def("flat_plate_turbulent_panel_nusselt",
+        &combaero::cooling::flat_plate_turbulent_panel_nusselt, py::arg("Re_L"),
+        py::arg("Pr"), py::arg("x_start_over_L"),
+        "Panel-averaged turbulent flat-plate Nusselt number over\n"
+        "x in [x0, x0 + L], on the panel length L.\n\n"
+        "  Nu_L = (0.0295/0.8) Pr^0.6 Re_L^0.8 [(1 + s)^0.8 - s^0.8], s = x0/L\n\n"
+        "CR-2648's St_o (the Stanford full-coverage unblown reference)\n"
+        "integrated in closed form; no unheated starting length.\n\n"
+        "  Re_L           : rho U L / mu on the panel length [-], > 0\n"
+        "  Pr             : gas Prandtl number [-], > 0\n"
+        "  x_start_over_L : boundary-layer start upstream of the panel's\n"
+        "                   leading edge, in panel lengths [-], >= 0\n\n"
+        "Returns FlatPlatePanelNusselt: Nu, dNu_dRe_L, Re_x_start, Re_x_end,\n"
+        "extrapolated (the panel's Re_x leaves the data's 1.5e5-5e6 span; it\n"
+        "is evaluated anyway, never refused). h_bar = Nu k / L.");
+
+  m.def("flat_plate_turbulent_panel_nusselt_and_derivative",
+        [](double Re_L, double Pr, double x_start_over_L) {
+          return combaero::cooling::flat_plate_turbulent_panel_nusselt_and_derivative(
+              Re_L, Pr, x_start_over_L, nullptr);
+        },
+        py::arg("Re_L"), py::arg("Pr"), py::arg("x_start_over_L"),
+        "Solver-facing (f, J) form: (Nu_L, dNu_L/dRe_L) at fixed x0/L.\n"
+        "Closed form, 0.8 Nu_L / Re_L.");
+
   m.def("equivalent_slot_width", &combaero::cooling::equivalent_slot_width,
         py::arg("hole_area"), py::arg("pitch"),
         "Gao Eq. (9): s = A_hole / pitch. The equivalent slot width that\n"

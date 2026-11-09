@@ -279,6 +279,11 @@ def networks() -> Iterator[tuple[str, str, dict]]:
         _renamed(eff._liner({"gas_film": "baldauf_sellers"}), "eff"),
     )
     yield (
+        "effusion_plate",
+        "on a gas-side chamber, flat-plate gas baseline",
+        _renamed(eff._liner({"gas_baseline": "flat_plate", "gas_start_length": 0.02}), "eff"),
+    )
+    yield (
         "impingement_array",
         "bypass from a boundary",
         _renamed(imp._bypass_schema("boundary"), "arr"),

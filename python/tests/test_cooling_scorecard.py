@@ -585,10 +585,12 @@ def test_the_andrews_figures_report_as_separate_rows(dataset) -> None:
     rows would average unlike quantities. Pooling the two plates would
     give +13%, describing neither the 3% fit nor the 24% miss.
     """
+    # Behrendt 2008's rows ride on the same set (the element's coolant side)
+    # and are pinned by test_behrendt_rows_report_each_gas_baseline_apart.
     rows = [
         r
         for r in rollup(build(run_dataset(dataset), dataset))
-        if r.scored_by == "andrews_1986_effusion_internal"
+        if r.scored_by == "andrews_1986_effusion_internal" and "eta_tot," not in r.label
     ]
     keyed = {
         (r.basis, r.label.split("  [")[1].rstrip("]") if r.label.count("  [") > 1 else ""): r
@@ -611,6 +613,34 @@ def test_the_andrews_figures_report_as_separate_rows(dataset) -> None:
     assert 0.17 < eta_b.bias < 0.30
     # The two plates must stay far apart; a pooled row would be +13%.
     assert eta_b.bias - eta_c.bias > 0.15
+
+
+def test_behrendt_rows_report_each_gas_baseline_apart(dataset) -> None:
+    """Behrendt 2008 through EffusionPlateElement: one rollup row per gas-side
+    baseline, both ACCURACY, never pooled, and the flat plate's out of its
+    kernel's Re_x span (so out-of-domain) -- reported, not dropped.
+
+    The numbers are the element at gas_augmentation 1.0; the per-curve
+    table and trends are pinned in test_effusion_network_runner.py."""
+    rows = {
+        r.label: r for r in rollup(build(run_dataset(dataset), dataset)) if "eta_tot," in r.label
+    }
+    chamber = rows["andrews_1986_effusion_internal  [eta_tot, chamber gas side]  [acc]"]
+    flat = rows[
+        "andrews_1986_effusion_internal  [eta_tot, flat_plate gas side]  [acc] "
+        f"{OUT_OF_DOMAIN_MARK}"
+    ]
+    assert len(rows) == 2, sorted(rows)
+    for r in (chamber, flat):
+        assert r.basis == "accuracy" and r.sampling == "complete"
+        # Nine curves, the x/d 18-50 vertices of each.
+        assert r.n_scored == 821
+    assert chamber.domain == "in-domain" and flat.domain == "out-of-domain"
+    # Both over-predict on every curve; the restarted boundary layer roughly
+    # halves the miss, and does not close it.
+    assert 0.20 < chamber.bias < 0.24
+    assert 0.11 < flat.bias < 0.14
+    assert chamber.within == 0.0 and flat.within == 0.0
 
 
 # ---------------------------------------------------------------------------

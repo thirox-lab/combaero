@@ -6527,6 +6527,20 @@ _EFFUSION_CHAMBER_SIDE_KEYS = (
     "velocity_ratio",
 )
 
+#: The numeric keys a flat-plate gas side (`gas_baseline="flat_plate"`) adds
+#: to _EFFUSION_CHAMBER_SIDE_KEYS: where the restarted boundary layer's panel
+#: average was taken, and whether its Re_x left the correlation's data span.
+_EFFUSION_FLAT_PLATE_KEYS = (
+    "h_gas_unblown_x_start",
+    "h_gas_unblown_x_end",
+    "h_gas_unblown_Re_x_start",
+    "h_gas_unblown_Re_x_end",
+    "h_gas_unblown_extrapolated",
+)
+
+#: What `h_gas_unblown_model` names for the flat-plate baseline.
+_FLAT_PLATE_MODEL = "flat_plate_turbulent(CR-2648 St_o, panel average)"
+
 
 def _chamber_gas_side(node: Any, state: "NetworkMixtureState") -> dict[str, Any] | None:
     """What a discharge node offers a wall as its gas side, or None.
@@ -6643,9 +6657,22 @@ class EffusionPlateElement(OrificeElement):
     THE PLATE OWNS ITS WALL (#471). `wall_heat_transfer()` -- reported in
     the diagnostics -- solves the wall with the coolant side above and a gas
     side the DISCHARGE NODE decides: a MomentumChamberNode (flow) supplies
-    its own unblown coefficient, gas temperature and velocity; a plenum
-    (state, no flow) takes the imposed `gas_heat_flux`. No ThermalWall
-    connects to this element.
+    the gas temperature and velocity, and by default its own surface
+    correlation as the unblown coefficient; a plenum (state, no flow) takes
+    the imposed `gas_heat_flux`. No ThermalWall connects to this element.
+
+    THE UNBLOWN BASELINE IS SELECTABLE (`gas_baseline`). 'chamber' (default)
+    is the chamber's own correlation -- for a smooth duct, fully developed.
+    'flat_plate' is a turbulent boundary layer restarted `gas_start_length`
+    upstream of the panel (a bleed, a starter-film lip, a liner step),
+    averaged over `panel_length`: CR-2648's St_o, the unblown reference the
+    Stanford full-coverage St/St_o data -- the measured augmentation -- are
+    published against. On two rigs a duct correlation was the wrong
+    reference: Andrews 88-GT-290 (plate at x/D_h 1.5, entry-corrected h_0
+    1.76x Dittus-Boelter) and Behrendt 2008 (boundary layer bled 21 d before
+    the sample; the duct's Dh 319 mm gives about half the flat plate's h).
+    Neither makes a `gas_augmentation` value a default; which baseline a
+    literature augmentation is quoted against decides which one to pick.
 
     AN OVERALL EFFECTIVENESS CORRELATION IS NEVER THE CLOSURE. Andrews
     (88-GT-290) states internal and film cooling are NOT additive -- "the
@@ -6703,9 +6730,39 @@ class EffusionPlateElement(OrificeElement):
         crossflow_segments: tuple[str | None, str | None] | None = None,
         crossflow_area: float | None = None,
         material: str | None = None,
+        gas_baseline: Literal["chamber", "flat_plate"] = "chamber",
+        gas_start_length: float | None = None,
     ) -> None:
         if hole_diameter <= 0.0:
             raise ValueError("EffusionPlateElement: hole_diameter must be positive")
+        # WHICH UNBLOWN COEFFICIENT `gas_augmentation` MULTIPLIES (#476). The
+        # chamber's own surface correlation (default), or a turbulent boundary
+        # layer restarted `gas_start_length` [m] upstream of the panel's
+        # leading edge -- a bleed, a starter-film lip, a liner step -- and
+        # averaged over the panel. See wall_heat_transfer.
+        if gas_baseline not in ("chamber", "flat_plate"):
+            raise ValueError("EffusionPlateElement: gas_baseline is 'chamber' or 'flat_plate'")
+        if gas_baseline == "flat_plate":
+            if gas_start_length is None or not gas_start_length >= 0.0:
+                raise ValueError(
+                    "EffusionPlateElement: gas_baseline='flat_plate' needs "
+                    "gas_start_length >= 0, the distance [m] from where the hot-side "
+                    "boundary layer starts (a bleed, a starter-film lip, a step) to "
+                    "the panel's leading edge"
+                )
+            if panel_length is None:
+                raise ValueError(
+                    "EffusionPlateElement: gas_baseline='flat_plate' needs "
+                    "panel_length, the streamwise extent the coefficient is averaged over"
+                )
+        elif gas_start_length is not None:
+            raise ValueError(
+                "EffusionPlateElement: gas_start_length is the flat-plate baseline's "
+                "input; the chamber baseline takes the chamber's own correlation "
+                "(set gas_baseline='flat_plate', or drop gas_start_length)"
+            )
+        self.gas_baseline = gas_baseline
+        self.gas_start_length = None if gas_start_length is None else float(gas_start_length)
         # The plate's alloy, for its temperature limit only (#998): the hot
         # end of its #882 envelope, or the generic metal cap without one.
         if material is not None and material not in cb.list_materials():
@@ -6928,6 +6985,16 @@ class EffusionPlateElement(OrificeElement):
             )
         if error := self._geometry_error():
             raise ValueError(error)
+        node = getattr(self, "_discharge_node", None)
+        if self.gas_baseline == "flat_plate" and not (
+            isinstance(node, MomentumChamberNode) and node.area > 0.0
+        ):
+            raise ValueError(
+                f"EffusionPlateElement {self.id!r}: gas_baseline='flat_plate' needs a "
+                "flowing gas side, a MomentumChamberNode with an area, to discharge "
+                f"into; {self.to_node!r} has no gas velocity (a plenum takes the "
+                "imposed gas_heat_flux, and no baseline applies)."
+            )
         if self.porosity >= 1.0:
             raise ValueError(
                 f"EffusionPlateElement {self.id!r}: porosity is "
@@ -7067,7 +7134,10 @@ class EffusionPlateElement(OrificeElement):
         of 1.76 from that choice alone (both plates, both baselines:
         validation/cooling/extractions/andrews_effusion_overall_eta.md). Published film-cooling ratios are usually referenced to a
         flat-plate turbulent boundary layer at the same x, which is a third
-        baseline again.
+        baseline again -- the element's `gas_baseline='flat_plate'` in a
+        network. On Behrendt 2008's reacting rig it halves the chamber
+        baseline's over-prediction (+22% to +13%, extractions/
+        behrendt_2008_effusion_eta_tot.md) and does not close it.
 
         WHAT SCORING IT AGAINST ANDREWS SHOWED. At `gas_augmentation = 1.0`
         and `eta_film = 0.0` the closure scores +3.1% on his effusion plate
@@ -7196,9 +7266,17 @@ class EffusionPlateElement(OrificeElement):
 
         GAS SIDE, by discharge node:
 
-        * a MomentumChamberNode has flow. Its own surface correlation gives
-          the UNBLOWN coefficient and gas temperature, its velocity the
-          blowing ratio. `gas_augmentation` (the caller's, 1.0 unless set;
+        * a MomentumChamberNode has flow. It gives the gas temperature and
+          its velocity the blowing ratio. The UNBLOWN coefficient is
+          `gas_baseline`'s: the chamber's own surface correlation
+          ('chamber', default), or ('flat_plate') CR-2648's turbulent
+          flat-plate St_o averaged over x in [gas_start_length,
+          gas_start_length + panel_length] from where the boundary layer
+          restarts, at the chamber's static state and velocity
+          (`h_gas_unblown_x_start`/`_x_end`/`_Re_x_start`/`_Re_x_end`
+          report the range; `h_gas_unblown_extrapolated` is 1 where its Re_x
+          leaves the Stanford data's 1.5e5-5e6, evaluated anyway).
+          `gas_augmentation` (the caller's, 1.0 unless set;
           never fitted -- see docs/VALIDATION_POLICY.md) scales the
           coefficient; Andrews 88-GT-290 shows that augmentation, not a
           film correlation, is the missing physics. `gas_film` stays 'none'
@@ -7242,6 +7320,8 @@ class EffusionPlateElement(OrificeElement):
         }
         node = getattr(self, "_discharge_node", None)
         gas = _chamber_gas_side(node, state_out)
+        if gas is not None and self.gas_baseline == "flat_plate":
+            gas = self._flat_plate_gas_side(node, state_out, gas)
         # NO COOLING PATH (#998): no coolant through the holes and no gas
         # flow on the other side. Nothing takes heat from the plate, so its
         # temperature is undetermined: an imposed flux q != 0 has no steady
@@ -7269,6 +7349,9 @@ class EffusionPlateElement(OrificeElement):
             out["gas_side_chamber"] = 1.0
             for key in _EFFUSION_CHAMBER_SIDE_KEYS:
                 out[key] = math.nan
+            if self.gas_baseline == "flat_plate":
+                for key in _EFFUSION_FLAT_PLATE_KEYS:
+                    out[key] = math.nan
             return self._with_wall_limit(out)
         if gas is None:
             q = self.gas_heat_flux
@@ -7340,7 +7423,40 @@ class EffusionPlateElement(OrificeElement):
                 "velocity_ratio": float(G_jet / rho_c / U_g) if U_g > 0.0 else math.inf,
             }
         )
+        if self.gas_baseline == "flat_plate":
+            out.update({k: gas[k] for k in _EFFUSION_FLAT_PLATE_KEYS})
         return self._with_wall_limit(out)
+
+    def _flat_plate_gas_side(
+        self, node: "MomentumChamberNode", state: NetworkMixtureState, gas: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The chamber's gas side with the unblown coefficient of a turbulent
+        flat plate restarted `gas_start_length` upstream of the panel.
+
+        The chamber still supplies the stream -- T_gas, U_gas, rho -- and only
+        the coefficient's correlation changes: CR-2648's St_o averaged over
+        x in [x0, x0 + panel_length] (C++ `flat_plate_turbulent_panel_
+        nusselt`), properties at the chamber's static state like its own
+        surface correlation (#578)."""
+        L = float(self.panel_length)
+        x0 = float(self.gas_start_length)
+        T_static = float(node._closure(state, node._total_m_dot).T_static)
+        ts = cb.transport_state(T_static, state.P, state.X)
+        re_L = gas["rho_gas"] * gas["U_gas"] * L / ts.mu
+        fp = cb.flat_plate_turbulent_panel_nusselt(re_L, ts.Pr, x0 / L)
+        return {
+            **gas,
+            "h_unblown": float(fp.Nu * ts.k / L),
+            "baseline_model": _FLAT_PLATE_MODEL,
+            "Re_unblown": float(re_L),
+            "Pr_unblown": float(ts.Pr),
+            "Nu_unblown": float(fp.Nu),
+            "h_gas_unblown_x_start": x0,
+            "h_gas_unblown_x_end": x0 + L,
+            "h_gas_unblown_Re_x_start": float(fp.Re_x_start),
+            "h_gas_unblown_Re_x_end": float(fp.Re_x_end),
+            "h_gas_unblown_extrapolated": float(fp.extrapolated),
+        }
 
     def _with_wall_limit(self, out: dict[str, float]) -> dict[str, float]:
         """The wall solution plus its temperature limit (#998): the plate

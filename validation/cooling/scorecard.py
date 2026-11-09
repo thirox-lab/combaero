@@ -106,6 +106,7 @@ class Cell:
 def _specialists() -> tuple:
     from validation.cooling import (
         effusion_internal_runner,
+        effusion_network_runner,
         effusion_overall_runner,
         film_runner,
         jet_array_runner,
@@ -124,6 +125,8 @@ def _specialists() -> tuple:
         (film_runner.owns, film_runner.run_series),
         (effusion_internal_runner.owns, effusion_internal_runner.run_series),
         (effusion_overall_runner.owns, effusion_overall_runner.run_series),
+        # Behrendt 2008 through the element's network (both gas baselines).
+        (effusion_network_runner.owns, effusion_network_runner.run_series),
     )
 
 
@@ -502,10 +505,13 @@ def rollup(cells: list[Cell]) -> list[Cell]:
     for c in cells:
         if c.scored_by is None:
             continue
+        # The out-of-domain mark trails the group's bracket, so it comes off
+        # first: stripping "]" before it left "group]" on a grouped row that
+        # is out of domain (first hit by behrendt2008's flat-plate rows).
         group = (
             c.label.split("  [")[1]
-            .rstrip("]")
             .replace(f"  {OUT_OF_DOMAIN_MARK}", "")
+            .rstrip("]")
             if "  [" in c.label
             else ""
         )
