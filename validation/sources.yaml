@@ -1317,6 +1317,74 @@ documents:
   notes: 'Memory: reference_impingement_sources_2026_10_20.md. Jackowski 2016 (network model) cited in
     docs/archive/REVIEW_NETWORK_GUI.md is a different paper. A companion KIT/DLR study, Jackowski et al. 2016
     GT2016-56598 (effusion liner tiles with modern cooling concepts, with Behrendt), is not held.'
+- file: sources/heat_transfer/film/Behrendt_Lengyel_Hassa_Gerendas_2008_GT2008-51191_effusion_reacting_high_pressure.pdf
+  sha256: '93309a3a1c9981c81304a9a75c7a1fbf18ab6703eb5ebb964b39ee18da82cf36'
+  citation: 'Behrendt, T., Lengyel, T., Hassa, C., Gerendas, M. (2008). Characterization of advanced combustor
+    cooling concepts under realistic operating conditions. ASME Turbo Expo 2008, GT2008-51191, Vol. 4, 1801-1814.'
+  id: doi:10.1115/GT2008-51191
+  topic: [effusion, film, combustion]
+  content: 'DLR Cologne high-pressure rig: effusion liner samples E20/E30 (beta 20/30 deg, t/d 2, sx/d 5, sz/d
+    8.6 staggered, Nimonic 75, d ~0.70 mm inferred from l/d 143 and b/d 114; no starter film) behind a kerosene
+    combustor at p_h 5 bar (TC1, T_h 1567 K, u_h 29.7 m/s) and 10 bar (TC2, 1532 K, 29.1 m/s). IR wall
+    temperature; TOTAL (overall) effectiveness eta_tot = (T_h(x/d=-10) - T_w)/(T_h - T_c), laterally averaged
+    over -17.1 < z/d < 8.6, against x/d (Figs. 5, 6, 9, 10: hole angle, Tc 470-580 K, dp_r,c 2-4%, p_h);
+    contour maps Figs. 4, 7 (incl. impingement-backed I20/I30); hot-side heat flux vs dp (Fig. 8, biased by
+    the sensor); Table 4 model h_h/h_e/h_c. Uncertainty d eta_r,tot <= 3% relative. M, I from the Martiny
+    1997 wall model; ~40% of the coolant fed the module (footnote 3).'
+  status: extracted
+  verdict: 'Extracted 2026-11-08 from the PDF vector stream, user-confirmed: 9 distinct eta_tot curves (three
+    curves printed twice agree to 1e-5 across independent calibrations; one copy each committed) and the 3
+    Fig. 8 heat-flux series (never for scoring). The first reacting 5-10 bar heated-wall eta_overall set: a
+    cross-source ACCURACY set for EffusionPlateElement eta_overall plus four trends (angle 20 vs 30 deg
+    0.800 vs 0.727; Tc 470/540/580 K 0.778/0.727/0.688; dp 2/3/4% 0.790/0.800/0.805; p_h 5 -> 10 bar 0.778
+    -> 0.753 at dp 3%). Never fidelity, never a tuner. For #476: no adiabatic wall temperature, so it does
+    NOT give gas_augmentation (h_h in Table 4 is model output); #476 stays open. Unscored until a runner
+    exists.'
+  read_for: ['#476 gas-side h / augmentation (no)', 'eta_overall accuracy at reacting high-pressure conditions']
+  issues: [476]
+  records: [validation/cooling/data/behrendt2008/metadata.yaml, validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md]
+  notes: 'Was on the wanted list (#1070). Its rig paper is Behrendt & Hassa ICAS 2006 (held); its wall model
+    is Martiny et al. 97-GT-329 (held). Companion GT2014-26909 (same rig, trenches and CMC) stays wanted.'
+- file: sources/heat_transfer/film/Behrendt_Hassa_2006_ICAS2006-152_combustor_cooling_test_rig.pdf
+  sha256: '6bf6c456c315e08d696a69d0300dec1303bf2d2b2a9f9316150ae20d7fd62660'
+  citation: 'Behrendt, T., Hassa, C. (2006). A test rig for investigations of gas turbine combustor cooling
+    concepts under realistic operating conditions. 25th ICAS Congress, Hamburg, paper 152.'
+  topic: [combustion, effusion]
+  content: 'Rig definition for the DLR high-pressure combustor cooling rig: tubular water-cooled kerosene
+    combustor (to 20 bar, T_F 1600-2100 K) feeding a rectangular test section, duct area 80e3 mm2, wall sample
+    100 x 80 mm (l x b) with optical access from four sides; boundary-layer bleed; coolant preheated to 750 K.
+    LDA near-wall velocity profiles and Tu 19-24%; thermocouple near-wall gas temperature profiles (corrected
+    for radiation/conduction) at the sample leading edge; bulk conditions TC1-TC4 (5-10 bar, 1750-2000 K, 24-30
+    m/s). No cooling results of its own.'
+  status: screened
+  verdict: 'Screened 2026-11-08 for the GT2008-51191 extraction: supplies the sample size (l 100 mm, b 80 mm,
+    hence d ~0.70 mm from the GT2008 l/d and b/d) and the free-stream turbulence (Tu 19-24%) that GT2008 does
+    not print. Its TC1-TC4 labels are not GT2008''s TC1/TC2. Needed to set the gas-side boundary of any
+    eta_overall runner on the GT2008 data.'
+  read_for: ['GT2008-51191 inputs (sample size, hole d, turbulence, near-wall gas state)']
+  issues: [476]
+  records: [validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md]
+  notes: 'Open access from the ICAS archive. The 2008 IMechE Part G journal paper (Behrendt & Hassa, J. Aerospace
+    Eng. 222(2), 169-177, doi:10.1243/09544100JAERO288; formerly on the wanted list) is the same content, so it
+    was dropped from wanted.'
+- file: sources/heat_transfer/film/Martiny_Schulz_Wittig_1997_97-GT-329_effusion_coupled_wall_model.pdf
+  sha256: '1f0d5b5fed6e74ad4b2c73918ad8de77ba7e117eab9b301a1f064039df0f5616'
+  citation: 'Martiny, M., Schulz, A., Wittig, S. (1997). Mathematical model describing the coupled heat transfer
+    in effusion cooled combustor walls. ASME 97-GT-329.'
+  topic: [effusion, film]
+  content: '1-D coupled wall model: hot side by h0 plus eta_aw superposition (both INPUTS); backside h_c on the
+    pitch area minus the projected hole; in-hole h with coupled ODEs for the wall and coolant temperature along
+    the hole; dimensionless groups incl. the enthalpy-to-conduction ratio K3 = rho u cp d / k_w. Validated
+    only against coolant exit temperature on a 4 mm, 17 deg hole in a 12 mm wall at 600 K. Fig. 14: coolant
+    saturation in the hole sets in below K3 ~10.'
+  status: screened
+  verdict: 'Screened 2026-11-08 (#476): no gas-side closure (h0 and eta_aw are inputs), so #476 stays open. Key
+    use: the K3 coolant-saturation regime, which EffusionPlateElement (no coolant capacity limit, sink at the
+    supply temperature) does not represent; K3 is about 6 on the Behrendt 2008 plates, inside it. Motivates a
+    follow-up; nothing implemented. It is the model Behrendt et al. 2008 use for their M, I and Table 4.'
+  read_for: ['#476 gas-side closure (no)', 'coolant heat-up / saturation in the hole', 'GT2008-51191 M, I provenance']
+  issues: [476]
+  records: [validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md]
 - file: sources/heat_transfer/film/JAKO200027542986867.pdf
   sha256: 'ba86d1c43fc1816d2f184e124ca820067b95fbc1cd19e4cc78d14447c3eef54c'
   citation: Rhee, D. H., Cho, H. H. (2000). Heat transfer characteristics on effusion plate in impingement/effusion
@@ -6466,30 +6534,8 @@ wanted:
 # DLR Cologne high-pressure combustor cooling rig (added 2026-11-08, after the #476 hot-side
 # question): effusion liner samples in a reacting hot-gas flow at up to 10 bar and flame
 # temperatures up to 2000 K. The user found no full texts on DLR elib; all three paywalled.
-- citation: 'Behrendt, T., Hassa, C. (2008). A test rig for investigations of gas turbine combustor cooling
-    concepts under realistic operating conditions. Proc. IMechE Part G: J. Aerospace Engineering 222(2),
-    169-177. doi:10.1243/09544100JAERO288'
-  checked: true
-  issues:
-  - 476
-  priority: later
-  question: 'The rig definition and the measured hot-gas velocity and temperature profiles at the sample leading
-    edge (p up to 10 bar, T_F up to 2000 K). No cooling results of its own; needed to set the gas-side boundary
-    of the two follow-on papers below for an eta_overall accuracy check.'
-  where: SAGE journal (paywalled); not on DLR elib (checked by the user, 2026-11-08).
-- citation: Behrendt, T., Lengyel, T., Hassa, C., Gerendas, M. (2008). Characterization of advanced combustor
-    cooling concepts under realistic operating conditions. ASME Turbo Expo 2008, GT2008-51191, Vol. 4, 1801-1814.
-    doi:10.1115/GT2008-51191
-  checked: true
-  issues:
-  - 476
-  priority: later
-  question: 'Total cooling effectiveness of effusion and other liner concepts, by IR thermography, in a reacting
-    flow at realistic pressure and temperature, with the coolant properties varied: a cross-source ACCURACY check
-    of EffusionPlateElement eta_overall at combustor conditions (Jackowski 2021 is electrically heated air). For
-    #476 only if it prints the wall heat flux, or both face temperatures with the gas temperature, so that a
-    gas-side h follows; unknown from the abstract. A liner case, not a front plate facing burners.'
-  where: ASME Digital Collection (paywalled); not on DLR elib (checked by the user, 2026-11-08).
+# 2026-11-08: GT2008-51191 obtained (documents, extracted) and the rig paper's ICAS 2006
+# conference version (documents; same content as the 2008 IMechE paper); GT2014 remains.
 - citation: Behrendt, T., Richter, S., Soehngen, P. (2014). Characterization of advanced combustor cooling concepts
     for metallic walls and oxide ceramic matrix composites in a reacting flow. ASME Turbo Expo 2014, GT2014-26909,
     Vol. 5C. doi:10.1115/GT2014-26909

@@ -10,6 +10,13 @@ reshapes it. The internal side is `andrews_effusion_internal_h.md`; the
 external side is `baldauf_2002_film_effectiveness.md` and
 `film_superposition.md`.
 
+Later addition (2026-11-08): Behrendt et al. (2008), GT2008-51191, is a
+reacting 5-10 bar heated-wall `eta_tot` set (effusion, 20 and 30 deg holes;
+coolant temperature, pressure drop and pressure varied). It is data only,
+unscored, and a cross-source accuracy set for the coupled wall, not a
+gas-side closure. See
+[behrendt_2008_effusion_eta_tot.md](behrendt_2008_effusion_eta_tot.md).
+
 ## What the figure is
 
 Page 7, `eta = (T_g - T_w)/(T_g - T_c)` (the paper's Eq. 3) against
