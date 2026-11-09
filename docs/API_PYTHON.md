@@ -855,7 +855,8 @@ from combaero.network import EffusionLiner
 
 liner = EffusionLiner("ln", n_segments=4, length=0.152, width=0.152, duct_height=0.03,
                       hole_diameter=3.27e-3, wall_thickness=6.3e-3,
-                      pitch_x=15.24e-3, pitch_y=15.24e-3)
+                      pitch_x=15.24e-3, pitch_y=15.24e-3,
+                      radiation=None)   # or GasRadiation(...): every panel's hot face
 liner.add_to(net, coolant_in="cin", coolant_out="cout", gas="liner_chamber")
 liner.summarize(res["__element_diag__"])   # bleed, U1/Vi, Cd, P_backside, T_wall per station
 ```
@@ -3362,12 +3363,16 @@ from combaero.network import ImpingementArray, WallLayer
 arr = ImpingementArray("ia", n_rows=10, d_jet=0.00254, xn_d=5.0, yn_d=4.0, z_d=2.0,
                        span=0.122, plate_thickness=0.00254)
 arr.add_to(net, supply="supply", exit="exit")            # rows ia__p{i}, ia__x{i}, ia__c{i}
-arr.add_wall(net, "w", hot_element="hot", layers=[WallLayer(0.001, 20.0)])
+arr.add_wall(net, "w", hot_element="hot", layers=[WallLayer(0.001, 20.0)],
+             radiation_hot=None,       # GasRadiation / CasingRadiation, hot face
+             radiation_target=None)    # e.g. CasingRadiation toward the jet plate
 res = NetworkSolver(net).solve()
 arr.summarize(res["__element_diag__"])   # m_dot, dP, Re_j/Gc_Gj ranges, rows_Nu, ...
 ```
 
-`add_wall` puts one `ThermalWall` per row on that row's target footprint; the
+`add_wall` puts one `ThermalWall` per row on that row's target footprint,
+each with the same `radiation_hot` / `radiation_target` mapped to its
+`radiation_a` / `radiation_b` (#1071); the
 hot side is evaluated once per row at its own state, so a hot side that changes
 along the array needs its own segments. Heating the crossflow lowers its
 density, which raises the jets' momentum cost and the supply non-uniformity
