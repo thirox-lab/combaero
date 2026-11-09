@@ -630,8 +630,15 @@ def test_behrendt_rows_report_each_gas_baseline_apart(dataset) -> None:
         "andrews_1986_effusion_internal  [eta_tot, flat_plate gas side]  [acc] "
         f"{OUT_OF_DOMAIN_MARK}"
     ]
-    assert len(rows) == 2, sorted(rows)
-    for r in (chamber, flat):
+    chamber_rad = rows[
+        "andrews_1986_effusion_internal  [eta_tot, chamber gas side + gas radiation]  [acc]"
+    ]
+    flat_rad = rows[
+        "andrews_1986_effusion_internal  [eta_tot, flat_plate gas side + gas radiation]  [acc] "
+        f"{OUT_OF_DOMAIN_MARK}"
+    ]
+    assert len(rows) == 4, sorted(rows)
+    for r in (chamber, flat, chamber_rad, flat_rad):
         assert r.basis == "accuracy" and r.sampling == "complete"
         # Nine curves, the x/d 18-50 vertices of each.
         assert r.n_scored == 821
@@ -641,6 +648,9 @@ def test_behrendt_rows_report_each_gas_baseline_apart(dataset) -> None:
     assert 0.20 < chamber.bias < 0.24
     assert 0.11 < flat.bias < 0.14
     assert chamber.within == 0.0 and flat.within == 0.0
+    # Gas radiation (#1071) lowers both by 3-5 points and closes neither.
+    assert 0.15 < chamber_rad.bias < chamber.bias - 0.03
+    assert 0.07 < flat_rad.bias < flat.bias - 0.03
 
 
 # ---------------------------------------------------------------------------

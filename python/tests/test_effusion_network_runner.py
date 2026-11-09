@@ -61,10 +61,11 @@ def test_the_plateau_predictions_are_pinned(series) -> None:
 def test_no_tuner_is_applied(series) -> None:
     for s in series.values():
         for b in nr.BASELINES:
-            d = nr.predict(s, b)
-            assert d["gas_augmentation"] == 1.0
-            assert d["internal_Nu_multiplier"] == 1.0
-            assert d["eta_film"] == 0.0
+            for rad in nr.RADIATION:
+                d = nr.predict(s, b, radiation=rad)
+                assert d["gas_augmentation"] == 1.0
+                assert d["internal_Nu_multiplier"] == 1.0
+                assert d["eta_film"] == 0.0
 
 
 def test_both_baselines_over_predict_and_the_flat_plate_less(series) -> None:
@@ -106,7 +107,7 @@ def test_the_trends(dataset) -> None:
     assert angle["measured"] == pytest.approx(-0.073, abs=1e-3)
     assert tc["measured"] == pytest.approx(-0.090, abs=1e-3)
     assert dp["measured"] == pytest.approx(0.015, abs=1e-3)
-    for b in nr.BASELINES:
+    for b in (*nr.BASELINES, *(f"{x}+rad" for x in nr.BASELINES)):
         assert angle[b] < 0.0 and angle[b] / angle["measured"] < 0.3
         assert abs(tc[b]) < 2e-3
         assert dp[b] > 0.0
@@ -116,6 +117,11 @@ def test_the_trends(dataset) -> None:
     assert dp["chamber"] / dp["measured"] == pytest.approx(0.86, abs=0.03)
     assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.54, abs=0.05)
     assert p3["flat_plate"] / p3["measured"] == pytest.approx(0.68, abs=0.05)
+    # Gas radiation (#1071) grows with pressure (eps_g 0.14 -> 0.26), so it
+    # closes most of the flat plate's pressure trend; it also steepens the
+    # dp trend, whose overshoot grows to 1.8x.
+    assert p3["flat_plate+rad"] / p3["measured"] == pytest.approx(0.84, abs=0.05)
+    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.82, abs=0.06)
 
 
 def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> None:
@@ -135,3 +141,37 @@ def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> 
         assert v["flat_plate_dh_alt"] == pytest.approx(v["flat_plate"], abs=1e-9), stem
         # The whole-sample panel averages a thicker boundary layer.
         assert v["flat_plate_whole_sample"] > v["flat_plate"], stem
+        # Radiation: a shorter beam (80 x 100 mm duct) or a duller wall
+        # radiates less, so eta rises toward the no-radiation value.
+        assert v["flat_plate_rad"] < v["flat_plate_rad_eps_alt"] < v["flat_plate"], stem
+        assert v["flat_plate_rad"] < v["flat_plate_rad_beam_alt"] < v["flat_plate"], stem
+
+
+# Plateau predictions with gas radiation (rig beam length, eps_w 0.9):
+# (chamber, flat plate), and the plate's hot-face radiative flux [kW/m^2].
+PINNED_RAD = {
+    "fig9_eta_tot_E20_dp2": (0.896, 0.832, 38.2),
+    "fig9_eta_tot_E20_dp3": (0.907, 0.849, 38.5),
+    "fig9_eta_tot_E20_dp4": (0.914, 0.860, 38.8),
+    "fig6_eta_tot_E30_Tc470": (0.894, 0.829, 39.3),
+    "fig6_eta_tot_E30_Tc540": (0.894, 0.829, 38.1),
+    "fig6_eta_tot_E30_Tc580": (0.892, 0.827, 37.3),
+    "fig10_eta_tot_E30_5bar_dp2": (0.882, 0.811, 38.9),
+    "fig10_eta_tot_E30_10bar_dp3": (0.879, 0.808, 67.4),
+    "fig10_eta_tot_E30_10bar_dp2": (0.868, 0.791, 66.8),
+}
+
+
+def test_the_radiation_rows_are_pinned_and_score_apart(series) -> None:
+    """ACCURACY, cross-source, on their own rows: gas radiation lowers every
+    curve by 2.5-3.5 points and leaves all of them over-predicted."""
+    for stem, (chamber, flat, q_rad) in PINNED_RAD.items():
+        s = series[stem]
+        dc = nr.predict(s, "chamber", radiation=True)
+        df = nr.predict(s, "flat_plate", radiation=True)
+        assert dc["eta_overall"] == pytest.approx(chamber, abs=1e-3), stem
+        assert df["eta_overall"] == pytest.approx(flat, abs=1e-3), stem
+        assert df["q_rad_hot"] * 1e-3 == pytest.approx(q_rad, abs=0.2), stem
+        assert df["eta_overall"] > nr.plateau(s), stem
+        groups = {r.group for r in nr.run_series(s)}
+        assert groups == {nr._group(b, rad) for b in nr.BASELINES for rad in nr.RADIATION}
