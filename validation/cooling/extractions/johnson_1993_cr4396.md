@@ -1,7 +1,7 @@
 # NASA CR-4396 Vol. II (Johnson, Wagner and Steuber, 1993) -- stationary trips
 
 **Status: digitised, user-checked and scored, 2026-10-22 (#452).**
-Source: `sources/heat_transfer/CR4396/19940011518.pdf` (gitignored), contract
+Source: `sources/heat_transfer/rib/CR4396/19940011518.pdf` (gitignored), contract
 NAS3-23691, Pratt & Whitney / UTRC. Data: `data/johnson1993/`.
 
 ## Why this source matters

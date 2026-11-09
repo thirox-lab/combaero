@@ -3,7 +3,7 @@
 **Status: extracted, two-channel verified, 2026-09-26. Not committed as a
 scored series** -- it is evidence about a CONSTANT, not data for the harness.
 
-Source: `sources/heat_transfer/han/han_91_GT_3.pdf`, page 9.
+Source: `sources/heat_transfer/rib/han_91_GT_3.pdf`, page 9.
 Han, J.C., Zhang, Y.M. and Lee, C.P. (1991), ASME 91-GT-3, "Influence of
 Surface Heat Flux Ratio on Heat Transfer Augmentation in Square Channels
 with Parallel, Crossed and V-Shaped Angled Ribs". Square channel,
