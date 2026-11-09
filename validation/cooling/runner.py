@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import combaero as cb
 
+from validation.cooling.conventions import STATUS_CONVERTED, STATUS_DIRECT
 from validation.cooling.schema import Point, SeriesMetadata, load_points
 
 # Han states G_bar (the ribbed/smooth average) as 1.2 G. Confirmed as item
@@ -85,9 +86,16 @@ SMOOTH_NU_COEF, SMOOTH_NU_RE_EXP, SMOOTH_NU_PR_EXP = 0.023, 0.8, 0.4
 # Bracket for the Re bisection. Deliberately far wider than any set's
 # stated validity: a series may sit outside it, and reporting that as
 # extrapolated is the point rather than something to avoid.
-# What the Re_Dh path predicts: passage friction (Taslim & Spring) and the
-# ribbed-wall Nu ratio on a smooth-tube reference (CR-4396, #452).
-RE_PATH_Y_AXES = ("f_fanning_passage", "Nu_ratio_KP")
+# What the Re_Dh path predicts: passage friction (Taslim & Spring), the same
+# friction as a ratio over Petukhov (Naik et al. 2014), and the ribbed-wall
+# Nu ratio on a smooth-tube reference -- Kays and Perkins (CR-4396, #452) or
+# Dittus-Boelter itself (Naik et al. 2014).
+RE_PATH_Y_AXES = ("f_fanning_passage", "f_ratio_petukhov", "Nu_ratio_KP", "Nu_ratio_DB")
+# The Nu-ratio axes, each with the ONE resolution status its name allows: a
+# Kays-Perkins axis must convert, a Dittus-Boelter axis must not. A series
+# whose axis and declared convention disagree is refused, so a KP series
+# mislabelled DB cannot be scored on the raw basis (and vice versa).
+NU_RATIO_AXIS_STATUS = {"Nu_ratio_KP": STATUS_CONVERTED, "Nu_ratio_DB": STATUS_DIRECT}
 
 RE_LO = 1.0e3
 RE_HI = 1.0e8
@@ -574,7 +582,7 @@ def _run_series(
     if series.alpha_deg is not None:
         geom.alpha_deg = float(series.alpha_deg)
 
-    if series.x_axis == "Re_Dh" and series.y_axis == "Nu_ratio_KP":
+    if series.x_axis == "Re_Dh" and series.y_axis in NU_RATIO_AXIS_STATUS:
         return _nu_ratio_vs_re(series, rib_set, set_name, geom, points)
 
     if series.x_axis == "Re_Dh":
@@ -582,11 +590,33 @@ def _run_series(
         # no R conversion on the measured side. Comparing in f, not R, keeps
         # the law-of-the-wall formalism out of the arbitration -- which
         # matters, since that formalism is part of what is in question.
+        # A ratio over a smooth baseline (Naik's f/f0) is first multiplied
+        # back by that baseline, through the conversion conventions.py
+        # registers -- never a constant written here.
+        to_fbar = None
+        if series.y_axis == "f_ratio_petukhov":
+            from validation.cooling import conventions
+
+            resolution = conventions.resolve(series, set_name)
+            if (
+                resolution.status != conventions.STATUS_CONVERTED
+                or resolution.conversion is None
+            ):
+                return [
+                    Record(
+                        series, p.x, p.y, None, False, None,
+                        f"f_ratio_petukhov needs a registered conversion to the "
+                        f"set's basis; got {resolution.status}: {resolution.detail}",
+                    )
+                    for p in points
+                ]
+            to_fbar = resolution.conversion.factor
         records = []
         for p in points:
             res = cb.evaluate_rib(rib_set, geom, p.x)
             fbar, _ = _channel_fbar(res.f, geom.W_H, p.x)
-            records.append(Record(series, p.x, p.y, fbar, res.extrapolated, p.x))
+            measured = p.y * to_fbar(p.x) if to_fbar is not None else p.y
+            records.append(Record(series, p.x, measured, fbar, res.extrapolated, p.x))
         return records
 
     if series.x_axis == "f_ratio":
@@ -670,23 +700,38 @@ def _nu_ratio_vs_re(
     at the set's Pr, over 0.023 Re^0.8 Pr^0.4 -- what _performance_ratios
     calls Nu_ratio. The MEASURED side is on whatever smooth reference its
     source used (CR-4396: Kays and Perkins), so it goes through the
-    conversion conventions.py registers, never a constant written here. A
-    series that declared the DB basis directly would have the conversion
-    applied twice, so that is refused.
+    conversion conventions.py registers, never a constant written here. The
+    axis name fixes which resolution is acceptable (NU_RATIO_AXIS_STATUS): a
+    Kays-Perkins axis that resolved direct, or a Dittus-Boelter axis that
+    needed a conversion, contradicts its own declaration and is refused, so
+    no conversion is ever skipped or applied twice.
     """
     from validation.cooling import conventions
 
     resolution = conventions.resolve(series, set_name)
-    if resolution.status != conventions.STATUS_CONVERTED or resolution.conversion is None:
+    wanted = NU_RATIO_AXIS_STATUS[series.y_axis]
+    ok = resolution.status == wanted and (
+        wanted == conventions.STATUS_DIRECT or resolution.conversion is not None
+    )
+    if not ok:
+        need = (
+            "a registered conversion to the set's basis"
+            if wanted == conventions.STATUS_CONVERTED
+            else "the set's own Dittus-Boelter basis, unconverted"
+        )
         return [
             Record(
                 series, p.x, p.y, None, False, None,
-                f"Nu_ratio_KP needs a registered conversion to the set's basis; "
+                f"{series.y_axis} needs {need}; "
                 f"got {resolution.status}: {resolution.detail}",
             )
             for p in points
         ]
-    to_db = resolution.conversion.factor()
+    to_db = (
+        resolution.conversion.factor()
+        if wanted == conventions.STATUS_CONVERTED
+        else 1.0
+    )
     pr = rib_set.valid_Pr
     records = []
     for p in points:

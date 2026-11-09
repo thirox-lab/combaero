@@ -2724,19 +2724,26 @@ documents:
     Fig. 17 f/f0(Re), Fig. 18 PI = (Nu/Nu0)/(f/f0)^(1/3) (derived, a digitisation cross-check), Figs. 11c/13c/15c
     perimeter Nu/Nu0. Figs. 16-18 also overplot Rhee et al. 2003 (AR 6.82 V ribs) and Wright et al. 2004 (AR 4)
     as reprints. Periodic RANS (realizable k-eps) alongside. No correlation.'
-  status: screened
-  verdict: 'Screened 2026-11-09. Independent-lab (not Texas A&M) rib data in a high-AR triangular TE passage --
-    a geometry combaero cannot represent (RibbedModel is rectangular; han_park_1988_angled caps W/H at 2,
-    fitted W/H 1-4, e/D <= 0.078). Usable only as CROSS-SOURCE ACCURACY / extrapolation for the angled-tapered
-    series (3 Nu + 3 f points) against han_park_1988_angled: how far a clamped-W/H rectangular model sits from
-    a real wedge; informs a W/H > 4 envelope (refuse or warn), never a tuner. Broken and chevron series map to
-    no shipped set (context only). No fidelity use (no correlation). Digitisation of Figs. 16-17 started
-    2026-11-09 (user: now).'
-  read_for: ['high-aspect-ratio / triangular rib channel coverage', 'an independent (non Texas A&M) rib source']
+  status: accuracy
+  verdict: 'Screened, extracted and scored 2026-11-09. Independent-lab (Alstom, not Texas A&M) rib data in a
+    high-AR wedge TE passage, a geometry combaero cannot represent. CROSS-SOURCE ACCURACY only, every point
+    out of every set''s box. Fig. 16 angled-tapered Nu/Nu0 (3 points, 1 cleanly sampled, so an upper bound)
+    is scored by all four eligible 45 deg parallel sets. han_park_1988_angled has bias -14.8% (-16.2/-8.7/-19.5%,
+    1 of 3 within 9.5%); han_1989_narrow_channel +45.1%, han_zhang_lee_1991_45par +34.2%,
+    rallabandi_2009_high_re +24.6%. The han_park Nu miss barely moves with W/H above 2 (<2%). Fig. 17 f/f0 is
+    unscored by rule: no 45 deg set declares passage friction. Off the harness, han_park_1988_angled''s fbar
+    would read +42/+64/+44%, growing with W/H through Han''s decomposition. Broken and chevron ribs map to no
+    set (context). Fig. 18 is mis-computed in the paper: the own points are 3 (Nu/Nu0)/(f/f0) to 0.3%, not
+    Eq. 6; the reprints follow Eq. 6 to 0.13%. Never a tuner; no fidelity use.'
+  read_for: ['high-aspect-ratio / triangular rib channel coverage', 'an independent (non Texas A&M) rib source',
+    'W/H > 4 envelope evidence for han_park_1988_angled (warn/refuse)']
   issues: []
-  records: []
+  records: [validation/cooling/extractions/naik_2014_te_wedge_ribs.md, validation/cooling/data/naik2014/metadata.yaml]
+  code: ['validation/cooling/conventions.py: Nu_ratio_DB, f_ratio_petukhov', 'validation/cooling/runner.py: Re_Dh
+      path (Nu_ratio_DB, f_ratio_petukhov)']
   notes: 'Arrived as sources/new/GT2014-25841_TE.pdf. Companion of GT2014-26130 (LE). Rhee, Lee & Cho 2003
-    (wanted) is the independent primary for high-AR rectangular ribs.'
+    (wanted) is the independent primary for high-AR rectangular ribs; its points and Wright et al. 2004''s are
+    reprinted in Figs. 16-18 and committed unscored as reprint_* series.'
 - file: sources/heat_transfer/rib/SaxerFelici_Naik_Gritsch_Sedlov_2014_GT2014-26130_LE_passage_turbulators.pdf
   sha256: 'ca9f7364084df1525bd3d99a6329901ab72bf6cf76f56c873e1825f2783ebef6'
   citation: 'Saxer-Felici, H., Naik, S., Gritsch, M., Sedlov, A. (2014). Heat transfer enhancement for a

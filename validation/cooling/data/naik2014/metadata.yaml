@@ -1,0 +1,885 @@
+# Naik, S., Retzko, S., Gritsch, M. and Sedlov, A. (2014), ASME GT2014-25841 --
+# "Impact of turbulator design on the heat transfer in a high aspect ratio
+# passage of a turbine blade". Alstom (Baden / Moscow). On disk (gitignored):
+# sources/heat_transfer/rib/Naik_Retzko_Gritsch_Sedlov_2014_GT2014-25841_TE_wedge_turbulators.pdf
+# Record: validation/cooling/extractions/naik_2014_te_wedge_ribs.md.
+#
+# AN INDEPENDENT LAB, AND A GEOMETRY NO SHIPPED SET WAS FITTED TO. Every
+# shipped rib set is Texas A&M (#403 item 2). This is an industrial rig, and
+# the passage is a WEDGE (trailing-edge triangle), W/H 6.64 with H at the
+# thick leading-edge end -- not a rectangle. So every score here is
+# CROSS-SOURCE ACCURACY and OUT OF DOMAIN for every set that scores it
+# (docs/VALIDATION_POLICY.md). The harness reports it and tunes nothing.
+#
+# THE RIG (Table 1, pp. 3-4):
+#   * wedge passage, AR = W/H 6.64; ribs on the two wide walls (pressure and
+#     suction side), 45 deg to the flow, PS and SS staggered by p/2
+#   * angled-tapered: rib height falls along the width with e / local H held
+#     constant; P/e 15 average (8 at the LE end), e/Dh 0.089 average (0.163
+#     max). Rib cross-section not stated.
+#   * broken and chevron: two rows, LE half P/e 15 / e/Dh 0.134, TE half
+#     P/e 30 / e/Dh 0.066 (TE row half width)
+#   * Re 22k, 60k, 145k on the passage Dh (no numeric Dh, W or H printed)
+#   * transient TLC on Perspex over the LAST 3-4 rib pitches; the angled case
+#     shows equal line averages at two stations, i.e. fully developed (p. 7)
+#   * rib-covered area EXCLUDED from the averages (p. 6-7), so Nu is the mean
+#     of the wall BETWEEN the ribs -- not a copper-segment average with the
+#     rib surfaces' heat folded in, as Han's rigs measure. Not converted;
+#     a difference between rigs, carried by the accuracy label.
+#
+# THE ORDINATES ARE PRINTED RATIOS ON PRINTED BASELINES (p. 7):
+#   Nu/Nu0, Nu0 = 0.023 Re^0.8 Pr^0.4 (Eq. 3, Dittus-Boelter). Pr is not
+#     printed (air, 0.70 assumed); a ratio against the sets' own Pr 0.70
+#     carries it only through a shared Pr^0.4, as every Nu ratio here does.
+#   f/f0 with f = dp / (4 (dL/dh) (1/2) (m/A)^2/rho) (Eq. 4, FANNING passage
+#     average) and f0 = 2 [2.236 ln Re - 4.639]^-2 (Eq. 5, Petukhov in Fanning
+#     form). y_axis f_ratio_petukhov; conventions.py registers fbar =
+#     (f/f0) f0(Re) as a definition.
+#
+# WHICH WALLS FIG. 16 AVERAGES IS NOT STATED. Declared ribbed-wall
+# (Nu_ratio_ribbed_DB): the ribbed PS/SS walls are ~80% of the Fig. 11c
+# perimeter, and a by-eye read of the measured line average there (LE wall
+# ~1.5 Nu0, TE apex ~2.2, ribbed walls ~2.25) puts a whole-perimeter mean
+# ~2-5% BELOW the ribbed-wall mean. If Fig. 16 is the perimeter mean, the
+# predictions read that much high against a ribbed-wall truth -- inside the
+# 9.5% measurement band, but not nothing. Recorded, not corrected.
+#
+# UNCERTAINTY. The paper's stated MEASUREMENT figures (Moffat, p. 5): HTC
+# +-9.5%, friction factor +-10% (mass flow +-2%, properties +-2%). Those
+# are `uncertainty` below. Fig. 16 DRAWS +-15% bars on every point; the
+# text does not say what they are (9.5% on h plus the Re terms of Nu0 adds
+# to ~10%, not 15%), so the stated figure is used and the drawn bar is
+# recorded in the extraction. Neither is derived from any model's error.
+#
+# FIG. 18 IS MIS-COMPUTED IN THE PAPER. Eq. 6 defines PI = (Nu/Nu0) /
+# (f/f0)^(1/3). The 12 REPRINT points reproduce Eq. 6 from their own
+# Fig. 16/17 marks to 0.13%; the paper's OWN 8 points do not (24-172% below)
+# and instead equal 3 (Nu/Nu0)/(f/f0) to 0.3% -- the spreadsheet precedence
+# slip A/(B^1/3), which evaluates as A/((B^1)/3) = 3A/B because ^ binds
+# before /. The factor is 3.00 +- 0.01 on all 8. So Fig. 18's own curves (and
+# the abstract's "angled gave the best PI") are 3 Nu/f, not Eq. 6. Fig. 18 is
+# committed as a CROSS-CHECK on the digitisation of Figs. 16-17 and as the
+# record of that error; it is never scored (y_axis performance_index_printed,
+# no convention). Pinned by test_naik_fig18_*.
+#
+# REPRINTS. Figs. 16-18 overplot Rhee, Lee and Cho (2003, GT2003-38622; AR
+# 6.82, 45/60 deg V ribs) and Wright, Fu and Han (2004, GT2004-54072; AR 4,
+# parallel angled and discrete W ribs). They are committed, labelled
+# `reprint_*` with the primary in `after`, and UNSCORED: second-hand, and
+# Naik gives neither their e/Dh nor P/e (geometry null, so the Re_Dh path
+# refuses them). They carry the Fig. 18 proof that the error is in the
+# paper's own column, not in the digitisation.
+#
+# EXTRACTION (2026-11-09, user-approved on scan overlays: "naik digitization
+# looks solid").
+#   * Fig. 16 is a RASTER: y calibrated on 7 gridlines (1.0-4.0), worst
+#     residual 0.0021 in Nu/Nu0; markers located by their pixel extent.
+#     At 60k and 145k the angled circle and chevron triangle overplot: 3 of
+#     the 5 marks there were located from the visible edge plus the error-bar
+#     cap midpoint (agreeing to 1 px). 1 of 3 angled-tapered marks is clean.
+#   * Figs. 17 and 18 are VECTOR: each marker is its own path object with its
+#     own colour; centre = path bounding box, mapped by a fit on every
+#     labelled tick (y residual <= 0.009 in f/f0, <= 0.0008 in PI).
+#   * x is the NOMINAL Re of Table 1 (22k/60k/145k) or of the reprints'
+#     legends (10k/20k/30k or 40k). The read abscissae agree within 0.6%
+#     (Fig. 16 raster) and 0.3% (vector); they are in the record.
+#   * Chevron at 22k: present in Fig. 17 only -- no marker and no error bar
+#     in Figs. 16 and 18. A gap in the figure, not in the read.
+
+paper:
+  name: naik2014
+  citation: >-
+    Naik, S., Retzko, S., Gritsch, M. and Sedlov, A. (2014). "Impact of
+    turbulator design on the heat transfer in a high aspect ratio passage of
+    a turbine blade." Proc. ASME Turbo Expo 2014, Duesseldorf, GT2014-25841.
+    Alstom.
+  secondary: false
+
+files:
+  - path: fig16_angled_tapered.csv
+    after: null
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), angled and tapered 45 deg ribs (e/local H constant), PS and SS staggered p/2, Re nominal.
+    figure: "16"
+    panel: single
+    geometry:
+      e_D: 0.089
+      e_D_max: 0.163
+      p_e: 15.0
+      p_e_min: 8.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: parallel
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: 0.095
+    cross_check: >-
+      Scored, CROSS-SOURCE ACCURACY (Alstom, not Texas A&M), by every set
+      runner.eligible_sets derives: 45 deg parallel ribs on a Nu ratio on the
+      Dittus-Boelter basis. Every point is OUT OF DOMAIN for every one of them
+      (W/H 6.64, a wedge, tapered ribs, e/Dh 0.089, Re to 145k) and is reported,
+      not dropped. Overplotted at 60k and 145k (chevron triangle over the circle):
+      1 of 3 marks is clean, so the score is an upper bound resting on 1
+      cleanly-sampled point. Ordinate read off a raster; calibration residual
+      0.0021 in Nu/Nu0.
+    scores: han_park_1988_angled
+    also_scores: [han_1989_narrow_channel, han_zhang_lee_1991_45par, rallabandi_2009_high_re]
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig16_broken.csv
+    after: null
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), broken (discrete) 45 deg ribs in two rows, TE row half width, PS and SS staggered p/2, Re nominal.
+    figure: "16"
+    panel: single
+    geometry:
+      e_D_LE_half: 0.134
+      p_e_LE_half: 15.0
+      e_D_TE_half: 0.066
+      p_e_TE_half: 30.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: discrete_angled
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: 0.095
+    cross_check: >-
+      Unscored context: no shipped set models discrete (broken) angled ribs in two
+      staggered rows of different height and pitch. Its quantity is declared
+      (Nu_ratio_DB) so a future set meets it explicitly. All 3 marks clean; err_hi
+      mirrored from err_lo at 60k/145k (upper caps hidden).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig16_chevron.csv
+    after: null
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), small 45 deg chevrons in two rows, TE row half width, PS and SS staggered p/2, Re nominal.
+    figure: "16"
+    panel: single
+    geometry:
+      e_D_LE_half: 0.134
+      p_e_LE_half: 15.0
+      e_D_TE_half: 0.066
+      p_e_TE_half: 30.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: discrete_chevron
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: 0.095
+    cross_check: >-
+      Unscored context: no shipped set models small discrete chevrons in two rows
+      (HZL 1991 V ribs span the wall). Fig. 16 has NO chevron mark at 22k (no
+      marker and no third error bar; Fig. 18 has none either), while Fig. 17 does.
+      Both marks overplotted by the angled circle.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 2
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig16_reprint_rhee2003_45degV.csv
+    after: 'Rhee, D.H., Lee, D.H. and Cho, H.H. (2003), ASME GT2003-38622'
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), REPRINT: Rhee et al. [4] 45 deg V-shaped ribs, AR 6.82 rectangular duct, Re nominal.
+    figure: "16"
+    panel: single
+    geometry: null
+    alpha_deg: 45.0
+    rib_shape: v
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig16_reprint_rhee2003_60degV.csv
+    after: 'Rhee, D.H., Lee, D.H. and Cho, H.H. (2003), ASME GT2003-38622'
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), REPRINT: Rhee et al. [4] 60 deg V-shaped ribs, AR 6.82 rectangular duct, Re nominal.
+    figure: "16"
+    panel: single
+    geometry: null
+    alpha_deg: 60.0
+    rib_shape: v
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig16_reprint_wright2004_discreteW.csv
+    after: 'Wright, L.M., Fu, W.-L. and Han, J.C. (2004), ASME GT2004-54072'
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), REPRINT: Wright et al. [7] discrete W-shaped ribs, AR 4 rectangular channel, Re nominal.
+    figure: "16"
+    panel: single
+    geometry: null
+    alpha_deg: null
+    rib_shape: discrete_w
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig16_reprint_wright2004_parallel.csv
+    after: 'Wright, L.M., Fu, W.-L. and Han, J.C. (2004), ASME GT2004-54072'
+    page: 11
+    item: "Figure 16"
+    series: >-
+      Nu/Nu0 (Dittus-Boelter, Eq. 3), REPRINT: Wright et al. [7] parallel angled ribs, AR 4 rectangular channel, Re nominal.
+    figure: "16"
+    panel: single
+    geometry: null
+    alpha_deg: null
+    rib_shape: parallel
+    x_axis: Re_Dh
+    y_axis: Nu_ratio_DB
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [1.0, 4.0]
+  - path: fig17_angled_tapered.csv
+    after: null
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), angled and tapered 45 deg ribs (e/local H constant), PS and SS staggered p/2, Re nominal.
+    figure: "17"
+    panel: single
+    geometry:
+      e_D: 0.089
+      e_D_max: 0.163
+      p_e: 15.0
+      p_e_min: 8.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: parallel
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: 0.10
+    cross_check: >-
+      Unscored: no angled-rib set declares the passage-average friction
+      (conventions.SET_ALSO_PRODUCES lists f_channel_two_ribbed for
+      han_1988_orthogonal only, which binds transverse 90 deg ribs), so
+      eligible_sets is empty and the f/f0 -> fbar conversion has no set to meet.
+      Refused by the existing rule, not by choice; declaring the friction for
+      the angled sets is a separate decision (it would also add rows to Taslim &
+      Spring's friction). The conversion itself is registered (definition: f0 is
+      Eq. 5). Vector marks, exact.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig17_broken.csv
+    after: null
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), broken (discrete) 45 deg ribs in two rows, TE row half width, PS and SS staggered p/2, Re nominal.
+    figure: "17"
+    panel: single
+    geometry:
+      e_D_LE_half: 0.134
+      p_e_LE_half: 15.0
+      e_D_TE_half: 0.066
+      p_e_TE_half: 30.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: discrete_angled
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: 0.10
+    cross_check: >-
+      Unscored context: no shipped set models discrete angled ribs in two rows.
+      Vector marks, exact.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig17_chevron.csv
+    after: null
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), small 45 deg chevrons in two rows, TE row half width, PS and SS staggered p/2, Re nominal.
+    figure: "17"
+    panel: single
+    geometry:
+      e_D_LE_half: 0.134
+      p_e_LE_half: 15.0
+      e_D_TE_half: 0.066
+      p_e_TE_half: 30.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: discrete_chevron
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: 0.10
+    cross_check: >-
+      Unscored context: no shipped set models small discrete chevrons. The 22k
+      mark exists here though Figs. 16 and 18 have none. Vector marks, exact.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig17_reprint_rhee2003_45degV.csv
+    after: 'Rhee, D.H., Lee, D.H. and Cho, H.H. (2003), ASME GT2003-38622'
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), REPRINT: Rhee et al. [4] 45 deg V-shaped ribs, AR 6.82 rectangular duct, Re nominal.
+    figure: "17"
+    panel: single
+    geometry: null
+    alpha_deg: 45.0
+    rib_shape: v
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig17_reprint_rhee2003_60degV.csv
+    after: 'Rhee, D.H., Lee, D.H. and Cho, H.H. (2003), ASME GT2003-38622'
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), REPRINT: Rhee et al. [4] 60 deg V-shaped ribs, AR 6.82 rectangular duct, Re nominal.
+    figure: "17"
+    panel: single
+    geometry: null
+    alpha_deg: 60.0
+    rib_shape: v
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig17_reprint_wright2004_discreteW.csv
+    after: 'Wright, L.M., Fu, W.-L. and Han, J.C. (2004), ASME GT2004-54072'
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), REPRINT: Wright et al. [7] discrete W-shaped ribs, AR 4 rectangular channel, Re nominal.
+    figure: "17"
+    panel: single
+    geometry: null
+    alpha_deg: null
+    rib_shape: discrete_w
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig17_reprint_wright2004_parallel.csv
+    after: 'Wright, L.M., Fu, W.-L. and Han, J.C. (2004), ASME GT2004-54072'
+    page: 11
+    item: "Figure 17"
+    series: >-
+      f/f0 (Fanning, over Petukhov Eq. 5), REPRINT: Wright et al. [7] parallel angled ribs, AR 4 rectangular channel, Re nominal.
+    figure: "17"
+    panel: single
+    geometry: null
+    alpha_deg: null
+    rib_shape: parallel
+    x_axis: Re_Dh
+    y_axis: f_ratio_petukhov
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Second-hand REPRINT in Naik's figure, unscored: the primary paper is not on
+      disk and Naik gives neither its e/Dh nor P/e, so there is no geometry to
+      score against (the Re_Dh path refuses it). Kept for the Fig. 18 cross-check.
+      Vector marks in Figs. 17/18; isolated raster marks in Fig. 16.
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0, 5, 10, 15, 20, 25]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 25.0]
+  - path: fig18_angled_tapered.csv
+    after: null
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), angled and tapered 45 deg ribs (e/local H constant), PS and SS staggered p/2, Re nominal.
+    figure: "18"
+    panel: single
+    geometry:
+      e_D: 0.089
+      e_D_max: 0.163
+      p_e: 15.0
+      p_e_min: 8.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: parallel
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. The paper's OWN points do NOT follow its Eq.
+      6: they are 3 (Nu/Nu0)/(f/f0) to 0.3% (an =A/B^1/3 precedence slip), 24-172%
+      below Eq. 6 (test_naik_fig18_own_points_are_3_nu_over_f).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]
+  - path: fig18_broken.csv
+    after: null
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), broken (discrete) 45 deg ribs in two rows, TE row half width, PS and SS staggered p/2, Re nominal.
+    figure: "18"
+    panel: single
+    geometry:
+      e_D_LE_half: 0.134
+      p_e_LE_half: 15.0
+      e_D_TE_half: 0.066
+      p_e_TE_half: 30.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: discrete_angled
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. The paper's OWN points do NOT follow its Eq.
+      6: they are 3 (Nu/Nu0)/(f/f0) to 0.3% (an =A/B^1/3 precedence slip), 24-172%
+      below Eq. 6 (test_naik_fig18_own_points_are_3_nu_over_f).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]
+  - path: fig18_chevron.csv
+    after: null
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), small 45 deg chevrons in two rows, TE row half width, PS and SS staggered p/2, Re nominal.
+    figure: "18"
+    panel: single
+    geometry:
+      e_D_LE_half: 0.134
+      p_e_LE_half: 15.0
+      e_D_TE_half: 0.066
+      p_e_TE_half: 30.0
+      W_H: 6.64
+      turbulated_walls: 2
+    alpha_deg: 45.0
+    rib_shape: discrete_chevron
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. The paper's OWN points do NOT follow its Eq.
+      6: they are 3 (Nu/Nu0)/(f/f0) to 0.3% (an =A/B^1/3 precedence slip), 24-172%
+      below Eq. 6 (test_naik_fig18_own_points_are_3_nu_over_f).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 2
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]
+  - path: fig18_reprint_rhee2003_45degV.csv
+    after: 'Rhee, D.H., Lee, D.H. and Cho, H.H. (2003), ASME GT2003-38622'
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), REPRINT: Rhee et al. [4] 45 deg V-shaped ribs, AR 6.82 rectangular duct, Re nominal.
+    figure: "18"
+    panel: single
+    geometry: null
+    alpha_deg: 45.0
+    rib_shape: v
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. This REPRINT reproduces Eq. 6, PI =
+      (Nu/Nu0)/(f/f0)^(1/3), from its own Fig. 16/17 marks to 0.13%
+      (test_naik_fig18_reprints_follow_eq6).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]
+  - path: fig18_reprint_rhee2003_60degV.csv
+    after: 'Rhee, D.H., Lee, D.H. and Cho, H.H. (2003), ASME GT2003-38622'
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), REPRINT: Rhee et al. [4] 60 deg V-shaped ribs, AR 6.82 rectangular duct, Re nominal.
+    figure: "18"
+    panel: single
+    geometry: null
+    alpha_deg: 60.0
+    rib_shape: v
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. This REPRINT reproduces Eq. 6, PI =
+      (Nu/Nu0)/(f/f0)^(1/3), from its own Fig. 16/17 marks to 0.13%
+      (test_naik_fig18_reprints_follow_eq6).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]
+  - path: fig18_reprint_wright2004_discreteW.csv
+    after: 'Wright, L.M., Fu, W.-L. and Han, J.C. (2004), ASME GT2004-54072'
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), REPRINT: Wright et al. [7] discrete W-shaped ribs, AR 4 rectangular channel, Re nominal.
+    figure: "18"
+    panel: single
+    geometry: null
+    alpha_deg: null
+    rib_shape: discrete_w
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. This REPRINT reproduces Eq. 6, PI =
+      (Nu/Nu0)/(f/f0)^(1/3), from its own Fig. 16/17 marks to 0.13%
+      (test_naik_fig18_reprints_follow_eq6).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]
+  - path: fig18_reprint_wright2004_parallel.csv
+    after: 'Wright, L.M., Fu, W.-L. and Han, J.C. (2004), ASME GT2004-54072'
+    page: 11
+    item: "Figure 18"
+    series: >-
+      PI as PLOTTED (see header: the paper's own points are 3 Nu/Nu0 / (f/f0)), REPRINT: Wright et al. [7] parallel angled ribs, AR 4 rectangular channel, Re nominal.
+    figure: "18"
+    panel: single
+    geometry: null
+    alpha_deg: null
+    rib_shape: parallel
+    x_axis: Re_Dh
+    y_axis: performance_index_printed
+    kind: measured
+    extraction: pdf-vector-exact
+    confidence: exact
+    uncertainty: null
+    cross_check: >-
+      Cross-check only, never scored. This REPRINT reproduces Eq. 6, PI =
+      (Nu/Nu0)/(f/f0)^(1/3), from its own Fig. 16/17 marks to 0.13%
+      (test_naik_fig18_reprints_follow_eq6).
+    scores: null
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      x_ticks: [0, 50000, 100000, 150000, 200000]
+      x_multiplier: 1.0
+      y_ticks: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+      y_multiplier: 1.0
+      expected_points: 3
+      monotonic: null
+      printed_curve: null
+      plot_x_limits: [0, 200000]
+      plot_y_limits: [0.0, 2.0]

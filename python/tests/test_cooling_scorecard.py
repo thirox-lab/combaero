@@ -550,6 +550,8 @@ def test_every_scored_series_basis_is_what_its_provenance_says(dataset) -> None:
         ("andrei2014", "baldauf_2002_sellers"): "accuracy",
         ("lau1990", "han_1988_orthogonal"): "accuracy",
         ("han_park_lei1984", "han_park_1988_angled"): "accuracy",
+        # Alstom wedge passage, W/H 6.64: another lab, another geometry.
+        ("naik2014", "han_park_1988_angled"): "accuracy",
     }
     seen = set()
     for series in dataset:
@@ -784,3 +786,31 @@ def test_a_measured_accuracy_is_never_used_as_a_band(dataset) -> None:
     text = "\n".join(render_set_accuracy(["han_1988_orthogonal", "han_park_1988_angled"]))
     assert "STATED" in text and "measured" in text
     assert "NOT a band" in text
+
+
+def test_naik2014_rows_are_accuracy_out_of_domain_and_an_upper_bound(cells) -> None:
+    """Naik et al. 2014 (Alstom wedge TE passage, W/H 6.64) as the scorecard
+    prints it: one row per eligible set, every one ACCURACY and OUT OF DOMAIN,
+    and sampling `unknown` -- Fig. 16 overplots the angled circle with the
+    chevron triangle at 60k and 145k, so 1 of the 3 marks is clean and the
+    rows are an upper bound, not an estimate. `within` is judged against the
+    paper's stated HTC uncertainty (9.5%), never against any model's error.
+    The unscored series report 0 scored points rather than a perfect score."""
+    rows = {c.label: c for c in cells if c.series_label == "naik2014/fig16_angled_tapered"}
+    own = rows[f"naik2014/fig16_angled_tapered  {OUT_OF_DOMAIN_MARK}"]
+    assert own.scored_by == "han_park_1988_angled"
+    assert len(rows) == 4, sorted(rows)
+    for c in rows.values():
+        assert c.basis == "accuracy" and c.domain == "out-of-domain"
+        assert c.sampling == "unknown" and c.n_scored == 3
+        assert c.convention == "direct"
+    # Recorded 2026-11-09: han_park_1988_angled reads LOW (only the 60k point
+    # inside 9.5%); the other three read 25-45% high.
+    assert own.bias == pytest.approx(-0.148, abs=0.005)
+    assert own.within == pytest.approx(1.0 / 3.0)
+    others = [c for c in rows.values() if c is not own]
+    assert all(0.20 < c.bias < 0.50 and c.within == 0.0 for c in others)
+
+    unscored = [c for c in cells if c.series_label.startswith("naik2014/") and c.scored_by is None]
+    assert len(unscored) == 20
+    assert all(c.n_scored == 0 for c in unscored)

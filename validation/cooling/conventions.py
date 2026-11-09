@@ -81,6 +81,13 @@ CONVENTION_NOTES: dict[str, str] = {
         "ribbed walls -- Han's measured fbar, NOT the four-sided f_r = "
         "fbar + (H/W)(fbar - f_s) his R is built on"
     ),
+    "f_ratio_passage_petukhov": (
+        "passage-average FANNING friction over Petukhov's smooth-tube FANNING "
+        "f0 = 2 [2.236 ln Re - 4.639]^-2, both on the passage D_h (Naik et al. "
+        "2014, Eqs. 4-5). Not Han's 0.046 Re^-0.2 baseline: multiplying by "
+        "f0(Re) recovers the passage fbar exactly, so the conversion is "
+        "definition"
+    ),
     "R_normalised_angled": "R normalised for the angled-rib quadratic form",
     "Nu_ratio_ribbed_DB_vs_fbar": (
         "RIBBED-side Nu over Dittus-Boelter 0.023 Re^0.8 Pr^0.4, plotted "
@@ -167,6 +174,15 @@ SOURCE_PUBLISHES: dict[tuple[str, str], str] = {
     ("aldabagh1990", "h_impingement_target"): "h_target_plate_area",
     # NASA CR-4396 Vol. II, Figs. 6.1/6.2 (#452): Kays and Perkins, not DB.
     ("johnson1993", "Nu_ratio_KP"): "Nu_ratio_ribbed_KP",
+    # Naik et al. 2014 Fig. 16 (Alstom wedge TE passage): Nu/Nu0 with Nu0 the
+    # printed Dittus-Boelter (Eq. 3), averaged between the ribs (rib surfaces
+    # excluded). Declared ribbed-wall although the paper does not say which
+    # walls Fig. 16 averages: the two ribbed walls are ~80% of the perimeter
+    # and a by-eye read of Fig. 11c puts a whole-perimeter mean ~2-5% below
+    # theirs -- inside the 9.5% band. See extractions/naik_2014_te_wedge_ribs.md.
+    ("naik2014", "Nu_ratio_DB"): "Nu_ratio_ribbed_DB",
+    # Fig. 17: Fanning passage f (Eq. 4) over Petukhov's Fanning f0 (Eq. 5).
+    ("naik2014", "f_ratio_petukhov"): "f_ratio_passage_petukhov",
 }
 
 # A series whose convention differs from the rest of its source's. None yet;
@@ -247,6 +263,19 @@ for _tag in ("90", "60par", "60crs", "60vee", "60lam", "45par", "45crs", "45vee"
 KAYS_PERKINS_COEF = 0.0176
 KAYS_PERKINS_PR = 0.72
 
+# Petukhov's smooth-tube friction as Naik et al. (2014) print it, Eq. 5, in
+# FANNING form: f0 = 2 [2.236 ln Re - 4.639]^-2. Petukhov's Darcy form
+# (0.790 ln Re - 1.64)^-2 over 4 is the same curve to 0.2% (2.236/sqrt(2) =
+# 1.5811, 4.639/sqrt(2) = 3.2803); the paper's own constants are kept because
+# they define its ordinate.
+NAIK_PETUKHOV_LN_COEF = 2.236
+NAIK_PETUKHOV_OFFSET = 4.639
+
+
+def naik_petukhov_fanning(re: float) -> float:
+    """Naik et al. (2014) Eq. 5: Petukhov's smooth-tube FANNING friction."""
+    return 2.0 / (NAIK_PETUKHOV_LN_COEF * math.log(re) - NAIK_PETUKHOV_OFFSET) ** 2
+
 
 @dataclass(frozen=True)
 class Conversion:
@@ -296,6 +325,19 @@ CONVERSIONS: dict[tuple[str, str], Conversion] = {
         "extractions/johnson_1993_cr4396.md.",
         applied_by="validation.cooling.runner.run_series",
         factor=lambda: KAYS_PERKINS_COEF / (0.023 * KAYS_PERKINS_PR**0.4),
+    ),
+    # Naik's f/f0 -> the passage-average Fanning fbar Han's sets are compared
+    # in (_channel_fbar). Both Fanning, both on the passage D_h and Re: f0(Re)
+    # is the paper's own printed denominator, so multiplying it back is
+    # definition. Which SETS may use it is a separate question --
+    # SET_ALSO_PRODUCES declares f_channel_two_ribbed for han_1988_orthogonal
+    # only, so the angled sets refuse it (unregistered) until declared.
+    ("f_ratio_passage_petukhov", "f_channel_two_ribbed"): Conversion(
+        derivation="fbar = (f/f0) * f0(Re), f0 = 2 [2.236 ln Re - 4.639]^-2 "
+        "(Naik et al. 2014 Eq. 5, Fanning). Definition, not a fit. See "
+        "extractions/naik_2014_te_wedge_ribs.md.",
+        applied_by="validation.cooling.runner.run_series",
+        factor=naik_petukhov_fanning,
     ),
 }
 
