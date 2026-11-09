@@ -50,6 +50,7 @@ from .components import (
     CrossflowSegmentElement,
     EffusionPlateElement,
     FilmSource,
+    GasRadiation,
     PlenumNode,
     _max_over_min,
 )
@@ -90,6 +91,9 @@ class EffusionLiner:
         Which way the hot gas runs past the panels, for the film the liner
         lays on a wall downstream (#695): with the backside coolant (station
         1 is upstream on the gas side too) or against it.
+    radiation : GasRadiation | None
+        Gas radiation on every panel's hot face, as
+        ``EffusionPlateElement(radiation=...)`` (#1071); None (default): none.
     """
 
     id: str
@@ -113,6 +117,7 @@ class EffusionLiner:
     internal_Nu_multiplier: float = 1.0
     film_direction: Literal["with_coolant", "against_coolant"] = "with_coolant"
     material: str | None = None
+    radiation: GasRadiation | None = None
 
     def __post_init__(self) -> None:
         if int(self.n_segments) != self.n_segments or self.n_segments < 1:
@@ -213,6 +218,7 @@ class EffusionLiner:
                     crossflow_segments=(self.segment_id(i - 1), self.segment_id(i)),
                     crossflow_area=A,
                     material=self.material,
+                    radiation=self.radiation,
                 )
             )
         panels = [net.elements[self.panel_id(i)] for i in range(1, n + 1)]

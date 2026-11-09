@@ -254,3 +254,20 @@ def test_a_compressible_liner_converges_from_cold() -> None:
     for i in range(1, 5):
         k = f"ln__p{i}.m_dot"
         assert r[k] == pytest.approx(ri[k], rel=0.03)
+
+
+def test_radiation_reaches_every_panel() -> None:
+    """#1071: the liner hands its GasRadiation to each panel's hot face."""
+    from combaero.network import GasRadiation
+
+    rad = GasRadiation(beam_length=0.05, fuel_air_ratio=0.03)
+    liner = _liner(radiation=rad)
+    g = _net(liner, chamber=True)
+    _, r = _solve(g)
+    _, r0 = _solve(_net(_liner(), chamber=True))
+    for i in range(1, 5):
+        pid = liner.panel_id(i)
+        assert g.elements[pid].radiation is rad
+        d, d0 = r["__element_diag__"][pid], r0["__element_diag__"][pid]
+        assert d["q_rad_hot"] > 0.0 and "q_rad_hot" not in d0
+        assert d["T_wall_hot"] > d0["T_wall_hot"]

@@ -136,3 +136,49 @@ def test_n_rows_must_be_a_positive_integer() -> None:
         ImpingementArray(
             "ia", n_rows=2.5, d_jet=D, xn_d=5, yn_d=4, z_d=2, span=0.1, plate_thickness=D
         )
+
+
+def test_radiation_reaches_every_rows_wall_on_the_named_face() -> None:
+    """#1071: the specs go on each row's ThermalWall, hot face and target
+    face mapped to sides A/B by `array_is_side_a`; more radiation from the
+    gas heats the coolant more."""
+    from combaero.network import CasingRadiation, GasRadiation
+
+    gas = GasRadiation(beam_length=0.05, fuel_air_ratio=0.03)
+    casing = CasingRadiation(area_ratio=1.0)
+    arr = _array(3)
+    base = NetworkSolver(_net(arr, hot=True)).solve()
+    for side_a in (False, True):
+        arr = _array(3)
+        net = _net(arr, hot=False)
+        net.add_node(_pb("hot_in", 1.02e5, 1200.0))
+        net.add_node(_pb("hot_out", 1.0e5, 1200.0))
+        L = arr.n_rows * arr.xn_d * D
+        net.add_element(
+            ChannelElement(
+                "hot",
+                "hot_in",
+                "hot_out",
+                length=L,
+                diameter=0.05,
+                surface=ConvectiveSurface(area=L * arr.span),
+            )
+        )
+        arr.add_wall(
+            net,
+            "w",
+            "hot",
+            [WallLayer(thickness=0.001, conductivity=20.0)],
+            array_is_side_a=side_a,
+            radiation_hot=gas,
+            radiation_target=casing,
+        )
+        res = NetworkSolver(net).solve()
+        assert res["__success__"], res.get("__message__")
+        for i in range(1, 4):
+            w = net.walls[f"w__r{i}"]
+            hot, target = ("b", "a") if side_a else ("a", "b")
+            assert getattr(w, f"radiation_{hot}") is gas
+            assert getattr(w, f"radiation_{target}") is casing
+            q = res[f"w__r{i}.Q"]
+            assert abs(q) > abs(base[f"w__r{i}.Q"]), i

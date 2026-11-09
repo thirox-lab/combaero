@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from .components import (
+    CasingRadiation,
+    GasRadiation,
     ImpingementCrossflowElement,
     ImpingementPlateElement,
     PlenumNode,
@@ -206,6 +208,8 @@ class ImpingementArray:
         layers: list[WallLayer],
         R_fouling: float = 0.0,
         array_is_side_a: bool = False,
+        radiation_hot: GasRadiation | CasingRadiation | None = None,
+        radiation_target: GasRadiation | CasingRadiation | None = None,
     ) -> list[str]:
         """One wall between ``hot_element`` and the array's target, as one
         ``ThermalWall`` per row, each on that row's target footprint.
@@ -213,11 +217,22 @@ class ImpingementArray:
         The hot side is evaluated once per row at its own state, so every row
         sees the same hot-gas h and T_aw: a hot side that changes along the
         array needs its own segments. Returns the per-row wall ids.
+
+        Radiation (#793, #1071) goes on each row's wall as ThermalWall's
+        ``radiation_a``/``radiation_b``: ``radiation_hot`` on the hot
+        element's face (a GasRadiation from a flame, or a CasingRadiation),
+        ``radiation_target`` on the target face (typically a CasingRadiation
+        toward the jet plate). Every row's wall gets the same specs.
         """
         ids = []
         for i in range(1, int(self.n_rows) + 1):
             plate = self.plate_id(i)
             a, b = (plate, hot_element) if array_is_side_a else (hot_element, plate)
+            rad_a, rad_b = (
+                (radiation_target, radiation_hot)
+                if array_is_side_a
+                else (radiation_hot, radiation_target)
+            )
             wid = f"{wall_id}__r{i}"
             net.add_wall(
                 ThermalWall(
@@ -227,6 +242,8 @@ class ImpingementArray:
                     layers=list(layers),
                     contact_area=net.elements[plate].surface.area,
                     R_fouling=R_fouling,
+                    radiation_a=rad_a,
+                    radiation_b=rad_b,
                 )
             )
             ids.append(wid)
