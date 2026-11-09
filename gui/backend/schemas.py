@@ -473,6 +473,9 @@ class EffusionPlateData(BaseModel):
     # for the flat plate, so switching back keeps it without refusing.
     gas_baseline: Literal["chamber", "flat_plate"] = "chamber"
     gas_start_length: float | None = Field(default=None, ge=0.0)
+    # Opt-in hole-angle Cd term (Idelchik diagram 3-2 on IdelchikThick's
+    # inlet coefficient); read only with IdelchikThick, like Cd with 'fixed'.
+    cd_inclination: Literal["none", "idelchik_3_2"] = "none"
     turbulence_intensity: float = Field(default=0.05, gt=0.0)
     gas_heat_flux: float = 0.0
     # The plate's alloy, for its wall temperature limit only (#998): the hot
@@ -538,6 +541,9 @@ class FilmCoolingData(BaseModel):
         "IdelchikThick"
     )
     Cd: float = 0.6
+    # Opt-in hole-angle Cd term, read only with IdelchikThick (see
+    # EffusionPlateData).
+    cd_inclination: Literal["none", "idelchik_3_2"] = "none"
     label: str | None = None
 
 

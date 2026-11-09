@@ -163,6 +163,7 @@ const NetworkCanvas = () => {
 					turbulence_intensity: 0.04,
 					correlation: "IdelchikThick",
 					Cd: 0.6,
+					cd_inclination: "none",
 				} as any;
 			} else if (type === "slot_film") {
 				// Marek & Tacina's D-7958 rig, on which the slot film is scored
@@ -191,6 +192,7 @@ const NetworkCanvas = () => {
 					angle_deg: 90.0,
 					correlation: "IdelchikThick",
 					Cd: 0.6,
+					cd_inclination: "none",
 					wall_conductivity: 20.0,
 					gas_film: "none",
 					gas_augmentation: 1.0,

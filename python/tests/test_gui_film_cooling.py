@@ -102,6 +102,20 @@ def test_cylindrical_holes_drop_the_shaped_geometry() -> None:
     assert e.area_ratio is None and e.breakout_width is None
 
 
+def test_the_hole_angle_cd_term_threads_through_with_idelchik_thick_only() -> None:
+    assert FilmCoolingData().cd_inclination == "none"
+    on = build_network_from_schema(
+        NetworkGraphSchema(**_schema(FILM, {"cd_inclination": "idelchik_3_2"}))
+    ).elements["film"]
+    assert on.cd_inclination == "idelchik_3_2"
+    kept = build_network_from_schema(
+        NetworkGraphSchema(
+            **_schema(FILM, {"cd_inclination": "idelchik_3_2", "correlation": "fixed"})
+        )
+    ).elements["film"]
+    assert kept.cd_inclination == "none"
+
+
 def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:
     with pytest.raises(ValueError, match="not a film provider"):
         build_network_from_schema(NetworkGraphSchema(**_schema({**FILM, "film": "hin"})))

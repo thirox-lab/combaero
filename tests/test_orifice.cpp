@@ -3,6 +3,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 // Test fixture for orifice tests
@@ -1606,4 +1607,114 @@ TEST(DischargePipe, RatioIsOneWithoutAPipe) {
     EXPECT_NEAR(discharge_pipe_cd_ratio(C::Idelchik1966Thick, h, 1e-3), 1.0, 1e-6);
     EXPECT_THROW(discharge_pipe_zeta(C::Idelchik1966Thick, h, 0.0), std::invalid_argument);
     EXPECT_THROW(discharge_pipe_zeta(C::Constant, h, 0.5), std::invalid_argument);
+}
+
+// -------------------------------------------------------------
+// Opt-in hole inclination: Idelchik diagram 3-2 in Eq. (4-20)'s zeta'
+// -------------------------------------------------------------
+
+namespace {
+
+DischargeHoleGeometry inclined_hole(double l_over_d, double delta_deg) {
+    DischargeHoleGeometry hole = wall_hole(1e-3, l_over_d * 1e-3, 0.0, 0.0);
+    hole.inclination_deg = delta_deg;
+    return hole;
+}
+
+}  // namespace
+
+TEST(HoleInclination, IncrementReproducesDiagram32Table) {
+    // Diagram 3-2's printed table (PDF p. 99): zeta_in at delta 20..90 deg.
+    const std::vector<std::pair<double, double>> table = {
+        {20.0, 0.96}, {30.0, 0.91}, {45.0, 0.81}, {60.0, 0.70},
+        {70.0, 0.63}, {80.0, 0.56}, {90.0, 0.50}};
+    for (const auto& [delta, zeta_in] : table) {
+        EXPECT_NEAR(orifice::idelchik::pipe_thick_inlet + discharge_inclination_dzeta(delta),
+                    zeta_in, 0.005)
+            << delta;
+    }
+    EXPECT_EQ(discharge_inclination_dzeta(90.0), 0.0);  // exactly
+    EXPECT_NEAR(discharge_inclination_dzeta(30.0), 0.3 * std::sqrt(3.0) / 2.0 + 0.2 * 0.75,
+                1e-15);
+    EXPECT_THROW(discharge_inclination_dzeta(0.0), std::invalid_argument);
+    EXPECT_THROW(discharge_inclination_dzeta(91.0), std::invalid_argument);
+}
+
+TEST(HoleInclination, NormalHoleIsBitIdenticalToTheDefault) {
+    auto c = make_discharge_correlation(DischargeCdCorrelation::Idelchik1966Thick);
+    for (double re : {50.0, 3e3, 2e4, 1e6}) {
+        const auto a = c->Cd_and_derivatives(wall_hole(1e-3, 3e-3, 0.0, 0.0), wall_flow(re));
+        const auto b = c->Cd_and_derivatives(inclined_hole(3.0, 90.0), wall_flow(re));
+        EXPECT_EQ(std::get<0>(a), std::get<0>(b));
+        EXPECT_EQ(std::get<1>(a), std::get<1>(b));
+    }
+}
+
+TEST(HoleInclination, ThirtyDegreesAddsTheIncrementToZetaPrimeAtHighRe) {
+    // At the top of the table (k eps_re = 1, zeta_phi0 = 0) the composed
+    // zeta is the normal hole's plus dzeta exactly.
+    auto c = make_discharge_correlation(DischargeCdCorrelation::Idelchik1966Thick);
+    const double re = 1e6;
+    const double cd0 = c->Cd(inclined_hole(3.0, 90.0), wall_flow(re));
+    const double cd30 = c->Cd(inclined_hole(3.0, 30.0), wall_flow(re));
+    const double dz = discharge_inclination_dzeta(30.0);
+    EXPECT_NEAR(1.0 / (cd30 * cd30), 1.0 / (cd0 * cd0) + dz, 1e-12);
+    EXPECT_LT(cd30, cd0);
+}
+
+TEST(HoleInclination, DerivativeContractIsExact) {
+    // (Cd, dCd/dRe, dCd/dU) analytic: dCd/dRe against a central difference,
+    // and the crossflow slot exactly zero.
+    auto c = make_discharge_correlation(DischargeCdCorrelation::Idelchik1966Thick);
+    const DischargeHoleGeometry h = inclined_hole(3.0, 30.0);
+    for (double re : {300.0, 3e3, 3e4, 3e5}) {
+        const auto [cd, dcd, du] = c->Cd_and_derivatives(h, wall_flow(re));
+        const double step = 1e-6 * re;
+        const double fd =
+            (c->Cd(h, wall_flow(re + step)) - c->Cd(h, wall_flow(re - step))) / (2.0 * step);
+        EXPECT_NEAR(dcd, fd, 1e-6 * std::abs(cd) / re + 1e-12) << re;
+        EXPECT_EQ(du, 0.0);
+    }
+}
+
+TEST(HoleInclination, OnlyTheThickHoleComposes) {
+    using C = DischargeCdCorrelation;
+    const DischargeHoleGeometry h = inclined_hole(3.0, 30.0);
+    for (C id : {C::Idelchik1966Sharp, C::Idelchik1966Beveled, C::Idelchik1966Rounded,
+                 C::Lichtarowicz1965, C::McGreehanSchotsch1988, C::Constant}) {
+        auto c = make_discharge_correlation(id);
+        EXPECT_THROW(c->Cd(h, wall_flow(2e4)), std::invalid_argument);
+        EXPECT_THROW(c->Cd_and_derivatives(h, wall_flow(2e4)), std::invalid_argument);
+        EXPECT_FALSE(discharge_cd_in_range(id, h, wall_flow(2e4)));
+    }
+    EXPECT_THROW(make_constant_discharge_correlation(0.7)->Cd(h, wall_flow(2e4)),
+                 std::invalid_argument);
+    EXPECT_THROW(discharge_pipe_zeta(C::Lichtarowicz1965, h, 0.5), std::invalid_argument);
+}
+
+TEST(HoleInclination, RangeFlagsDiagram32sReAndTheReattachmentFloor) {
+    using C = DischargeCdCorrelation;
+    EXPECT_TRUE(
+        discharge_cd_in_range(C::Idelchik1966Thick, inclined_hole(3.0, 30.0), wall_flow(2e4)));
+    // Below diagram 3-2's Re > 1e4 and below l/d 2: flagged, still evaluated.
+    EXPECT_FALSE(
+        discharge_cd_in_range(C::Idelchik1966Thick, inclined_hole(3.0, 30.0), wall_flow(5e3)));
+    EXPECT_FALSE(
+        discharge_cd_in_range(C::Idelchik1966Thick, inclined_hole(1.5, 30.0), wall_flow(2e4)));
+    // The same short hole, normal, is inside the plain Thick range.
+    EXPECT_TRUE(
+        discharge_cd_in_range(C::Idelchik1966Thick, inclined_hole(1.5, 90.0), wall_flow(2e4)));
+    auto c = make_discharge_correlation(C::Idelchik1966Thick);
+    EXPECT_GT(c->Cd(inclined_hole(1.5, 30.0), wall_flow(2e4)), 0.0);
+}
+
+TEST(HoleInclination, InPipeLossTakesTheSameInletCoefficient) {
+    using C = DischargeCdCorrelation;
+    const double beta = 1e-3;  // the wall limit: zeta1 n^2 -> the wall zeta'
+    const double n2 = std::pow(beta, 4.0);
+    const double z90 =
+        n2 * discharge_pipe_zeta(C::Idelchik1966Thick, inclined_hole(3.0, 90.0), beta);
+    const double z30 =
+        n2 * discharge_pipe_zeta(C::Idelchik1966Thick, inclined_hole(3.0, 30.0), beta);
+    EXPECT_NEAR(z30 - z90, discharge_inclination_dzeta(30.0), 1e-3);
 }

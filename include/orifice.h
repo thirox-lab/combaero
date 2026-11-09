@@ -471,6 +471,40 @@ constexpr double pipe_thick_lambda = 0.02;
 constexpr double pipe_thick_inlet = 0.5;
 constexpr double pipe_thick_wall_offset = 1.5;
 
+// Inclined hole, OPT-IN (DischargeHoleGeometry::inclination_deg < 90).
+//
+// Diagram 3-2 (PDF p. 99, printed p. 93; also Eq. 3-1 on printed p. 82,
+// Weisbach's formula): a straight entrance into a conduit mounted flush with
+// the wall at an angle delta between the conduit axis and the wall,
+// Re = w0 Dh / nu > 1e4:
+//   zeta_in = 0.5 + 0.3 cos(delta) + 0.2 cos^2(delta)
+// tabulated 0.96, 0.91, 0.81, 0.70, 0.63, 0.56, 0.50 at delta 20..90 deg.
+//
+// THE COMPOSITION IS THE SOURCE'S, ITS TRANSFER TO AN INCLINED HOLE IS OURS.
+// Eq. (4-20) (printed p. 120) builds a wall orifice of arbitrary edge shape
+// and thickness as zeta' + 1 + tau + zeta_fr (F1 = F2 = infinity), with
+// zeta' the inlet-edge coefficient "determined as zeta from diagrams 3-1 to
+// 3-3, and 3-6" -- a range that contains 3-2 -- and, for the thick-walled
+// orifice, zeta' = 0.5 (Eq. 4-27; pipe_thick_inlet above). Diagram 4-18a's
+// tabulated zeta'(l/Dh) is therefore 0.5 + 1 + tau(l/Dh). Replacing the
+// 0.5 by diagram 3-2's zeta_in adds
+//   dzeta = zeta_in(delta) - 0.5 = 0.3 cos(delta) + 0.2 cos^2(delta).
+// What Idelchik does NOT say: tau (diagram 4-11, the inlet jet's interaction
+// with the wall thickness) was measured on normal holes and is kept at its
+// normal-hole value here. That, and applying 4-20 to an inclined hole at
+// all, is our composition.
+constexpr double inclination_cos_coef = 0.3;
+constexpr double inclination_cos2_coef = 0.2;
+// Diagram 3-2's own Reynolds condition.
+constexpr double inclination_re_min = 1.0e4;
+// The entrance loss is separable from the exit loss only once the inlet's
+// vena contracta has reattached inside the hole: diagram 3-2 is a conduit
+// entrance. Diagram 4-18a's zeta' reaches its plateau (1.55, tau ~ 0.05) at
+// l/Dh = 2.0 and is still falling steeply below 1.0, so 2.0 is the floor;
+// shorter holes are FLAGGED out of range, not refused. l is the length along
+// the hole axis (t / sin(delta)).
+constexpr double inclination_l_over_d_min = 2.0;
+
 } // namespace idelchik
 
 // -------------------------------------------------------------
@@ -924,14 +958,29 @@ struct DischargeHoleGeometry {
                          // Idelchik diagram 4-18b's argument is l/Dh, the
                          // beveled DEPTH over the hole diameter, at a bevel
                          // angle of 40-60 deg; it is not the wall thickness.
+    double inclination_deg = 90.0;  // Angle between the hole axis and the
+                                    // wall [deg], Idelchik's delta. 90 (the
+                                    // default) = a normal hole and NO
+                                    // inclination term; below 90 opts in to
+                                    // diagram 3-2's inlet loss, composed with
+                                    // Idelchik1966Thick only (the others
+                                    // refuse it). See
+                                    // orifice::idelchik::inclination_*.
 
     double L_over_d() const;   // Length ratio L/d [-]
     double bevel_over_d() const;  // Bevel depth ratio l/d [-]
     double r_over_d() const;   // Radius ratio r/d [-]
     double area() const;       // Hole area [m^2]
+    bool is_inclined() const;  // inclination_deg < 90: the opt-in term applies
 
     bool is_valid() const;
 };
+
+// Idelchik diagram 3-2's inclined-entrance increment over the normal sharp
+// entrance, dzeta = 0.3 cos(delta) + 0.2 cos^2(delta) [-] on the hole
+// velocity head; exactly 0 at delta = 90 deg. Geometry only (no Re
+// dependence). Throws std::invalid_argument outside 0 < delta <= 90.
+double discharge_inclination_dzeta(double inclination_deg);
 
 // Flow state at one discharge hole.
 struct DischargeHoleState {
@@ -972,9 +1021,13 @@ std::unique_ptr<DischargeCorrelationBase> make_discharge_correlation(
 //   McGreehanSchotsch1988  Re >= re_min (no stated l/d limit)
 //   Idelchik1966*          Re 25 to 1e6, plus the diagram's own geometry
 //                          axis (l/d <= 0.015 sharp, l/d <= 4 thick, bevel
-//                          and r/d within their tables)
+//                          and r/d within their tables); an inclined
+//                          Thick hole also needs diagram 3-2's Re > 1e4 and
+//                          l/d >= inclination_l_over_d_min
 //   Lichtarowicz1965       Re 10 to 2e4, l/d 2 to 10
 //   Constant               always
+// An inclined hole on any correlation but Idelchik1966Thick reads false (its
+// Cd refuses the geometry).
 bool discharge_cd_in_range(DischargeCdCorrelation id,
                            const DischargeHoleGeometry& hole,
                            const DischargeHoleState& flow);
