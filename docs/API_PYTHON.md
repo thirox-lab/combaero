@@ -383,6 +383,14 @@ cb.discharge_cd_in_range(cb.DischargeCdCorrelation.Lichtarowicz1965, hole, flow)
 # form above continues the slope for McGreehan-Schotsch and Idelchik)
 re_floor = cb.discharge_cd_re_floor(cb.DischargeCdCorrelation.McGreehanSchotsch1988)  # 1e4
 
+# An inclined hole, OPT-IN: Idelchik diagram 3-2's
+# inlet loss on the thick-walled hole's zeta', dzeta = 0.3 cos + 0.2 cos^2 of
+# the hole-to-wall angle (0 at 90). Idelchik1966Thick only; the others raise.
+# Flagged out of range below Re 1e4 or l/d 2.
+tilted = cb.DischargeHoleGeometry(d=1e-3, L=4e-3, inclination_deg=30.0)
+Cd30 = cb.discharge_cd(cb.DischargeCdCorrelation.Idelchik1966Thick, tilted, flow)
+dzeta = cb.discharge_inclination_dzeta(30.0)  # 0.41
+
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
 # applies between pipes (C_pipe = Cd_wall * R, R -> 1 as beta -> 0)
@@ -779,7 +787,8 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=3.27e-3,
                              gas_heat_flux=0.0,           # plenum discharge only
                              material=None,               # T_wall_limit only (#998)
                              gas_baseline="chamber",      # or "flat_plate"
-                             gas_start_length=None)       # [m], flat_plate only
+                             gas_start_length=None,       # [m], flat_plate only
+                             cd_inclination="none")       # or "idelchik_3_2"
 diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
 ```
 
@@ -812,6 +821,15 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   reacting rig (`validation/cooling/effusion_network_runner.py`, accuracy,
   cross-source) it moves the mean over-prediction from +22% to +13% at
   `gas_augmentation` 1.0; nothing here recommends an augmentation.
+- **Hole-angle Cd term, opt-in.** By default the angle enters the Cd only
+  through the drilled length `t/sin(angle_deg)`. `cd_inclination="idelchik_3_2"`
+  (`EffusionPlateElement` and `FilmCoolingElement`, `correlation="IdelchikThick"`
+  only -- any other correlation, `"fixed"` included, raises) adds Idelchik
+  diagram 3-2's inclined-inlet loss to the thick hole's inlet coefficient,
+  reported as `Cd_inclination_dzeta` (0.0 when off); outside Re > 1e4 and
+  l/d >= 2 `Cd_in_range` reads 0. Cross-source accuracy on Hay 1983 and
+  Gritsch 1998 (`validation/cooling/hole_cd_inclination_runner.py`): see the
+  runner; off is the default and bit-identical.
 
 ##### Duct-fed: the effusion liner (#471)
 
@@ -1360,6 +1378,7 @@ net.add_element(FilmCoolingElement(
     n_rows=2, row_pitch=0.01, angle_deg=30.0,
     hole_type="shaped", area_ratio=3.5, breakout_width=3e-3,  # Colban
     # hole_type="cylindrical", turbulence_intensity=0.05      # Baldauf
+    # cd_inclination="idelchik_3_2"  # opt-in hole-angle Cd term (IdelchikThick)
 ))
 net.add_wall(ThermalWall(
     id="liner", element_a="hot_duct", element_b="backside",

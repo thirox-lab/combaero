@@ -4741,6 +4741,36 @@ _DISCHARGE_SELECTORS = {
     "Lichtarowicz": cb.DischargeCdCorrelation.Lichtarowicz1965,
 }
 
+# The inclined-hole inlet loss of a cooling hole's Cd, OPT-IN (default
+# "none": the angle enters the Cd only through the drilled length t/sin).
+# "idelchik_3_2": Idelchik diagram 3-2's inclined entrance put into Eq.
+# (4-20)'s inlet coefficient of the thick-walled hole, see
+# orifice::idelchik::inclination_* in include/orifice.h. It composes with
+# 'IdelchikThick' only; any other correlation refuses the opt-in.
+CD_INCLINATION_MODELS = ("none", "idelchik_3_2")
+
+
+def _cd_inclination_deg(
+    name: str, cd_inclination: str, correlation: str, angle_deg: float
+) -> float:
+    """The hole-to-wall angle the discharge correlation sees: 90 (no term)
+    unless ``cd_inclination`` opts in, which needs 'IdelchikThick'."""
+    if cd_inclination not in CD_INCLINATION_MODELS:
+        raise ValueError(
+            f"{name}: cd_inclination {cd_inclination!r} is not one of "
+            f"{list(CD_INCLINATION_MODELS)}."
+        )
+    if cd_inclination == "none":
+        return 90.0
+    if correlation != "IdelchikThick":
+        raise ValueError(
+            f"{name}: cd_inclination={cd_inclination!r} is Idelchik diagram 3-2's inclined "
+            "inlet, composed into the thick-walled hole's inlet coefficient (Eq. 4-20); "
+            f"it does not compose with correlation={correlation!r}. Use "
+            "correlation='IdelchikThick', or cd_inclination='none'."
+        )
+    return float(angle_deg)
+
 
 # Below this Cd an orifice kernel is evaluated at Cd = 1 and scaled: the
 # kernels are linear in Cd and refuse A_eff <= 0 (OrificeElement._kernel_from).
@@ -5028,6 +5058,10 @@ class OrificeElement(NetworkElement):
         # Angle of the discharged jet to the axis of a merge chamber it feeds
         # as a side stream (#471). 90 = normal injection, no axial momentum.
         self.injection_angle_deg = float(injection_angle_deg)
+        # The hole-to-wall angle the discharge correlation sees (opt-in
+        # inclination term, CD_INCLINATION_MODELS). 90: no term. Only the
+        # inclined cooling-hole subclasses set it.
+        self._cd_inclination_deg = 90.0
 
         # A bore of zero is a CLOSED restriction (#1024); a negative or
         # non-finite one is no geometry.
@@ -5589,7 +5623,15 @@ class OrificeElement(NetworkElement):
             r=self.edge_radius,
         )
         hole.bevel = self.bevel_depth
+        if self._cd_inclination_deg < 90.0:
+            hole.inclination_deg = self._cd_inclination_deg
         return hole
+
+    def _inclination_diagnostics(self) -> dict[str, float]:
+        """The opt-in inclined-inlet increment on zeta' (0.0 when off)."""
+        return {
+            "Cd_inclination_dzeta": float(cb.discharge_inclination_dzeta(self._cd_inclination_deg))
+        }
 
     def validate(self) -> None:
         # Lichtarowicz refuses short holes (l/d < 1.5, the source's own
@@ -6647,6 +6689,14 @@ class EffusionPlateElement(OrificeElement):
     one built on a half-pitch square inlet area, which is worth knowing about
     but is a different convention; at their own pitch it is a 0.3% effect.
 
+    THE HOLE ANGLE enters the Cd only through the drilled length t/sin(angle)
+    by default. ``cd_inclination='idelchik_3_2'`` (opt-in, IdelchikThick
+    only; any other correlation refuses it) adds Idelchik diagram 3-2's
+    inclined-inlet loss, dzeta = 0.3 cos(angle) + 0.2 cos^2(angle), to
+    diagram 4-18a's inlet coefficient (Eq. 4-20); reported as
+    ``Cd_inclination_dzeta``. Outside its range (Re > 1e4, l/d >= 2) the
+    Cd is flagged by ``Cd_in_range``, not refused.
+
     THERMAL, INTERNAL SIDE. `internal_heat_transfer()` gives the coolant-side
     coefficient from Andrews 86-GT-225: the hole APPROACH flow over the
     coolant-side surface plus the THROAT, summed. The approach term dominates
@@ -6732,6 +6782,7 @@ class EffusionPlateElement(OrificeElement):
         material: str | None = None,
         gas_baseline: Literal["chamber", "flat_plate"] = "chamber",
         gas_start_length: float | None = None,
+        cd_inclination: Literal["none", "idelchik_3_2"] = "none",
     ) -> None:
         if hole_diameter <= 0.0:
             raise ValueError("EffusionPlateElement: hole_diameter must be positive")
@@ -6890,6 +6941,11 @@ class EffusionPlateElement(OrificeElement):
         # Discharged into a merge chamber, the holes' inclination to the wall
         # is the jets' angle to the gas axis (holes pointing downstream).
         self.injection_angle_deg = float(angle_deg)
+        # Opt-in inclined-inlet Cd term (CD_INCLINATION_MODELS).
+        self.cd_inclination = cd_inclination
+        self._cd_inclination_deg = _cd_inclination_deg(
+            f"EffusionPlateElement {id!r}", cd_inclination, correlation, angle_deg
+        )
 
     def _hole_count(self) -> float:
         return float(self.n_holes)
@@ -7508,6 +7564,7 @@ class EffusionPlateElement(OrificeElement):
             # A homogenised panel would otherwise average an ingesting hole
             # into a healthy net outflow. Say it instead.
             "is_ingesting": float(dP_drive <= 0.0),
+            **self._inclination_diagnostics(),
         }
         # Coolant-side heat transfer, when there is flow to carry it, and the
         # plate's own wall with the gas side its discharge node decides.
@@ -7567,6 +7624,9 @@ class FilmCoolingElement(OrificeElement):
 
     FLOW: an orifice of n_rows * holes_per_row holes in parallel, each of
     the drilled length ``wall_thickness / sin(angle_deg)``, plenum-fed.
+    ``cd_inclination='idelchik_3_2'`` opts in to Idelchik diagram 3-2's
+    inclined-inlet loss on the IdelchikThick Cd (see EffusionPlateElement);
+    reported as ``Cd_inclination_dzeta``.
     """
 
     _selects_compressible_model = False  # keeps the nozzle (#861)
@@ -7590,6 +7650,7 @@ class FilmCoolingElement(OrificeElement):
         correlation: str = "IdelchikThick",
         Cd: float | None = None,
         edge_radius: float = 0.0,
+        cd_inclination: Literal["none", "idelchik_3_2"] = "none",
     ) -> None:
         name = f"FilmCoolingElement {id!r}"
         if hole_diameter <= 0.0 or lateral_pitch <= 0.0 or wall_thickness <= 0.0:
@@ -7646,6 +7707,9 @@ class FilmCoolingElement(OrificeElement):
         self.equivalent_bore = self.diameter
         # Into a merge chamber the jets enter at the hole angle to the gas axis.
         self.injection_angle_deg = float(angle_deg)
+        # Opt-in inclined-inlet Cd term (CD_INCLINATION_MODELS).
+        self.cd_inclination = cd_inclination
+        self._cd_inclination_deg = _cd_inclination_deg(name, cd_inclination, correlation, angle_deg)
 
     def _hole_count(self) -> float:
         return float(self.n_holes)
@@ -7738,6 +7802,7 @@ class FilmCoolingElement(OrificeElement):
                 "G_jet": float(abs(state_in.m_dot) / self.total_hole_area),
                 "dP_drive": float(dP_drive),
                 "is_ingesting": float(dP_drive <= 0.0),
+                **self._inclination_diagnostics(),
             }
         )
         return base

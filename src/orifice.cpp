@@ -536,6 +536,19 @@ double velocity_of_approach_factor(double beta) {
 
 namespace {
 
+// An explicit inclination opt-in on a correlation it does not compose with
+// is refused, never ignored: only Idelchik1966Thick has the source's
+// inlet-edge term (Eq. 4-20's zeta') to put diagram 3-2 into.
+void refuse_inclination(const DischargeHoleGeometry& hole, const std::string& who) {
+    if (hole.is_inclined()) {
+        throw std::invalid_argument(
+            who + ": the hole-inclination term (Idelchik diagram 3-2) composes "
+            "only with Idelchik1966Thick, whose zeta' carries a sharp normal "
+            "inlet it can replace. Use Idelchik1966Thick, or leave "
+            "inclination_deg at 90.");
+    }
+}
+
 class ReaderHarrisGallagherCorrelation : public OrificeCorrelationBase {
 public:
     double Cd(const OrificeGeometry& geom, const OrificeState& state) const override {
@@ -803,6 +816,9 @@ public:
     std::tuple<double, double, double> Cd_and_derivatives(
         const DischargeHoleGeometry& hole,
         const DischargeHoleState& flow) const override {
+        if (hole.is_inclined()) {
+            accept_inclination(hole);
+        }
         const Interpolated z = zeta(hole, flow);
         if (!combaero::validation::is_finite_positive(z.value)) {
             throw std::invalid_argument(
@@ -814,6 +830,16 @@ public:
     }
 
 protected:
+    // Whether this edge type composes with the opt-in inclined inlet. Only
+    // the thick-walled hole does (see orifice::idelchik::inclination_*),
+    // and it applies the term inside its own zeta(); the sharp, beveled and
+    // rounded edges refuse: a thin plate has no conduit entrance, and a
+    // beveled or rounded inlet already IS the zeta' term diagram 3-2 would
+    // replace.
+    virtual void accept_inclination(const DischargeHoleGeometry& hole) const {
+        refuse_inclination(hole, name());
+    }
+
     // zeta and dzeta/dRe for this edge type.
     virtual Interpolated zeta(const DischargeHoleGeometry& hole,
                               const DischargeHoleState& flow) const = 0;
@@ -892,14 +918,29 @@ public:
     }
 
 protected:
+    void accept_inclination(const DischargeHoleGeometry&) const override {}
+
     Interpolated zeta(const DischargeHoleGeometry& hole,
                       const DischargeHoleState& flow) const override {
         const double re = clamped_re(flow.Re);
         // zeta'(l/Dh) is geometry, so it contributes no dzeta/dRe.
-        const Interpolated zp = pchip(orifice::idelchik::thick_l_over_d,
-                                      orifice::idelchik::thick_zeta,
-                                      orifice::idelchik::thick_n,
-                                      hole.L_over_d());
+        Interpolated zp = pchip(orifice::idelchik::thick_l_over_d,
+                                orifice::idelchik::thick_zeta,
+                                orifice::idelchik::thick_n,
+                                hole.L_over_d());
+        // OPT-IN inclined inlet (orifice::idelchik::inclination_*). The
+        // table's zeta' is Eq. (4-20)'s 0.5 + 1 + tau with the sharp NORMAL
+        // inlet 0.5 of Eq. (4-27); an inclined inlet takes diagram 3-2's
+        // value instead, so zeta' gains the excess. It enters zeta' -- not
+        // the total -- because item 2 below scales the high-Re zeta' "as
+        // for Re >= 1e5" by k eps_re(Re); at the top of the table (k eps_re
+        // = 1) the two readings coincide. Geometry: the increment itself has
+        // no Re dependence; the Re derivative below carries it through
+        // k d(eps_re)/dRe exactly like the rest of zeta'. Skipped entirely
+        // for a normal hole, so the default stays bit-identical.
+        if (hole.is_inclined()) {
+            zp.value += discharge_inclination_dzeta(hole.inclination_deg);
+        }
         const Interpolated fr = friction_term(hole, re);
 
         // One expression over the whole range, for the same reason as the
@@ -987,6 +1028,7 @@ public:
         const DischargeHoleGeometry& hole,
         const DischargeHoleState& flow) const override {
         namespace L = orifice::lichtarowicz;
+        refuse_inclination(hole, name());
 
         const double ld = hole.L_over_d();
         if (ld < L::l_over_d_min) {
@@ -1045,6 +1087,7 @@ class McGreehanSchotsch1988Correlation : public DischargeCorrelationBase {
 public:
     double Cd(const DischargeHoleGeometry& hole,
               const DischargeHoleState& flow) const override {
+        refuse_inclination(hole, name());
         warn_below_floor(flow.Re);
         return orifice::mcgreehan_schotsch::cd(flow.Re, hole.r_over_d(),
                                                hole.L_over_d(), flow.U1_over_Vi);
@@ -1053,6 +1096,7 @@ public:
     std::tuple<double, double, double> Cd_and_derivatives(
         const DischargeHoleGeometry& hole,
         const DischargeHoleState& flow) const override {
+        refuse_inclination(hole, name());
         warn_below_floor(flow.Re);
         return orifice::mcgreehan_schotsch::cd_and_derivatives(
             flow.Re, hole.r_over_d(), hole.L_over_d(), flow.U1_over_Vi);
@@ -1088,16 +1132,18 @@ public:
         double Cd = orifice::defaults::discharge_cd)
         : Cd_value_(Cd) {}
 
-    double Cd(const DischargeHoleGeometry&,
+    double Cd(const DischargeHoleGeometry& hole,
               const DischargeHoleState&) const override {
+        refuse_inclination(hole, name());
         return Cd_value_;
     }
 
     // Exactly zero, not a small number: a constant has no Re or crossflow
     // sensitivity, and a solver is entitled to that being exact.
     std::tuple<double, double, double> Cd_and_derivatives(
-        const DischargeHoleGeometry&,
+        const DischargeHoleGeometry& hole,
         const DischargeHoleState&) const override {
+        refuse_inclination(hole, name());
         return {Cd_value_, 0.0, 0.0};
     }
 
@@ -1152,10 +1198,29 @@ double DischargeHoleGeometry::area() const {
     return M_PI * d * d / 4.0;
 }
 
+bool DischargeHoleGeometry::is_inclined() const {
+    return inclination_deg < 90.0;
+}
+
 bool DischargeHoleGeometry::is_valid() const {
     // L = 0 is a legitimate limit (a knife-edge hole), r = 0 is a sharp
-    // inlet. Only a non-positive diameter makes the hole meaningless.
-    return d > 0.0 && L >= 0.0 && r >= 0.0;
+    // inlet. Only a non-positive diameter makes the hole meaningless; an
+    // inclination is Idelchik's delta, 0 < delta <= 90.
+    return d > 0.0 && L >= 0.0 && r >= 0.0 && inclination_deg > 0.0 &&
+           inclination_deg <= 90.0;
+}
+
+double discharge_inclination_dzeta(double inclination_deg) {
+    if (!(inclination_deg > 0.0 && inclination_deg <= 90.0)) {
+        throw std::invalid_argument(
+            "discharge_inclination_dzeta: the hole-to-wall angle must be in (0, 90] deg");
+    }
+    if (inclination_deg == 90.0) {
+        return 0.0;  // exactly: cos(pi/2) is 6e-17 in floating point
+    }
+    namespace I = orifice::idelchik;
+    const double c = std::cos(inclination_deg * M_PI / 180.0);
+    return I::inclination_cos_coef * c + I::inclination_cos2_coef * c * c;
 }
 
 std::unique_ptr<DischargeCorrelationBase> make_discharge_correlation(
@@ -1192,6 +1257,14 @@ bool discharge_cd_in_range(DischargeCdCorrelation id,
     const double re = flow.Re;
     const double ld = hole.L_over_d();
     const bool idelchik_re = re >= I::re_points[0] && re <= I::re_points[I::re_n - 1];
+    if (hole.is_inclined()) {
+        // Only the thick-walled hole composes with diagram 3-2; inside its
+        // own range it also needs 3-2's Re and a hole long enough for the
+        // inlet jet to reattach (orifice::idelchik::inclination_*).
+        return id == DischargeCdCorrelation::Idelchik1966Thick && idelchik_re &&
+               ld <= I::thick_l_over_d[I::thick_n - 1] && re > I::inclination_re_min &&
+               ld >= I::inclination_l_over_d_min;
+    }
     switch (id) {
         case DischargeCdCorrelation::McGreehanSchotsch1988:
             return re >= orifice::mcgreehan_schotsch::re_min;
@@ -1242,6 +1315,9 @@ namespace {
 // returns the wall hole's high-Re zeta exactly.
 double pipe_zeta0(DischargeCdCorrelation id, const DischargeHoleGeometry& hole, double n) {
     namespace I = orifice::idelchik;
+    if (hole.is_inclined() && id != DischargeCdCorrelation::Idelchik1966Thick) {
+        refuse_inclination(hole, "discharge_pipe_zeta");
+    }
     const double m = 1.0 - n;
     const auto edge = [m](double zeta_wall) {
         const double s = std::sqrt(zeta_wall) - 1.0;
@@ -1266,8 +1342,14 @@ double pipe_zeta0(DischargeCdCorrelation id, const DischargeHoleGeometry& hole, 
             const double tau =
                 pchip(I::thick_l_over_d, I::thick_zeta, I::thick_n, ld).value
                 - I::pipe_thick_wall_offset;
-            return (I::pipe_thick_inlet + tau * std::sqrt(m)) * m + m * m
-                 + I::pipe_thick_lambda * ld;
+            // Eq. (4-20)'s inlet zeta' is diagram 3-2's for an inclined
+            // Thick hole, exactly as in the wall correlation; tau stays the
+            // normal hole's.
+            const double inlet =
+                hole.is_inclined()
+                    ? I::pipe_thick_inlet + discharge_inclination_dzeta(hole.inclination_deg)
+                    : I::pipe_thick_inlet;
+            return (inlet + tau * std::sqrt(m)) * m + m * m + I::pipe_thick_lambda * ld;
         }
         case DischargeCdCorrelation::Constant:
             break;

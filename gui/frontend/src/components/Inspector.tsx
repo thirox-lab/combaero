@@ -2090,6 +2090,25 @@ const Inspector = () => {
 									</select>
 								</div>
 								{d.correlation === "fixed" && num("Cd", "Fixed Cd Value", 0.6)}
+								{(d.correlation || "IdelchikThick") === "IdelchikThick" && (
+									<div className="flex flex-col gap-1">
+										<label className="text-xs font-bold text-gray-500 uppercase">
+											Hole Angle Cd Term
+										</label>
+										<select
+											className="p-2 border rounded bg-white text-xs border-stone-200"
+											value={d.cd_inclination || "none"}
+											onChange={(e) => set({ cd_inclination: e.target.value })}
+										>
+											<option value="none">
+												None (angle via hole length only)
+											</option>
+											<option value="idelchik_3_2">
+												Inclined inlet (Idelchik 3-2, opt-in)
+											</option>
+										</select>
+									</div>
+								)}
 								{num("wall_conductivity", "Wall Conductivity [W/m/K]", 20)}
 								<PlateMaterialSelect
 									value={d.material}
@@ -2306,6 +2325,25 @@ const Inspector = () => {
 									</select>
 								</div>
 								{d.correlation === "fixed" && num("Cd", "Fixed Cd Value", 0.6)}
+								{(d.correlation || "IdelchikThick") === "IdelchikThick" && (
+									<div className="flex flex-col gap-1">
+										<label className="text-xs font-bold text-gray-500 uppercase">
+											Hole Angle Cd Term
+										</label>
+										<select
+											className="p-2 border rounded bg-white text-xs border-stone-200"
+											value={d.cd_inclination || "none"}
+											onChange={(e) => set({ cd_inclination: e.target.value })}
+										>
+											<option value="none">
+												None (angle via hole length only)
+											</option>
+											<option value="idelchik_3_2">
+												Inclined inlet (Idelchik 3-2, opt-in)
+											</option>
+										</select>
+									</div>
+								)}
 							</>
 						);
 					})()}

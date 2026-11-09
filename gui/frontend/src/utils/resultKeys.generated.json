@@ -212,6 +212,7 @@
 		"effusion_plate": [
 			"Cd",
 			"Cd_in_range",
+			"Cd_inclination_dzeta",
 			"Cd_pipe_ratio",
 			"E",
 			"G_coolant",
@@ -357,6 +358,7 @@
 		"film_cooling": [
 			"Cd",
 			"Cd_in_range",
+			"Cd_inclination_dzeta",
 			"Cd_pipe_ratio",
 			"E",
 			"G_jet",
@@ -950,6 +952,7 @@
 	"units": {
 		"Cd": "-",
 		"Cd_in_range": "-",
+		"Cd_inclination_dzeta": "-",
 		"Cd_pipe_ratio": "-",
 		"Ci": "-",
 		"Cv": "-",

@@ -6429,16 +6429,17 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "Geometry of one discharge hole. There is deliberately no pipe\n"
       "diameter: a hole in a wall has no beta.")
       .def(py::init<>())
-      .def(py::init([](double d, double L, double r, double bevel) {
+      .def(py::init([](double d, double L, double r, double bevel, double inclination_deg) {
              DischargeHoleGeometry g;
              g.d = d;
              g.L = L;
              g.r = r;
              g.bevel = bevel;
+             g.inclination_deg = inclination_deg;
              return g;
            }),
            py::arg("d"), py::arg("L") = 0.0, py::arg("r") = 0.0,
-           py::arg("bevel") = 0.0)
+           py::arg("bevel") = 0.0, py::arg("inclination_deg") = 90.0)
       .def_readwrite("d", &DischargeHoleGeometry::d, "Hole diameter [m]")
       .def_readwrite("L", &DischargeHoleGeometry::L,
                      "Hole length along its axis [m] -- the wall thickness for\n"
@@ -6449,13 +6450,28 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
                      "Bevel depth along the hole axis [m] (0 = not beveled).\n"
                      "Idelchik diagram 4-18b's l/Dh at a bevel angle of\n"
                      "40-60 deg -- NOT the wall thickness.")
+      .def_readwrite("inclination_deg", &DischargeHoleGeometry::inclination_deg,
+                     "Angle between the hole axis and the wall [deg],\n"
+                     "Idelchik's delta. 90 (default) = normal hole, no\n"
+                     "inclination term. Below 90 opts in to diagram 3-2's\n"
+                     "inclined-inlet loss, composed with Idelchik1966Thick\n"
+                     "only; every other correlation raises ValueError.")
+      .def("is_inclined", &DischargeHoleGeometry::is_inclined,
+           "True when inclination_deg < 90: the opt-in term applies")
       .def("L_over_d", &DischargeHoleGeometry::L_over_d, "Length ratio L/d [-]")
       .def("r_over_d", &DischargeHoleGeometry::r_over_d, "Radius ratio r/d [-]")
       .def("bevel_over_d", &DischargeHoleGeometry::bevel_over_d,
            "Bevel depth ratio l/d [-]")
       .def("area", &DischargeHoleGeometry::area, "Hole area [m^2]")
       .def("is_valid", &DischargeHoleGeometry::is_valid,
-           "True when d > 0 and L, r >= 0");
+           "True when d > 0, L, r >= 0 and 0 < inclination_deg <= 90");
+
+  m.def("discharge_inclination_dzeta", &discharge_inclination_dzeta,
+        py::arg("inclination_deg"),
+        "Idelchik (1966) diagram 3-2's inclined-entrance increment over the\n"
+        "normal sharp entrance: dzeta = 0.3 cos(delta) + 0.2 cos^2(delta) on\n"
+        "the hole velocity head, delta the hole-axis-to-wall angle [deg];\n"
+        "exactly 0 at 90. Geometry only. Raises ValueError outside (0, 90].");
 
   // DischargeHoleState struct
   py::class_<DischargeHoleState>(m, "DischargeHoleState",

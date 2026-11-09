@@ -1707,12 +1707,20 @@ enum class DischargeCdCorrelation {
 
 struct DischargeHoleGeometry {
     double d, L, r, bevel;   // [m]; no pipe diameter, by design
+    double inclination_deg = 90.0;  // hole axis to wall [deg]; < 90 opts in
+                                    // to Idelchik diagram 3-2 (Thick only)
     double L_over_d() const;
     double r_over_d() const;
     double bevel_over_d() const;
     double area() const;
+    bool is_inclined() const;  // inclination_deg < 90
     bool is_valid() const;
 };
+
+// Idelchik diagram 3-2's inclined-inlet increment over the normal sharp
+// inlet: 0.3 cos(delta) + 0.2 cos^2(delta), exactly 0 at 90 deg. Geometry
+// only; throws outside 0 < delta <= 90.
+double discharge_inclination_dzeta(double inclination_deg);
 
 struct DischargeHoleState {
     double Re;            // based on the hole diameter
@@ -1752,7 +1760,21 @@ double discharge_pipe_cd_ratio(DischargeCdCorrelation id, const DischargeHoleGeo
 ```
 
 For the Idelchik members `zeta` is referenced to the hole velocity and carries
-the full permanent loss, so `Cd = 1/sqrt(zeta)` exactly. See
+the full permanent loss, so `Cd = 1/sqrt(zeta)` exactly.
+
+**Inclined holes, opt-in.** By default a hole's angle enters only through
+its length `L = t/sin(angle)`. `inclination_deg < 90` adds diagram 3-2's
+inclined-inlet loss to `Idelchik1966Thick`'s inlet coefficient zeta' (Eq.
+4-20 builds the wall hole as zeta' + 1 + tau + zeta_fr with zeta' from
+diagrams 3-1..3-3; 4-18a's table has the normal sharp inlet's 0.5 in it), so
+zeta' gains `discharge_inclination_dzeta`; tau keeps its normal-hole value
+(our composition). It inherits zeta''s low-Re scaling (4-18a item 2), so
+`dCd/dRe` stays analytic. Every other correlation, and `discharge_pipe_zeta`
+on them, throws for an inclined hole; `discharge_cd_in_range` also needs
+diagram 3-2's Re > 1e4 and `l/d >= orifice::idelchik::inclination_l_over_d_min`
+(2, where 4-18a's zeta' has plateaued: the inlet jet has reattached). The
+in-pipe loss takes the same inlet coefficient. Constants:
+`orifice::idelchik::inclination_*`. See
 `validation/cooling/extractions/idelchik_1966_wall_orifice.md` for the tables,
 the cross-source agreement with McGreehan-Schotsch, and why the in-a-pipe
 diagrams are a different conversion.

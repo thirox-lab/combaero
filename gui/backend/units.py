@@ -110,6 +110,7 @@ UNIT_MAP: dict[str, str] = {
     "area_ratio": "-",  # Phase 2 name
     "is_correlation": "-",
     "Cd_in_range": "-",  # 1 inside the discharge correlation's source range
+    "Cd_inclination_dzeta": "-",  # opt-in inclined-inlet increment on zeta' (0 when off)
     # --- Impingement plate / crossflow (#465) ---
     "n_holes": "-",
     "Re_j": "-",

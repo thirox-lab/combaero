@@ -119,3 +119,25 @@ def test_the_flat_plate_gas_baseline_is_exposed_and_the_chamber_stays_default() 
     assert r["success"]
     assert r["h_gas_unblown_x_start"] == pytest.approx(0.02)
     assert r["h_gas_unblown_x_end"] == pytest.approx(0.02 + 0.152)
+
+
+def test_the_hole_angle_cd_term_is_off_by_default_and_threads_through() -> None:
+    off = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
+    assert off.elements["eff"].cd_inclination == "none"
+    on = build_network_from_schema(
+        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "idelchik_3_2"}))
+    )
+    assert on.elements["eff"].cd_inclination == "idelchik_3_2"
+    assert on.elements["eff"]._cd_inclination_deg == 30.0
+
+
+def test_the_hole_angle_cd_term_is_read_only_with_idelchik_thick() -> None:
+    # The Inspector shows the field for IdelchikThick only; a node switched to
+    # another correlation keeps it, and the builder does not hand the element
+    # an opt-in it would refuse.
+    net = build_network_from_schema(
+        NetworkGraphSchema(
+            **_liner({"correlation": "Lichtarowicz", "cd_inclination": "idelchik_3_2"})
+        )
+    )
+    assert net.elements["eff"].cd_inclination == "none"
