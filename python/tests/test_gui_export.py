@@ -11,10 +11,12 @@ import pytest
 import combaero as cb
 from combaero.heat_transfer import ConvectiveSurface, RibbedModel, SmoothModel
 from combaero.network import (
+    CasingRadiation,
     ChannelElement,
     CombustorNode,
     FlowNetwork,
     FuelBoundary,
+    GasRadiation,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -319,3 +321,40 @@ def test_a_compressor_and_turbine_round_trip(eta: dict) -> None:
     assert comp["pressure_ratio"] == 4.0
     assert comp["efficiency_type"] == ("polytropic" if "eta_poly" in eta else "isentropic")
     _same(direct, gui, ["comp.m_dot", "b.Tt", "c.Tt", "comp.power", "turb.power"])
+
+
+def test_wall_radiation_round_trips() -> None:
+    """#1071: each face's radiation has a GUI form, so it is exported, not dropped."""
+    net = FlowNetwork()
+    net.add_node(PressureBoundary("h_in", Pt=1.2e5, Tt=1600.0, Y=AIR))
+    net.add_node(PressureBoundary("h_out", Pt=1.1e5, Tt=1600.0, Y=AIR))
+    net.add_node(MassFlowBoundary("c_in", m_dot=0.02, Tt=600.0, Y=AIR))
+    net.add_node(PressureBoundary("c_out", Pt=1.5e5, Tt=600.0, Y=AIR))
+    for eid, a, b, D in (("hot", "h_in", "h_out", 0.04), ("cold", "c_in", "c_out", 0.01)):
+        net.add_element(
+            ChannelElement(
+                eid, a, b, length=0.3, diameter=D, surface=ConvectiveSurface(model=SmoothModel())
+            )
+        )
+    net.add_wall(
+        ThermalWall(
+            "w",
+            "hot",
+            "cold",
+            layers=[WallLayer(0.002, 20.0)],
+            contact_area=0.01,
+            radiation_a=GasRadiation(beam_length=0.08, fuel_air_ratio=0.03),
+            radiation_b=CasingRadiation(area_ratio=0.7),
+        )
+    )
+    doc, d, g = _both(net)
+    wall = next(e for e in doc["edges"] if e["id"] == "w")["data"]
+    assert wall["radiation_a"]["kind"] == "gas" and wall["radiation_a"]["beam_length"] == 0.08
+    assert wall["radiation_b"] == {
+        "kind": "casing",
+        "area_ratio": 0.7,
+        "emissivity_wall": 0.7,
+        "emissivity_casing": 0.4,
+        "T_casing": None,
+    }
+    _same(d, g, ["w.Q", "w.q_rad_a", "w.q_rad_b", "w.eps_g_a"], rel=1e-5)

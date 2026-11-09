@@ -232,6 +232,47 @@ export const QUANTITY_CATALOGUE: Record<
 	eta_overall: { label: "η overall", unit: "—", format: (v) => v.toFixed(3) },
 	eta_film: { label: "η film", unit: "—", format: (v) => v.toFixed(3) },
 	blowing_ratio: { label: "M", unit: "—", format: (v) => v.toFixed(2) },
+	// Gas radiation on the plate's hot face (#1071)
+	q_rad_hot: {
+		label: "q radiation (hot face)",
+		cardLabel: "q rad",
+		unit: "kW/m²",
+		format: (v) => (v / 1000).toFixed(2),
+	},
+	eps_g: { label: "ε gas", unit: "—", format: (v) => v.toFixed(3) },
+	// Thermal wall radiation per face (#793, #1071): A source, B target
+	q_rad_a: {
+		label: "q radiation (side A)",
+		unit: "kW/m²",
+		format: (v) => (v / 1000).toFixed(2),
+	},
+	q_rad_b: {
+		label: "q radiation (side B)",
+		unit: "kW/m²",
+		format: (v) => (v / 1000).toFixed(2),
+	},
+	Q_rad_a: {
+		label: "Q radiation (side A)",
+		unit: "W",
+		format: (v) => v.toFixed(1),
+	},
+	Q_rad_b: {
+		label: "Q radiation (side B)",
+		unit: "W",
+		format: (v) => v.toFixed(1),
+	},
+	T_surface_a: {
+		label: "T surface (side A)",
+		unit: "K",
+		format: (v) => v.toFixed(0),
+	},
+	T_surface_b: {
+		label: "T surface (side B)",
+		unit: "K",
+		format: (v) => v.toFixed(0),
+	},
+	eps_g_a: { label: "ε gas (side A)", unit: "—", format: (v) => v.toFixed(3) },
+	eps_g_b: { label: "ε gas (side B)", unit: "—", format: (v) => v.toFixed(3) },
 	// Effusion liner (#471)
 	bleed_fraction: {
 		label: "Bleed",

@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from combaero.network import (
     AreaChangeElement,
+    CasingRadiation,
     ChannelElement,
     CombustorNode,
     CompressorElement,
@@ -17,6 +18,7 @@ from combaero.network import (
     FlowNetwork,
     FlowSplitter,
     FuelBoundary,
+    GasRadiation,
     ImpingementArray,
     ImpingementModel,
     LinearThetaFractionLoss,
@@ -60,6 +62,7 @@ from .schemas import (
     FilmCoolingData,
     FlowSplitterData,
     FuelBoundaryData,
+    GasRadiationData,
     HeatSourceData,
     ImpingementArrayData,
     ImpingementModelData,
@@ -81,6 +84,7 @@ from .schemas import (
     TurbomachineData,
     VortexData,
     WallData,
+    WallRadiationData,
     removed_surface_message,
 )
 
@@ -216,6 +220,36 @@ def _cd_inclination(data: EffusionPlateData | FilmCoolingData) -> str:
     only), so switching the correlation does not leave an opt-in the element
     would refuse."""
     return data.cd_inclination if data.correlation == "IdelchikThick" else "none"
+
+
+def _radiation(
+    data: GasRadiationData | None,
+) -> GasRadiation | CasingRadiation | None:
+    """The library spec of a face's radiation (#1071): None for an absent
+    field or kind "none", so a network saved without radiation builds
+    exactly as before. Only the chosen kind's fields are read; the library
+    validates them, and refuses a kind the face cannot take (casing on a
+    plate, side B of a one-sided wall)."""
+    if data is None or data.kind == "none":
+        return None
+    if data.kind == "gas":
+        return GasRadiation(
+            beam_length=data.beam_length,
+            emissivity_wall=data.emissivity_wall,
+            luminosity=data.luminosity,
+            T_gas=data.T_gas,
+            fuel_air_ratio=data.fuel_air_ratio,
+            pressure=data.pressure,
+        )
+    # "casing": only a wall side's data (WallRadiationData) has the kind.
+    if not isinstance(data, WallRadiationData):
+        raise ValueError(f"Radiation kind {data.kind!r} is for a thermal wall's side only")
+    return CasingRadiation(
+        area_ratio=data.area_ratio,
+        emissivity_wall=data.emissivity_wall,
+        emissivity_casing=data.emissivity_casing,
+        T_casing=data.T_casing,
+    )
 
 
 def _checked_edges(schema: NetworkGraphSchema) -> NetworkGraphSchema:
@@ -1325,6 +1359,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 gas_heat_flux=_ld.gas_heat_flux,
                 film_direction=_ld.film_direction,
                 material=_ld.material or None,
+                radiation=_radiation(_ld.radiation),
             )
             liner.add_to(net, _ends[0], _ends[1], _ends[2])
             gui_arrays[elem_id] = liner
@@ -1510,6 +1545,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                     data.gas_start_length if data.gas_baseline == "flat_plate" else None
                 ),
                 cd_inclination=_cd_inclination(data),
+                radiation=_radiation(data.radiation),
             )
             net.add_element(elem)
         elif elem_type == "film_cooling":
@@ -1780,6 +1816,12 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                     layers=layers,
                     R_fouling=data.R_fouling,
                     array_is_side_a=array_is_a,
+                    # The edge's side A is its source, as on any wall: the
+                    # array's target face when the array is the source.
+                    radiation_hot=_radiation(data.radiation_b if array_is_a else data.radiation_a),
+                    radiation_target=_radiation(
+                        data.radiation_a if array_is_a else data.radiation_b
+                    ),
                 )
                 continue
             _wetted_area_from_wall(net, edge.source, data.area_a, data.area)
@@ -1804,6 +1846,8 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                     film_side=data.film_side,
                     film_start=data.film_start,
                     film_end=data.film_end,
+                    radiation_a=_radiation(data.radiation_a),
+                    radiation_b=_radiation(data.radiation_b),
                 )
             )
             net.thermal_coupling_enabled = True

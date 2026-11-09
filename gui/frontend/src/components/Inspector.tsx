@@ -59,6 +59,7 @@ import GeometryFields from "./GeometryFields";
 import LengthInput from "./LengthInput";
 import NumericInput from "./NumericInput";
 import PlateMaterialSelect from "./PlateMaterialSelect";
+import RadiationEditor from "./RadiationEditor";
 import SurfaceEnhancementInspector from "./SurfaceEnhancementInspector";
 import UnitInput from "./UnitInput";
 import WallLayersEditor from "./WallLayersEditor";
@@ -1945,6 +1946,12 @@ const Inspector = () => {
 										downstream (drag its "f" handle onto that wall).
 									</p>
 								</div>
+								<RadiationEditor
+									id={`radiation_${selectedNode.id}`}
+									label="Gas Radiation on the Panels (opt-in)"
+									value={d.radiation}
+									onChange={(radiation) => set({ radiation })}
+								/>
 								{rows && rows.length > 0 && (
 									<div className="flex flex-col gap-1 mt-2">
 										<label className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
@@ -2179,6 +2186,12 @@ const Inspector = () => {
 								{d.gas_film === "baldauf_sellers" &&
 									num("turbulence_intensity", "Turbulence Intensity", 0.05)}
 								{num("gas_heat_flux", "Imposed Heat Flux [W/m²] (plenum)", 0)}
+								<RadiationEditor
+									id={`radiation_${selectedNode.id}`}
+									label="Gas Radiation on the Hot Face (opt-in)"
+									value={d.radiation}
+									onChange={(radiation) => set({ radiation })}
+								/>
 								{r && r.T_wall_hot != null && (
 									<div className="flex flex-col gap-0.5 mt-2 bg-blue-50/50 p-2 rounded border border-blue-100/50 text-[10px] font-mono">
 										<span>
@@ -2199,6 +2212,13 @@ const Inspector = () => {
 												<span>η overall: {r.eta_overall.toFixed(3)}</span>
 												<span>h gas: {r.h_gas.toFixed(0)} W/m²/K</span>
 												<span>M: {r.blowing_ratio.toFixed(2)}</span>
+												{r.q_rad_hot != null &&
+													Number.isFinite(r.q_rad_hot) && (
+														<span>
+															q radiation: {(r.q_rad_hot / 1000).toFixed(2)}{" "}
+															kW/m² (ε gas {Number(r.eps_g).toFixed(3)})
+														</span>
+													)}
 											</>
 										) : null}
 										{r.film_extrapolated > 0 && (
@@ -4856,6 +4876,57 @@ const Inspector = () => {
 										</div>
 									)}
 								</>
+							)}
+						</div>
+					);
+				})()}
+
+				{(() => {
+					// Radiation on each face (#793, #1071): side A is the edge's
+					// source, side B its target, as for the per-side areas.
+					const d = selectedEdge.data;
+					const r = d.result;
+					const sideLabel = (nid: string) => {
+						const n = nodes.find((m) => m.id === nid);
+						return n?.data?.label || nid;
+					};
+					const face = (side: "a" | "b") => {
+						const q = r?.[`q_rad_${side}`];
+						if (q == null || !Number.isFinite(q)) return null;
+						const eps = r[`eps_g_${side}`];
+						return (
+							<span>
+								{side.toUpperCase()}: q {(q / 1000).toFixed(2)} kW/m² · T
+								surface {Number(r[`T_surface_${side}`]).toFixed(0)} K
+								{eps != null && ` · ε gas ${Number(eps).toFixed(3)}`}
+							</span>
+						);
+					};
+					return (
+						<div className="flex flex-col gap-3 border-t pt-4">
+							<RadiationEditor
+								id={`radiation_a_${selectedEdge.id}`}
+								label={`Radiation, side A (${sideLabel(selectedEdge.source)})`}
+								value={d.radiation_a}
+								onChange={(radiation_a) =>
+									updateEdgeData(selectedEdge.id, { radiation_a })
+								}
+								allowCasing
+							/>
+							<RadiationEditor
+								id={`radiation_b_${selectedEdge.id}`}
+								label={`Radiation, side B (${sideLabel(selectedEdge.target)})`}
+								value={d.radiation_b}
+								onChange={(radiation_b) =>
+									updateEdgeData(selectedEdge.id, { radiation_b })
+								}
+								allowCasing
+							/>
+							{(face("a") || face("b")) && (
+								<div className="flex flex-col gap-0.5 bg-blue-50/50 p-2 rounded border border-blue-100/50 text-[10px] font-mono">
+									{face("a")}
+									{face("b")}
+								</div>
 							)}
 						</div>
 					);

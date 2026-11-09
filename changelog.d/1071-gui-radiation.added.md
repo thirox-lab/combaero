@@ -1,0 +1,5 @@
+- **Radiation inputs in the GUI (#1071).** The thermal wall edge's Inspector has a radiation selector per side (None / Gas / Casing, side A the edge's source), and the effusion plate's and effusion liner's a None / Gas selector for the hot face.
+  - Gas radiation takes the beam length (default 50 mm, a working example), wall emissivity and luminosity factor, with optional gas temperature, fuel-air ratio and pressure overrides; casing radiation takes A_w/A_c (default 0.8), wall and casing emissivities and an optional casing temperature.
+  - On a wall to an impingement array the sides map onto `add_wall`'s `radiation_hot` / `radiation_target` by which end of the edge the array is.
+  - None, or a file saved without the fields, builds exactly what it did before.
+  - Results show on the edge (`q_rad_a`, `T_surface_a`, `eps_g_a`, ...) and the plate (`q_rad_hot`, `eps_g`); `network_to_gui` now exports a wall's radiation instead of dropping it.

@@ -353,8 +353,8 @@ UNIT_MAP: dict[str, str] = {
     "counterflow": "-",
     # Thermal wall radiation (#793), per face: flux on that face, rate,
     # surface temperature, gas emissivity
-    "q_rad_a": "W/m²",
-    "q_rad_b": "W/m²",
+    "q_rad_a": "W/m\u00b2",
+    "q_rad_b": "W/m\u00b2",
     "Q_rad_a": "W",
     "Q_rad_b": "W",
     "T_surface_a": "K",
@@ -524,6 +524,15 @@ INPUT_UNIT_MAP: dict[str, str] = {
     "k_pin": "W/m/K",
     "R_fouling": "m^2*K/W",
     "gas_heat_flux": "W/m^2",
+    # Radiation on a wall face or a plate's hot face (#1071)
+    "beam_length": "m",
+    "emissivity_wall": "-",
+    "emissivity_casing": "-",
+    "luminosity": "-",
+    "T_gas": "K",
+    "fuel_air_ratio": "-",
+    "pressure": "Pa",
+    "T_casing": "K",
     # Flow references
     "m_ref": "kg/s",
     # Dimensionless: coefficients, ratios, multipliers, counts and flags

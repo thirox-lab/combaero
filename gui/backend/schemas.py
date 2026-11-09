@@ -401,6 +401,44 @@ class OrificeData(BaseModel):
         return data
 
 
+class GasRadiationData(BaseModel):
+    """Gas radiation onto one face (#1071), as the library's GasRadiation
+    (Lefebvre & Ballal Eq. 8.7 / 8.11): an effusion plate's or liner's hot
+    face, or one side of a thermal wall (WallRadiationData).
+
+    ``kind`` "none" (the default) builds no radiation at all, as before the
+    field existed. The fields are kept whatever the kind, so switching to
+    "none" and back keeps them; only the chosen kind's fields reach the
+    library, which validates them. The beam length is a working example (a
+    50 mm gas layer, ``3.4 V/A`` of a liner a few cm deep), not a fact about
+    any geometry: the user's own is ``cb.mean_beam_length(V, A)``. The other
+    defaults are GasRadiation's. A None override is the side's own stream
+    value (Tt, elemental fuel-air ratio, static P).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    kind: Literal["none", "gas"] = "none"
+    beam_length: float = 0.05
+    emissivity_wall: float = 0.7
+    luminosity: float = 1.0
+    T_gas: float | None = None
+    fuel_air_ratio: float | None = None
+    pressure: float | None = None
+
+
+class WallRadiationData(GasRadiationData):
+    """Radiation on one side of a thermal wall (#793, #1071): gas radiation
+    from that side's stream, or wall-to-casing radiation (CasingRadiation,
+    Lefebvre & Ballal Eq. 8.17). ``area_ratio`` 0.8 is Lefebvre's
+    tubo-annular A_w/A_c, ``emissivity_casing`` and ``T_casing`` are
+    CasingRadiation's defaults (None: the side's stream Tt)."""
+
+    kind: Literal["none", "gas", "casing"] = "none"  # type: ignore[assignment]
+    area_ratio: float = 0.8
+    emissivity_casing: float = 0.4
+    T_casing: float | None = None
+
+
 class EffusionLinerData(BaseModel):
     """Effusion liner (#471): a backside coolant duct whose wall bleeds
     through effusion holes into the gas. Expanded into N stations: a Bassett
@@ -438,6 +476,8 @@ class EffusionLinerData(BaseModel):
     # The plates' alloy, for their wall temperature limit only (#998); None
     # is the generic metal cap.
     material: str | None = None
+    # Gas radiation on every panel's hot face (#1071); None or kind "none": off.
+    radiation: GasRadiationData | None = None
     label: str | None = None
 
 
@@ -481,6 +521,9 @@ class EffusionPlateData(BaseModel):
     # The plate's alloy, for its wall temperature limit only (#998): the hot
     # end of its k(T) envelope. None is the generic metal cap.
     material: str | None = None
+    # Gas radiation on the plate's hot face (#1071), read with a gas-side
+    # chamber; None or kind "none": off.
+    radiation: GasRadiationData | None = None
     label: str | None = None
 
 
@@ -821,6 +864,10 @@ class ThermalWallData(BaseModel):
     film_side: Literal["a", "b"] = "a"
     film_start: float = Field(default=0.0, ge=0.0)
     film_end: float | None = Field(default=None, ge=0.0)
+    # Radiation on each face (#793, #1071): side A is the edge's source, side
+    # B its target, as for the per-side areas. None or kind "none": off.
+    radiation_a: WallRadiationData | None = None
+    radiation_b: WallRadiationData | None = None
 
     @model_validator(mode="before")
     @classmethod
