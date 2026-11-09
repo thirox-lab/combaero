@@ -1415,3 +1415,191 @@ def test_a_set_scoring_another_sets_figure_is_accuracy(dataset) -> None:
     assert basis_of(first("4.47"), "han_1989_narrow_channel") == "accuracy"
     g45 = next(s for s in dataset if s.label == "han2012/fig4.51_G_45par")
     assert basis_of(g45, "han_zhang_lee_1991_45par") == "fidelity"
+
+
+# ---------------------------------------------------------------------------
+# Naik, Retzko, Gritsch and Sedlov (2014), GT2014-25841: Alstom wedge
+# trailing-edge passage, W/H 6.64. Record:
+# validation/cooling/extractions/naik_2014_te_wedge_ribs.md.
+# ---------------------------------------------------------------------------
+
+
+def _naik(dataset, stem: str):
+    return next(s for s in dataset if s.source.name == "naik2014" and s.path.stem == stem)
+
+
+def _naik_points(dataset, fig: str, series: str) -> dict[float, float]:
+    return {p.x: p.y for p in load_points(_naik(dataset, f"fig{fig}_{series}"))}
+
+
+# Every set the harness can score the angled-tapered Nu/Nu0 with: (points,
+# points inside the set's own box, bias). Recorded when the series was
+# committed (2026-11-09); every point is outside every box (W/H 6.64, e/Dh
+# 0.089, a wedge, tapered ribs, Re to 145k).
+NAIK_NU_SETS = {
+    "han_1989_narrow_channel": (3, 0, 0.451),
+    "han_park_1988_angled": (3, 0, -0.148),
+    "han_zhang_lee_1991_45par": (3, 0, 0.342),
+    "rallabandi_2009_high_re": (3, 0, 0.246),
+}
+
+
+def test_naik2014_nu_is_scored_by_every_eligible_set_as_accuracy(dataset, records) -> None:
+    """Alstom's rig, not Texas A&M: cross-source ACCURACY on every row, and
+    out of domain for every set -- reported, not dropped. The list of sets is
+    derived by rule (eligible_sets), so han_park_1988_angled, the only one
+    that reads LOW, cannot be the only one shown, nor the three that read
+    25-45% high be left off.
+
+    The ordinate is already on the sets' Dittus-Boelter basis (Eq. 3), so it
+    resolves DIRECT: the measured value scored is the digitised one,
+    unconverted.
+    """
+    from validation.cooling import conventions
+    from validation.cooling.runner import eligible_sets, sets_for
+    from validation.cooling.scorecard import basis_of
+
+    s = _naik(dataset, "fig16_angled_tapered")
+    assert set(sets_for(s)) == set(eligible_sets(s)) == set(NAIK_NU_SETS)
+    digitised = _naik_points(dataset, "16", "angled_tapered")
+    assert sorted(digitised) == [22000.0, 60000.0, 145000.0]
+    for set_name, (n, n_in, bias) in NAIK_NU_SETS.items():
+        assert conventions.resolve(s, set_name).status == conventions.STATUS_DIRECT
+        assert basis_of(s, set_name) == "accuracy"
+        rs = [r for r in records if r.series is s and r.scored_by == set_name]
+        assert len(rs) == n, set_name
+        assert sum(not r.extrapolated for r in rs) == n_in, set_name
+        for r in rs:
+            assert r.measured == digitised[r.x]
+        got = sum(r.rel_error for r in rs) / len(rs)
+        assert got == pytest.approx(bias, abs=0.005), f"{set_name}: {got:+.3f}"
+
+
+def test_naik2014_nu_axis_and_convention_must_agree(dataset) -> None:
+    """A Dittus-Boelter axis that resolves through a conversion contradicts
+    itself, as a Kays-Perkins axis that resolves direct does (the CR-4396
+    trap). Either is refused -- so no conversion is skipped or applied twice."""
+    from validation.cooling import conventions
+
+    s = _naik(dataset, "fig16_angled_tapered")
+    assert all(r.predicted is not None for r in run_series(s))
+    try:
+        conventions.SERIES_OVERRIDE[s.label] = "Nu_ratio_ribbed_KP"
+        refused = run_series(s)
+    finally:
+        conventions.SERIES_OVERRIDE.pop(s.label, None)
+    assert all(r.predicted is None for r in refused)
+    assert "Dittus-Boelter basis, unconverted" in (refused[0].reason or "")
+
+
+def test_naik2014_friction_is_refused_by_rule_and_the_conversion_is_definition(
+    dataset, monkeypatch
+) -> None:
+    """f/f0 is unscored because no 45 deg set declares the passage-average
+    friction (only han_1988_orthogonal does, and it binds transverse 90 deg ribs), so
+    eligible_sets is empty -- refused by the existing rule, not by choice.
+
+    The conversion is still registered and exercised: declaring
+    f_channel_two_ribbed for han_park_1988_angled (monkeypatched here, NOT
+    shipped) makes the measured side exactly (f/f0) * Eq. 5. What it would
+    read is the record's business, not a score."""
+    from validation.cooling import conventions
+    from validation.cooling.runner import eligible_sets
+
+    s = _naik(dataset, "fig17_angled_tapered")
+    assert s.scores is None and eligible_sets(s) == ()
+    refused = run_series(s, set_name="han_park_1988_angled")
+    assert all(r.predicted is None for r in refused)
+    assert "unregistered" in (refused[0].reason or "")
+    orthogonal = run_series(s, set_name="han_1988_orthogonal")
+    assert all(r.predicted is None for r in orthogonal)
+    assert "binds Transverse ribs only" in (orthogonal[0].reason or "")
+
+    monkeypatch.setitem(
+        conventions.SET_ALSO_PRODUCES,
+        "han_park_1988_angled",
+        (*conventions.SET_ALSO_PRODUCES["han_park_1988_angled"], "f_channel_two_ribbed"),
+    )
+    scored = run_series(s, set_name="han_park_1988_angled")
+    digitised = _naik_points(dataset, "17", "angled_tapered")
+    for r in scored:
+        assert r.predicted is not None
+        assert r.measured == pytest.approx(
+            digitised[r.x] * 2.0 / (2.236 * math.log(r.x) - 4.639) ** 2
+        )
+
+
+def test_naik_petukhov_is_fanning() -> None:
+    """Eq. 5 is Petukhov's Darcy (0.790 ln Re - 1.64)^-2 over 4 -- Fanning,
+    like Eq. 4's f -- to 0.2%. A Darcy reading would be 4x off."""
+    import combaero as cb
+    from validation.cooling.conventions import naik_petukhov_fanning
+
+    for re in (22000.0, 60000.0, 145000.0):
+        assert naik_petukhov_fanning(re) == pytest.approx(cb.friction_petukhov(re) / 4.0, rel=0.003)
+
+
+NAIK_OWN = ("angled_tapered", "broken", "chevron")
+NAIK_REPRINTS = (
+    "reprint_rhee2003_45degV",
+    "reprint_rhee2003_60degV",
+    "reprint_wright2004_parallel",
+    "reprint_wright2004_discreteW",
+)
+
+
+def _naik_pi_triples(dataset, series: str) -> list[tuple[float, float, float]]:
+    """(Nu/Nu0, f/f0, PI) at every Re all three figures carry."""
+    nu = _naik_points(dataset, "16", series)
+    f = _naik_points(dataset, "17", series)
+    pi = _naik_points(dataset, "18", series)
+    common = sorted(set(nu) & set(f) & set(pi))
+    return [(nu[x], f[x], pi[x]) for x in common]
+
+
+def test_naik_fig18_own_points_are_3_nu_over_f(dataset) -> None:
+    """The paper's own Fig. 18 does not follow its own Eq. 6.
+
+    PI = (Nu/Nu0)/(f/f0)^(1/3) is printed; the 8 points of the paper's own
+    configurations are instead 3 (Nu/Nu0)/(f/f0) to 0.3% -- A/(B^1/3)
+    evaluated with ^ before /. They sit 24-172% below Eq. 6, so Fig. 18's
+    own curves (and the abstract's PI ranking) are not Eq. 6. Guards the
+    digitisation of Figs. 16-18 too: three figures read independently agree
+    to 0.3% under one identity.
+    """
+    n = 0
+    for series in NAIK_OWN:
+        for nu, f, pi in _naik_pi_triples(dataset, series):
+            n += 1
+            assert pi == pytest.approx(3.0 * nu / f, rel=0.004), series
+            assert nu / f ** (1.0 / 3.0) / pi - 1.0 > 0.20, series
+    assert n == 8  # chevron at 22k has f/f0 only
+
+
+def test_naik_fig18_reprints_follow_eq6(dataset) -> None:
+    """The 12 reprinted points DO follow Eq. 6, to 0.13% -- so the error is
+    in the paper's own column, not in our reading of the figure."""
+    n = 0
+    for series in NAIK_REPRINTS:
+        for nu, f, pi in _naik_pi_triples(dataset, series):
+            n += 1
+            assert pi == pytest.approx(nu / f ** (1.0 / 3.0), rel=0.002), series
+            assert abs(3.0 * nu / f / pi - 1.0) > 0.10, series
+    assert n == 12
+
+
+def test_naik2014_unscored_series_have_no_eligible_set(dataset) -> None:
+    """Broken and chevron ribs (two rows of discrete ribs) and the reprints
+    (no geometry in Naik) have no set by rule, and Fig. 18 is not a scored
+    quantity: nothing here is unscored that a set could score."""
+    from validation.cooling.runner import eligible_sets
+
+    naik = [s for s in dataset if s.source.name == "naik2014"]
+    assert len(naik) == 21
+    scored = [s.path.stem for s in naik if s.scores]
+    assert scored == ["fig16_angled_tapered"]
+    for s in naik:
+        if s.scores is None:
+            assert eligible_sets(s) == (), s.label
+        if "reprint" in s.path.stem:
+            assert s.after and s.geometry is None and s.scores is None, s.label

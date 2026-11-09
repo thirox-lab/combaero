@@ -79,6 +79,12 @@ AXIS_NAMES = {
     "Nu_ratio": "Nu_r / Nu_0",
     # Kays and Perkins, NOT Dittus-Boelter: 0.873 of it at Pr 0.72.
     "Nu_ratio_KP": "Nu / Nu_inf, Nu_inf = 0.0176 Re^0.8 (Kays & Perkins)",
+    "Nu_ratio_DB": "Nu / Nu0, Nu0 = 0.023 Re^0.8 Pr^0.4 (Dittus-Boelter)",
+    # Naik et al. (2014): Fanning over Petukhov's Fanning, Eqs. 4-5.
+    "f_ratio_petukhov": "f / f0, Fanning, f0 = 2 (2.236 ln Re - 4.639)^-2",
+    # Naik et al. (2014) Fig. 18 as printed -- NOT its own Eq. 6 for the
+    # paper's own points (3 Nu/f); a cross-check, never scored.
+    "performance_index_printed": "performance index PI as plotted",
     "G_coolant": "G [kg/s/m2], coolant per unit plate area",
     # The two h conventions spelled out, because a bare "h" on an axis is
     # exactly how 86-GT-225's h_m and 88-GT-290's h get confused.

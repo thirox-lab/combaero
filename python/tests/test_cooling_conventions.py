@@ -98,7 +98,8 @@ def test_the_whole_dataset_resolves(dataset) -> None:
     # +1 Perry 1949 air via Jobson Fig. 5a, K on the reservoir state (#854).
     # +1 Schiller 1933 steam via Jobson Fig. 5b, same convention (#861).
     # +9 Behrendt 2008 eta_tot through EffusionPlateElement (eta_overall, direct).
-    assert len(statuses[C.STATUS_DIRECT]) == 132
+    # +1 Naik et al. 2014 Fig. 16 angled-tapered Nu/Nu0, already Dittus-Boelter.
+    assert len(statuses[C.STATUS_DIRECT]) == 133
     # +12 CR-4396 Figs. 6.1/6.2, Kays-Perkins to Dittus-Boelter (#452).
     cr4396 = [
         f"johnson1993/fig{fig}_{wall}_seg{seg}"
