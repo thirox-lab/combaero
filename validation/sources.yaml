@@ -1346,12 +1346,17 @@ documents:
     -> 0.753 at dp 3%). Never fidelity, never a tuner. For #476: no adiabatic wall temperature, so it does
     NOT give gas_augmentation (h_h in Table 4 is model output); #476 stays open. Scored 2026-11-08 through
     EffusionPlateElement at gas_augmentation 1.0 (accuracy, cross-source): +21.6% mean on the chamber
-    baseline, +12.5% on the flat plate restarted at the bleed (dx/d -21); T_c trend missed by both.'
+    baseline, +12.5% on the flat plate restarted at the bleed (dx/d -21); T_c trend missed by both. Gas
+    radiation on the hot face (#1071, own rows; Eq. 8.7/8.11 at L 1, no soot radiation in the authors''
+    spectra; beam 0.126 m from the duct section, eps_w 0.9 for the high-emissivity coating, no value printed):
+    +17.6% chamber, +8.9% flat plate per vertex; q_rad 38/67 kW/m2 at 5/10 bar; pressure trend 0.84x.'
   read_for: ['#476 gas-side h / augmentation (no)', 'eta_overall accuracy at reacting high-pressure conditions',
-    'flat-plate gas baseline start length (the BL bleed at dx/d -21)']
-  issues: [476]
+    'flat-plate gas baseline start length (the BL bleed at dx/d -21)', '#1071 radiation: soot (none), coating
+    emissivity (high, unprinted), duct section for the beam length']
+  issues: [476, 1071]
   records: [validation/cooling/data/behrendt2008/metadata.yaml, validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md]
-  code: ['validation/cooling/effusion_network_runner.py: both gas baselines, plateau window x/d 18-50']
+  code: ['validation/cooling/effusion_network_runner.py: both gas baselines, with and without gas radiation,
+      plateau window x/d 18-50']
   notes: 'Was on the wanted list (#1070). Its rig paper is Behrendt & Hassa ICAS 2006 (held); its wall model
     is Martiny et al. 97-GT-329 (held). Companion GT2014-26909 (same rig, trenches and CMC) stays wanted.'
 - file: sources/heat_transfer/film/Behrendt_Hassa_2006_ICAS2006-152_combustor_cooling_test_rig.pdf

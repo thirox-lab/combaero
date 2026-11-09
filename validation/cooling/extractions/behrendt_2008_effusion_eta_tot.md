@@ -286,6 +286,53 @@ Sensitivity (reported, never chosen; `sensitivity()`):
 - **Whole sample as one panel** (x/d 0-143): flat-plate eta +0.009 against the
   window, a thicker average boundary layer.
 
+## Scored: with gas radiation on the hot face (#1071; accuracy, cross-source)
+
+`radiation=GasRadiation` on the plate: Lefebvre & Ballal Eq. 8.7 with Eq.
+8.11 at L = 1 (the authors' spectra showed no soot radiation), solved with
+the wall in C++'s `wall_radiation_sides`. Its own rows, beside each baseline
+without it, never pooled. The inputs are rig boundary conditions, not
+choices made on the score:
+
+- beam length 3.4 V/A of the 80 x 1000 mm duct section (A_DUCT), 0.126 m;
+- wall emissivity 0.9 for the "high emissivity colour" on the hot face (no
+  value printed);
+- gas at T_h, the chamber's static P and the hot gas's composition (q
+  0.031 from its elements).
+
+| curve | measured | chamber + rad | err | flat + rad | err | q_rad [kW/m2] | eps_g |
+|---|---|---|---|---|---|---|---|
+| E20 dp 2% Tc 540 K | 0.790 | 0.896 | +13.4% | 0.832 | +5.4% | 38 | 0.137 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.907 | +13.4% | 0.849 | +6.2% | 39 | 0.137 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.914 | +13.5% | 0.860 | +6.8% | 39 | 0.137 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.894 | +14.9% | 0.829 | +6.5% | 39 | 0.137 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.894 | +23.0% | 0.829 | +14.1% | 38 | 0.137 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.892 | +29.6% | 0.827 | +20.2% | 37 | 0.137 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.882 | +14.8% | 0.811 | +5.6% | 39 | 0.137 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.879 | +16.8% | 0.808 | +7.3% | 67 | 0.262 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.868 | +17.9% | 0.791 | +7.5% | 67 | 0.262 |
+
+Per vertex (821 points): +17.6% (chamber) and +8.9% (flat plate), against
++21.7% and +12.6% without radiation. Still no curve inside the 3% band. The
+radiative flux is about 23% of the convective one at both pressures.
+
+Trends with radiation (chamber / flat plate): angle -0.013 / -0.020; T_c
+-0.002 / -0.001; dp +0.018 / +0.028; p_h dp 3% -0.015 / -0.021; p_h dp ~2%
+-0.014 / -0.020. The pressure trend closes to 0.6 / 0.84x, since eps_g
+nearly doubles from 5 to 10 bar. The dp overshoot grows (flat plate 1.8x),
+and the T_c and angle trends stay missed.
+
+Sensitivity (flat plate, `sensitivity()`): the 80 x 100 mm beam length
+(0.076 m) or a 0.7 emissivity raises eta by 0.003-0.006, so the radiative
+share is robust to both readings.
+
+Caveats. Eq. 8.11 is Reeves' luminous kerosene-product fit; for H2O/CO2
+bands alone a Hottel-type estimate is lower (about 1.5x by our sizing), so
+these rows may overstate the radiation. In an exploratory run (tmp, not
+scored) radiation together with the coolant flow held at the printed M put
+six curves within -0.8 to +2.7%; the printed M are the authors' own
+estimates (footnote 3), so that is suggestive, not a result.
+
 **What remains (not fixed here).** A diagnostic inversion of the element's own
 wall (never applied) puts the gas-side h the plateaus need at 1.6-1.8x this
 flat plate on seven curves and 2.3 / 2.7x on the two hot-coolant E30 curves.
@@ -303,3 +350,5 @@ approximate, footnote 3). Neither is a tuning target.
 - 2026-11-08: scored through EffusionPlateElement (effusion_network_runner),
   chamber and flat-plate gas baselines; the user chose the flat plate as the
   baseline to add ("flat plate approach now, it is what we hold").
+- 2026-11-09: gas radiation on the plate's hot face scored on its own rows
+  (#1071); the user chose radiation before the orifice correlations.

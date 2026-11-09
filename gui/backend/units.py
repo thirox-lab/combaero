@@ -286,6 +286,9 @@ UNIT_MAP: dict[str, str] = {
     "h_gas_unblown_Re_x_start": "-",
     "h_gas_unblown_Re_x_end": "-",
     "h_gas_unblown_extrapolated": "-",
+    # Gas radiation on the plate's hot face (#1071)
+    "q_rad_hot": "W/m\u00b2",
+    "eps_g": "-",
     "T_gas_from_main_inlet": "-",
     "film_extrapolated": "-",
     "gas_side_chamber": "-",

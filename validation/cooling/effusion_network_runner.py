@@ -55,6 +55,19 @@ RIG BOUNDARY CONDITIONS, NOT MODEL CHOICES (all reported, none tuned):
   eta_overall entry requires, via the chamber's main inlet.
 * Coolant: dry air at T_c, supply total pressure p_h (1 + dp_rc).
 * Wall: Nimonic 75, k at 750 K from the materials database.
+
+GAS RADIATION (#1071) IS SCORED ON ITS OWN ROWS, beside each baseline without
+it, never pooled: `radiation=GasRadiation` on the plate, Lefebvre & Ballal Eq.
+8.7/8.11 at L = 1 (the authors' spectra showed no soot radiation, p. 1805).
+Its inputs are rig boundary conditions too:
+
+* Beam length 3.4 V/A of the duct cross-section (Eq. 8.10), 80 x 1000 mm
+  with A_DUCT; the 80 x 100 mm reading in `sensitivity`.
+* Wall emissivity 0.9: the hot face was coated "with a high emissivity
+  colour" (p. 1803), no value printed; 0.7 (Nimonic, the spec's default) in
+  `sensitivity`.
+* Gas: T_h, the chamber's static P, the hot gas's composition (q from its
+  elements) -- the spec's stream defaults.
 """
 
 from __future__ import annotations
@@ -66,6 +79,7 @@ from functools import lru_cache
 import combaero as cb
 from combaero.network import (
     EffusionPlateElement,
+    GasRadiation,
     FlowNetwork,
     LosslessConnectionElement,
     MassFlowBoundary,
@@ -79,6 +93,7 @@ from validation.cooling.schema import SeriesMetadata, load_points
 SOURCE = "behrendt2008"
 SET = "andrews_1986_effusion_internal"
 BASELINES = ("chamber", "flat_plate")
+RADIATION = (False, True)
 
 # The rig (pp. 1803-1804 and ICAS 2006-152).
 A_DUCT = 80.0e3 * 1e-6  # [m^2]
@@ -90,6 +105,14 @@ WINDOW_OVER_D = (18.0, 50.0)  # the record's plateau window
 T_WALL_REF = 750.0  # [K] for the plate's k
 T_PREHEAT = 650.0  # [K] ICAS 2006 combustor air
 T_FLAME = 1750.0  # [K] ICAS 2006 global flame temperature
+DUCT_DEPTH = 0.080  # [m] the y = 40 mm symmetry plane
+EPS_WALL = 0.9  # "high emissivity colour" on the hot face, no value printed
+EPS_WALL_ALT = 0.7  # Nimonic, GasRadiation's default
+
+
+def beam_length(width: float = A_DUCT / DUCT_DEPTH) -> float:
+    """3.4 V/A of the duct cross-section per unit length (Eq. 8.10) [m]."""
+    return cb.mean_beam_length(DUCT_DEPTH * width, 2.0 * (DUCT_DEPTH + width))
 
 _Y_AIR = list(cb.mole_to_mass(cb.species.dry_air()))
 
@@ -150,8 +173,8 @@ def owns(series: SeriesMetadata) -> bool:
     return series.source.name == SOURCE
 
 
-def _group(baseline: str) -> str:
-    return f"eta_tot, {baseline} gas side"
+def _group(baseline: str, radiation: bool = False) -> str:
+    return f"eta_tot, {baseline} gas side" + (" + gas radiation" if radiation else "")
 
 
 @lru_cache(maxsize=None)
@@ -170,7 +193,9 @@ def _solve(
     x_start_over_d: float,
     length_over_d: float,
     dh: float | None,
+    radiation: tuple[float, float] | None = None,
 ) -> dict[str, float]:
+    """`radiation` = (beam length, wall emissivity), or None for none."""
     y_gas, _ = hot_gas()
     y_gas = list(y_gas)
     x_gas = list(cb.mass_to_mole(y_gas))
@@ -189,6 +214,8 @@ def _solve(
     kw: dict = {}
     if baseline == "flat_plate":
         kw = {"gas_baseline": "flat_plate", "gas_start_length": x_start_over_d * d}
+    if radiation is not None:
+        kw["radiation"] = GasRadiation(beam_length=radiation[0], emissivity_wall=radiation[1])
     g.add_element(
         EffusionPlateElement(
             "eff",
@@ -219,12 +246,16 @@ def predict(
     bleed_over_d: float = BLEED_OVER_D,
     window_over_d: tuple[float, float] = WINDOW_OVER_D,
     dh: float | None = None,
+    radiation: bool = False,
+    beam: float | None = None,
+    eps_wall: float = EPS_WALL,
 ) -> dict[str, float]:
     """The plate's diagnostics for one series' operating point.
 
     `bleed_over_d` and `window_over_d` set the flat plate's x range: the
     boundary layer starts `bleed_over_d` upstream of the sample's leading
-    edge and the panel covers the window. Defaults are the rig's.
+    edge and the panel covers the window. `radiation` adds gas radiation at
+    `beam` (default `beam_length()`) and `eps_wall`. Defaults are the rig's.
     """
     g = series.geometry or {}
     lo, hi = window_over_d
@@ -243,6 +274,7 @@ def predict(
         bleed_over_d + lo,
         hi - lo,
         dh,
+        (beam if beam is not None else beam_length(), eps_wall) if radiation else None,
     )
 
 
@@ -260,25 +292,27 @@ def run_series(series: SeriesMetadata) -> list[Record]:
     lo, hi = WINDOW_OVER_D
     out: list[Record] = []
     for baseline in BASELINES:
-        d = predict(series, baseline)
-        extrapolated = bool(d.get("h_gas_unblown_extrapolated", 0.0))
-        for p in points:
-            if lo <= p.x <= hi:
-                out.append(
-                    Record(series, p.x, p.y, d["eta_overall"], extrapolated, None, _group(baseline))
-                )
-            else:
-                out.append(
-                    Record(
-                        series,
-                        p.x,
-                        p.y,
-                        None,
-                        extrapolated,
-                        "outside the scored window x/d 18-50",
-                        _group(baseline),
+        for rad in RADIATION:
+            d = predict(series, baseline, radiation=rad)
+            extrapolated = bool(d.get("h_gas_unblown_extrapolated", 0.0))
+            group = _group(baseline, rad)
+            for p in points:
+                if lo <= p.x <= hi:
+                    out.append(
+                        Record(series, p.x, p.y, d["eta_overall"], extrapolated, None, group)
                     )
-                )
+                else:
+                    out.append(
+                        Record(
+                            series,
+                            p.x,
+                            p.y,
+                            None,
+                            extrapolated,
+                            "outside the scored window x/d 18-50",
+                            group,
+                        )
+                    )
     return out
 
 
@@ -318,9 +352,12 @@ def trends(dataset: list[SeriesMetadata]) -> list[dict[str, float | str]]:
         sa, sb = by_stem[a], by_stem[b]
         row: dict[str, float | str] = {"trend": name, "measured": plateau(sb) - plateau(sa)}
         for baseline in BASELINES:
-            row[baseline] = (
-                predict(sb, baseline)["eta_overall"] - predict(sa, baseline)["eta_overall"]
-            )
+            for rad in RADIATION:
+                key = baseline + ("+rad" if rad else "")
+                row[key] = (
+                    predict(sb, baseline, radiation=rad)["eta_overall"]
+                    - predict(sa, baseline, radiation=rad)["eta_overall"]
+                )
         rows.append(row)
     return rows
 
@@ -332,7 +369,9 @@ def sensitivity(series: SeriesMetadata) -> dict[str, float]:
       a boundary layer from the sample's own leading edge;
     * the whole-sample panel (x/d 0-143) instead of the scored window;
     * the chamber at the 80 x 100 mm duct reading (Dh 89 mm), which the flat
-      plate does not see.
+      plate does not see;
+    * gas radiation on the flat plate at the 80 x 100 mm beam length and at
+      wall emissivity 0.7.
     """
     out = {
         "flat_plate": predict(series, "flat_plate")["eta_overall"],
@@ -351,6 +390,13 @@ def sensitivity(series: SeriesMetadata) -> dict[str, float]:
         "chamber": predict(series, "chamber")["eta_overall"],
         "chamber_dh_alt": predict(series, "chamber", dh=DH_ALT)["eta_overall"],
         "flat_plate_dh_alt": predict(series, "flat_plate", dh=DH_ALT)["eta_overall"],
+        "flat_plate_rad": predict(series, "flat_plate", radiation=True)["eta_overall"],
+        "flat_plate_rad_beam_alt": predict(
+            series, "flat_plate", radiation=True, beam=beam_length(0.100)
+        )["eta_overall"],
+        "flat_plate_rad_eps_alt": predict(
+            series, "flat_plate", radiation=True, eps_wall=EPS_WALL_ALT
+        )["eta_overall"],
     }
     return out
 
@@ -361,21 +407,22 @@ def _main() -> None:
     ds = load_dataset()
     print("eta_tot plateau x/d 18-50, gas_augmentation 1.0 -- ACCURACY, cross-source")
     print(f"{'series':34s} {'meas':>6s} {'chamber':>8s} {'err':>7s} {'flat':>7s} {'err':>7s} "
-          f"{'h_ch':>5s} {'h_fp':>5s} {'Re_x0':>7s} {'Re_x1':>7s}")
+          f"{'ch+rad':>7s} {'err':>7s} {'fp+rad':>7s} {'err':>7s} {'q_rad':>6s} {'eps_g':>6s}")
     for s in scored(ds):
         m = plateau(s)
         dc, df = predict(s, "chamber"), predict(s, "flat_plate")
+        rc, rf = predict(s, "chamber", radiation=True), predict(s, "flat_plate", radiation=True)
         print(
             f"{s.path.stem:34s} {m:6.3f} {dc['eta_overall']:8.3f} "
             f"{dc['eta_overall'] / m - 1:+7.1%} {df['eta_overall']:7.3f} "
-            f"{df['eta_overall'] / m - 1:+7.1%} {dc['h_gas_unblown']:5.0f} "
-            f"{df['h_gas_unblown']:5.0f} {df['h_gas_unblown_Re_x_start']:7.0f} "
-            f"{df['h_gas_unblown_Re_x_end']:7.0f}"
+            f"{df['eta_overall'] / m - 1:+7.1%} {rc['eta_overall']:7.3f} "
+            f"{rc['eta_overall'] / m - 1:+7.1%} {rf['eta_overall']:7.3f} "
+            f"{rf['eta_overall'] / m - 1:+7.1%} {rf['q_rad_hot'] * 1e-3:6.1f} {rf['eps_g']:6.3f}"
         )
     for row in trends(ds):
         print(
-            f"{row['trend']:42s} meas {row['measured']:+.4f} chamber {row['chamber']:+.4f} "
-            f"flat {row['flat_plate']:+.4f}"
+            f"{row['trend']:42s} meas {row['measured']:+.4f} "
+            + " ".join(f"{k} {v:+.4f}" for k, v in row.items() if k not in ("trend", "measured"))
         )
     for s in scored(ds):
         print(s.path.stem, {k: round(v, 4) for k, v in sensitivity(s).items()})

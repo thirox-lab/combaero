@@ -6608,11 +6608,11 @@ def _chamber_gas_side(node: Any, state: "NetworkMixtureState") -> dict[str, Any]
         return None
     # The chamber's static density (#578), from its closure on state.Tt.
     rho_g, _ = _safe_rho(node.static_density(state)[0])
-    T_gas, from_main = float(gas.T_aw), False
+    T_gas, from_main, Y_gas = float(gas.T_aw), False, list(state.Y)
     if node.main_inlet is not None and node.has_side_streams():
         for eid, st, _names in getattr(node, "_inflows", []):
             if eid == node.main_inlet:
-                T_gas, from_main = float(st.Tt), True
+                T_gas, from_main, Y_gas = float(st.Tt), True, list(st.Y)
     model = node.surface.model
     corr = getattr(model, "correlation", None)
     return {
@@ -6626,6 +6626,7 @@ def _chamber_gas_side(node: Any, state: "NetworkMixtureState") -> dict[str, Any]
         "Nu_unblown": float(gas.Nu),
         "T_gas": T_gas,
         "T_from_main_inlet": from_main,
+        "Y_gas": Y_gas,
         "U_gas": abs(getattr(node, "_total_m_dot", 0.0)) / (rho_g * node.area),
         "rho_gas": rho_g,
     }
@@ -6739,6 +6740,13 @@ class EffusionPlateElement(OrificeElement):
     uses Andrews' still-plenum coolant side; `coolant_crossflow_ignored`
     flags a supply node a channel runs through.
 
+    GAS RADIATION (#1071), opt-in. `radiation=GasRadiation(beam_length=...)`
+    adds Lefebvre & Ballal's Eq. 8.7 (emissivity Eq. 8.11) on the hot face,
+    from the gas the convection sees (T_gas, the chamber's static P, that
+    stream's composition, unless the spec fixes them), through the same C++
+    kernel as a ThermalWall face (`wall_radiation_sides`). Off (default), the
+    wall solve is today's. Reported: `q_rad_hot`, `eps_g`.
+
     WALL TEMPERATURE LIMIT (#998). `material` names the plate's alloy from
     the database (`cb.list_materials()`) for ONE purpose: its #882 envelope's
     hot end (the solidus) is `T_wall_limit`, and `wall_above_limit` flags a
@@ -6783,9 +6791,19 @@ class EffusionPlateElement(OrificeElement):
         gas_baseline: Literal["chamber", "flat_plate"] = "chamber",
         gas_start_length: float | None = None,
         cd_inclination: Literal["none", "idelchik_3_2"] = "none",
+        radiation: GasRadiation | None = None,
     ) -> None:
         if hole_diameter <= 0.0:
             raise ValueError("EffusionPlateElement: hole_diameter must be positive")
+        # Gas radiation onto the hot face (#1071), opt-in: the same spec and
+        # kernel as a ThermalWall face (#793). A casing faces no effusion
+        # plate's hot side, so only GasRadiation.
+        if radiation is not None and not isinstance(radiation, GasRadiation):
+            raise ValueError(
+                "EffusionPlateElement: radiation is a GasRadiation (the hot face "
+                f"sees the gas), not {type(radiation).__name__}"
+            )
+        self.radiation = radiation
         # WHICH UNBLOWN COEFFICIENT `gas_augmentation` MULTIPLIES (#476). The
         # chamber's own surface correlation (default), or a turbulent boundary
         # layer restarted `gas_start_length` [m] upstream of the panel's
@@ -7341,12 +7359,22 @@ class EffusionPlateElement(OrificeElement):
           flag, but the data refuse it offered alone.
         * anything else (a plenum) has a state but no flow, so no
           coefficient: the gas side is the imposed `gas_heat_flux` [W/m^2],
-          0 by default (adiabatic). Radiation is not modelled on the plate: a
-          ThermalWall face can carry it (GasRadiation, #793), this element
-          cannot.
+          0 by default (adiabatic).
+
+        RADIATION (#1071, `radiation`, opt-in, a gas-side chamber only): Eq.
+        8.7 from the gas onto the hot face, at the gas the convection sees --
+        T_gas, the chamber's static P and that stream's composition, each
+        unless the GasRadiation fixes it. The film lowers the convective
+        driving temperature only; the gas radiates at T_gas, as on a
+        ThermalWall face. `q_rad_hot` [W/m^2] and `eps_g` are reported (NaN
+        where no gas side is defined, 0 without coolant: the adiabatic wall
+        then sits at T_gas). On a plenum the imposed `gas_heat_flux` stays
+        the whole gas side; radiation is not added to it (both keys NaN).
 
         WALL: one layer, `wall_thickness / wall_conductivity`, through C++'s
-        wall_coupling_and_jacobian.
+        wall_coupling_and_jacobian; with radiation, C++'s
+        wall_radiation_sides (the surface temperatures solved with the T^4
+        term, no outer iteration).
 
         WITHOUT COOLANT FLOW the keys stay. On a gas-side chamber the plate is
         then adiabatic (no coolant takes heat): q = 0, both faces at the gas
@@ -7408,6 +7436,8 @@ class EffusionPlateElement(OrificeElement):
             if self.gas_baseline == "flat_plate":
                 for key in _EFFUSION_FLAT_PLATE_KEYS:
                     out[key] = math.nan
+            if self.radiation is not None:
+                out["q_rad_hot"] = out["eps_g"] = math.nan
             return self._with_wall_limit(out)
         if gas is None:
             q = self.gas_heat_flux
@@ -7422,6 +7452,8 @@ class EffusionPlateElement(OrificeElement):
                     "T_wall_hot": float(t_cold + q * t_over_k),
                 }
             )
+            if self.radiation is not None:
+                out["q_rad_hot"] = out["eps_g"] = math.nan
             return self._with_wall_limit(out)
 
         rho_c, _ = _safe_rho(cb.density(T_c, state_out.P, state_in.X))
@@ -7451,8 +7483,21 @@ class EffusionPlateElement(OrificeElement):
             # terms as above (radiation, backside convection, conduction)
             # would pull it below T_aw; none is modelled.
             t_hot, t_cold, q = T_aw_g, T_aw_g, 0.0  # adiabatic: nothing takes the heat
-        else:
+        elif self.radiation is None:
             t_hot, t_cold, q = _effusion_wall(h_i, T_c, h_g, T_aw_g, t_over_k)
+        if self.radiation is not None:
+            face = _radiation_face(self.radiation, (T_g, float(state_out.P), gas["Y_gas"]), 1.0)
+            out["eps_g"] = face.eps_g
+            if no_coolant:
+                # No film without coolant, so T_aw_g is T_gas: the gas
+                # radiates onto a face at its own temperature, q_rad 0.
+                out["q_rad_hot"] = 0.0
+            else:
+                w = _solver_tools.wall_radiation_sides(
+                    T_aw_g, h_g, T_c, h_i, t_over_k, face.kind, face.T_src, face.k, 0, 0.0, 0.0
+                )
+                t_hot, t_cold, q = float(w.T_s_a), float(w.T_s_b), float(w.q)
+                out["q_rad_hot"] = float(w.q_rad_a)
         out.update(
             {
                 "gas_side_chamber": 1.0,

@@ -788,7 +788,8 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=3.27e-3,
                              material=None,               # T_wall_limit only (#998)
                              gas_baseline="chamber",      # or "flat_plate"
                              gas_start_length=None,       # [m], flat_plate only
-                             cd_inclination="none")       # or "idelchik_3_2"
+                             cd_inclination="none",       # or "idelchik_3_2"
+                             radiation=None)              # or GasRadiation(beam_length=...)
 diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
 ```
 
@@ -821,6 +822,18 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   reacting rig (`validation/cooling/effusion_network_runner.py`, accuracy,
   cross-source) it moves the mean over-prediction from +22% to +13% at
   `gas_augmentation` 1.0; nothing here recommends an augmentation.
+- **Gas radiation on the hot face, opt-in (#1071).** `radiation=GasRadiation(
+  beam_length=...)` (the `ThermalWall` face spec; a `CasingRadiation` is
+  refused) adds Lefebvre & Ballal Eq. 8.7 with Eq. 8.11's emissivity, solved
+  with the wall in C++'s `wall_radiation_sides`. The gas radiates at `T_gas`
+  (the film lowers the convective driving temperature only), the chamber's
+  static P and that stream's composition, unless the spec fixes them.
+  Reported: `q_rad_hot` [W/m^2] (included in `q_wall`) and `eps_g`; 0 without
+  coolant (the adiabatic plate sits at `T_gas`), NaN on a plenum discharge,
+  whose imposed `gas_heat_flux` stays the whole gas side. Off, the wall solve
+  is unchanged. On Behrendt 2008 (accuracy, cross-source, rig beam length and
+  a 0.9 wall emissivity) it moves the flat-plate mean over-prediction from
+  +12.5% to +8.8%.
 - **Hole-angle Cd term, opt-in.** By default the angle enters the Cd only
   through the drilled length `t/sin(angle_deg)`. `cd_inclination="idelchik_3_2"`
   (`EffusionPlateElement` and `FilmCoolingElement`, `correlation="IdelchikThick"`
