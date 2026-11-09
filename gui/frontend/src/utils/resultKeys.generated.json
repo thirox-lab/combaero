@@ -256,6 +256,7 @@
 			"dPt",
 			"density_ratio",
 			"diameter",
+			"eps_g",
 			"eta_film",
 			"eta_overall",
 			"film_extrapolated",
@@ -297,6 +298,7 @@
 			"pr_static",
 			"pr_total",
 			"pressure_recovery",
+			"q_rad_hot",
 			"q_wall",
 			"rho_ref",
 			"s_ref",
@@ -766,16 +768,24 @@
 		"thermal_wall": [
 			"NTU",
 			"Q",
+			"Q_rad_a",
+			"Q_rad_b",
 			"Q_to_boundary",
 			"T_aw_a",
 			"T_aw_b",
 			"T_hot",
+			"T_surface_a",
+			"T_surface_b",
 			"UA",
 			"counterflow",
 			"effectiveness",
+			"eps_g_a",
+			"eps_g_b",
 			"h_a",
 			"h_b",
-			"material_in_range"
+			"material_in_range",
+			"q_rad_a",
+			"q_rad_b"
 		],
 		"turbine": [
 			"Pt_in",
@@ -851,7 +861,9 @@
 		"channel": [
 			"palette",
 			"heated (thermal wall)",
-			"incompressible"
+			"incompressible",
+			"heated, gas radiation on A, casing on B",
+			"heated, casing radiation on A, gas on B"
 		],
 		"combustor": [
 			"palette",
@@ -875,7 +887,8 @@
 			"palette",
 			"on a gas-side chamber",
 			"on a gas-side chamber, baldauf_sellers film",
-			"on a gas-side chamber, flat-plate gas baseline"
+			"on a gas-side chamber, flat-plate gas baseline",
+			"on a gas-side chamber, gas radiation"
 		],
 		"ejector": [
 			"palette",
@@ -996,6 +1009,8 @@
 		"Pt_out": "Pa",
 		"Q": "W",
 		"Q_fraction": "W",
+		"Q_rad_a": "W",
+		"Q_rad_b": "W",
 		"Q_to_boundary": "W",
 		"Q_wall": "W",
 		"Q_withheld": "W",
@@ -1016,6 +1031,8 @@
 		"T_hot": "K",
 		"T_in": "K",
 		"T_out": "K",
+		"T_surface_a": "K",
+		"T_surface_b": "K",
 		"T_wall_cold": "K",
 		"T_wall_hot": "K",
 		"T_wall_hot_max": "K",
@@ -1070,6 +1087,9 @@
 		"efficiency": "-",
 		"entrainment_ratio": "-",
 		"entrainment_ratio_critical": "-",
+		"eps_g": "-",
+		"eps_g_a": "-",
+		"eps_g_b": "-",
 		"eta_film": "-",
 		"eta_is": "-",
 		"eta_overall": "-",
@@ -1196,6 +1216,9 @@
 		"pr_total": "-",
 		"pressure_ratio": "-",
 		"pressure_recovery": "-",
+		"q_rad_a": "W/m\u00b2",
+		"q_rad_b": "W/m\u00b2",
+		"q_rad_hot": "W/m\u00b2",
 		"q_wall": "W/m\u00b2",
 		"r_gas": "J/kg/K",
 		"rayleigh_in_momentum": "-",

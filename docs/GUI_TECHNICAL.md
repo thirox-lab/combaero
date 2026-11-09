@@ -154,6 +154,18 @@ one `outlet`; handle ids `port-{primary,secondary,outlet}-{target,source}`).
 Diagnostics returned on solve include `entrainment_ratio`,
 `P_c_star` (critical back pressure), and `gamma`.
 
+#### Radiation (`radiation`, `radiation_a`, `radiation_b`)
+Opt-in radiation (#1071) on an `effusion_plate` or `effusion_liner` hot face
+(`radiation`, kind `"none"` or `"gas"`) and on each side of a thermal wall
+edge (`radiation_a` on the source, `radiation_b` on the target, also
+`"casing"`). Absent or `"none"` builds no radiation. `"gas"` reads
+`beam_length` [m], `emissivity_wall`, `luminosity` and the optional overrides
+`T_gas` [K], `fuel_air_ratio`, `pressure` [Pa]; `"casing"` reads
+`area_ratio`, `emissivity_wall`, `emissivity_casing` and `T_casing` [K]
+(`gui/backend/schemas.py` holds the defaults). Results: `q_rad_hot` and
+`eps_g` on the plate; `q_rad_a`, `Q_rad_a`, `T_surface_a`, `eps_g_a` (and
+`_b`) on the wall edge.
+
 ## Solver Settings
 ```json
 {

@@ -833,7 +833,8 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   whose imposed `gas_heat_flux` stays the whole gas side. Off, the wall solve
   is unchanged. On Behrendt 2008 (accuracy, cross-source, rig beam length and
   a 0.9 wall emissivity) it moves the flat-plate mean over-prediction from
-  +12.5% to +8.8%.
+  +12.5% to +8.8%. In the GUI the plate's and the effusion liner's Inspector
+  have a None / Gas radiation selector (node field `radiation`).
 - **Hole-angle Cd term, opt-in.** By default the angle enters the Cd only
   through the drilled length `t/sin(angle_deg)`. `cd_inclination="idelchik_3_2"`
   (`EffusionPlateElement` and `FilmCoolingElement`, `correlation="IdelchikThick"`
@@ -1326,6 +1327,10 @@ Ballal print it (Ch. 8):
   `Q_rad_a` / `Q_rad_b` [W], `T_surface_a` / `T_surface_b` [K], and
   `eps_g_a` / `eps_g_b` for a gas face. `{wall}.UA` includes the radiative
   conductances.
+- **In the GUI (#1071):** the wall edge's Inspector has a None / Gas /
+  Casing selector per side (edge fields `radiation_a` / `radiation_b`; side
+  A is the edge's source, also on an impingement array's wall), and
+  `network_to_gui` exports both faces.
 
 **What it does not represent.**
 
@@ -2958,7 +2963,7 @@ with open("my_network.json", "w") as f:
     `MomentumChamberNode` (side streams on its side inlet), `CombustorNode`;
   - elements: `ChannelElement`, `OrificeElement`, `PressureLossElement` (all
     four correlations), `LosslessConnectionElement`;
-  - `ThermalWall`;
+  - `ThermalWall`, with its faces' radiation;
   - smooth convective surfaces only.
 - **Compositions** are written as exact mass fractions.
 - **Anything without a GUI form** raises `UnsupportedForGUIError`, which lists

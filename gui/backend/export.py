@@ -19,10 +19,12 @@ from typing import Any
 
 import combaero as cb
 from combaero.network import (
+    CasingRadiation,
     ChannelElement,
     CombustorNode,
     FlowNetwork,
     FuelBoundary,
+    GasRadiation,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -307,6 +309,29 @@ def _splitters(
     return out
 
 
+def _radiation(spec: GasRadiation | CasingRadiation | None) -> dict[str, Any] | None:
+    """A face's radiation (#1071) as the GUI's WallRadiationData; None: off."""
+    if isinstance(spec, GasRadiation):
+        return {
+            "kind": "gas",
+            "beam_length": float(spec.beam_length),
+            "emissivity_wall": float(spec.emissivity_wall),
+            "luminosity": float(spec.luminosity),
+            "T_gas": spec.T_gas,
+            "fuel_air_ratio": spec.fuel_air_ratio,
+            "pressure": spec.pressure,
+        }
+    if isinstance(spec, CasingRadiation):
+        return {
+            "kind": "casing",
+            "area_ratio": float(spec.area_ratio),
+            "emissivity_wall": float(spec.emissivity_wall),
+            "emissivity_casing": float(spec.emissivity_casing),
+            "T_casing": spec.T_casing,
+        }
+    return None
+
+
 def _wall(w: ThermalWall, problems: list[str]) -> dict[str, Any]:
     if w.element_b is None:
         problems.append(f"{w.id}: a wall with no stream on side B (side_b, #970; no GUI field)")
@@ -346,6 +371,10 @@ def _wall(w: ThermalWall, problems: list[str]) -> dict[str, Any]:
             film_start=float(w.film_start),
             film_end=float(w.film_end) if w.film_end is not None else None,
         )
+    for side in ("a", "b"):
+        rad = _radiation(getattr(w, f"radiation_{side}"))
+        if rad is not None:
+            d[f"radiation_{side}"] = rad
     return d
 
 

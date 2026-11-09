@@ -132,6 +132,14 @@ def _heated_pair() -> dict:
     }
 
 
+def _radiating_pair(side_a: str, side_b: str) -> dict:
+    """The heated pair with radiation on both faces (#793, #1071): each
+    face's flux, rate and surface temperature, and a gas face's emissivity."""
+    graph = _heated_pair()
+    graph["edges"][-1]["data"].update(radiation_a={"kind": side_a}, radiation_b={"kind": side_b})
+    return graph
+
+
 def _walled_loss(graph: dict) -> dict:
     """A discrete loss walled to a warm channel: its convective diagnostics.
 
@@ -199,6 +207,8 @@ def networks() -> Iterator[tuple[str, str, dict]]:
 
     yield "channel", "heated (thermal wall)", _heated_pair()
     yield "channel", "incompressible", _with(_heated_pair(), "x", regime="incompressible")
+    yield "channel", "heated, gas radiation on A, casing on B", _radiating_pair("gas", "casing")
+    yield "channel", "heated, casing radiation on A, gas on B", _radiating_pair("casing", "gas")
     yield "orifice", "in a pipe", _orifice_in_pipe({})
     for model in ("nozzle", "jobson1955", "iso5167"):
         yield "orifice", f"in a pipe, {model}", _orifice_in_pipe({"compressible_model": model})
@@ -282,6 +292,11 @@ def networks() -> Iterator[tuple[str, str, dict]]:
         "effusion_plate",
         "on a gas-side chamber, flat-plate gas baseline",
         _renamed(eff._liner({"gas_baseline": "flat_plate", "gas_start_length": 0.02}), "eff"),
+    )
+    yield (
+        "effusion_plate",
+        "on a gas-side chamber, gas radiation",
+        _renamed(eff._liner({"radiation": {"kind": "gas"}}), "eff"),
     )
     yield (
         "impingement_array",

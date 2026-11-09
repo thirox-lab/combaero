@@ -145,6 +145,7 @@ const NetworkCanvas = () => {
 					gas_augmentation: 1.0,
 					turbulence_intensity: 0.05,
 					gas_heat_flux: 0.0,
+					radiation: { kind: "none" },
 				} as any;
 			} else if (type === "film_cooling") {
 				// Colban Eq. (19) at Gritsch configuration B, the geometry it is
@@ -199,6 +200,7 @@ const NetworkCanvas = () => {
 					gas_baseline: "chamber",
 					turbulence_intensity: 0.05,
 					gas_heat_flux: 0.0,
+					radiation: { kind: "none" },
 				} as any;
 			} else if (type === "impingement_array") {
 				// A Florschuetz test geometry, so the default is a working
