@@ -4,7 +4,7 @@ Taslim, M.E. and Spring, S.D. (1987). "Friction Factors and Heat Transfer
 Coefficients in Turbulated Cooling Passages of Different Aspect Ratios,
 Part I: Experimental Results." AIAA-87-2009, 23rd Joint Propulsion
 Conference, San Diego. DOI 10.2514/6.1987-2009.
-`sources/heat_transfer/film/Taslim_Spring_1987_AIAA-87-2009_turbulated_passages_aspect_ratio.pdf`
+`sources/heat_transfer/rib/Taslim_Spring_1987_AIAA-87-2009_turbulated_passages_aspect_ratio.pdf`
 
 ## Why this source
 

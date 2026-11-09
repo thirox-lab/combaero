@@ -297,7 +297,7 @@ documents:
   read_for: ['#697 third-duct original nozzle point']
   issues: [697, 698]
   records: [validation/ejector/data/mazzelli2015_tables.py]
-- file: sources/heat_transfer/ALKHAMIS-THESIS.pdf
+- file: sources/heat_transfer/rib/ALKHAMIS-THESIS.pdf
   sha256: '14494e96d3f1d4747d933807d386cd479979fa5a20142c84bafffe358c1ae779'
   citation: Alkhamis, N. Y. (2009). Heat transfer and pressure drop measurement for square channels with
     V-shape ribs at high Reynolds numbers. M.S. thesis, Texas A&M University.
@@ -313,7 +313,7 @@ documents:
   records: []
   notes: Thesis version of Alkhamis_2011_JHT_133_111901_vshaped.pdf. Verdict recorded in memory project_rib_source_provenance.md
     only.
-- file: sources/heat_transfer/Alkhamis_2011_JHT_133_111901_vshaped.pdf
+- file: sources/heat_transfer/rib/Alkhamis_2011_JHT_133_111901_vshaped.pdf
   sha256: 'd1d7a6504b9096be8fd0a2c1844062bf245bb4b2be72dd8ea62f70eb20b16150'
   citation: Alkhamis, N. Y., Rallabandi, A. P., Han, J.-C. (2011). Heat transfer and pressure drop correlations
     for square channels with V-shaped ribs at high Reynolds numbers. ASME J. Heat Transfer 133(11), 111901.
@@ -349,7 +349,7 @@ documents:
   read_for: []
   issues: []
   records: []
-- file: sources/heat_transfer/CR4396/19910021175.pdf
+- file: sources/heat_transfer/rib/CR4396/19910021175.pdf
   sha256: '3def813e7ddfa71ba6d07f5cb7e970e9bba3c41eac3d9fcf8de2cf261bc5b25c'
   citation: 'Hajek, T. J., Wagner, J. H., Johnson, B. V., Higgins, A. W., Steuber, G. D. (1991). Effects
     of rotation on coolant passage heat transfer, Volume I: Coolant passages with smooth walls. NASA Contractor
@@ -366,7 +366,7 @@ documents:
   issues: []
   records: []
   notes: Vol. I of the report whose Vol. II (CR4396/19940011518.pdf) is scored. NTRS accession 19910021175.
-- file: sources/heat_transfer/CR4396/19940011518.pdf
+- file: sources/heat_transfer/rib/CR4396/19940011518.pdf
   sha256: 'e3e24eb825e5b57b2142e6e3bb2b57a7dc7b1e4a07e79345a246b30e5b81ac89'
   citation: 'Johnson, B. V., Wagner, J. H., Steuber, G. D. (1993). Effects of rotation on coolant passage
     heat transfer, Volume II: Coolant passages with trips normal and skewed to the flow. NASA Contractor
@@ -1251,7 +1251,7 @@ documents:
   read_for: ['#387 source inventory']
   issues: [386, 387]
   records: []
-- file: sources/heat_transfer/film/FLOW_AND_HEAT_TRANSFER_IN_A_RIB-ROUGHENED_TRAILING.pdf
+- file: sources/heat_transfer/rib/FLOW_AND_HEAT_TRANSFER_IN_A_RIB-ROUGHENED_TRAILING.pdf
   sha256: '04a4feb8e7552c3756a5f68cd37e936ec3646bb759c657d0fe78af50c1063452'
   citation: Xue, F., Taslim, M. E. (2019). Flow and heat transfer in a rib-roughened trailing-edge cooling
     channel with crossover impingement. Int. J. Gas Turbine, Propulsion and Power Systems 10(1), ?.
@@ -1265,7 +1265,7 @@ documents:
   issues: []
   records: []
   notes: Rib/impingement paper filed under film/.
-- file: sources/heat_transfer/film/han_1991_590_vol_113.pdf
+- file: sources/heat_transfer/rib/han_1991_590_vol_113.pdf
   sha256: 'c509e0129a9118552cf5f1a5eeb7a03674697277c219859909fcfc62c54d66e2'
   citation: Han, J. C., Zhang, Y. M., Lee, C. P. (1991). Augmented heat transfer in square channels with
     parallel, crossed, and V-shaped angled ribs. ASME J. Heat Transfer 113(3), 590-596.
@@ -1281,7 +1281,7 @@ documents:
   records: [validation/cooling/extractions/han_zhang_lee_1991_jht.md]
   code: ['include/rib_correlation.h: han_zhang_lee_1991']
   notes: Rib paper filed under film/ by mistake (the record says so). Not the conference twin of 91-GT-3.
-- file: sources/heat_transfer/film/Heat-Transfer-and-Friction-Studies-in-a-Tilted-and-Rib-Roughened-Trailing-Edge-Cooling-Cavity-With-and-Without-the-Trailing-Edge-Cooling-Holes.pdf
+- file: sources/heat_transfer/rib/Heat-Transfer-and-Friction-Studies-in-a-Tilted-and-Rib-Roughened-Trailing-Edge-Cooling-Cavity-With-and-Without-the-Trailing-Edge-Cooling-Holes.pdf
   sha256: 'ce6a8938fb534f66737e71a24284973bd4f52b2cc57f35f1f1bb8c8299600401'
   citation: Taslim, M. E., Halabi, J. S. (2014). Heat transfer and friction studies in a tilted and rib-roughened
     trailing-edge cooling cavity with and without the trailing-edge cooling holes. Int. J. Rotating Machinery
@@ -1754,7 +1754,7 @@ documents:
   code: ['include/cooling_correlations.h: film_superposition_sellers, film_superposition_corrected']
   notes: A byte-identical copy, A_Study_on_the_Film_Superposition_Method_for_the_M.pdf, was deleted 2026-10-25;
     this is the file name the code cites.
-- file: sources/heat_transfer/film/Taslim_Spring_1987_AIAA-87-2009_turbulated_passages_aspect_ratio.pdf
+- file: sources/heat_transfer/rib/Taslim_Spring_1987_AIAA-87-2009_turbulated_passages_aspect_ratio.pdf
   sha256: 'a41e9b9a1a241a572b1c3734c5cabfde5cf4e9457e67d1e2f4011a40a2b08015'
   citation: 'Taslim, M. E., Spring, S. D. (1987). Friction factors and heat transfer coefficients in turbulated
     cooling passages of different aspect ratios, Part I: experimental results. AIAA-87-2009, 23rd Joint
@@ -2037,7 +2037,7 @@ documents:
     it in sources/heat_transfer/han/: fig4.46/4.47/4.48/4.51/4.53/4.54/4.193 *_data folders, page PNGs of
     equations and figures, han_ribs.md and han_impingement.md (text extractions), clarification_4_sided_f_han.md.
     Fig. 4.46 and 4.51 are scored with fidelity on Han''s own data in han2012.'
-- file: sources/heat_transfer/han/han_91_GT_3.pdf
+- file: sources/heat_transfer/rib/han_91_GT_3.pdf
   sha256: '5ad1db0412e10a7c8da3459498a125cb2697e0ae80e2ec6582441daa8fbe5529'
   citation: Han, J. C., Zhang, Y. M., Lee, C. P. (1991). Influence of surface heat flux ratio on heat
     transfer augmentation in square channels with parallel, crossed and V-shaped angled ribs. ASME paper
@@ -2055,9 +2055,9 @@ documents:
       sets']
   issues: [333, 392, 401, 403, 434, 444]
   records: [validation/cooling/extractions/han_zhang_lee_91gt3_table3.md, validation/cooling/extractions/han_ribbed.md]
-  notes: NOT the conference twin of Han, Zhang & Lee 1991 JHT 113, 590 (that PDF is misfiled at sources/heat_transfer/film/han_1991_590_vol_113.pdf);
+  notes: NOT the conference twin of Han, Zhang & Lee 1991 JHT 113, 590 (that PDF is misfiled at sources/heat_transfer/rib/han_1991_590_vol_113.pdf);
     91-GT-3 is the heat-flux-ratio companion. Cited in validation/cooling/runner.py comments.
-- file: sources/heat_transfer/han/Han_Ou_Park_Lei_1989_IJHMT_32_1619_narrow.pdf
+- file: sources/heat_transfer/rib/Han_Ou_Park_Lei_1989_IJHMT_32_1619_narrow.pdf
   sha256: '58cc453f8a3d890ca5190680f37b917ce9fda3f38121c8e5a386e6684be5a1e1'
   citation: Han, J. C., Ou, S., Park, J. S., Lei, C. K. (1989). Augmented heat transfer in rectangular
     channels of narrow aspect ratios with rib turbulators. International Journal of Heat and Mass Transfer
@@ -2081,7 +2081,7 @@ documents:
     this paper; worth checking whether the shipped R was updated. OPEN GAP: the shipped set still uses
     this project''s fit to the book''s Fig. 4.48a, and include/rib_correlation.h says R has no printed
     equation; #402 found Eq. 8 here and closed with the three-regime W/H exponent rework not done.'
-- file: sources/heat_transfer/han/Han_Park_1988_IJHMT_31_183_angled.pdf
+- file: sources/heat_transfer/rib/Han_Park_1988_IJHMT_31_183_angled.pdf
   sha256: '04e29b2f26f94489bdc9e52077394bd6fc19b874fa60ae73dc1e0661e59e54c2'
   citation: Han, J. C., Park, J. S. (1988). Developing heat transfer in rectangular channels with rib
     turbulators. International Journal of Heat and Mass Transfer 31(1), 183-195.
@@ -2340,7 +2340,7 @@ documents:
   - 468
   records: []
   notes: Arrived 2026-10-25 from a koreascience.kr search.
-- file: sources/heat_transfer/NASA_CR-3837_1984.pdf
+- file: sources/heat_transfer/rib/NASA_CR-3837_1984.pdf
   sha256: '2be0a67b3cc6e5adade3591d3a65eceef1bfdd37eed7def528d755a5689391e0'
   citation: Han, J. C., Park, J. S., Lei, C. K. (1984). Heat transfer and pressure drop in blade cooling
     channels with turbulence promoters. NASA Contractor Report 3837, grant NAG3-311. November 1984.
@@ -2358,7 +2358,7 @@ documents:
   records: [validation/cooling/extractions/han_park_lei_1984_cr3837.md, validation/cooling/data/han_park_lei1984/metadata.yaml]
   notes: Journal version Han, Park & Lei (1985) J. Eng. Gas Turbines Power 107, 628-635. Worked example
     in docs/VALIDATION_POLICY.md.
-- file: sources/heat_transfer/NASA_CR-4015_1986.pdf
+- file: sources/heat_transfer/rib/NASA_CR-4015_1986.pdf
   sha256: 'f736f57e4d0ecb488d1593089d25cb37d23864446dd8b1828c1852f1724921c0'
   citation: Han, J. C., Park, J. S., Ibrahim, M. Y. (1986). Measurement of heat transfer and pressure
     drop in rectangular channels with turbulence promoters. NASA Contractor Report 4015 (AVSCOM TR 86-C-25),
@@ -2691,7 +2691,7 @@ documents:
   issues: [386]
   records: []
   notes: Thesis version of Rallabandi_2009_JHT_131_071703_angled.pdf.
-- file: sources/heat_transfer/Rallabandi_2009_JHT_131_071703_angled.pdf
+- file: sources/heat_transfer/rib/Rallabandi_2009_JHT_131_071703_angled.pdf
   sha256: '790f206ae8805a2583ecf9a68e8cfc7ee47748f7a8606b740342250439777925'
   citation: Rallabandi, A. P., Yang, H., Han, J.-C. (2009). Heat transfer and pressure drop correlations
     for square channels with 45 deg ribs at high Reynolds numbers. ASME J. Heat Transfer 131(7), 071703.
@@ -2708,7 +2708,59 @@ documents:
   records: [validation/cooling/extractions/han_ribbed_high_re.md]
   code: ['include/rib_correlation.h: rallabandi_2009_high_re']
   notes: 'Dissertation version: RALLABANDI-DISSERTATION.pdf.'
-- file: sources/heat_transfer/ribs_lau_1990.pdf
+- file: sources/heat_transfer/rib/Naik_Retzko_Gritsch_Sedlov_2014_GT2014-25841_TE_wedge_turbulators.pdf
+  sha256: '04e8ae90113916cec8f0ea8543dbf4357054cc327b730af920963215581125af'
+  citation: 'Naik, S., Retzko, S., Gritsch, M., Sedlov, A. (2014). Impact of turbulator design on the heat
+    transfer in a high aspect ratio passage of a turbine blade. Proc. ASME Turbo Expo 2014, Duesseldorf,
+    GT2014-25841.'
+  id: ASME GT2014-25841
+  topic: [rib]
+  content: 'Alstom (Baden/Moscow), 13 pp. Stationary triangular (wedge) trailing-edge passage, W/H 6.64, no
+    ejection; 45 deg turbulators on both walls, staggered p/2: angled-tapered (P/e avg 15, min 8; e/Dh avg
+    0.089, max 0.163), broken and small-chevron (LE part P/e 15, e/Dh 0.134; TE part P/e 30, e/Dh 0.066)
+    (Table 1). Re 22k/60k/145k. Transient TLC on Perspex over the last 3-4 pitches; HTC +/-9.5%, f +/-10%.
+    Ratios on PRINTED baselines: Nu0 = 0.023 Re^0.8 Pr^0.4, Fanning f0 = 2(2.236 ln Re - 4.639)^-2 (Petukhov),
+    so absolute values are recoverable; absolute Dh not given. Results PLOTTED only: Fig. 16 Nu/Nu0(Re),
+    Fig. 17 f/f0(Re), Fig. 18 PI = (Nu/Nu0)/(f/f0)^(1/3) (derived, a digitisation cross-check), Figs. 11c/13c/15c
+    perimeter Nu/Nu0. Figs. 16-18 also overplot Rhee et al. 2003 (AR 6.82 V ribs) and Wright et al. 2004 (AR 4)
+    as reprints. Periodic RANS (realizable k-eps) alongside. No correlation.'
+  status: screened
+  verdict: 'Screened 2026-11-09. Independent-lab (not Texas A&M) rib data in a high-AR triangular TE passage --
+    a geometry combaero cannot represent (RibbedModel is rectangular; han_park_1988_angled caps W/H at 2,
+    fitted W/H 1-4, e/D <= 0.078). Usable only as CROSS-SOURCE ACCURACY / extrapolation for the angled-tapered
+    series (3 Nu + 3 f points) against han_park_1988_angled: how far a clamped-W/H rectangular model sits from
+    a real wedge; informs a W/H > 4 envelope (refuse or warn), never a tuner. Broken and chevron series map to
+    no shipped set (context only). No fidelity use (no correlation). Digitisation of Figs. 16-17 started
+    2026-11-09 (user: now).'
+  read_for: ['high-aspect-ratio / triangular rib channel coverage', 'an independent (non Texas A&M) rib source']
+  issues: []
+  records: []
+  notes: 'Arrived as sources/new/GT2014-25841_TE.pdf. Companion of GT2014-26130 (LE). Rhee, Lee & Cho 2003
+    (wanted) is the independent primary for high-AR rectangular ribs.'
+- file: sources/heat_transfer/rib/SaxerFelici_Naik_Gritsch_Sedlov_2014_GT2014-26130_LE_passage_turbulators.pdf
+  sha256: 'ca9f7364084df1525bd3d99a6329901ab72bf6cf76f56c873e1825f2783ebef6'
+  citation: 'Saxer-Felici, H., Naik, S., Gritsch, M., Sedlov, A. (2014). Heat transfer enhancement for a
+    turbine blade leading edge passage using various turbulator geometries. Proc. ASME Turbo Expo 2014,
+    Duesseldorf, GT2014-26130.'
+  id: ASME GT2014-26130
+  topic: [rib]
+  content: 'Alstom, 11 pp. Rounded-triangle blade leading-edge passage (H/W 0.8), streamwise-invariant Perspex
+    model, transient TLC (+/-8%). MEASURED: config c0 only (45 deg, P/e 10, e/Dh 0.10, discrete ribs): Figs. 6/7
+    perimeter Nu/Nu0 at Re 1.27e5 (and the full-blade rig at 7.5e4), one measured f/f0 (Fig. 16a); Fig. 7 also
+    draws a Han, Park & Lei 1985 line. Everything else (alpha 45/60, P/e 8/10, e/Dh 0.10-0.20, non-discrete,
+    partial, broken, fillets f/Dh 0.02; Table 1) is periodic RANS, which under-predicts the SS by up to 2x.
+    Nu0 = Dittus-Boelter with Pr^0.3 for the experiments, Pr^0.4 for CFD; Fanning f0 Petukhov. No correlation.'
+  status: screened
+  verdict: 'Screened 2026-11-09. One measured geometry at one Re: at most a single cross-source accuracy point
+    for han_park_1988_angled, itself out of domain (e/Dh 0.10 > 0.078, non-rectangular). The CFD sensitivity is
+    not data. Not worth digitising unless a leading-edge passage element is planned.'
+  read_for: ['leading-edge passage rib coverage']
+  issues: []
+  records: []
+  notes: 'Arrived as sources/new/GT2014-26130_LE.pdf. Companion of GT2014-25841. Three further Alstom papers
+    arrived with these (GT2011-46294, GT2012-68478, GT2013-95003), were screened as of no value (geometry or
+    inputs withheld, no matching element) and deleted at the user''s request (2026-11-09).'
+- file: sources/heat_transfer/rib/ribs_lau_1990.pdf
   sha256: '56c65f5a0adadbe59ee78758b9f046d921ef6b4b89a1683638164bf0e5f091a1'
   citation: Lau, S. C., Kukreja, R. T., McMillin, R. D. (1990). Effects of V-shaped rib arrays on turbulent
     heat transfer and friction of fully developed flow in a square channel. Int. J. Heat Mass Transfer
@@ -2724,7 +2776,7 @@ documents:
   issues: [385, 390, 392, 394, 403]
   records: [validation/cooling/extractions/lau_1990_v_ribs.md, validation/cooling/data/lau1990/metadata.yaml]
   notes: Volume and end page not printed in the PDF text; the extraction record gives IJHMT 34(7), 1605-1616.
-- file: sources/heat_transfer/Forsyth_McGilvray_Gillespie_2017_ExpFluids_58_5_ribbed_developing_flow.pdf
+- file: sources/heat_transfer/rib/Forsyth_McGilvray_Gillespie_2017_ExpFluids_58_5_ribbed_developing_flow.pdf
   sha256: '0fca4466edbe1d5f5d50030c4b38d2abe98d7048afa8e932096293ec161b17fb'
   citation: 'Forsyth, P., McGilvray, M., Gillespie, D. R. H. (2017). Secondary flow and heat transfer coefficient
     distributions in the developing flow region of ribbed turbine blade cooling passages. Experiments in Fluids
@@ -2771,7 +2823,7 @@ documents:
   notes: Arrived 2026-11-02 in sources/new/ (from the user) as s00348-016-2286-6.pdf. Not checked against the
     conference version GT2014-26737 (not held). Nu0 = 200 is computed here (Dittus-Boelter, Pr 0.71), not printed.
     Fig. 14 values are read by eye from a 110 dpi page image, not digitised.
-- file: sources/heat_transfer/Webb_Eckert_Goldstein_1971_IJHMT_14_pp601-617.pdf
+- file: sources/heat_transfer/rib/Webb_Eckert_Goldstein_1971_IJHMT_14_pp601-617.pdf
   sha256: 'c3a63dc7edd1932adc675b563bb78f758f326570df9c8c66c7c8598ae9c03b5c'
   citation: Webb, R. L., Eckert, E. R. G., Goldstein, R. J. (1971). Heat transfer and friction in tubes
     with repeated-rib roughness. Int. J. Heat Mass Transfer 14, 601-617.
@@ -2787,7 +2839,7 @@ documents:
   records: []
   notes: Parent of Webb_Eckert_Goldstein_1972_IJHMT_15_pp180-184 (which generalises it). Note the repo
     cites the 1972 paper, never this 1971 one.
-- file: sources/heat_transfer/Webb_Eckert_Goldstein_1972_IJHMT_15_pp180-184_0017931072901792.pdf
+- file: sources/heat_transfer/rib/Webb_Eckert_Goldstein_1972_IJHMT_15_pp180-184_0017931072901792.pdf
   sha256: '94b4fef760092955610474dd28070972932c19874b90b94afe27090572e0a33d'
   citation: Webb, R. L., Eckert, E. R. G., Goldstein, R. J. (1972). Generalized heat transfer and friction
     correlations for tubes with repeated-rib roughness. Int. J. Heat Mass Transfer 15, 180-184.
@@ -6241,6 +6293,15 @@ documents:
     as recalled); ref. 21 Ahmed, Ramakrishnan, Ekkad 2021 JTSEA 14(2) (can combustor liner, reacting).
     Arrived 2026-11-08 in sources/new/oa_swirl_1108/ as 1-s2.0-S2214157X25001984-main.pdf.'
 wanted:
+- citation: 'Rhee, D. H., Lee, D. H., Cho, H. H. (2003). Effects of duct aspect ratios on heat/mass transfer with
+    discrete V-shaped ribs. ASME Turbo Expo 2003, GT2003-38622. (citation as recalled)'
+  checked: false
+  issues: []
+  priority: later
+  question: 'An independent (Yonsei, not Texas A&M) primary for ribs in high-aspect-ratio rectangular ducts (AR 3
+    to ~6.8): would score RibbedModel above its W/H 4 data span on a rectangular section, which the wedge-shaped
+    Naik 2014 TE passage (held) cannot do cleanly. Naik 2014 reprints some of its points.'
+  where: ASME Digital Collection (paywalled).
 - citation: 'Venneman, W. F. (1959, 1960). Flow coefficients and jet deflection angles for combustor-liner air-entry
     holes, Parts I and II. General Electric Company, Schenectady, NY; and Marshall, L. A. (1958). Aerodynamic
     characteristics of combustor-liner air-entry passages. Rep. R58AGT558, Aircraft Gas Turbine Division, General

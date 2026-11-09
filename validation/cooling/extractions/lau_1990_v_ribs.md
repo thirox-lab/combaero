@@ -12,7 +12,7 @@ Tracked by #385, under #333.
 > Lau, S.C., Kukreja, R.T. and McMillin, R.D. (1990). "Effects of V-shaped rib
 > arrays on turbulent heat transfer and friction of fully developed flow in a
 > square channel." *Int. J. Heat Mass Transfer* 34(7), 1605-1616.
-> `sources/heat_transfer/ribs_lau_1990.pdf` (gitignored, copyrighted).
+> `sources/heat_transfer/rib/ribs_lau_1990.pdf` (gitignored, copyrighted).
 
 **The first rib source outside Han**, and a primary paper rather than a
 textbook reprint. #333 named this gap explicitly: agreement with the curve a

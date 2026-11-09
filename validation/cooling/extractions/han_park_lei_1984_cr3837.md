@@ -1,7 +1,7 @@
 # NASA CR-3837 (Han, Park and Lei, 1984) -- tabulated primary
 
 **Status: extracted and committed, 2026-09-26.** Two-channel verified.
-Source: `sources/heat_transfer/NASA_CR-3837_1984.pdf` (gitignored), 164 pp,
+Source: `sources/heat_transfer/rib/NASA_CR-3837_1984.pdf` (gitignored), 164 pp,
 grant NAG3-311, November 1984. Journal version Han, Park and Lei (1985),
 ASME J. Engng Gas Turbines Power **107**, 628-635.
 

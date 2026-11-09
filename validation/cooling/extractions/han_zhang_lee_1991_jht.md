@@ -4,7 +4,7 @@
 54 cells, zero disagreements (see "Table 2 verification"). Implemented as
 `han_zhang_lee_1991(shape, alpha_deg)` under #434.**
 
-Source: `sources/heat_transfer/film/han_1991_590_vol_113.pdf` (gitignored --
+Source: `sources/heat_transfer/rib/han_1991_590_vol_113.pdf` (gitignored --
 copyrighted; filed under `film/` by mistake, it is a rib paper).
 Han, J.C., Zhang, Y.M. and Lee, C.P. (1991), "Augmented Heat Transfer in
 Square Channels With Parallel, Crossed, and V-Shaped Angled Ribs", ASME J.

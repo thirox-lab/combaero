@@ -1,7 +1,7 @@
 # Johnson, B.V., Wagner, J.H. and Steuber, G.D. (1993). NASA CR-4396 Vol. II,
 # "Effects of Rotation on Coolant Passage Heat Transfer, Volume II -- Coolant
 # Passages With Trips Normal and Skewed to the Flow". Pratt & Whitney / UTRC,
-# contract NAS3-23691. On disk: sources/heat_transfer/CR4396/19940011518.pdf.
+# contract NAS3-23691. On disk: sources/heat_transfer/rib/CR4396/19940011518.pdf.
 #
 # AN INDEPENDENT LAB. Every other rib-Nu source in this dataset traces to
 # Texas A&M (Han's or Lau's laboratory, #403 item 2). This one is Pratt &
