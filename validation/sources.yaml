@@ -4028,14 +4028,27 @@ documents:
     average errors < 5% (Shan''s model > 6% at best, Table 2). Non-luminous: no soot.'
   status: screened
   verdict: 'Screened 2026-10-28: the pressure coverage Bordbar et al. (2014) lacked -- gas-turbine liners at
-    10-40 bar sit inside 0.1-80 atm -- making it the better candidate for a non-luminous gas-radiation kernel
-    (#793 Lefebvre & Ballal liner examples; no radiation issue exists yet). BUT the coefficients are NOT in the
-    paper: they are in its supplementary material (one set per pressure, with a MATLAB function) -- now held,
-    but licensed non-commercial / no redistribution without the author''s permission (its entry).
-    Between the ten pressures an implementation must interpolate (in p or ln p; the paper does not prescribe
-    one). Soot stays outside (Lefebvre''s luminosity factor).'
-  read_for: ['#793 liner wall temperature: non-luminous gas emissivity at combustor pressure']
-  issues: [793]
+    10-40 bar sit inside 0.1-80 atm -- the candidate non-luminous gas emissivity at combustor pressure. LICENCE:
+    the article is CC BY 4.0 (printed on p. 1; the publisher''s permissions page states no permission is needed
+    to reuse it), so the Appendix A constants (supplement mmc1) may be implemented with a citation; the mmc2
+    files carry the author''s own non-commercial notice and are never used or shipped. FIDELITY (2026-11-09,
+    #1071, scratch only): the model exactly as Eqs. 7-11 state -- eps = sum_i a_i [1 - exp(-kappa_p,i (p_H2O +
+    p_CO2) L)], kappa in 1/(atm m), a_i = sum_j b_ij (T/1500 K)^j, b_ij and kappa as quartics in Mr with k = 0
+    on Mr^4 -- reproduces the paper''s own 1-D slab model curves (Figs. 3-5, p = 0.5, 1, 30 atm; 18 vector-exact
+    curves, 3609 points; own RTE solve) to max 1.25%, mean 0.28% of the normalised source/flux, and against the
+    plotted LBL points gives errors matching Table 2 (e.g. p 30 atm Case 2: 10.3/3.0% vs 10.0/2.82%). No
+    reinterpretation (kappa x (x p)^2, T/1200 K, reversed powers) does. Fig. 2 (emissivity charts) does NOT
+    follow Eq. 7: at 0.1 atm it matches a pressure path p^2 L -- the MATLAB function''s emissivity output counts
+    (x_H2O + x_CO2) p twice (its RTE outputs a_wsgg/kk_wsgg are right) -- and at 80 atm, L >= 0.75 m, nothing
+    fits; a question for the author, not a blocker. Seven of the ten sets are untested by any figure under Eq.
+    7. On the DLR 2008 effusion rig Lefebvre Eq. 8.11 sits 3-12% above Appendix A at 5 bar and 32-41% above at
+    10 bar (cross-source). An implementation must interpolate eps (never coefficients: gray gas i is a different
+    band in each set; neighbouring sets differ 2-5% at the same state, so d eps/dp kinks at the nodes), clamp Mr
+    to the fitted 0.1-4 (the quartics diverge outside), define Mr as x -> 0, stay at T <= 3000 K (eps < 0 near
+    3500-4000 K), and bound eps (sum a_i reaches 1.039 at 2 atm).'
+  read_for: ['#793 liner wall temperature: non-luminous gas emissivity at combustor pressure', '#1071
+      composition-based emissivity in place of Lefebvre Eq. 8.11']
+  issues: [793, 1071]
   records: []
   notes: Arrived 2026-10-28 as docs/new/Pressure-dependent-weighted-sum-of-gray-gases-model_2021_International-Journ.pdf.
 - file: sources/radiation/Ehlme_et_al_2025_ACSOmega_10_2978_WSGG_5000K.pdf
@@ -4096,17 +4109,17 @@ documents:
     atm, T 300-3000 K, x_H2O, x_CO2, optional path length; datasets 33 Mr points 0.1-4, 55 T points 300-3000 K,
     19 path lengths 0.01-60 m.'
   status: screened
-  verdict: 'Received 2026-10-28; read, not run. LICENCE: every .dat file says "COPYRIGHT (C) 2020 HADI BORDBAR
-    ... Used for non-commercial purposes only with the permission of the copywriter. Not to be distributed
-    without the permission of the copywriter." -> the coefficients must NOT be committed to or shipped with
-    combaero (PyPI) without the author''s written permission; ask before any implementation. DISCREPANCY to
-    settle first: the mmc1 Appendix A tables and the mmc2 .dat coefficients differ at the same pressure (0.1
-    atm, gas 1, first entry: -1.017554e-3 vs -6.685900e-4) -- the ordering (k vs b4..b0), the reference
-    temperature (the function uses 1500 K; the 2014 model 1200 K) or a later refit; which set reproduces the
-    paper''s figures is unverified. An implementation would also have to choose the interpolation between the
-    ten pressures.'
+  verdict: 'Received 2026-10-28. LICENCE: every mmc2 .dat file says "COPYRIGHT (C) 2020 HADI BORDBAR ... Used
+    for non-commercial purposes only with the permission of the copywriter. Not to be distributed without the
+    permission of the copywriter." -> never commit, run in shipped code, or redistribute the mmc2 files. mmc1
+    (Appendix A) carries no such notice and belongs to the CC BY article. THE 2026-10-28 "DISCREPANCY" WAS A
+    MISREAD (2026-11-09, #1071): all 1200 constants (10 pressures x 4 gases x (1 d + 5 c rows) x 5) are
+    identical in mmc1 and mmc2 (max relative difference 2.5e-16); the .dat lists each gas''s five a-polynomial
+    rows first and its kappa row last (labelled j = 0), Appendix A the kappa row first. So Appendix A holds every
+    number. The MATLAB function''s emissivity output multiplies the pressure path by (x_H2O + x_CO2) p twice (its
+    RTE outputs are right); do not port that line. Fidelity of Appendix A: see the article''s entry.'
   read_for: ['#793 non-luminous gas emissivity at combustor pressure: the coefficients']
-  issues: [793]
+  issues: [793, 1071]
   records: []
   notes: Arrived 2026-10-28 as docs/new/ScienceDirect_files_28Oct2026_13-20-09.809.zip (outer zip holding mmc1.pdf
     and mmc2.zip). Extracted for reading into tmp/bordbar2021_supp/ (gitignored); no code executed.
