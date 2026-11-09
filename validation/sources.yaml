@@ -4313,6 +4313,65 @@ documents:
   issues: [807]
   records: []
   notes: Arrived 2026-10-28 as docs/new/aerospace-13-00555-v2.pdf.
+- file: sources/orifices/rowbury_oldfield_lock_2001_JT_123_258_external_crossflow_cd_correlation.pdf
+  sha256: 'd7e4ed46f7bfa2f1fb74c511c1da5e5eb7bdd18dec8d95e26bbf178528204814'
+  citation: 'Rowbury, D. A., Oldfield, M. L. G., Lock, G. D. (2001). A method for correlating the influence of
+    external crossflow on the discharge coefficients of film cooling holes. ASME J. Turbomach. 123(2), 258-265
+    (ASME Paper 2000-GT-294).'
+  id: doi:10.1115/1.1354137
+  topic: [orifice, film]
+  content: 'Cd of film-cooling holes with EXTERNAL (exit) crossflow, no internal crossflow. Data: an engine HP NGV
+    (proprietary, not printed) and its 1.4x replica in the Oxford annular cascade (CHTT, foreign-gas coolant,
+    DR 1.77; theta 20-90 deg, orientation alpha 0-60 deg, cylindrical and 12.5 deg fan-shaped holes, AR 2.9-4.0,
+    sharp CNC inlets). No-crossflow Cd: Lichtarowicz 1965 Eqs. 1-2 (Cdu = 0.827 - 0.0085 l/d for 2 < l/d < 10,
+    Re_h > 2e4) plus Schoder & Dawson Eq. 3 dCd = 3.10 (r/d) Cd for inlet radius. Crossflow: the additive
+    outlet loss delta_out = 1/Cd^2 - 1/Cd,no^2 (Eq. 7) at equal Re_h, correlated against the PERPENDICULAR
+    outlet momentum flux ratio k_out,perp = rho_h u_h u_h,perp / (rho_m u_m^2) as delta_out = A k^-B - C (Eq. 8),
+    A, B, C functions of theta and alpha per vane region and hole shape (Table 2, p. 263, printed as an image:
+    pressure surface, leading edge, suction surface; cylindrical and fan-shaped). Solved iteratively with Cd,no
+    at the iterate''s Re_h. Fig. 9: predicts Gritsch et al. 1998''s 30 deg cylindrical hole at Mm 0, 0.3, 0.6, 1.2
+    with the SUCTION-surface coefficients (a flat wall); over-predicts at low PR, under-predicts near PR 2.
+    Figs. 6-8: rows 1, 10, 14 measured vs generalised. No scatter statistics printed.'
+  status: screened
+  verdict: 'Screened 2026-11-09 (#1074 open gap: exit crossflow). The one printed, angle-general exit-crossflow
+    Cd correction: it plugs combaero''s missing exit-side Cd for film and effusion holes (Hay 1983 at Minf 0.31 stays
+    +12% with the inclination term on). The model form needs only quantities the elements already have (Cd,no,
+    the jet momentum flux, the gas dynamic head, theta), and crossover (delta < 0, Cd raised) is built in. Limits:
+    coefficients fitted on one NGV''s rows (curved, accelerating surfaces), so a flat liner takes the suction-
+    surface set as the authors did for Gritsch; C > 0 floors delta at -C, so at the large momentum ratios of
+    effusion (DLR k_perp ~8-12) it RAISES Cd by ~3-4% -- the wrong direction for DLR''s 1.5x coolant-flow excess,
+    which this paper therefore does not explain. Scoring: Gritsch 1998 (held, digitised, same 30 deg geometry the
+    authors predict in Fig. 9: cross-source for the coefficients, which come from the CHTT) and Hay 1983 exit-
+    crossflow points are the accuracy sets. Internal (inlet) crossflow is not covered (the authors: analogous,
+    not done).'
+  read_for: ['#1074 exit-crossflow Cd of film and effusion holes', 'Hay 1983 Minf 0.31 residual', 'DLR 2008
+      coolant-flow excess (no: wrong sign at high k)']
+  issues: [386, 1074]
+  records: []
+  notes: 'Was on the wanted list as the 2000 ASME paper; this is the journal version. Its ref. [21] corrects the
+    Gritsch "ISABE 1997" wanted citation to AIAA J. 36(6), 976-980 (1998). Its refs [22,23] (Hay, Khaldi &
+    Lampard 1987; Hay, Lampard & Khaldi 1994, ASME 94-GT-180) carry delta_out-k_out data for rounded holes.'
+- file: sources/orifices/hay_lampard_1995_ASME_95-GT-15_flared_hole_cd.pdf
+  sha256: 'c1fd6d9882be8081324b0eb09b4c5b6f7319158d91386190184bdfba27874f06'
+  citation: 'Hay, N., Lampard, D. (1995). The discharge coefficient of flared film cooling holes. ASME Paper
+    95-GT-15, International Gas Turbine and Aeroengine Congress, Houston, June 1995.'
+  id: ASME 95-GT-15
+  topic: [orifice, film]
+  content: 'Cd of spark-eroded conically flared (25 deg) holes, 90 deg and 30 deg inclined, with and without
+    layback, cylindrical inlet L/d 1, 2, 4; pressure ratio to ~2; crossflow at inlet (Mc 0.15, 0.3) and at outlet,
+    and 45 deg skew. Figs. 3-4 normal holes without crossflow, Fig. 6 crossflow on 90 deg holes, Figs. 7-9 30 deg
+    holes (with Bromley 1994 cylindrical data for comparison), Fig. 10 skewed. Uncertainty +-2.5-3% (plates 7 and 8
+    nominally identical, spread ~5%). Data only, no correlation.'
+  status: screened
+  verdict: 'Screened 2026-11-09. Shaped-hole Cd data, which combaero lacks (FilmCoolingElement "shaped" uses the
+    plain-hole Cd on the metering diameter): 30 deg flared holes run 15-25% ABOVE cylindrical-hole data, and the
+    layback hardly matters; a short cylindrical inlet (L/d 1) loses Cd under inlet crossflow, L/d >= 4 keeps it.
+    Outlet crossflow is within the measurement uncertainty for both flared and cylindrical 30 deg holes -- a
+    cross-source counterpoint to Rowbury 2001''s crossover at low k. Usable as an accuracy set (digitise Figs.
+    7-9) when a shaped-hole Cd is implemented; no closure to implement from it.'
+  read_for: ['shaped-hole Cd', 'exit-crossflow Cd (negligible here)']
+  issues: [386]
+  records: []
 - file: sources/orifices/hay_lampard_1996_ASME_96-GT-492_cooling_hole_cd_review.pdf
   sha256: '710140f0d62581d7367df4ce1744dfd0767dd5f6d64ac5f0e2dcb0439e1d783a'
   citation: 'Hay, N., Lampard, D. (1996). Discharge coefficient of turbine cooling holes: a review. ASME 96-GT-492
@@ -6437,10 +6496,9 @@ wanted:
     prints the set in full (Eqs. 8.4-8.15) and suffices to implement it; this paper would add the data
     behind the luminosity factor.
   where: Elsevier journal.
-- citation: 'Gritsch, M., Schulz, A., Wittig, S. (1997). A method of correlating the discharge coefficient of
-    film-cooling holes with crossflows at hole entry and exit. 13th Int. Symp. on Airbreathing Engines (ISABE),
-    Chattanooga, TN, 8-12 Sept. 1997.'
-  checked: false
+- citation: 'Gritsch, M., Schulz, A., Wittig, S. (1998). Method for correlating discharge coefficients of
+    film-cooling holes. AIAA J. 36(6), 976-980. (Earlier: ISABE 1997, Chattanooga, as cited in the 1998 JT paper.)'
+  checked: true
   issues:
   - 386
   - 807
@@ -6450,7 +6508,7 @@ wanted:
     fan-shaped 30 deg holes under supply crossflow to Ma 0.6 and exit crossflow to Ma 1.2. combaero has no
     shaped-hole Cd (FilmCoolingElement "shaped" uses the plain-hole Cd on the metering diameter) and no exit-side
     Cd for film or effusion holes. Citation as printed in the 1998 paper''s reference list; paper number unknown.'
-  where: ISABE 1997 proceedings (AIAA distributes later ISABE volumes; not searched).
+  where: 'AIAA Journal (paywalled, AIAA ARC). Citation verified from Rowbury et al. 2001 ref. [21] (held).'
 - citation: Van Niekerk, J. E., Morris, R. M. (2005). (T56 combustor isothermal flow split measurement.) ISABE
     2005.
   checked: false
@@ -6462,18 +6520,6 @@ wanted:
     second independent liner flow split for #813 PR 2 and a #793 example, if the hole geometry is given (else
     Gouws 2007). Title as recalled, unverified.'
   where: ISABE 2005 proceedings.
-- citation: 'Rowbury, D. A., Oldfield, M. L. G., Lock, G. D. (2000). A method for correlating the influence of
-    external crossflow on the discharge coefficients of film cooling holes. ASME Paper 2000-GT-0294 (also J.
-    Turbomach. 123, 2001). Background: Rowbury (1998) DPhil thesis, Oxford.'
-  checked: false
-  issues:
-  - 386
-  priority: later
-  question: The standard film-hole Cd correction for external crossflow (inclination via sin phi), to check the
-    film element's hole Cd against; Sargison 2001 (held) measured Cd with crossflow on 35 deg holes and
-    compares with it.
-  where: 'ASME Digital Collection (paywalled). The Rowbury (1998) DPhil thesis was not found on Oxford ORA by a web
-    search (2026-11-02); the 2000/2001 paper is listed on the Univ. of Bath research portal (not checked for a full text).'
 - citation: Ballal, D. R., Lefebvre, A. H. (1973). Film-cooling effectiveness in the near-slot region. ASME
     J. Heat Transfer 95(2), 265-266. doi:10.1115/1.3450039
   checked: true
