@@ -145,6 +145,14 @@ def test_lefebvre_worked_examples(
 # --- the coupling's derivatives ---------------------------------------------
 
 
+def _gas_radiation(model: str) -> GasRadiation:
+    """The hot face's spec: Eq. 8.11 with a luminosity, or the Bordbar 2021
+    WSGG (#1071), which reads the composition through x_H2O and x_CO2."""
+    if model == "bordbar2021":
+        return GasRadiation(beam_length=0.08, emissivity_model="bordbar2021")
+    return GasRadiation(beam_length=0.08, luminosity=1.7)
+
+
 def _products(q: float) -> list[float]:
     """n-heptane burnt completely at fuel/air ratio q (mass fractions)."""
     Y = [v / (1.0 + q) for v in AIR]
@@ -169,7 +177,8 @@ def _products(q: float) -> list[float]:
     ids=["constant_k", "k_of_T"],
 )
 @pytest.mark.parametrize("C", [(math.inf, math.inf), (40.0, 25.0)], ids=["reservoirs", "streams"])
-def test_coupling_derivatives(wall: dict, layers: list, C: tuple) -> None:
+@pytest.mark.parametrize("model", ["lefebvre", "bordbar2021"])
+def test_coupling_derivatives(wall: dict, layers: list, C: tuple, model: str) -> None:
     """Every input derivative of a radiating wall's Q, through the surface
     temperatures' fixed point (and the k(T) one), against central
     differences: h, T_aw per side and the radiation's stream Tt, P and Y."""
@@ -179,7 +188,7 @@ def test_coupling_derivatives(wall: dict, layers: list, C: tuple) -> None:
         "a",
         "b",
         layers=layers,
-        radiation_a=GasRadiation(beam_length=0.08, luminosity=1.7),
+        radiation_a=_gas_radiation(model),
         radiation_b=CasingRadiation(area_ratio=0.75),
         **wall,
     )
@@ -209,7 +218,8 @@ def test_coupling_derivatives(wall: dict, layers: list, C: tuple) -> None:
                 fd = (Q(args, gb=hi) - Q(args, gb=lo)) / (2 * e)
             got = getattr(r, f"rad_dQ_d{name}_{side}")
             assert got == pytest.approx(fd, rel=1e-6, abs=1e-9 * abs(r.Q)), (side, name)
-    # The composition enters side A through q (gas); side B's casing reads none.
+    # The composition enters side A through q (Lefebvre) or x_H2O, x_CO2
+    # (Bordbar); side B's casing reads none.
     assert r.rad_dQ_dY_b is None
     dY = np.asarray(r.rad_dQ_dY_a)
     for k in range(len(Y)):
@@ -243,7 +253,9 @@ def test_radiation_adds_heat_and_none_changes_nothing() -> None:
 # --- in a network ------------------------------------------------------------
 
 
-def _mixing_net(rad: bool = True, layers: list | None = None, **wall: object) -> FlowNetwork:
+def _mixing_net(
+    rad: bool = True, layers: list | None = None, model: str = "lefebvre", **wall: object
+) -> FlowNetwork:
     """Hot products mixed with air in a plenum feed the radiating duct, so
     the wall's gas Tt, P and composition all move with the unknowns; both
     ducts deliver into interior plenums, whose T carries the wall heat."""
@@ -283,7 +295,7 @@ def _mixing_net(rad: bool = True, layers: list | None = None, **wall: object) ->
     kw: dict = {}
     if rad:
         kw = {
-            "radiation_a": GasRadiation(beam_length=0.08, luminosity=1.7),
+            "radiation_a": _gas_radiation(model),
             "radiation_b": CasingRadiation(area_ratio=0.7),
         }
     n.add_wall(
@@ -316,12 +328,13 @@ def _solve(n: FlowNetwork) -> tuple[NetworkSolver, dict]:
     ],
     ids=["constant_k", "k_of_T", "per_side"],
 )
-def test_network_relay_is_exact(layers: list | None, wall: dict) -> None:
+@pytest.mark.parametrize("model", ["lefebvre", "bordbar2021"])
+def test_network_relay_is_exact(layers: list | None, wall: dict, model: str) -> None:
     """The two wall-heated nodes' temperature sensitivities (the relay the
     Jacobian is built from) against central differences of the propagated
     temperatures, in every unknown. Dropping any one radiation term (gas Tt,
     P, composition) moves them by 0.03-3 K; this holds them to 1e-5 K."""
-    s, r = _solve(_mixing_net(True, layers, **wall))
+    s, r = _solve(_mixing_net(True, layers, model, **wall))
     assert r["w.Q_rad_a"] > 0.0 and r["w.Q_rad_b"] > 0.0
     x = np.array(r["__x_solution__"])
     relay = s._propagate_states(x, with_relay=True)

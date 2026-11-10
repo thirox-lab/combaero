@@ -233,6 +233,16 @@ def _radiation(
     if data is None or data.kind == "none":
         return None
     if data.kind == "gas":
+        if data.emissivity_model == "bordbar2021":
+            # Composition-based and non-luminous: the Lefebvre-only fields
+            # (luminosity, fuel_air_ratio) stay on the node but do not build.
+            return GasRadiation(
+                beam_length=data.beam_length,
+                emissivity_wall=data.emissivity_wall,
+                T_gas=data.T_gas,
+                pressure=data.pressure,
+                emissivity_model="bordbar2021",
+            )
         return GasRadiation(
             beam_length=data.beam_length,
             emissivity_wall=data.emissivity_wall,

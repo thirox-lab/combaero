@@ -199,6 +199,18 @@ try:
         liner_casing_exchange_factor,
         mean_beam_length,
         elemental_fuel_air_ratio,
+        WSGG_BORDBAR2021_T_REF,
+        WSGG_BORDBAR2021_T_MIN,
+        WSGG_BORDBAR2021_T_MAX,
+        WSGG_BORDBAR2021_MR_MIN,
+        WSGG_BORDBAR2021_MR_MAX,
+        WSGG_PA_PER_ATM,
+        WsggGrayGases,
+        WsggEmissivityResult,
+        WsggMixtureEmissivityResult,
+        wsgg_bordbar2021_gray_gases,
+        gas_emissivity_bordbar2021,
+        gas_emissivity_bordbar2021_mixture,
         SEBAN1960_C_NEAR,
         SEBAN1960_C_NEAR_PRINTED,
         SEBAN1960_C_FAR,
@@ -880,6 +892,18 @@ except (ModuleNotFoundError, ImportError) as e:
     liner_casing_exchange_factor = _core.liner_casing_exchange_factor
     mean_beam_length = _core.mean_beam_length
     elemental_fuel_air_ratio = _core.elemental_fuel_air_ratio
+    WSGG_BORDBAR2021_T_REF = _core.WSGG_BORDBAR2021_T_REF
+    WSGG_BORDBAR2021_T_MIN = _core.WSGG_BORDBAR2021_T_MIN
+    WSGG_BORDBAR2021_T_MAX = _core.WSGG_BORDBAR2021_T_MAX
+    WSGG_BORDBAR2021_MR_MIN = _core.WSGG_BORDBAR2021_MR_MIN
+    WSGG_BORDBAR2021_MR_MAX = _core.WSGG_BORDBAR2021_MR_MAX
+    WSGG_PA_PER_ATM = _core.WSGG_PA_PER_ATM
+    WsggGrayGases = _core.WsggGrayGases
+    WsggEmissivityResult = _core.WsggEmissivityResult
+    WsggMixtureEmissivityResult = _core.WsggMixtureEmissivityResult
+    wsgg_bordbar2021_gray_gases = _core.wsgg_bordbar2021_gray_gases
+    gas_emissivity_bordbar2021 = _core.gas_emissivity_bordbar2021
+    gas_emissivity_bordbar2021_mixture = _core.gas_emissivity_bordbar2021_mixture
     SEBAN1960_C_NEAR = _core.SEBAN1960_C_NEAR
     SEBAN1960_C_NEAR_PRINTED = _core.SEBAN1960_C_NEAR_PRINTED
     SEBAN1960_C_FAR = _core.SEBAN1960_C_FAR
@@ -1349,6 +1373,18 @@ __all__ = [
     "liner_casing_exchange_factor",
     "mean_beam_length",
     "elemental_fuel_air_ratio",
+    "WSGG_BORDBAR2021_T_REF",
+    "WSGG_BORDBAR2021_T_MIN",
+    "WSGG_BORDBAR2021_T_MAX",
+    "WSGG_BORDBAR2021_MR_MIN",
+    "WSGG_BORDBAR2021_MR_MAX",
+    "WSGG_PA_PER_ATM",
+    "WsggGrayGases",
+    "WsggEmissivityResult",
+    "WsggMixtureEmissivityResult",
+    "wsgg_bordbar2021_gray_gases",
+    "gas_emissivity_bordbar2021",
+    "gas_emissivity_bordbar2021_mixture",
     "SEBAN1960_C_NEAR",
     "SEBAN1960_C_NEAR_PRINTED",
     "SEBAN1960_C_FAR",

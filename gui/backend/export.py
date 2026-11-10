@@ -317,6 +317,7 @@ def _radiation(spec: GasRadiation | CasingRadiation | None) -> dict[str, Any] | 
             "beam_length": float(spec.beam_length),
             "emissivity_wall": float(spec.emissivity_wall),
             "luminosity": float(spec.luminosity),
+            "emissivity_model": spec.emissivity_model,
             "T_gas": spec.T_gas,
             "fuel_air_ratio": spec.fuel_air_ratio,
             "pressure": spec.pressure,

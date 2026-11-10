@@ -37,6 +37,7 @@
 #include "ideal_junction.h"
 #include "mpce_junction.h"
 #include "liner_radiation.h"
+#include "wsgg_bordbar2021.h"
 #include "materials.h"
 #include "orifice.h"
 #include "registry.h"
@@ -8227,6 +8228,86 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "rest, q = w / (1 - w). The same for reactants and products. Water\n"
       "vapour's H counts as fuel; a fuel's own O or N counts as air.\n"
       "Returns (q, dq/dY) in the mass fractions Y.");
+
+  // Bordbar et al. (2021) pressure-dependent WSGG emissivity (#1071).
+  m.attr("WSGG_BORDBAR2021_T_REF") = WSGG_BORDBAR2021_T_REF;
+  m.attr("WSGG_BORDBAR2021_T_MIN") = WSGG_BORDBAR2021_T_MIN;
+  m.attr("WSGG_BORDBAR2021_T_MAX") = WSGG_BORDBAR2021_T_MAX;
+  m.attr("WSGG_BORDBAR2021_MR_MIN") = WSGG_BORDBAR2021_MR_MIN;
+  m.attr("WSGG_BORDBAR2021_MR_MAX") = WSGG_BORDBAR2021_MR_MAX;
+  m.attr("WSGG_PA_PER_ATM") = WSGG_PA_PER_ATM;
+
+  py::class_<WsggGrayGases>(
+      m, "WsggGrayGases",
+      "The four gray gases of one Bordbar (2021) pressure set: weights a [-]\n"
+      "and pressure absorption coefficients kappa [1/(atm m)].")
+      .def_readonly("a", &WsggGrayGases::a, "gray-gas weights a_i [-]")
+      .def_readonly("kappa", &WsggGrayGases::kappa,
+                    "pressure absorption coefficients kappa_p,i [1/(atm m)]");
+
+  m.def("wsgg_bordbar2021_gray_gases", &wsgg_bordbar2021_gray_gases,
+        py::arg("p_set_atm"), py::arg("T"), py::arg("Mr"),
+        "Bordbar et al. (2021) Eqs. 9-11 at one tabulated pressure set\n"
+        "(0.1, 0.5, 1, 2, 5, 10, 20, 30, 50 or 80 atm): the gray-gas weights\n"
+        "and kappas at temperature T [K] (300-3000) and mole ratio\n"
+        "Mr = x_H2O/x_CO2 (0.1-4), for an RTE solve. Unclamped: raises\n"
+        "outside the fitted range. Returns WsggGrayGases.");
+
+  py::class_<WsggEmissivityResult>(
+      m, "WsggEmissivityResult",
+      "Bordbar (2021) WSGG emissivity and its partials.")
+      .def_readonly("eps", &WsggEmissivityResult::eps, "eps_g [-]")
+      .def_readonly("deps_dT", &WsggEmissivityResult::deps_dT,
+                    "d eps_g / d T_g [1/K]")
+      .def_readonly("deps_dP", &WsggEmissivityResult::deps_dP,
+                    "d eps_g / d P [1/Pa]")
+      .def_readonly("deps_dx_h2o", &WsggEmissivityResult::deps_dx_h2o,
+                    "d eps_g / d x_H2O [-]")
+      .def_readonly("deps_dx_co2", &WsggEmissivityResult::deps_dx_co2,
+                    "d eps_g / d x_CO2 [-]")
+      .def_readonly("deps_dl_b", &WsggEmissivityResult::deps_dl_b,
+                    "d eps_g / d l_b [1/m]");
+
+  m.def("gas_emissivity_bordbar2021", &gas_emissivity_bordbar2021,
+        py::arg("T_g"), py::arg("P"), py::arg("x_h2o"), py::arg("x_co2"),
+        py::arg("l_b"),
+        "Non-luminous H2O-CO2 gas emissivity, Bordbar et al. (2021) pressure-\n"
+        "dependent WSGG (Int. J. Heat Mass Transfer 173, 121207, App. A):\n"
+        "  eps = sum_i a_i(T, Mr) [1 - exp(-kappa_i(Mr) (x_H2O + x_CO2) P L)]\n"
+        "with eps interpolated linearly in ln P between the ten pressure sets\n"
+        "(each at the actual pressure path). Clamps T to 300-3000 K, Mr to\n"
+        "0.1-4 and eps to [0, 1] (zero partials where clamped).\n\n"
+        "  T_g : gas temperature [K]\n"
+        "  P   : total pressure [Pa]\n"
+        "  x_h2o, x_co2 : mole fractions [-]\n"
+        "  l_b : path or mean beam length [m]\n\n"
+        "Returns WsggEmissivityResult with the analytic partials.");
+
+  py::class_<WsggMixtureEmissivityResult>(
+      m, "WsggMixtureEmissivityResult",
+      "Bordbar (2021) WSGG emissivity of a mixture and its partials in the\n"
+      "mass fractions.")
+      .def_readonly("eps", &WsggMixtureEmissivityResult::eps, "eps_g [-]")
+      .def_readonly("deps_dT", &WsggMixtureEmissivityResult::deps_dT,
+                    "d eps_g / d T_g [1/K]")
+      .def_readonly("deps_dP", &WsggMixtureEmissivityResult::deps_dP,
+                    "d eps_g / d P [1/Pa]")
+      .def_readonly("deps_dl_b", &WsggMixtureEmissivityResult::deps_dl_b,
+                    "d eps_g / d l_b [1/m]")
+      .def_readonly("deps_dY", &WsggMixtureEmissivityResult::deps_dY,
+                    "d eps_g / d Y_k [-], one per species");
+
+  m.def(
+      "gas_emissivity_bordbar2021_mixture",
+      [](double T_g, double P,
+         py::array_t<double, py::array::c_style | py::array::forcecast> Y,
+         double l_b) {
+        return gas_emissivity_bordbar2021_mixture(T_g, P, to_vec(Y), l_b);
+      },
+      py::arg("T_g"), py::arg("P"), py::arg("Y"), py::arg("l_b"),
+      "gas_emissivity_bordbar2021 from a mixture's mass fractions Y (one per\n"
+      "species): x_H2O and x_CO2 formed internally, deps_dY chained through\n"
+      "them. Returns WsggMixtureEmissivityResult.");
 
   py::class_<WallRadiationSides>(
       m, "WallRadiationSides",

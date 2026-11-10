@@ -4041,8 +4041,16 @@ documents:
     surveys earlier pressure-dependent WSGG models (Bahador & Sunden, Coelho & Franca, Shan et al., Wang &
     Xuan). Validated against LBL on 1-D slabs (isothermal/homogeneous and varying T, composition and Mr);
     average errors < 5% (Shan''s model > 6% at best, Table 2). Non-luminous: no soot.'
-  status: screened
-  verdict: 'Screened 2026-10-28: the pressure coverage Bordbar et al. (2014) lacked -- gas-turbine liners at
+  status: implemented
+  verdict: 'IMPLEMENTED 2026-11-10 (#1071), opt-in: GasRadiation(emissivity_model="bordbar2021"), kernels in
+    include/wsgg_bordbar2021.h from Appendix A only; Lefebvre Eq. 8.11 stays the default. Between the sets eps
+    (never the coefficients) is interpolated linearly in ln P, each set at the actual pressure path; T, Mr and
+    eps are clamped to the fit (choices of ours, the paper gives none). FIDELITY (committed): Figs. 3-5 slab
+    curves re-solved with the shipped kernel, 16 Gauss-Legendre ordinates per hemisphere (converged; at the
+    paper''s 6 they leave max 1.42%, mean 0.44%): max 1.25%, mean 0.28% (validation/radiation/bordbar2021_slab.py).
+    DLR 2008 effusion rows (accuracy, cross-source): eps_g 0.132 / 0.198 at 5 / 10 bar, flat-plate eta per
+    vertex +9.2% against +8.9% with Eq. 8.11, pressure trend 0.58x against 0.84x -- no improvement on that rig.
+    Screened 2026-10-28: the pressure coverage Bordbar et al. (2014) lacked -- gas-turbine liners at
     10-40 bar sit inside 0.1-80 atm -- the candidate non-luminous gas emissivity at combustor pressure. LICENCE:
     the article is CC BY 4.0 (printed on p. 1; the publisher''s permissions page states no permission is needed
     to reuse it), so the Appendix A constants (supplement mmc1) may be implemented with a citation; the mmc2
@@ -4064,7 +4072,10 @@ documents:
   read_for: ['#793 liner wall temperature: non-luminous gas emissivity at combustor pressure', '#1071
       composition-based emissivity in place of Lefebvre Eq. 8.11']
   issues: [793, 1071]
-  records: []
+  records: ['validation/radiation/extractions/bordbar_2021_slab.md', 'validation/radiation/bordbar2021_slab.py',
+    'python/tests/test_wsgg_bordbar2021.py', 'validation/cooling/extractions/behrendt_2008_effusion_eta_tot.md']
+  code: ['include/wsgg_bordbar2021.h: Eqs. 7-11, ln P interpolation, clamps', 'include/wsgg_bordbar2021_data.h:
+      Appendix A Tables A.1-A.10', 'python/combaero/network/components.py: GasRadiation(emissivity_model="bordbar2021")']
   notes: Arrived 2026-10-28 as docs/new/Pressure-dependent-weighted-sum-of-gray-gases-model_2021_International-Journ.pdf.
 - file: sources/radiation/Ehlme_et_al_2025_ACSOmega_10_2978_WSGG_5000K.pdf
   sha256: 'fa5184381e25220124827f5c5d21aafa7046d955023e22bb336289c70c6d23f1'
