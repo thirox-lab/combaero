@@ -1,0 +1,363 @@
+# Kaddah (1964) liner air-entry holes: Vol. 1 Tables 11-30, transcribed as printed.
+# NOT a schema.py metadata.yaml: these are multi-column printed tables, not
+# (x, y) figure series, so load_dataset() does not read them; kaddah_runner.py
+# does. Record and self-checks: extractions/kaddah_1964_liner_hole_tables.md.
+paper:
+  name: kaddah1964
+  citation: Kaddah, K. Sh. (1964). Discharge coefficient and jet deflection studies for combustor liner
+    air-entry holes. Thesis for the Diploma of Advanced Engineering, Department of Aircraft Propulsion,
+    The College of Aeronautics, Cranfield, June 1964. Vol. 1 Tables 11-30 (PDF pages 99-118); Vol. 2 Figs.
+    35-103 re-plot them.
+  secondary: false
+extraction: tabulated
+rig:
+  duct_width_Y_in: 8.0
+  duct_depth_Z_in: 1.25
+  test_section_length_in: 18.0
+  A1_sq_in: 10.0
+  plate: 1/16 in (0.0625 in) aluminium, 16 s.w.g., square-edged holes flush with the duct floor (Section
+    7.3)
+  wall_thickness_in: 0.0625
+  approach_static_in_Hg_abs: 33.0
+  p1: approach static at station 2, 7.875 in upstream of the hole centre (Section 7.4.1.1)
+  pj: jet static = plenum surrounding pressure (Section 7.4.1.2)
+  P1: approach total, pitot at station 3, 6.875 in upstream (Section 7.4.1.3)
+definitions:
+  C: C = Lj/Lth, Lth = 25 rhoj Vj n Ah [lb/hr, Ah sq.in], rhoj = rho1 (pj/p1)^(1/1.4), Vj = 18.28 sqrt(h/rhoj)
+    ft/sec with h the jet dynamic pressure in inches water (App. 2, Eqs. A2.1.1-A2.1.4). The printed Vj
+    is reproduced by sqrt(2 g (P1 - pj)/rhoj) at p1 = 33 in Hg (median +0.2%), so h = P1 - pj and C is
+    referenced to the approach TOTAL pressure (conventions.py Cd_total).
+  K: K = (P1 - pj)/(P1 - p1) = Vj^2/V1^2 incompressible (Section 3.1); computed as (rhoj/rho1) Vj^2/V1^2
+    (App. 2). The velocity head ratio of Rohde / TN 3663's Phi.
+  alpha: alpha = Lj/L1, bleed ratio, printed in percent
+  mu: mu = alpha/a*
+  a_star: a* = n Ah/A1, A1 = 8 x 1.25 = 10 sq.in
+  phi: angle between the jet axis and the downstream plane of the hole, degrees; 90 = normal jet (Section
+    3.1; deflector, Section 7.5)
+  delta: momentum-loss factor = Ah (p1' - pj)/(Mj sin phi) = 4.15e4 a* (p1' - pj)/(Lj Vj sin phi); p1'
+    (hole-centre static) is not tabulated
+  blocks:
+    noxflow: 'no cross flow: duct closed downstream, alpha = 100%, V1 the residual feed velocity'
+    '80': approach velocity 80 ft/sec
+    '130': approach velocity 130 ft/sec
+cell_flags:
+  file: cell_flags.csv
+  sequence_judged: an ambiguous digit (overstruck, faint, overtyped, handwritten) judged from its shape
+    and the row sequence; NOT exact. Rows whose scoring inputs carry it are reported separately.
+  arithmetic_confirmed: an ambiguous digit where the table's own arithmetic holds for the chosen read
+    and fails for every alternative
+  printed_inconsistent: the printed value contradicts the table's own arithmetic; kept as printed, the
+    arithmetic alternative recorded, and the row excluded from scoring by default
+uncertainty: no measurement band for C or phi is stated; manometer error +/-0.1 in water (Section 7.4.1)
+tables:
+- table: 11
+  code: C1
+  file: table11_C1.csv
+  shape: circular
+  n_holes: 7
+  dimensions_in:
+    D_in: 0.329
+  a_star: 0.0595
+  t_over_d: 0.19
+  vol1_pdf_page: 99
+  vol2_figure_vs_p1_pj: 35
+  vol2_figure_vs_K: 42
+  liner_envelope: inside
+  figure_offset: 'Vol. 2 Fig. 35 plots the no-cross-flow C about 0.03-0.07 BELOW this table (.678/.672/.635/.640/.700),
+    and two 130 ft/s points (p1/pj 1.034, 1.085) off the table''s values; the 80 ft/s block and every
+    phi agree. The table is primary: it is self-consistent (C = Lj/Lth to 0.1%). Decided 2026-11-10.'
+- table: 12
+  code: C2
+  file: table12_C2.csv
+  shape: circular
+  n_holes: 7
+  dimensions_in:
+    D_in: 0.472
+  a_star: 0.1223
+  t_over_d: 0.1324
+  vol1_pdf_page: 100
+  vol2_figure_vs_p1_pj: 36
+  vol2_figure_vs_K: 43
+  liner_envelope: inside
+- table: 13
+  code: C3
+  file: table13_C3.csv
+  shape: circular
+  n_holes: 5
+  dimensions_in:
+    D_in: 0.807
+  a_star: 0.2542
+  t_over_d: 0.0774
+  vol1_pdf_page: 101
+  vol2_figure_vs_p1_pj: 37
+  vol2_figure_vs_K: 44
+  liner_envelope: marginal
+  thesis_inconsistent:
+    columns:
+    - mu
+    detail: every mu implies a* = 0.246, 3% below the stated 0.2542; C, Lth and K are consistent with
+      0.2542. mu is not a scoring input.
+- table: 14
+  code: C4
+  file: table14_C4.csv
+  shape: circular
+  n_holes: 5
+  dimensions_in:
+    D_in: 0.985
+  a_star: 0.381
+  t_over_d: 0.0635
+  vol1_pdf_page: 103
+  vol2_figure_vs_p1_pj: 38
+  vol2_figure_vs_K: 45
+  liner_envelope: outside
+- table: 15
+  code: C5
+  file: table15_C5.csv
+  shape: circular
+  n_holes: 3
+  dimensions_in:
+    D_in: 1.59
+  a_star: 0.595
+  t_over_d: 0.0393
+  vol1_pdf_page: 102
+  vol2_figure_vs_p1_pj: 39
+  vol2_figure_vs_K: 46
+  liner_envelope: outside
+  handwritten: whole table handwritten on a ruled data sheet (PDF page 102, before Table 14 on page 103);
+    its 4 resembles 9.
+- table: 16
+  code: O1
+  file: table16_O1.csv
+  shape: oval
+  n_holes: 7
+  dimensions_in:
+    a_prime_in: 0.218
+    b_prime_in: 0.218
+    aspect_1_plus_bp_ap: 2.0
+  a_star: 0.0595
+  t_over_d: null
+  vol1_pdf_page: 104
+  vol2_figure_vs_p1_pj: 49
+  vol2_figure_vs_K: 60
+  liner_envelope: inside
+  figure_offset: Vol. 2 Fig. 49 plots 130 ft/s row 4 at about C .60, supporting Lj/Lth = .602 against
+    the printed .502 (cell_flags.csv).
+- table: 17
+  code: O2
+  file: table17_O2.csv
+  shape: oval
+  n_holes: 7
+  dimensions_in:
+    a_prime_in: 0.312
+    b_prime_in: 0.312
+    aspect_1_plus_bp_ap: 2.0
+  a_star: 0.1217
+  t_over_d: null
+  vol1_pdf_page: 105
+  vol2_figure_vs_p1_pj: 50
+  vol2_figure_vs_K: 61
+  liner_envelope: inside
+- table: 18
+  code: O3
+  file: table18_O3.csv
+  shape: oval
+  n_holes: 5
+  dimensions_in:
+    a_prime_in: 0.531
+    b_prime_in: 0.531
+    aspect_1_plus_bp_ap: 2.0
+  a_star: 0.252
+  t_over_d: null
+  vol1_pdf_page: 106
+  vol2_figure_vs_p1_pj: 51
+  vol2_figure_vs_K: 62
+  liner_envelope: marginal
+- table: 19
+  code: O4
+  file: table19_O4.csv
+  shape: oval
+  n_holes: 5
+  dimensions_in:
+    a_prime_in: 0.656
+    b_prime_in: 0.656
+    aspect_1_plus_bp_ap: 2.0
+  a_star: 0.384
+  t_over_d: null
+  vol1_pdf_page: 107
+  vol2_figure_vs_p1_pj: 52
+  vol2_figure_vs_K: 63
+  liner_envelope: outside
+- table: 20
+  code: O5
+  file: table20_O5.csv
+  shape: oval
+  n_holes: 3
+  dimensions_in:
+    a_prime_in: 1.062
+    b_prime_in: 1.062
+    aspect_1_plus_bp_ap: 2.0
+  a_star: 0.604
+  t_over_d: null
+  vol1_pdf_page: 108
+  vol2_figure_vs_p1_pj: 53
+  vol2_figure_vs_K: 64
+  liner_envelope: outside
+- table: 21
+  code: O6
+  file: table21_O6.csv
+  shape: oval
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.375
+    b_in: 1.122
+    aspect_1_plus_bp_ap: 4.0
+  a_star: 0.252
+  t_over_d: null
+  vol1_pdf_page: 109
+  vol2_figure_vs_p1_pj: 56
+  vol2_figure_vs_K: 67
+  liner_envelope: marginal
+- table: 22
+  code: O7
+  file: table22_O7.csv
+  shape: oval
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.25
+    b_in: 1.85
+    aspect_1_plus_bp_ap: 8.0
+  a_star: 0.252
+  t_over_d: null
+  vol1_pdf_page: 110
+  vol2_figure_vs_p1_pj: 57
+  vol2_figure_vs_K: 68
+  liner_envelope: outside
+- table: 23
+  code: R1
+  file: table23_R1.csv
+  shape: rectangular
+  n_holes: 7
+  dimensions_in:
+    a_in: 0.206
+    b_in: 0.412
+    b_over_a: 2.0
+  a_star: 0.0595
+  t_over_d: null
+  vol1_pdf_page: 111
+  vol2_figure_vs_p1_pj: 71
+  vol2_figure_vs_K: 83
+  liner_envelope: inside
+- table: 24
+  code: R2
+  file: table24_R2.csv
+  shape: rectangular
+  n_holes: 7
+  dimensions_in:
+    a_in: 0.295
+    b_in: 0.591
+    b_over_a: 2.0
+  a_star: 0.122
+  t_over_d: null
+  vol1_pdf_page: 112
+  vol2_figure_vs_p1_pj: 72
+  vol2_figure_vs_K: 84
+  liner_envelope: inside
+- table: 25
+  code: R3
+  file: table25_R3.csv
+  shape: rectangular
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.5
+    b_in: 1.0
+    b_over_a: 2.0
+  a_star: 0.25
+  t_over_d: null
+  vol1_pdf_page: 113
+  vol2_figure_vs_p1_pj: 73
+  vol2_figure_vs_K: 85
+  liner_envelope: marginal
+- table: 26
+  code: R4
+  file: table26_R4.csv
+  shape: rectangular
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.62
+    b_in: 1.24
+    b_over_a: 2.0
+  a_star: 0.384
+  t_over_d: null
+  vol1_pdf_page: 114
+  vol2_figure_vs_p1_pj: 74
+  vol2_figure_vs_K: 86
+  liner_envelope: outside
+- table: 27
+  code: R5
+  file: table27_R5.csv
+  shape: rectangular
+  n_holes: 3
+  dimensions_in:
+    a_in: 1.0
+    b_in: 2.0
+    b_over_a: 2.0
+  a_star: 0.6
+  t_over_d: null
+  vol1_pdf_page: 115
+  vol2_figure_vs_p1_pj: 75
+  vol2_figure_vs_K: 87
+  liner_envelope: outside
+  thesis_inconsistent:
+    columns:
+    - mu
+    - Lth_lb/hr
+    - C
+    detail: every mu and Lth implies n Ah = 6.72 sq.in (a* 0.672), not 3 x 1.0 x 2.0 = 6.0 sq.in (a* 0.600)
+      of Section 7.3 and Fig. 75. If the slots are 6.0 sq.in the printed C are about 11% low. Excluded
+      from scoring by default.
+  excluded_from_scoring: true
+- table: 28
+  code: R6
+  file: table28_R6.csv
+  shape: rectangular
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.708
+    b_in: 0.708
+    b_over_a: 1.0
+  a_star: 0.252
+  t_over_d: null
+  vol1_pdf_page: 116
+  vol2_figure_vs_p1_pj: 78
+  vol2_figure_vs_K: 90
+  liner_envelope: marginal
+- table: 29
+  code: R7
+  file: table29_R7.csv
+  shape: rectangular
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.355
+    b_in: 1.42
+    b_over_a: 4.0
+  a_star: 0.252
+  t_over_d: null
+  vol1_pdf_page: 117
+  vol2_figure_vs_p1_pj: 79
+  vol2_figure_vs_K: 91
+  liner_envelope: outside
+- table: 30
+  code: R8
+  file: table30_R8.csv
+  shape: rectangular
+  n_holes: 5
+  dimensions_in:
+    a_in: 0.25
+    b_in: 2.0
+    b_over_a: 8.0
+  a_star: 0.25
+  t_over_d: null
+  vol1_pdf_page: 118
+  vol2_figure_vs_p1_pj: 80
+  vol2_figure_vs_K: 92
+  liner_envelope: outside

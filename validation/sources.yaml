@@ -3535,16 +3535,16 @@ documents:
     oval O1-O7 and rectangular R-slots (aspect ratio 1-8, a* 0.0595-0.604, slot major dimension up to 2.1 in
     -- longer than the duct depth for the largest). Approach velocity V1 = 0 (no crossflow), 80 and 130 ft/s
     (duct Mach about 0.07-0.12, incompressible), p1/pj up to 1.12, flow parameter K = (P1 - pj)/(P1 - p1)
-    about 1.5-170, bleed ratio alpha to about 0.4. TABLES 11-30 (PDF pp. 99-118, one per configuration)
+    1.19-40 with crossflow (to about 800 without), bleed ratio alpha 2.7-100%. TABLES 11-30 (PDF pp. 99-118, one per configuration)
     TABULATE every measured point: p1/pj, alpha, mu = alpha/a*, L1, Lj, rho1, V1, rhoj, Vj, Lth, C, K, the
-    measured jet deflection angle phi (deg, from the plate) and the momentum loss factor delta -- about 15
-    points per configuration, about 300 in all; no digitising needed. C = Lj/Lth with Lth = rho_j Vj A_h and
+    measured jet deflection angle phi (deg, from the plate) and the momentum loss factor delta -- 10-15
+    points per configuration, 269 in all; no digitising needed. C = Lj/Lth with Lth = rho_j Vj A_h and
     Vj from (P1 - pj) (Appendix 2), i.e. Cd referred to the approach TOTAL pressure and the jet static, the
     Phi convention of TN 3663. Section 6: two 1-D momentum analyses; Analysis I (Eqs. 8-13) gives C and phi
     from K, alpha and a*; Analysis II adds an axial momentum loss factor delta (mean 0.8, Eqs. 28/29).
     Tables 1-10 tabulate the theory. Appendix 4: a fit to Gandamihardja (1962) deflection angles. Vol. 2
     (separate file) holds the figures, 125 + 26 appendix + 24 plates.'
-  status: screened
+  status: accuracy
   verdict: 'Screened 2026-11-06 (was wanted, #807). THE PRIMARY OF LEFEBVRE & BALLAL Eq. 4.15 / Fig. 4.2,
     confirmed: the book''s (K - 1)/[4K^2 - K(2 - alpha)^2]^0.5 is Kaddah''s Analysis I Eq. 11; the book''s
     leading 1.25 is not in Eq. 11 and is presumably the delta = 0.8 of Analysis II (1/0.8 = 1.25) -- check the
@@ -3563,13 +3563,32 @@ documents:
     54/71/76/79/80 vs measured 66/70/72/73/75. So the jets are 9-12 deg STEEPER than Eq. 9 at the lowest K
     (keep less axial velocity) and up to 7 deg SHALLOWER at high K (keep more): Eq. 9 is not a bound either
     way, and #813''s from_crossflow mode should be scored against these tables, not assumed. Non-circular slots: oval and rectangular
-    data (Dittrich TN 3924 covers rectangular only; no oval data elsewhere in the register).'
+    data (Dittrich TN 3924 covers rectangular only; no oval data elsewhere in the register).
+    EXTRACTED 2026-11-10 (#1014, user sign-off 2026-11-10): all 20 tables, 269 rows, as printed into
+    validation/cooling/data/kaddah1964 (two independent channels -- Vision OCR and a blind visual read --
+    a third read of every disagreement, the tables'' own arithmetic, and an overlay on every Vol. 2 C/phi vs
+    p1/pj figure). Per-cell read confidence in cell_flags.csv: 43 sequence_judged (not exact, reported
+    separately), 36 arithmetic_confirmed, 7 printed_inconsistent (thesis misprints, kept as printed and
+    excluded by default: T13 80/1 Lj, T14 80/2 C, T16 130/4 C, T17 130/1 C, T24 80/3 alpha, T28 130/3 Lth,
+    T11 nox/4 phi "840"). Table 27 (R5): every mu and Lth implies a* 0.672, not the 0.600 of Section 7.3 --
+    excluded. Table 11 vs Vol. 2 Fig. 35: the figure plots the no-crossflow C 0.03-0.07 lower; the table
+    is primary (self-consistent). SCORED (kaddah_runner.py, ACCURACY, CROSS-SOURCE, C converted to the
+    static basis by the registered sqrt(K/(K-1)), U1/Vi under BOTH Kaddah''s approach V1 and combaero''s mean
+    of approaching and departing flow): Eq. 17 anchored on each table''s no-crossflow block, liner-envelope
+    configurations (C1, O1, R1, C2, O2, R2; 54 clean rows): bias -5.3% / MAE 7.1% (approach), -3.0% / 5.8%
+    (mean); at K < 2 it reads 30-33% LOW, the TN 3663 direction (thin holes keep more Cd under strong
+    crossflow than Eq. 17 predicts). The full chain on C1/C2 (26 rows): -7.3% / 7.9% and -6.7% / 7.6%.
+    Jet angle, reported not scored (no closure yet, #813): Report 1373 Eq. 9 +0.7 deg bias / 3.4 deg MAE on
+    the liner-envelope crossflow rows; NREC Eq. 97 with Cd_inf 0.625 +8.0 / 8.8 deg.'
   read_for: ['#807 thin-wall liner-hole Cd under supply crossflow (cross-source accuracy for McGreehan-Schotsch
       Eq. 17)', 'primary of Lefebvre & Ballal Eq. 4.15 / Fig. 4.2', '#813 jet deflection angle vs Report 1373
       Eq. 9 (jets carrying V_A)']
   issues: [807, 813, 793, 1014]
-  records: []
-  code: ['include/orifice.h: orifice::mcgreehan_schotsch::cd (Eq. 17, the closure Tables 11-15 would score)']
+  records: [validation/cooling/data/kaddah1964/tables.yaml, validation/cooling/data/kaddah1964/cell_flags.csv,
+    validation/cooling/extractions/kaddah_1964_liner_hole_tables.md, validation/cooling/kaddah_runner.py,
+    python/tests/test_kaddah1964.py]
+  code: ['include/orifice.h: orifice::mcgreehan_schotsch::cd and cd_with_crossflow (Eq. 17, scored by
+      validation/cooling/kaddah_runner.py)', 'validation/cooling/conventions.py: (kaddah1964, Cd) -> Cd_total']
   notes: 'Was on the wanted list as "Discharge coefficients and jet deflection angles for combustor liner air
     admission ports, M.Sc. thesis" (as recalled); the printed title and degree differ. Copyrighted thesis
     (Cranfield; scan supplied by the user). Transcription targets (tabulated, two-reader workflow, user
@@ -3590,10 +3609,14 @@ documents:
   status: screened
   verdict: 'Screened 2026-11-06 with Vol. 1. The measured points are tabulated in Vol. 1 Tables 11-30, so
     nothing here needs digitising; use it only to check a transcription (Fig. 35-103 points per configuration)
-    and for the comparison plots against previous work (Figs. 104-111), which are other labs'' data.'
+    and for the comparison plots against previous work (Figs. 104-111), which are other labs'' data. USED 2026-11-10 (#1014) to cross-check the Vol. 1 transcription: every
+    table was overlaid on its C/phi vs p1/pj figure (Figs. 35-39, 49-53, 56-57, 71-75, 78-80; axes calibrated
+    from OCR''d tick labels). Agreement within plotting precision except Fig. 35 (C1 no-crossflow C plotted
+    0.03-0.07 below Table 11; the table is primary) and Fig. 49 (supports .602 for the misprinted Table 16
+    130/4 C). Overlays are not committed (scans stay in sources/).'
   read_for: ['#807 (companion of Vol. 1)']
   issues: [807, 1014]
-  records: []
+  records: [validation/cooling/extractions/kaddah_1964_liner_hole_tables.md]
   notes: Copyrighted thesis (Cranfield; scan supplied by the user). 90 MB.
 - file: sources/combustor_network/nrec_1968_NASA_CR-72374_vol1_annular_combustor_program.pdf
   sha256: '2990d1ce5050957f0cd875d72065c7f220ea3f1b6dfa27211e1a1e3a1460eee3'
