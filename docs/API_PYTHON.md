@@ -803,7 +803,7 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=3.27e-3,
                              material=None,               # T_wall_limit only (#998)
                              gas_baseline="chamber",      # or "flat_plate"
                              gas_start_length=None,       # [m], flat_plate only
-                             cd_inclination="none",       # or "idelchik_3_2"
+                             cd_inclination="auto",       # or "none" / "idelchik_3_2"
                              radiation=None,              # or GasRadiation(beam_length=...)
                              cd_exit_crossflow="none",    # or "rowbury_2001"
                              exit_crossflow_region="suction_surface",
@@ -838,7 +838,7 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   baseline published full-coverage St/St_o ratios use, so pick by which one
   an augmentation you carry over was quoted against. On Behrendt 2008's
   reacting rig (`validation/cooling/effusion_network_runner.py`, accuracy,
-  cross-source) it moves the mean over-prediction from +22% to +13% at
+  cross-source) it moves the mean over-prediction from +21% to +12% at
   `gas_augmentation` 1.0; nothing here recommends an augmentation.
 - **Gas radiation on the hot face, opt-in (#1071).** `radiation=GasRadiation(
   beam_length=...)` (the `ThermalWall` face spec; a `CasingRadiation` is
@@ -851,17 +851,23 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   whose imposed `gas_heat_flux` stays the whole gas side. Off, the wall solve
   is unchanged. On Behrendt 2008 (accuracy, cross-source, rig beam length and
   a 0.9 wall emissivity) it moves the flat-plate mean over-prediction from
-  +12.5% to +8.8%. In the GUI the plate's and the effusion liner's Inspector
+  +11.5% to +7.7%. In the GUI the plate's and the effusion liner's Inspector
   have a None / Gas radiation selector (node field `radiation`).
-- **Hole-angle Cd term, opt-in.** By default the angle enters the Cd only
-  through the drilled length `t/sin(angle_deg)`. `cd_inclination="idelchik_3_2"`
-  (`EffusionPlateElement` and `FilmCoolingElement`, `correlation="IdelchikThick"`
-  only -- any other correlation, `"fixed"` included, raises) adds Idelchik
-  diagram 3-2's inclined-inlet loss to the thick hole's inlet coefficient,
-  reported as `Cd_inclination_dzeta` (0.0 when off); outside Re > 1e4 and
-  l/d >= 2 `Cd_in_range` reads 0. Cross-source accuracy on Hay 1983 and
-  Gritsch 1998 (`validation/cooling/hole_cd_inclination_runner.py`): see the
-  runner; off is the default and bit-identical.
+- **Hole-angle Cd term, on by default for cylindrical holes.** The angle
+  enters the Cd through the drilled length `t/sin(angle_deg)` and, with
+  `correlation="IdelchikThick"`, Idelchik diagram 3-2's inclined-inlet loss
+  added to the thick hole's inlet coefficient, reported as
+  `Cd_inclination_dzeta` (exactly 0.0 at 90 deg, so a normal hole is
+  unchanged). `cd_inclination` on `EffusionPlateElement` and
+  `FilmCoolingElement`: `"auto"` (default) applies it to a cylindrical hole on
+  IdelchikThick and leaves it off for a shaped hole and for every other
+  correlation; `"none"` switches it off; `"idelchik_3_2"` forces it, and any
+  other correlation (`"fixed"` included) then raises. The attribute holds the
+  resolved model. Shaped holes stay off because no shape term offsets it:
+  alone it moves Gritsch 1998's fan and laidback holes from -2% / 0% to
+  -11% / -10%. Outside Re > 1e4 and l/d >= 2 `Cd_in_range` reads 0.
+  Cross-source accuracy on Hay 1983 and Gritsch 1998:
+  `validation/cooling/hole_cd_inclination_runner.py`.
 - **Exit-crossflow Cd term, opt-in (#1074).** `cd_exit_crossflow="rowbury_2001"`
   (`EffusionPlateElement` and `FilmCoolingElement`, any correlation including
   `"fixed"`, with or without `cd_inclination`) puts Rowbury, Oldfield & Lock
@@ -1479,7 +1485,7 @@ net.add_element(FilmCoolingElement(
     n_rows=2, row_pitch=0.01, angle_deg=30.0,
     hole_type="shaped", area_ratio=3.5, breakout_width=3e-3,  # Colban
     # hole_type="cylindrical", turbulence_intensity=0.05      # Baldauf
-    # cd_inclination="idelchik_3_2"  # opt-in hole-angle Cd term (IdelchikThick)
+    # cd_inclination="auto"  # hole-angle Cd term: on for cylindrical, off for shaped
     # cd_exit_crossflow="rowbury_2001"  # opt-in exit-crossflow Cd term (chamber discharge)
 ))
 net.add_wall(ThermalWall(

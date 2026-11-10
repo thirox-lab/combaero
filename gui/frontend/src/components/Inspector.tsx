@@ -2104,14 +2104,17 @@ const Inspector = () => {
 										</label>
 										<select
 											className="p-2 border rounded bg-white text-xs border-stone-200"
-											value={d.cd_inclination || "none"}
+											value={d.cd_inclination || "auto"}
 											onChange={(e) => set({ cd_inclination: e.target.value })}
 										>
+											<option value="auto">
+												Default (inclined inlet, Idelchik 3-2)
+											</option>
 											<option value="none">
 												None (angle via hole length only)
 											</option>
 											<option value="idelchik_3_2">
-												Inclined inlet (Idelchik 3-2, opt-in)
+												Inclined inlet (Idelchik 3-2, forced)
 											</option>
 										</select>
 									</div>
@@ -2352,14 +2355,17 @@ const Inspector = () => {
 										</label>
 										<select
 											className="p-2 border rounded bg-white text-xs border-stone-200"
-											value={d.cd_inclination || "none"}
+											value={d.cd_inclination || "auto"}
 											onChange={(e) => set({ cd_inclination: e.target.value })}
 										>
+											<option value="auto">
+												Default (Idelchik 3-2 if cylindrical)
+											</option>
 											<option value="none">
 												None (angle via hole length only)
 											</option>
 											<option value="idelchik_3_2">
-												Inclined inlet (Idelchik 3-2, opt-in)
+												Inclined inlet (Idelchik 3-2, forced)
 											</option>
 										</select>
 									</div>

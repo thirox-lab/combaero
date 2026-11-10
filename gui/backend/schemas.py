@@ -518,7 +518,7 @@ class EffusionPlateData(BaseModel):
     gas_start_length: float | None = Field(default=None, ge=0.0)
     # Opt-in hole-angle Cd term (Idelchik diagram 3-2 on IdelchikThick's
     # inlet coefficient); read only with IdelchikThick, like Cd with 'fixed'.
-    cd_inclination: Literal["none", "idelchik_3_2"] = "none"
+    cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
     # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
     # flowing discharge chamber (the element refuses it otherwise). No
     # Inspector control yet: set in the network JSON.
@@ -597,7 +597,7 @@ class FilmCoolingData(BaseModel):
     Cd: float = 0.6
     # Opt-in hole-angle Cd term, read only with IdelchikThick (see
     # EffusionPlateData).
-    cd_inclination: Literal["none", "idelchik_3_2"] = "none"
+    cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
     # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
     # flowing discharge chamber (the element refuses it otherwise). No
     # Inspector control yet: set in the network JSON.

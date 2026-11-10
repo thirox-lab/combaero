@@ -1349,7 +1349,10 @@ documents:
     baseline, +12.5% on the flat plate restarted at the bleed (dx/d -21); T_c trend missed by both. Gas
     radiation on the hot face (#1071, own rows; Eq. 8.7/8.11 at L 1, no soot radiation in the authors''
     spectra; beam 0.126 m from the duct section, eps_w 0.9 for the high-emissivity coating, no value printed):
-    +17.6% chamber, +8.9% flat plate per vertex; q_rad 38/67 kW/m2 at 5/10 bar; pressure trend 0.84x.'
+    +17.6% chamber, +8.9% flat plate per vertex; q_rad 38/67 kW/m2 at 5/10 bar; pressure trend 0.84x.
+    Re-scored 2026-11-10 with the hole Cd''s inclination term default-on for cylindrical holes (hole-Cd audit
+    stage 1): Cd 0.82-0.84 -> 0.74-0.77, coolant flow -9%; plateau means +21.1% chamber / +11.5% flat plate,
+    with radiation +16.8% / +7.8% per vertex; every curve still outside the 3% band.'
   read_for: ['#476 gas-side h / augmentation (no)', 'eta_overall accuracy at reacting high-pressure conditions',
     'flat-plate gas baseline start length (the BL bleed at dx/d -21)', '#1071 radiation: soot (none), coating
     emissivity (high, unprinted), duct section for the beam length']
@@ -3120,7 +3123,9 @@ documents:
     put into Eq. 4-20 (PDF p. 126, printed 120), whose inlet coefficient zeta'' is "determined as zeta from
     diagrams 3-1 to 3-3, and 3-6" and is 0.5 for the thick orifice (Eq. 4-27). The substitution is the
     source''s; keeping tau (4-11) at its normal-hole value and applying it to inclined cooling holes is ours.
-    Eq. 3-2 (screen + inlet edge) does not bear on it.'
+    Eq. 3-2 (screen + inlet edge) does not bear on it. Default-on since 2026-11-10 for CYLINDRICAL holes on
+    IdelchikThick (cd_inclination="auto"; hole-Cd audit stage 1, user-approved); off for shaped holes, which it
+    moves away from Gritsch 1998 with no shape term to offset it.'
   read_for: [area change closures (#731/#733/#736), wall orifice Cd (#409), orifice in-pipe loss (#645/#654),
     'junction joining alpha (#197, #283-#285)', ideal tee split loss (#517), 'hole-inclination Cd term (diagram
       3-2 in Eq. 4-20)']
@@ -4443,7 +4448,12 @@ documents:
     is in neither. Used 2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not
     scored) for the opt-in Rowbury 2001 exit-crossflow term: fig3 Ma_m 0.3 / 0.6 / 1.2, mean error with the
     inclination term +0.8% -> -2.7%, +15.9% -> +3.6%, +46.8% -> +9.9% (without it +12.0% -> +8.5%, +28.9% ->
-    +15.1%, +63.2% -> +20.0%).'
+    +15.1%, +63.2% -> +20.0%).
+    Re-run 2026-11-10 through FilmCoolingElement for the inclination term''s switch to default-on for
+    cylindrical holes (hole-Cd audit stage 1; the plenum-to-plenum Cd, no crossflow term): exit Ma_m 0.3 / 0.6
+    +12.0% / +28.9% -> +0.8% / +15.9%, coolant crossflow cell +6.2% -> -4.5%; shaped holes stay off by
+    default because the term alone moves them away (fan none -1.5% -> -11.3%, laidback +0.5% -> -9.5%,
+    cross-source accuracy).'
   read_for: ['#807/#813 inlet-crossflow Cd of duct-fed holes vs McGreehan-Schotsch U1/Vi', 'exit-side crossflow Cd
       to Ma_m 1.2', shaped-hole (fan, laidback) Cd for FilmCoolingElement hole_type shaped, 'hole-inclination Cd
       term, 30 deg no-crossflow accuracy', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']
@@ -4641,7 +4651,10 @@ documents:
     0, Minf .31 series keep a +11-12% bias from their low-PR, exit-crossflow points either way. Used
     2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not scored) for the
     opt-in Rowbury 2001 exit-crossflow term on those Mc 0, Minf .31 series (inclination term on): 90 deg +11.2%
-    -> -4.1%, 30 deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%.'
+    -> -4.1%, 30 deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%.
+    The inclination term is default-on for cylindrical holes since 2026-11-10 (hole-Cd audit stage 1):
+    through FilmCoolingElement, 30 deg Minf .31 parallel +23.2% -> +11.5%, perpendicular +26.1% -> +14.1% (7
+    clean marks; fig12''s PR >= 1.9 cluster excluded as overplotted), 90 deg cells unchanged bit for bit.'
   read_for: ['#813 duct-fed hole Cd reference pressure and coolant-side crossflow', '#800/#818 cross-source check
       of the exit-side grazing Cd', '#807 L/D effect (none usable)', 'hole-inclination Cd term, 30/90 deg
       ratio', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']

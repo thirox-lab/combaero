@@ -19,16 +19,19 @@ from validation.cooling import effusion_network_runner as nr  # noqa: E402
 from validation.cooling.schema import load_dataset  # noqa: E402
 
 # Plateau (x/d 18-50) predictions at gas_augmentation 1.0: (chamber, flat plate).
+# With the default hole-angle Cd term (Idelchik 3-2 on these cylindrical 20 and
+# 30 deg holes, default since the 2026-11-10 hole-Cd audit): Cd 0.82-0.84 ->
+# 0.74-0.77, coolant flow -9%, plateau eta -0.4 to -0.9 points.
 PINNED = {
-    "fig9_eta_tot_E20_dp2": (0.926, 0.860),
-    "fig9_eta_tot_E20_dp3": (0.934, 0.874),
-    "fig9_eta_tot_E20_dp4": (0.939, 0.883),
-    "fig6_eta_tot_E30_Tc470": (0.924, 0.856),
-    "fig6_eta_tot_E30_Tc540": (0.925, 0.857),
-    "fig6_eta_tot_E30_Tc580": (0.924, 0.856),
-    "fig10_eta_tot_E30_5bar_dp2": (0.915, 0.840),
-    "fig10_eta_tot_E30_10bar_dp3": (0.914, 0.839),
-    "fig10_eta_tot_E30_10bar_dp2": (0.906, 0.824),
+    "fig9_eta_tot_E20_dp2": (0.922, 0.852),
+    "fig9_eta_tot_E20_dp3": (0.930, 0.867),
+    "fig9_eta_tot_E20_dp4": (0.936, 0.876),
+    "fig6_eta_tot_E30_Tc470": (0.920, 0.848),
+    "fig6_eta_tot_E30_Tc540": (0.921, 0.850),
+    "fig6_eta_tot_E30_Tc580": (0.920, 0.849),
+    "fig10_eta_tot_E30_5bar_dp2": (0.911, 0.832),
+    "fig10_eta_tot_E30_10bar_dp3": (0.909, 0.830),
+    "fig10_eta_tot_E30_10bar_dp2": (0.901, 0.816),
 }
 
 
@@ -76,7 +79,7 @@ def test_both_baselines_over_predict_and_the_flat_plate_less(series) -> None:
         ch = nr.predict(s, "chamber")["eta_overall"] / m - 1.0
         fp = nr.predict(s, "flat_plate")["eta_overall"] / m - 1.0
         assert 0.16 < ch < 0.35, stem
-        assert 0.08 < fp < 0.25, stem
+        assert 0.07 < fp < 0.25, stem
         assert fp < ch - 0.07, stem
 
 
@@ -112,16 +115,16 @@ def test_the_trends(dataset) -> None:
         assert abs(tc[b]) < 2e-3
         assert dp[b] > 0.0
         assert p3[b] < 0.0 and p2[b] < 0.0
-    # The flat plate overshoots the dp trend (1.5x) where the chamber
-    # undershoots it (0.86x), and closes half the pressure trend's gap.
-    assert dp["chamber"] / dp["measured"] == pytest.approx(0.86, abs=0.03)
-    assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.54, abs=0.05)
-    assert p3["flat_plate"] / p3["measured"] == pytest.approx(0.68, abs=0.05)
+    # The flat plate overshoots the dp trend (1.6x) where the chamber
+    # undershoots it (0.90x), and closes most of the pressure trend's gap.
+    assert dp["chamber"] / dp["measured"] == pytest.approx(0.90, abs=0.03)
+    assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.60, abs=0.05)
+    assert p3["flat_plate"] / p3["measured"] == pytest.approx(0.71, abs=0.05)
     # Gas radiation (#1071) grows with pressure (eps_g 0.14 -> 0.26), so it
     # closes most of the flat plate's pressure trend; it also steepens the
-    # dp trend, whose overshoot grows to 1.8x.
-    assert p3["flat_plate+rad"] / p3["measured"] == pytest.approx(0.84, abs=0.05)
-    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.82, abs=0.06)
+    # dp trend, whose overshoot grows to 1.9x.
+    assert p3["flat_plate+rad"] / p3["measured"] == pytest.approx(0.89, abs=0.05)
+    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.89, abs=0.06)
 
 
 def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> None:
@@ -150,15 +153,15 @@ def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> 
 # Plateau predictions with gas radiation (rig beam length, eps_w 0.9):
 # (chamber, flat plate), and the plate's hot-face radiative flux [kW/m^2].
 PINNED_RAD = {
-    "fig9_eta_tot_E20_dp2": (0.896, 0.832, 38.2),
-    "fig9_eta_tot_E20_dp3": (0.907, 0.849, 38.5),
-    "fig9_eta_tot_E20_dp4": (0.914, 0.860, 38.8),
-    "fig6_eta_tot_E30_Tc470": (0.894, 0.829, 39.3),
-    "fig6_eta_tot_E30_Tc540": (0.894, 0.829, 38.1),
-    "fig6_eta_tot_E30_Tc580": (0.892, 0.827, 37.3),
-    "fig10_eta_tot_E30_5bar_dp2": (0.882, 0.811, 38.9),
-    "fig10_eta_tot_E30_10bar_dp3": (0.879, 0.808, 67.4),
-    "fig10_eta_tot_E30_10bar_dp2": (0.868, 0.791, 66.8),
+    "fig9_eta_tot_E20_dp2": (0.890, 0.824, 38.0),
+    "fig9_eta_tot_E20_dp3": (0.902, 0.841, 38.4),
+    "fig9_eta_tot_E20_dp4": (0.909, 0.852, 38.6),
+    "fig6_eta_tot_E30_Tc470": (0.888, 0.820, 39.1),
+    "fig6_eta_tot_E30_Tc540": (0.888, 0.821, 37.9),
+    "fig6_eta_tot_E30_Tc580": (0.887, 0.819, 37.1),
+    "fig10_eta_tot_E30_5bar_dp2": (0.876, 0.802, 38.7),
+    "fig10_eta_tot_E30_10bar_dp3": (0.872, 0.798, 67.0),
+    "fig10_eta_tot_E30_10bar_dp2": (0.860, 0.781, 66.3),
 }
 
 

@@ -4779,25 +4779,45 @@ _DISCHARGE_SELECTORS = {
     "Lichtarowicz": cb.DischargeCdCorrelation.Lichtarowicz1965,
 }
 
-# The inclined-hole inlet loss of a cooling hole's Cd, OPT-IN (default
-# "none": the angle enters the Cd only through the drilled length t/sin).
+# The inclined-hole inlet loss of a cooling hole's Cd.
 # "idelchik_3_2": Idelchik diagram 3-2's inclined entrance put into Eq.
 # (4-20)'s inlet coefficient of the thick-walled hole, see
 # orifice::idelchik::inclination_* in include/orifice.h. It composes with
-# 'IdelchikThick' only; any other correlation refuses the opt-in.
-CD_INCLINATION_MODELS = ("none", "idelchik_3_2")
+# 'IdelchikThick' only; any other correlation refuses it.
+# "none": the angle enters the Cd only through the drilled length t/sin.
+# "auto" (the default since the 2026-11-10 hole-Cd audit): "idelchik_3_2"
+# for a CYLINDRICAL hole on 'IdelchikThick', "none" otherwise. Cross-source,
+# the term moves every 30 deg cylindrical cell of Gritsch 1998 and Hay 1983
+# toward the data, and it worsens shaped holes (Gritsch fan -2 -> -11 %,
+# laidback 0 -> -10 %) because no shape term offsets it, so a shaped hole
+# stays off until one exists. At 90 deg the term is exactly zero.
+CD_INCLINATION_MODELS = ("auto", "none", "idelchik_3_2")
+
+
+def _resolve_cd_inclination(
+    name: str, cd_inclination: str, correlation: str, hole_type: str
+) -> str:
+    """The inclination model an inclined cooling hole is built with: "auto"
+    resolved from the correlation and the hole type, an explicit choice
+    kept (and refused by _cd_inclination_deg where it cannot compose)."""
+    if cd_inclination not in CD_INCLINATION_MODELS:
+        raise ValueError(
+            f"{name}: cd_inclination {cd_inclination!r} is not one of "
+            f"{list(CD_INCLINATION_MODELS)}."
+        )
+    if cd_inclination != "auto":
+        return cd_inclination
+    if correlation == "IdelchikThick" and hole_type == "cylindrical":
+        return "idelchik_3_2"
+    return "none"
 
 
 def _cd_inclination_deg(
     name: str, cd_inclination: str, correlation: str, angle_deg: float
 ) -> float:
     """The hole-to-wall angle the discharge correlation sees: 90 (no term)
-    unless ``cd_inclination`` opts in, which needs 'IdelchikThick'."""
-    if cd_inclination not in CD_INCLINATION_MODELS:
-        raise ValueError(
-            f"{name}: cd_inclination {cd_inclination!r} is not one of "
-            f"{list(CD_INCLINATION_MODELS)}."
-        )
+    for "none", the hole angle for "idelchik_3_2", which needs
+    'IdelchikThick'. ``cd_inclination`` is already resolved."""
     if cd_inclination == "none":
         return 90.0
     if correlation != "IdelchikThick":
@@ -4805,7 +4825,7 @@ def _cd_inclination_deg(
             f"{name}: cd_inclination={cd_inclination!r} is Idelchik diagram 3-2's inclined "
             "inlet, composed into the thick-walled hole's inlet coefficient (Eq. 4-20); "
             f"it does not compose with correlation={correlation!r}. Use "
-            "correlation='IdelchikThick', or cd_inclination='none'."
+            "correlation='IdelchikThick', or cd_inclination='none' (or 'auto')."
         )
     return float(angle_deg)
 
@@ -5184,7 +5204,7 @@ class OrificeElement(NetworkElement):
         # Angle of the discharged jet to the axis of a merge chamber it feeds
         # as a side stream (#471). 90 = normal injection, no axial momentum.
         self.injection_angle_deg = float(injection_angle_deg)
-        # The hole-to-wall angle the discharge correlation sees (opt-in
+        # The hole-to-wall angle the discharge correlation sees (the
         # inclination term, CD_INCLINATION_MODELS). 90: no term. Only the
         # inclined cooling-hole subclasses set it.
         self._cd_inclination_deg = 90.0
@@ -5906,7 +5926,7 @@ class OrificeElement(NetworkElement):
         return hole
 
     def _inclination_diagnostics(self) -> dict[str, float]:
-        """The opt-in inclined-inlet increment on zeta' (0.0 when off)."""
+        """The inclined-inlet increment on zeta' (0.0 when off or at 90 deg)."""
         return {
             "Cd_inclination_dzeta": float(cb.discharge_inclination_dzeta(self._cd_inclination_deg))
         }
@@ -7075,12 +7095,14 @@ class EffusionPlateElement(OrificeElement):
     one built on a half-pitch square inlet area, which is worth knowing about
     but is a different convention; at their own pitch it is a 0.3% effect.
 
-    THE HOLE ANGLE enters the Cd only through the drilled length t/sin(angle)
-    by default. ``cd_inclination='idelchik_3_2'`` (opt-in, IdelchikThick
-    only; any other correlation refuses it) adds Idelchik diagram 3-2's
-    inclined-inlet loss, dzeta = 0.3 cos(angle) + 0.2 cos^2(angle), to
-    diagram 4-18a's inlet coefficient (Eq. 4-20); reported as
-    ``Cd_inclination_dzeta``. Outside its range (Re > 1e4, l/d >= 2) the
+    THE HOLE ANGLE enters the Cd through the drilled length t/sin(angle) and,
+    with IdelchikThick, through Idelchik diagram 3-2's inclined-inlet loss,
+    dzeta = 0.3 cos(angle) + 0.2 cos^2(angle), added to diagram 4-18a's
+    inlet coefficient (Eq. 4-20); reported as ``Cd_inclination_dzeta``
+    (exactly 0 at 90 deg). ``cd_inclination='auto'`` (default) applies it
+    with IdelchikThick and leaves it off with any other correlation;
+    ``'idelchik_3_2'`` forces it (any other correlation refuses it) and
+    ``'none'`` switches it off. Outside its range (Re > 1e4, l/d >= 2) the
     Cd is flagged by ``Cd_in_range``, not refused.
 
     THERMAL, INTERNAL SIDE. `internal_heat_transfer()` gives the coolant-side
@@ -7175,7 +7197,7 @@ class EffusionPlateElement(OrificeElement):
         material: str | None = None,
         gas_baseline: Literal["chamber", "flat_plate"] = "chamber",
         gas_start_length: float | None = None,
-        cd_inclination: Literal["none", "idelchik_3_2"] = "none",
+        cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto",
         radiation: GasRadiation | None = None,
         cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none",
         exit_crossflow_region: Literal[
@@ -7349,10 +7371,13 @@ class EffusionPlateElement(OrificeElement):
         # Discharged into a merge chamber, the holes' inclination to the wall
         # is the jets' angle to the gas axis (holes pointing downstream).
         self.injection_angle_deg = float(angle_deg)
-        # Opt-in inclined-inlet Cd term (CD_INCLINATION_MODELS).
-        self.cd_inclination = cd_inclination
+        # Inclined-inlet Cd term (CD_INCLINATION_MODELS): the model in use,
+        # "auto" resolved (an effusion hole is cylindrical).
+        self.cd_inclination = _resolve_cd_inclination(
+            f"EffusionPlateElement {id!r}", cd_inclination, correlation, "cylindrical"
+        )
         self._cd_inclination_deg = _cd_inclination_deg(
-            f"EffusionPlateElement {id!r}", cd_inclination, correlation, angle_deg
+            f"EffusionPlateElement {id!r}", self.cd_inclination, correlation, angle_deg
         )
         # Opt-in exit-crossflow Cd term (CD_EXIT_CROSSFLOW_MODELS).
         self.cd_exit_crossflow = cd_exit_crossflow
@@ -7615,7 +7640,7 @@ class EffusionPlateElement(OrificeElement):
         flat-plate turbulent boundary layer at the same x, which is a third
         baseline again -- the element's `gas_baseline='flat_plate'` in a
         network. On Behrendt 2008's reacting rig it halves the chamber
-        baseline's over-prediction (+22% to +13%, extractions/
+        baseline's over-prediction (+21% to +12%, extractions/
         behrendt_2008_effusion_eta_tot.md) and does not close it.
 
         WHAT SCORING IT AGAINST ANDREWS SHOWED. At `gas_augmentation = 1.0`
@@ -8075,9 +8100,13 @@ class FilmCoolingElement(OrificeElement):
 
     FLOW: an orifice of n_rows * holes_per_row holes in parallel, each of
     the drilled length ``wall_thickness / sin(angle_deg)``, plenum-fed.
-    ``cd_inclination='idelchik_3_2'`` opts in to Idelchik diagram 3-2's
-    inclined-inlet loss on the IdelchikThick Cd (see EffusionPlateElement);
-    reported as ``Cd_inclination_dzeta``.
+    ``cd_inclination='auto'`` (default) adds Idelchik diagram 3-2's
+    inclined-inlet loss to the IdelchikThick Cd of a CYLINDRICAL hole (see
+    EffusionPlateElement) and leaves a shaped hole without it: the plain-hole
+    Cd on the metering area has no shape term, and the inclination term
+    alone moves the shaped holes away from Gritsch 1998's data.
+    ``'idelchik_3_2'`` forces it, ``'none'`` switches it off; reported as
+    ``Cd_inclination_dzeta``.
     """
 
     _selects_compressible_model = False  # keeps the nozzle (#861)
@@ -8101,7 +8130,7 @@ class FilmCoolingElement(OrificeElement):
         correlation: str = "IdelchikThick",
         Cd: float | None = None,
         edge_radius: float = 0.0,
-        cd_inclination: Literal["none", "idelchik_3_2"] = "none",
+        cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto",
         cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none",
         exit_crossflow_region: Literal[
             "suction_surface", "pressure_surface", "leading_edge"
@@ -8163,9 +8192,12 @@ class FilmCoolingElement(OrificeElement):
         self.equivalent_bore = self.diameter
         # Into a merge chamber the jets enter at the hole angle to the gas axis.
         self.injection_angle_deg = float(angle_deg)
-        # Opt-in inclined-inlet Cd term (CD_INCLINATION_MODELS).
-        self.cd_inclination = cd_inclination
-        self._cd_inclination_deg = _cd_inclination_deg(name, cd_inclination, correlation, angle_deg)
+        # Inclined-inlet Cd term (CD_INCLINATION_MODELS): the model in use,
+        # "auto" resolved from the correlation and the hole type.
+        self.cd_inclination = _resolve_cd_inclination(name, cd_inclination, correlation, hole_type)
+        self._cd_inclination_deg = _cd_inclination_deg(
+            name, self.cd_inclination, correlation, angle_deg
+        )
         # Opt-in exit-crossflow Cd term (CD_EXIT_CROSSFLOW_MODELS). A shaped
         # hole takes Table 2's fan-shaped sets and the exit-plane flux.
         self.cd_exit_crossflow = cd_exit_crossflow
