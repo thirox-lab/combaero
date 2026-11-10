@@ -222,9 +222,14 @@ SET_ALSO_PRODUCES: dict[str, tuple[str, ...]] = {
         "R_ribbed_wall", "R_normalised_pe", "G_four_wall", "f_channel_two_ribbed",
         "Nu_ratio_ribbed_DB_vs_fbar", "Nu_ratio_ribbed_DB",
     ),
+    # f_channel_two_ribbed: Han and Park (1988) MEASURE the passage-average
+    # fbar of a channel with two opposite ribbed walls (p. 186), build R on
+    # the four-sided f = fbar + (H/W)(fbar - f(FD)) (Eq. 6, f(FD) = 0.046
+    # Re^-0.2, Eq. 8), and state that fbar "can be predicted by combining
+    # equations (7)-(9)" (p. 193). runner._channel_fbar is that inverse.
     "han_park_1988_angled": (
         "R_ribbed_wall", "R_normalised_pe", "R_normalised_angled",
-        "G_four_wall", "Nu_ratio_ribbed_DB",
+        "G_four_wall", "f_channel_two_ribbed", "Nu_ratio_ribbed_DB",
     ),
     "rallabandi_2009_high_re": (
         "R_ribbed_wall", "R_normalised_pe", "Nu_ratio_ribbed_DB",
@@ -331,7 +336,7 @@ CONVERSIONS: dict[tuple[str, str], Conversion] = {
     # is the paper's own printed denominator, so multiplying it back is
     # definition. Which SETS may use it is a separate question --
     # SET_ALSO_PRODUCES declares f_channel_two_ribbed for han_1988_orthogonal
-    # only, so the angled sets refuse it (unregistered) until declared.
+    # and han_park_1988_angled only; any other set refuses it (unregistered).
     ("f_ratio_passage_petukhov", "f_channel_two_ribbed"): Conversion(
         derivation="fbar = (f/f0) * f0(Re), f0 = 2 [2.236 ln Re - 4.639]^-2 "
         "(Naik et al. 2014 Eq. 5, Fanning). Definition, not a fit. See "

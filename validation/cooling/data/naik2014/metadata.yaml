@@ -388,15 +388,15 @@ files:
     confidence: exact
     uncertainty: 0.10
     cross_check: >-
-      Unscored: no angled-rib set declares the passage-average friction
-      (conventions.SET_ALSO_PRODUCES lists f_channel_two_ribbed for
-      han_1988_orthogonal only, which binds transverse 90 deg ribs), so
-      eligible_sets is empty and the f/f0 -> fbar conversion has no set to meet.
-      Refused by the existing rule, not by choice; declaring the friction for
-      the angled sets is a separate decision (it would also add rows to Taslim &
-      Spring's friction). The conversion itself is registered (definition: f0 is
-      Eq. 5). Vector marks, exact.
-    scores: null
+      Scored by han_park_1988_angled, the one set eligible by rule: it
+      declares the passage-average friction (f_channel_two_ribbed), because
+      Han and Park (1988) measure fbar for two opposite ribbed walls and
+      predict it by inverting their Eq. 6 (p. 193). The measured f/f0 goes to
+      fbar through the registered conversion (definition: f0 is Eq. 5).
+      W/H 6.64 and e/D 0.089 are both outside the set's box (W/H 1-4, e/D
+      0.047-0.078), so every row is out of domain: CROSS-SOURCE ACCURACY,
+      never fidelity, never a tuner. Vector marks, exact.
+    scores: han_park_1988_angled
     verification:
       x_axis_type: linear
       y_axis_type: linear

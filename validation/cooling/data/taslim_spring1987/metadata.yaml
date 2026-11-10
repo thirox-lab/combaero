@@ -37,8 +37,9 @@
 # does. Instead (#443) the friction is compared on a Re_Dh path with Han's
 # measured passage-average fbar, the same definition (conventions.py:
 # f_fanning_passage -> f_channel_two_ribbed). Every two-wall fig11 series is
-# scored by han_1988_orthogonal, the one set eligible by rule; all of it is
-# out of Han's domain and labelled accuracy. The one-wall series stay
+# scored by han_1988_orthogonal and han_park_1988_angled, the two sets that
+# declare the passage fbar and so are eligible by rule; all of it is out of
+# Han's domain and labelled accuracy. The one-wall series stay
 # unscored: no shipped set models a single ribbed wall. fig4/fig5 Nu are
 # scored by this source's own taslim_spring_1987_* sets.
 #
@@ -234,8 +235,9 @@ files:
     confidence: band
     uncertainty: null
     cross_check: >-
-      Taslim AR 0.5 = Han W/H 2.0, two wall(s) turbulated, e/D_H 0.250. Scored by han_1988_orthogonal, the one set eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 2.0 is inside Han's 1-4, but e/D_H is above Han's 0.047-0.078 band, so every row is out of domain -- an accuracy measurement from an independent lab, labelled.
+      Taslim AR 0.5 = Han W/H 2.0, two wall(s) turbulated, e/D_H 0.250. Scored by han_1988_orthogonal and han_park_1988_angled, the two sets eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 2.0 is inside Han's 1-4, but e/D_H is above Han's 0.047-0.078 band, so every row is out of domain -- an accuracy measurement from an independent lab, labelled.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -277,8 +279,9 @@ files:
     confidence: band
     uncertainty: null
     cross_check: >-
-      Taslim AR 0.5 = Han W/H 2.0, two wall(s) turbulated, e/D_H 0.125. Scored by han_1988_orthogonal, the one set eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 2.0 is inside Han's 1-4, but e/D_H is above Han's 0.047-0.078 band, so every row is out of domain -- an accuracy measurement from an independent lab, labelled.
+      Taslim AR 0.5 = Han W/H 2.0, two wall(s) turbulated, e/D_H 0.125. Scored by han_1988_orthogonal and han_park_1988_angled, the two sets eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 2.0 is inside Han's 1-4, but e/D_H is above Han's 0.047-0.078 band, so every row is out of domain -- an accuracy measurement from an independent lab, labelled.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -432,7 +435,8 @@ files:
       Taslim AR 1.0 = Han W/H 1.0, two opposite walls turbulated, e/D_H 0.083,
       90 deg transverse in-line, P/e 10 -- Han's own square-channel
       configuration, from an independent lab (Northeastern / GE).
-      Scored by han_1988_orthogonal (#403 item 2) on the Re_Dh path:
+      Scored by han_1988_orthogonal (#403 item 2) and, since both declare
+      the passage fbar, han_park_1988_angled, on the Re_Dh path:
       the measured passage-average Fanning f is Han's measured `fbar`
       (same definition, Han 1988 / Han, Zhang and Lee 1991 Eq. 1), so
       the set's four-sided f is converted to it with Han's own
@@ -442,6 +446,7 @@ files:
       measurement, labelled. Rib cross-section shape is not stated in
       the paper. No measurement uncertainty is stated either.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -481,7 +486,8 @@ files:
       Taslim AR 1.0 = Han W/H 1.0, two opposite walls turbulated, e/D_H 0.250,
       90 deg transverse in-line, P/e 10 -- Han's own square-channel
       configuration, from an independent lab (Northeastern / GE).
-      Scored by han_1988_orthogonal (#403 item 2) on the Re_Dh path:
+      Scored by han_1988_orthogonal (#403 item 2) and, since both declare
+      the passage fbar, han_park_1988_angled, on the Re_Dh path:
       the measured passage-average Fanning f is Han's measured `fbar`
       (same definition, Han 1988 / Han, Zhang and Lee 1991 Eq. 1), so
       the set's four-sided f is converted to it with Han's own
@@ -491,6 +497,7 @@ files:
       measurement, labelled. Rib cross-section shape is not stated in
       the paper. No measurement uncertainty is stated either.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -530,7 +537,8 @@ files:
       Taslim AR 1.0 = Han W/H 1.0, two opposite walls turbulated, e/D_H 0.167,
       90 deg transverse in-line, P/e 10 -- Han's own square-channel
       configuration, from an independent lab (Northeastern / GE).
-      Scored by han_1988_orthogonal (#403 item 2) on the Re_Dh path:
+      Scored by han_1988_orthogonal (#403 item 2) and, since both declare
+      the passage fbar, han_park_1988_angled, on the Re_Dh path:
       the measured passage-average Fanning f is Han's measured `fbar`
       (same definition, Han 1988 / Han, Zhang and Lee 1991 Eq. 1), so
       the set's four-sided f is converted to it with Han's own
@@ -540,6 +548,7 @@ files:
       measurement, labelled. Rib cross-section shape is not stated in
       the paper. No measurement uncertainty is stated either.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -695,8 +704,9 @@ files:
     confidence: band
     uncertainty: null
     cross_check: >-
-      Taslim AR 3.5 = Han W/H 0.286, two wall(s) turbulated, e/D_H 0.053. Scored by han_1988_orthogonal, the one set eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 0.286 is below Han's 1-4 (and e/D_H above his band except at 0.053), so every row is out of domain -- an accuracy measurement from an independent lab, labelled, and the only independent check of Han's friction in a narrow channel.
+      Taslim AR 3.5 = Han W/H 0.286, two wall(s) turbulated, e/D_H 0.053. Scored by han_1988_orthogonal and han_park_1988_angled, the two sets eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 0.286 is below Han's 1-4 (and e/D_H above his band except at 0.053), so every row is out of domain -- an accuracy measurement from an independent lab, labelled, and the only independent check of Han's friction in a narrow channel.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -733,8 +743,9 @@ files:
     confidence: band
     uncertainty: null
     cross_check: >-
-      Taslim AR 3.5 = Han W/H 0.286, two wall(s) turbulated, e/D_H 0.107. Scored by han_1988_orthogonal, the one set eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 0.286 is below Han's 1-4 (and e/D_H above his band except at 0.053), so every row is out of domain -- an accuracy measurement from an independent lab, labelled, and the only independent check of Han's friction in a narrow channel.
+      Taslim AR 3.5 = Han W/H 0.286, two wall(s) turbulated, e/D_H 0.107. Scored by han_1988_orthogonal and han_park_1988_angled, the two sets eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 0.286 is below Han's 1-4 (and e/D_H above his band except at 0.053), so every row is out of domain -- an accuracy measurement from an independent lab, labelled, and the only independent check of Han's friction in a narrow channel.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
@@ -771,8 +782,9 @@ files:
     confidence: band
     uncertainty: null
     cross_check: >-
-      Taslim AR 3.5 = Han W/H 0.286, two wall(s) turbulated, e/D_H 0.161. Scored by han_1988_orthogonal, the one set eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 0.286 is below Han's 1-4 (and e/D_H above his band except at 0.053), so every row is out of domain -- an accuracy measurement from an independent lab, labelled, and the only independent check of Han's friction in a narrow channel.
+      Taslim AR 3.5 = Han W/H 0.286, two wall(s) turbulated, e/D_H 0.161. Scored by han_1988_orthogonal and han_park_1988_angled, the two sets eligible by rule, on the same Re_Dh fbar path as the AR 1.0 series (#443). W/H 0.286 is below Han's 1-4 (and e/D_H above his band except at 0.053), so every row is out of domain -- an accuracy measurement from an independent lab, labelled, and the only independent check of Han's friction in a narrow channel.
     scores: han_1988_orthogonal
+    also_scores: [han_park_1988_angled]
     verification:
       x_axis_type: log
       y_axis_type: log
