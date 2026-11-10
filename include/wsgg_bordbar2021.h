@@ -9,12 +9,17 @@
 // emissivities, 300-3000 K, Mr = x_H2O/x_CO2 = 0.1-4, ten total-pressure sets
 // 0.1-80 atm. Non-luminous: no soot.
 //
-// At one pressure set (Eqs. 7-11):
+// At one pressure set (Eqs. 7-11; Eq. 9 is the transparent weight):
 //   eps = sum_i a_i [1 - exp(-kappa_p,i (p_H2O + p_CO2) L)]       (7)
-//   a_i = sum_j b_ij (T / 1500 K)^(j-1),  j = 1..5                (9)
+//   a_i = sum_j b_ij (T / 1500 K)^(j-1),  j = 1..5                (8)
+//   a_0 = 1 - sum_i a_i  (the transparent gas)                    (9)
 //   b_ij = sum_k c_ijk Mr^(4-k),  kappa_p,i = sum_k d_ik Mr^(4-k)  (10, 11)
 // four gray gases plus a transparent one, kappa_p in 1/(atm m), the partial
 // pressures in atm. The constants are Appendix A's (wsgg_bordbar2021_data.h).
+// The fit's own properties, not transcription errors: some a_i are negative
+// (down to -0.136 at 80 atm, 300 K), and sum_i a_i exceeds 1 in places, so
+// a_0 can be negative and eps is not monotonic in L. An RTE user of
+// wsgg_bordbar2021_gray_gases must accept a negative a_0.
 //
 // Between the sets (the paper gives no rule; these choices are combaero's):
 // - eps, not the coefficients, is interpolated: gray gas i is a different
@@ -31,7 +36,10 @@
 // - Mr to [0.1, 4]; x_CO2 = 0 (hydrogen or ammonia products) is Mr = 4 and
 //   x_H2O = 0 is Mr = 0.1, both extrapolations of the model; d/dMr = 0 there.
 // - eps to [0, 1]: sum_i a_i reaches 1.039 (2 atm), so the optically thick
-//   limit can exceed 1.
+//   limit can exceed 1. All partials are 0 where a clamp is active, including
+//   eps = 0 exactly (no H2O or CO2, P = 0 or L = 0), where the true one-sided
+//   d eps/dx is positive: a Newton iterate on a dry gas sees no composition
+//   coupling until some H2O or CO2 is present.
 // -----------------------------------------------------------------------------
 
 #include <array>
@@ -48,9 +56,11 @@ constexpr double WSGG_BORDBAR2021_MR_MIN = 0.1;
 constexpr double WSGG_BORDBAR2021_MR_MAX = 4.0;
 // Pa per standard atmosphere: the model's pressures are in atm.
 constexpr double WSGG_PA_PER_ATM = 101325.0;
+// Mass fractions down to -1e-12 (solver round-off) are read as zero.
+constexpr double WSGG_BORDBAR2021_Y_NEG_TOL = 1e-12;
 
 // The four gray gases of one pressure set at (T, Mr): weights a_i [-] and
-// pressure absorption coefficients kappa_p,i [1/(atm m)] (Eqs. 9-11). For an
+// pressure absorption coefficients kappa_p,i [1/(atm m)] (Eqs. 8, 10, 11). For an
 // RTE solve; the transparent gas has weight 1 - sum a_i.
 struct WsggGrayGases {
   std::array<double, 4> a{};

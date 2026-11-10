@@ -4094,8 +4094,8 @@ documents:
   verdict: 'Screened 2026-11-09 for #1071 (composition-based gas emissivity in place of Lefebvre Eq. 8.11): 1
     atm only, so it does NOT plug the pressure gap -- at the DLR 2008 rig Eq. 8.11 agrees with the held
     pressure-dependent Bordbar 2021 WSGG at 5 bar (1.03-1.13x) and overstates it at 10 bar (1.32-1.41x; scratch
-    evaluation, not committed). Its value is the licence: CC-BY 4.0 with the coefficients printed, so unlike
-    Bordbar 2021 (non-redistributable) it could ship as a 1-atm composition-based emissivity, e.g. as the base
+    evaluation, not committed). Its value is the licence: CC-BY 4.0 with the coefficients printed, like
+    Bordbar 2021''s Appendix A (CC BY; only its mmc2 code files are non-commercial) it could ship as a 1-atm composition-based emissivity, e.g. as the base
     of a pressure-scaled model or a cross-source check of Eq. 8.11 at 1 atm. Not implemented.'
   read_for: ['#1071 non-luminous gas emissivity (composition-based)', 'a redistributable WSGG']
   issues: [1071, 793]
@@ -5984,7 +5984,8 @@ documents:
     appendix derives the geometric factors; the engineering value combaero needs (Le = 0.9 x 4V/A, i.e. 3.6
     V/A, against Lefebvre Eq. 8.10''s 3.4 V/A after Fishenden & Saunders) is the textbook''s, so either value is
     sourced; the 6% difference is a model choice to state. App. F names the pressure-capable, closed-form
-    alternative to Bordbar 2021 that is NOT under a non-commercial licence as far as seen: Alberti, Weber &
+    alternative beside Bordbar 2021 (whose Appendix A is CC BY and now ships, #1071; only its mmc2 code files
+    are non-commercial): Alberti, Weber &
     Mancini 2018/2020 (JQSRT 219, 274-291; JQSRT 255, 107227) curve fits to 100 atm, with a public
     spreadsheet -- wanted. The charts themselves are not digitised and should not be (curve fits exist).
     Example K.1 is a one-number check of a gas-emissivity kernel (accuracy, not fidelity: Alberti spreadsheet
@@ -6555,7 +6556,7 @@ wanted:
   priority: later
   question: 'The pressure-capable, composition-based non-luminous gas emissivity (300-3000 K, 0.1-100 atm, pure
     H2O through CO2-rich) that Howell et al. 7th ed. App. F reproduces (held) -- the shippable alternative to
-    Reeves (Lefebvre Eq. 8.9) and to Bordbar 2021 (non-commercial licence). Needed: the fit coefficients and
+    Reeves (Lefebvre Eq. 8.9) and a cross-check of Bordbar 2021 (Appendix A CC BY, shipped #1071; to 80 atm only). Needed: the fit coefficients and
     their licence. Covers the H2/NH3 limit (H2O only) that Bordbar does not.'
   where: Elsevier journal (paywalled); check whether the authors publish the coefficients openly (the Howell
     appendix mentions a spreadsheet).

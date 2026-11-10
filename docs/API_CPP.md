@@ -1548,7 +1548,7 @@ between the sets and the clamps; the constants are Appendix A's, in
 // Constants: WSGG_BORDBAR2021_T_REF = 1500 K, _T_MIN/_T_MAX = 300/3000 K,
 // _MR_MIN/_MR_MAX = 0.1/4, WSGG_PA_PER_ATM = 101325.
 
-// One tabulated set's gray gases (Eqs. 9-11): a[4] [-], kappa[4] [1/(atm m)].
+// One tabulated set's gray gases (Eqs. 8, 10, 11): a[4] [-], kappa[4] [1/(atm m)].
 // Unclamped: throws outside the fitted range or off a tabulated pressure.
 WsggGrayGases wsgg_bordbar2021_gray_gases(double p_set_atm, double T, double Mr);
 

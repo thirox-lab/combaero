@@ -1158,7 +1158,7 @@ e.eps, e.deps_dT, e.deps_dP, e.deps_dx_h2o, e.deps_dx_co2, e.deps_dl_b   # 0.132
 m = cb.gas_emissivity_bordbar2021_mixture(T_g=1567.0, P=5e5, Y=Y, l_b=0.126)
 m.eps, m.deps_dT, m.deps_dP, m.deps_dl_b, m.deps_dY
 
-# One tabulated set's gray gases (Eqs. 9-11), for an RTE solve; unclamped.
+# One tabulated set's gray gases (Eqs. 8, 10, 11), for an RTE solve; unclamped.
 g = cb.wsgg_bordbar2021_gray_gases(p_set_atm=30.0, T=1500.0, Mr=2.0)
 g.a, g.kappa          # 4 weights [-], 4 kappas [1/(atm m)]
 ```

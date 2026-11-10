@@ -182,6 +182,25 @@ def test_mixture_chains_through_the_mole_fractions() -> None:
         assert m.deps_dY[k] == pytest.approx(fd, rel=1e-5, abs=1e-7), names[k]
 
 
+def test_mixture_reads_round_off_negatives_as_zero() -> None:
+    """A solver iterate's -1e-14 is zero, as on the default Lefebvre path; a
+    real negative mass fraction is still refused."""
+    names = list(cb.species.names)
+    Y = np.zeros(len(names))
+    for sp, v in (("N2", 0.72), ("O2", 0.12), ("H2O", 0.07), ("CO2", 0.09)):
+        Y[names.index(sp)] = v
+    ref = cb.gas_emissivity_bordbar2021_mixture(1700.0, 12e5, Y, 0.1).eps
+    noisy = Y.copy()
+    noisy[names.index("AR")] = -1e-14
+    assert cb.gas_emissivity_bordbar2021_mixture(1700.0, 12e5, noisy, 0.1).eps == pytest.approx(
+        ref, rel=1e-12
+    )
+    bad = Y.copy()
+    bad[names.index("AR")] = -1e-6
+    with pytest.raises(ValueError, match="Y must be >= 0"):
+        cb.gas_emissivity_bordbar2021_mixture(1700.0, 12e5, bad, 0.1)
+
+
 # --- clamps -------------------------------------------------------------------
 
 

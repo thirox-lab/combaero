@@ -8247,7 +8247,7 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
 
   m.def("wsgg_bordbar2021_gray_gases", &wsgg_bordbar2021_gray_gases,
         py::arg("p_set_atm"), py::arg("T"), py::arg("Mr"),
-        "Bordbar et al. (2021) Eqs. 9-11 at one tabulated pressure set\n"
+        "Bordbar et al. (2021) Eqs. 8, 10, 11 at one tabulated pressure set\n"
         "(0.1, 0.5, 1, 2, 5, 10, 20, 30, 50 or 80 atm): the gray-gas weights\n"
         "and kappas at temperature T [K] (300-3000) and mole ratio\n"
         "Mr = x_H2O/x_CO2 (0.1-4), for an RTE solve. Unclamped: raises\n"

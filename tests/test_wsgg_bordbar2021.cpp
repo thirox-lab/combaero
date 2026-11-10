@@ -66,10 +66,11 @@ TEST(WsggBordbar2021, Clamps) {
               gas_emissivity_bordbar2021(1800.0, P, 0.16, 0.04, 0.3).eps,
               1e-14);
   EXPECT_EQ(gas_emissivity_bordbar2021(1800.0, P, 0.0, 0.0, 0.3).eps, 0.0);
-  const double thick = gas_emissivity_bordbar2021(1500.0, 2.0 * WSGG_PA_PER_ATM,
-                                                  0.5, 0.5, 1000.0)
-                           .eps;
-  EXPECT_LE(thick, 1.0);
+  // 2 atm, 300 K, Mr 1: sum a_i = 1.0285, so the thick limit is clamped.
+  const auto thick = gas_emissivity_bordbar2021(300.0, 2.0 * WSGG_PA_PER_ATM,
+                                                0.5, 0.5, 1000.0);
+  EXPECT_EQ(thick.eps, 1.0);
+  EXPECT_EQ(thick.deps_dl_b, 0.0);
   EXPECT_THROW(gas_emissivity_bordbar2021(1800.0, P, 0.7, 0.4, 0.3),
                std::invalid_argument);
   EXPECT_THROW(wsgg_bordbar2021_gray_gases(3.0, 1500.0, 1.0),

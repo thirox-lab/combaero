@@ -27,7 +27,7 @@ void require_finite(double v, const char *what) {
   }
 }
 
-// Eqs. 9-11 at one set, with d/dT and d/dMr of the weights and kappas.
+// Eqs. 8, 10, 11 at one set, with d/dT and d/dMr of the weights and kappas.
 struct SetGases {
   std::array<double, 4> a{}, da_dT{}, da_dMr{};
   std::array<double, 4> kappa{}, dkappa_dMr{};
@@ -245,18 +245,20 @@ gas_emissivity_bordbar2021_mixture(double T_g, double P,
   double N = 0.0;
   for (std::size_t k = 0; k < n; ++k) {
     require_finite(Y[k], "Y");
-    if (Y[k] < 0.0) {
+    // Round-off negatives from a solver iterate count as zero, as the
+    // default Lefebvre path tolerates them; a real negative is refused.
+    if (Y[k] < -WSGG_BORDBAR2021_Y_NEG_TOL) {
       throw std::invalid_argument(
           "gas_emissivity_bordbar2021_mixture: Y must be >= 0");
     }
-    N += Y[k] / molar_masses[k];
+    N += std::max(Y[k], 0.0) / molar_masses[k];
   }
   if (!(N > 0.0)) {
     throw std::invalid_argument(
         "gas_emissivity_bordbar2021_mixture: Y must not be all zero");
   }
-  const double xh = Y[ih] / molar_masses[ih] / N;
-  const double xc = Y[ic] / molar_masses[ic] / N;
+  const double xh = std::max(Y[ih], 0.0) / molar_masses[ih] / N;
+  const double xc = std::max(Y[ic], 0.0) / molar_masses[ic] / N;
   const WsggEmissivityResult e =
       gas_emissivity_bordbar2021(T_g, P, xh, xc, l_b);
   WsggMixtureEmissivityResult r;
