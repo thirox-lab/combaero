@@ -169,6 +169,14 @@ try:
         ROGERS_HERSH_1976_SUCTION_B,
         CrossflowCd,
         rogers_hersh_1976_cd,
+        ROGERS_HERSH_1976_VELOCITY_RATIO_MIN,
+        ROGERS_HERSH_1976_VELOCITY_RATIO_MAX,
+        ROGERS_HERSH_1976_L_OVER_D_MIN,
+        ROGERS_HERSH_1976_L_OVER_D_MAX,
+        ROGERS_HERSH_1976_V_INF_MIN,
+        ROGERS_HERSH_1976_V_INF_MAX,
+        RogersHersh1976Envelope,
+        rogers_hersh_1976_envelope,
         florschuetz_metzger_su_1982_has_plate,
         florschuetz_metzger_su_1982_cd,
         Rowbury2001Set,
@@ -503,6 +511,8 @@ try:
         discharge_cd,
         discharge_cd_and_derivatives,
         discharge_cd_in_range,
+        DischargeCdEnvelope,
+        discharge_cd_envelope,
         discharge_cd_re_floor,
         discharge_inclination_dzeta,
         discharge_pipe_cd_ratio,
@@ -1039,6 +1049,8 @@ except (ModuleNotFoundError, ImportError) as e:
     discharge_cd = _core.discharge_cd
     discharge_cd_and_derivatives = _core.discharge_cd_and_derivatives
     discharge_cd_in_range = _core.discharge_cd_in_range
+    DischargeCdEnvelope = _core.DischargeCdEnvelope
+    discharge_cd_envelope = _core.discharge_cd_envelope
     discharge_cd_re_floor = _core.discharge_cd_re_floor
     discharge_inclination_dzeta = _core.discharge_inclination_dzeta
     discharge_pipe_cd_ratio = _core.discharge_pipe_cd_ratio
@@ -1348,6 +1360,14 @@ __all__ = [
     "ROGERS_HERSH_1976_SUCTION_B",
     "CrossflowCd",
     "rogers_hersh_1976_cd",
+    "ROGERS_HERSH_1976_VELOCITY_RATIO_MIN",
+    "ROGERS_HERSH_1976_VELOCITY_RATIO_MAX",
+    "ROGERS_HERSH_1976_L_OVER_D_MIN",
+    "ROGERS_HERSH_1976_L_OVER_D_MAX",
+    "ROGERS_HERSH_1976_V_INF_MIN",
+    "ROGERS_HERSH_1976_V_INF_MAX",
+    "RogersHersh1976Envelope",
+    "rogers_hersh_1976_envelope",
     "florschuetz_metzger_su_1982_has_plate",
     "florschuetz_metzger_su_1982_cd",
     "Rowbury2001Set",
@@ -1785,6 +1805,8 @@ __all__ = [
     "discharge_cd",
     "discharge_cd_and_derivatives",
     "discharge_cd_in_range",
+    "DischargeCdEnvelope",
+    "discharge_cd_envelope",
     "discharge_cd_re_floor",
     "discharge_inclination_dzeta",
     "discharge_pipe_cd_ratio",

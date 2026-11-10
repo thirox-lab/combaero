@@ -190,6 +190,8 @@
 			"xi"
 		],
 		"effusion_liner": [
+			"Cd_extrapolated_Re",
+			"Cd_extrapolated_l_d",
 			"T_wall_hot_max",
 			"T_wall_limit",
 			"U1_over_Vi_max",
@@ -211,6 +213,9 @@
 		],
 		"effusion_plate": [
 			"Cd",
+			"Cd_extrapolated_Re",
+			"Cd_extrapolated_edge",
+			"Cd_extrapolated_l_d",
 			"Cd_in_range",
 			"Cd_inclination_dzeta",
 			"Cd_pipe_ratio",
@@ -359,6 +364,9 @@
 		],
 		"film_cooling": [
 			"Cd",
+			"Cd_extrapolated_Re",
+			"Cd_extrapolated_edge",
+			"Cd_extrapolated_l_d",
 			"Cd_in_range",
 			"Cd_inclination_dzeta",
 			"Cd_pipe_ratio",
@@ -469,6 +477,12 @@
 		],
 		"impingement_array": [
 			"Cd",
+			"Cd_crossflow_extrapolated_grazing_velocity",
+			"Cd_crossflow_extrapolated_l_d",
+			"Cd_crossflow_extrapolated_velocity_ratio",
+			"Cd_extrapolated_Re",
+			"Cd_extrapolated_edge",
+			"Cd_extrapolated_l_d",
 			"Cd_in_range",
 			"Gc_Gj_max",
 			"Nu_mean",
@@ -624,6 +638,9 @@
 		],
 		"orifice": [
 			"Cd",
+			"Cd_extrapolated_Re",
+			"Cd_extrapolated_edge",
+			"Cd_extrapolated_l_d",
 			"Cd_in_range",
 			"Cd_pipe_ratio",
 			"Ci",
@@ -715,6 +732,9 @@
 		],
 		"slot_film": [
 			"Cd",
+			"Cd_extrapolated_Re",
+			"Cd_extrapolated_edge",
+			"Cd_extrapolated_l_d",
 			"Cd_in_range",
 			"Cd_pipe_ratio",
 			"E",
@@ -964,6 +984,12 @@
 	},
 	"units": {
 		"Cd": "-",
+		"Cd_crossflow_extrapolated_grazing_velocity": "-",
+		"Cd_crossflow_extrapolated_l_d": "-",
+		"Cd_crossflow_extrapolated_velocity_ratio": "-",
+		"Cd_extrapolated_Re": "-",
+		"Cd_extrapolated_edge": "-",
+		"Cd_extrapolated_l_d": "-",
 		"Cd_in_range": "-",
 		"Cd_inclination_dzeta": "-",
 		"Cd_pipe_ratio": "-",

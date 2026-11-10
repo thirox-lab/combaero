@@ -84,6 +84,33 @@ struct CrossflowCd {
 // (a reversed jet). G_ideal <= 0 gives Cd = 0 unless G_c <= 0 (capped).
 CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool suction);
 
+// Rogers & Hersh (1976)'s envelope, by variable: the Fig. 11 fits' velocity
+// ratio and grazing speed (single holes, D 12.7 mm, L/D 1) and the L/D the
+// report tested under grazing flow (0.12-2.0; Figs. 17-19 show L/D moving
+// the suction Cd at every ratio). INFORMATION to report where the law acts
+// (not capped), never a selector and never a warning: the Cd is the fit's.
+//   velocity_ratio    Vi / V_inf (actual jet over grazing velocity) outside
+//                     0.004-0.9; below it the power law runs to zero
+//   l_over_d          hole L/D outside 0.12-2.0
+//   grazing_velocity  V_inf outside 24-85 m/s (M <= 0.25, incompressible)
+constexpr double ROGERS_HERSH_1976_VELOCITY_RATIO_MIN = 0.004;
+constexpr double ROGERS_HERSH_1976_VELOCITY_RATIO_MAX = 0.9;
+constexpr double ROGERS_HERSH_1976_L_OVER_D_MIN = 0.12;
+constexpr double ROGERS_HERSH_1976_L_OVER_D_MAX = 2.0;
+constexpr double ROGERS_HERSH_1976_V_INF_MIN = 24.0;  // [m/s]
+constexpr double ROGERS_HERSH_1976_V_INF_MAX = 85.0;  // [m/s]
+
+struct RogersHersh1976Envelope {
+  bool velocity_ratio = false;
+  bool l_over_d = false;
+  bool grazing_velocity = false;
+  bool in_range() const { return !(velocity_ratio || l_over_d || grazing_velocity); }
+};
+
+// Vi_over_V_inf: the actual jet velocity over the grazing one; V_inf [m/s].
+RogersHersh1976Envelope rogers_hersh_1976_envelope(double Vi_over_V_inf, double L_over_D,
+                                                   double V_inf);
+
 // True when Table 4.1 covers the plate (xn/d, yn/d, z/d), to 1e-9.
 bool florschuetz_metzger_su_1982_has_plate(double xn_d, double yn_d, double z_d);
 

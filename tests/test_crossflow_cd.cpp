@@ -16,6 +16,7 @@ using combaero::CrossflowCd;
 using combaero::florschuetz_metzger_su_1982_cd;
 using combaero::florschuetz_metzger_su_1982_has_plate;
 using combaero::rogers_hersh_1976_cd;
+using combaero::rogers_hersh_1976_envelope;
 
 namespace {
 
@@ -114,6 +115,24 @@ TEST(RogersHersh1976, AnalyticPartials) {
       expect_partials(law, Gi, kGc, 1e-6);
     }
   }
+}
+
+TEST(RogersHersh1976, EnvelopeNamesEachVariable) {
+  // Fig. 11's own conditions: in range.
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.1, 1.0, 50.0).in_range());
+  const auto lo = rogers_hersh_1976_envelope(0.001, 1.0, 50.0);
+  EXPECT_TRUE(lo.velocity_ratio);
+  EXPECT_FALSE(lo.l_over_d);
+  EXPECT_FALSE(lo.grazing_velocity);
+  const auto thick = rogers_hersh_1976_envelope(0.1, 6.0, 50.0);
+  EXPECT_TRUE(thick.l_over_d);
+  EXPECT_FALSE(thick.velocity_ratio);
+  const auto slow = rogers_hersh_1976_envelope(0.1, 1.0, 10.0);
+  EXPECT_TRUE(slow.grazing_velocity);
+  EXPECT_FALSE(slow.in_range());
+  // The edges are inside.
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.004, 0.12, 24.0).in_range());
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.9, 2.0, 85.0).in_range());
 }
 
 TEST(RogersHersh1976, RefusesANonPositiveCd0) {

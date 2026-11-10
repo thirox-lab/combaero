@@ -136,6 +136,37 @@ export const QUANTITY_CATALOGUE: Record<
 		unit: "—",
 		format: (v) => (v > 0 ? "yes" : "no"),
 	},
+	// Which hole-Cd input is outside its source's range: info, not a warning
+	Cd_extrapolated_Re: {
+		label: "Cd extrapolated in Re",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes" : "no"),
+	},
+	Cd_extrapolated_l_d: {
+		label: "Cd extrapolated in l/d",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes" : "no"),
+	},
+	Cd_extrapolated_edge: {
+		label: "Cd extrapolated in edge shape",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes" : "no"),
+	},
+	Cd_crossflow_extrapolated_velocity_ratio: {
+		label: "Crossflow Cd extrapolated in Vi/V_inf",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes" : "no"),
+	},
+	Cd_crossflow_extrapolated_l_d: {
+		label: "Crossflow Cd extrapolated in L/D",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes" : "no"),
+	},
+	Cd_crossflow_extrapolated_grazing_velocity: {
+		label: "Crossflow Cd extrapolated in V_inf",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes" : "no"),
+	},
 	// Rayleigh omission of a wall-heated compressible channel (#551)
 	rayleigh_omitted_frac: {
 		label: "Heating dPt omitted",

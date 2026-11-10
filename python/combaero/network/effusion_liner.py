@@ -247,6 +247,11 @@ class EffusionLiner:
             "crossflow_cd_degraded": float(
                 any(p.get("crossflow_cd_degraded", 0.0) for p in panels)
             ),
+            # McGreehan-Schotsch outside its source's range on any panel, by
+            # variable (Re below 1e4: Cd held; l/d beyond 10): information,
+            # never a warning.
+            "Cd_extrapolated_Re": float(any(p.get("Cd_extrapolated_Re", 0.0) for p in panels)),
+            "Cd_extrapolated_l_d": float(any(p.get("Cd_extrapolated_l_d", 0.0) for p in panels)),
             "bleed_nonuniformity": _max_over_min(bleed),
             "station_psi_min": float(min(psi)),
             "station_psi_beyond_bassett": float(min(psi) > BASSETT_PSI_MEASURED_MAX),

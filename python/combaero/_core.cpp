@@ -710,6 +710,23 @@ PYBIND11_MODULE(_core, m) {
         "(ideal hole over crossflow mass velocity) and capped at the hole's own\n"
         "Cd0. suction: the hole draws from the grazing stream (a reversed jet).\n"
         "Analytic dCd/dG_ideal, dCd/dG_c.");
+  m.attr("ROGERS_HERSH_1976_VELOCITY_RATIO_MIN") = combaero::ROGERS_HERSH_1976_VELOCITY_RATIO_MIN;
+  m.attr("ROGERS_HERSH_1976_VELOCITY_RATIO_MAX") = combaero::ROGERS_HERSH_1976_VELOCITY_RATIO_MAX;
+  m.attr("ROGERS_HERSH_1976_L_OVER_D_MIN") = combaero::ROGERS_HERSH_1976_L_OVER_D_MIN;
+  m.attr("ROGERS_HERSH_1976_L_OVER_D_MAX") = combaero::ROGERS_HERSH_1976_L_OVER_D_MAX;
+  m.attr("ROGERS_HERSH_1976_V_INF_MIN") = combaero::ROGERS_HERSH_1976_V_INF_MIN;
+  m.attr("ROGERS_HERSH_1976_V_INF_MAX") = combaero::ROGERS_HERSH_1976_V_INF_MAX;
+  py::class_<combaero::RogersHersh1976Envelope>(m, "RogersHersh1976Envelope")
+      .def_readonly("velocity_ratio", &combaero::RogersHersh1976Envelope::velocity_ratio)
+      .def_readonly("l_over_d", &combaero::RogersHersh1976Envelope::l_over_d)
+      .def_readonly("grazing_velocity", &combaero::RogersHersh1976Envelope::grazing_velocity)
+      .def("in_range", &combaero::RogersHersh1976Envelope::in_range);
+  m.def("rogers_hersh_1976_envelope", &combaero::rogers_hersh_1976_envelope,
+        py::arg("Vi_over_V_inf"), py::arg("L_over_D"), py::arg("V_inf"),
+        "Which inputs lie outside Rogers & Hersh (1976)'s envelope, by variable:\n"
+        "velocity_ratio (Vi/V_inf outside 0.004-0.9), l_over_d (L/D outside\n"
+        "0.12-2.0), grazing_velocity (V_inf outside 24-85 m/s). Information to\n"
+        "report, never a selector: rogers_hersh_1976_cd returns the fit anyway.");
   m.def("florschuetz_metzger_su_1982_has_plate",
         &combaero::florschuetz_metzger_su_1982_has_plate, py::arg("xn_d"), py::arg("yn_d"),
         py::arg("z_d"), "True when CR-3630 Table 4.1 covers the jet plate.");
@@ -6585,12 +6602,23 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "default. Raises ValueError for a correlation that is declared but not\n"
       "implemented.");
 
+  py::class_<DischargeCdEnvelope>(m, "DischargeCdEnvelope")
+      .def_readonly("re", &DischargeCdEnvelope::re)
+      .def_readonly("l_over_d", &DischargeCdEnvelope::l_over_d)
+      .def_readonly("edge", &DischargeCdEnvelope::edge)
+      .def("in_range", &DischargeCdEnvelope::in_range);
+  m.def("discharge_cd_envelope", &discharge_cd_envelope, py::arg("correlation"),
+        py::arg("hole"), py::arg("flow"),
+        "Which inputs lie outside the range the correlation's source fitted or\n"
+        "tabulated, by variable: re, l_over_d, edge (bevel or r/d table, or an\n"
+        "inclined hole on a correlation that refuses it). Information to\n"
+        "report beside the result, never a selector and never a warning:\n"
+        "discharge_cd returns a value regardless (held or continued).");
   m.def("discharge_cd_in_range", &discharge_cd_in_range, py::arg("correlation"),
         py::arg("hole"), py::arg("flow"),
-        "True when (hole, flow) lies inside the range the correlation was\n"
-        "fitted or tabulated on: Re, and the l/d (or bevel, r/d) axis of its\n"
-        "source. A flag to report, never a selector; discharge_cd still\n"
-        "returns a value outside it.");
+        "True when no input lies outside the correlation's source range:\n"
+        "discharge_cd_envelope(...).in_range(). A flag to report, never a\n"
+        "selector; discharge_cd still returns a value outside it.");
   m.def("discharge_cd_re_floor", &discharge_cd_re_floor, py::arg("correlation"),
         "Hole Reynolds number below which the correlation HOLDS its Cd value\n"
         "(Re clamped up to it), so the value's true dCd/dRe there is 0.\n"

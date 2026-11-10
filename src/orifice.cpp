@@ -1,5 +1,4 @@
 #include "../include/dual_number.h"
-#include "../include/correlation_status.h"
 #include "../include/friction.h"
 #include "../include/humidair.h"
 #include "../include/math_constants.h"
@@ -1088,7 +1087,6 @@ public:
     double Cd(const DischargeHoleGeometry& hole,
               const DischargeHoleState& flow) const override {
         refuse_inclination(hole, name());
-        warn_below_floor(flow.Re);
         return orifice::mcgreehan_schotsch::cd(flow.Re, hole.r_over_d(),
                                                hole.L_over_d(), flow.U1_over_Vi);
     }
@@ -1097,32 +1095,11 @@ public:
         const DischargeHoleGeometry& hole,
         const DischargeHoleState& flow) const override {
         refuse_inclination(hole, name());
-        warn_below_floor(flow.Re);
         return orifice::mcgreehan_schotsch::cd_and_derivatives(
             flow.Re, hole.r_over_d(), hole.L_over_d(), flow.U1_over_Vi);
     }
 
     std::string name() const override { return "McGreehan-Schotsch (1988)"; }
-
-private:
-    // Below re_min the chain holds Re AT the floor, so Cd stops responding
-    // to flow entirely. That is documented behaviour and deliberate -- Eq.
-    // (8) diverges below it -- but silently returning a frozen Cd to a
-    // caller who does not know is how a plenum-fed hole came to be read
-    // +21.7% high at Re = 432 against Lichtarowicz, which IS valid there.
-    // Warn once per call rather than refuse: refusing would break existing
-    // networks that transit low Re during Newton iteration.
-    static void warn_below_floor(double Re) {
-        if (Re < orifice::mcgreehan_schotsch::re_min) {
-            combaero::warn(
-                "McGreehanSchotsch1988: Re = " + std::to_string(Re) +
-                " is below the correlation's floor of " +
-                std::to_string(orifice::mcgreehan_schotsch::re_min) +
-                "; Cd is held at the floor value and no longer responds to "
-                "flow. For a long hole at low Re use Lichtarowicz1965 "
-                "(valid 10 to 2e4), or Idelchik1966Thick (valid from 25).");
-        }
-    }
 };
 
 class ConstantDischargeCdCorrelation : public DischargeCorrelationBase {
@@ -1249,42 +1226,64 @@ std::unique_ptr<DischargeCorrelationBase> make_constant_discharge_correlation(
     return std::make_unique<ConstantDischargeCdCorrelation>(Cd);
 }
 
-bool discharge_cd_in_range(DischargeCdCorrelation id,
-                           const DischargeHoleGeometry& hole,
-                           const DischargeHoleState& flow) {
+DischargeCdEnvelope discharge_cd_envelope(DischargeCdCorrelation id,
+                                          const DischargeHoleGeometry& hole,
+                                          const DischargeHoleState& flow) {
     namespace I = orifice::idelchik;
     namespace L = orifice::lichtarowicz;
+    namespace MS = orifice::mcgreehan_schotsch;
     const double re = flow.Re;
     const double ld = hole.L_over_d();
     const bool idelchik_re = re >= I::re_points[0] && re <= I::re_points[I::re_n - 1];
+    const double thick_ld_max = I::thick_l_over_d[I::thick_n - 1];
+    DischargeCdEnvelope env;
     if (hole.is_inclined()) {
         // Only the thick-walled hole composes with diagram 3-2; inside its
         // own range it also needs 3-2's Re and a hole long enough for the
         // inlet jet to reattach (orifice::idelchik::inclination_*).
-        return id == DischargeCdCorrelation::Idelchik1966Thick && idelchik_re &&
-               ld <= I::thick_l_over_d[I::thick_n - 1] && re > I::inclination_re_min &&
-               ld >= I::inclination_l_over_d_min;
+        if (id != DischargeCdCorrelation::Idelchik1966Thick) {
+            env.edge = true;
+            return env;
+        }
+        env.re = !idelchik_re || !(re > I::inclination_re_min);
+        env.l_over_d = ld > thick_ld_max || ld < I::inclination_l_over_d_min;
+        return env;
     }
     switch (id) {
         case DischargeCdCorrelation::McGreehanSchotsch1988:
-            return re >= orifice::mcgreehan_schotsch::re_min;
+            env.re = re < MS::re_min;
+            env.l_over_d = ld > MS::l_over_d_max;
+            break;
         case DischargeCdCorrelation::Idelchik1966Sharp:
-            return idelchik_re && ld <= I::sharp_l_over_d_max;
+            env.re = !idelchik_re;
+            env.l_over_d = ld > I::sharp_l_over_d_max;
+            break;
         case DischargeCdCorrelation::Idelchik1966Thick:
-            return idelchik_re && ld <= I::thick_l_over_d[I::thick_n - 1];
+            env.re = !idelchik_re;
+            env.l_over_d = ld > thick_ld_max;
+            break;
         case DischargeCdCorrelation::Idelchik1966Beveled:
-            return idelchik_re &&
-                   hole.bevel_over_d() <= I::beveled_l_over_d[I::beveled_n - 1];
+            env.re = !idelchik_re;
+            env.edge = hole.bevel_over_d() > I::beveled_l_over_d[I::beveled_n - 1];
+            break;
         case DischargeCdCorrelation::Idelchik1966Rounded:
-            return idelchik_re &&
-                   hole.r_over_d() <= I::rounded_r_over_d[I::rounded_n - 1];
+            env.re = !idelchik_re;
+            env.edge = hole.r_over_d() > I::rounded_r_over_d[I::rounded_n - 1];
+            break;
         case DischargeCdCorrelation::Lichtarowicz1965:
-            return re >= L::re_validated_min && re <= L::re_validated_max &&
-                   ld >= L::l_over_d_split && ld <= L::l_over_d_max;
+            env.re = re < L::re_validated_min;
+            env.l_over_d = ld < L::l_over_d_split || ld > L::l_over_d_max;
+            break;
         case DischargeCdCorrelation::Constant:
-            return true;
+            break;
     }
-    return false;
+    return env;
+}
+
+bool discharge_cd_in_range(DischargeCdCorrelation id,
+                           const DischargeHoleGeometry& hole,
+                           const DischargeHoleState& flow) {
+    return discharge_cd_envelope(id, hole, flow).in_range();
 }
 
 double discharge_cd_re_floor(DischargeCdCorrelation id) {

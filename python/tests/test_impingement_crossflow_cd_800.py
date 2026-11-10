@@ -190,3 +190,26 @@ def test_an_unknown_law_is_refused() -> None:
             "p", "s", "c", d_jet=D_JET, xn_d=5, yn_d=4, z_d=1, span=SPAN,
             plate_thickness=D_JET, cd_crossflow="mcgreehan",  # type: ignore[arg-type]
         )  # fmt: skip
+
+
+def test_the_envelope_is_reported_where_the_law_acts() -> None:
+    """Rogers & Hersh's envelope (CR-2681: Vi/V_inf 0.004-0.9, L/D
+    0.12-2.0, V_inf 24-85 m/s), reported per variable as information, never
+    a warning, and only on rows where the law acts. At mc/mj 0.99 the
+    first row's jet barely moves (Vi/V_inf below 0.004) and the rows the
+    cap holds (the hole's own Cd) carry no flag."""
+    _, res, arr = _solved(0.99, "rogers_hersh_1976")
+    diag = res["__element_diag__"]
+    rows = [diag[arr.plate_id(i)] for i in range(1, N_ROWS + 1)]
+    assert rows[0]["Cd_crossflow_extrapolated_velocity_ratio"] == 1.0
+    for p in rows:
+        assert p["Cd_crossflow_extrapolated_l_d"] == 0.0  # L/D 1, Fig. 11's own
+        if p["Cd"] == p["Cd_own"]:  # capped: the law does not act
+            assert p["Cd_crossflow_extrapolated_velocity_ratio"] == 0.0
+            assert p["Cd_crossflow_extrapolated_grazing_velocity"] == 0.0
+    summary = arr.summarize(diag)
+    assert summary["Cd_crossflow_extrapolated_velocity_ratio"] == 1.0
+    _, res, arr = _solved(0.99, "none")
+    for i in range(1, N_ROWS + 1):
+        p = res["__element_diag__"][arr.plate_id(i)]
+        assert p["Cd_crossflow_extrapolated_velocity_ratio"] == 0.0

@@ -378,6 +378,10 @@ Cd, dCd_dRe, dCd_dU = cb.discharge_cd_and_derivatives(
 
 # Inside the source's own Re and l/d range? A flag, never a selector.
 cb.discharge_cd_in_range(cb.DischargeCdCorrelation.Lichtarowicz1965, hole, flow)
+# ... and which variable is outside, if any: .re, .l_over_d, .edge (bevel or
+# r/d table; or an inclined hole on a correlation that refuses it). Info to
+# report beside the Cd, which is returned regardless (held or continued).
+env = cb.discharge_cd_envelope(cb.DischargeCdCorrelation.Idelchik1966Thick, hole, flow)
 
 # Re below which the Cd VALUE is held (true dCd/dRe = 0 there; the solver
 # form above continues the slope for McGreehan-Schotsch and Idelchik)
@@ -904,6 +908,20 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   (Gritsch 1998, Hay 1983): `validation/cooling/exit_crossflow_cd_runner.py`.
   Off is the default and bit-identical. No GUI Inspector control yet (the
   node fields load from network JSON).
+
+- **Which Cd input is outside its source's range, by variable (info, not a
+  warning).** Every orifice-family element reports `Cd_extrapolated_Re`,
+  `Cd_extrapolated_l_d` and `Cd_extrapolated_edge` (1.0 when that input of
+  the discharge-hole Cd lies outside the source's range; C++
+  `cb.discharge_cd_envelope`) beside `Cd_in_range` (1.0 when none does). The
+  Cd is held or continued there exactly as before. Read them as: a thick
+  Idelchik hole beyond l/d 4 (zeta' held, only friction grows: gentle);
+  McGreehan-Schotsch beyond l/d 10 (its length function keeps falling: Cd
+  0.49 at l/d 40) or below Re 1e4 (value held; this used to print a C++
+  warning on every call); Lichtarowicz below Re 10 or outside l/d 2-10. Above
+  Re 2e4 Lichtarowicz is at its Eq. (7) high-Re asymptote and is in range.
+  0.0 for a metering or `'fixed'` Cd. `EffusionLiner` reports Re and l/d as
+  "any panel".
 
 ##### Duct-fed: the effusion liner (#471)
 
@@ -3596,7 +3614,13 @@ are crossflow.
   Resolved in q, the row flow goes as dP^1.07 under a strong crossflow (a
   linear resistance) instead of sqrt(dP), which removed the alternating-sign
   stagnant rows of CR-3630 B(5,4,1) (#799). Diagnostics add `Cd` (the one
-  used) beside `Cd_own`. A cold solve that fails is retried once from the
+  used) beside `Cd_own`. Where Rogers & Hersh's law acts (not capped), the
+  inputs outside CR-2681's envelope are named, 1.0 each, as information:
+  `Cd_crossflow_extrapolated_velocity_ratio` (Vi/V_inf = Cd q outside
+  0.004-0.9), `Cd_crossflow_extrapolated_l_d` (hole L/D outside 0.12-2.0),
+  `Cd_crossflow_extrapolated_grazing_velocity` (G_c / rho of the channel
+  outside 24-85 m/s); C++ `cb.rogers_hersh_1976_envelope`. `ImpingementArray`
+  reports each as "any row". A cold solve that fails is retried once from the
   constant-Cd root (`NetworkSolver`, "[from the constant-Cd solution]"). With
   a `'florschuetz_metzger_su_1982'` plate that stage runs first (#1021): the
   law's root has a narrow basin the cold seed misses.

@@ -558,6 +558,10 @@ constexpr double trans_c0  = 0.005;
 constexpr double trans_c1  = 7.5;
 constexpr double trans_c2  = 0.00015;
 
+// Eq. (12)'s fitted Re range. The upper end is NOT an envelope edge: Eq. (7)
+// is the "ultimate" high-Re Cd, measured at Re = 2e4 from data collected to
+// about 1e5 (the paper's summary), and Eq. (12) reduces to it above 2e4 to
+// within 2.2e-4. So discharge_cd_envelope flags Re below re_validated_min only.
 constexpr double re_validated_min = 10.0;
 constexpr double re_validated_max = 2.0e4;
 
@@ -689,6 +693,12 @@ constexpr double s_smooth_eps  = 0.01;   // in pressure-ratio units
 
 // Stated validity floor for Eqs. (8) and (9).
 constexpr double re_min       = 1.0e4;
+// The end of the data Eq. (14)'s length function was fitted to: Fig. 3 plots
+// Lichtarowicz et al.'s long orifices on an L/d axis to 10. The paper states
+// no limit, but g keeps falling beyond it (Cd 0.74 at L/d 10, 0.66 at 20,
+// 0.49 at 40 for a sharp inlet at high Re), the steepest extrapolation in the
+// hole-Cd family, so beyond it is reported (DischargeCdEnvelope::l_over_d).
+constexpr double l_over_d_max = 10.0;
 // Above this r/d an ASME nozzle Cd is reached and further radiusing buys
 // nothing (p.214). Eq. (12) is evaluated as-is; this is the documented knee.
 constexpr double r_over_d_nozzle_limit = 0.82;
@@ -1014,20 +1024,39 @@ public:
 std::unique_ptr<DischargeCorrelationBase> make_discharge_correlation(
     DischargeCdCorrelation id);
 
-// True when (hole, flow) lies inside the range the selected correlation was
-// fitted or tabulated on. A FLAG, never a selector: the Cd itself is still
-// returned outside the range (held or extrapolated, per correlation), and the
-// caller reports the flag. The ranges are the sources' own:
-//   McGreehanSchotsch1988  Re >= re_min (no stated l/d limit)
-//   Idelchik1966*          Re 25 to 1e6, plus the diagram's own geometry
-//                          axis (l/d <= 0.015 sharp, l/d <= 4 thick, bevel
-//                          and r/d within their tables); an inclined
-//                          Thick hole also needs diagram 3-2's Re > 1e4 and
-//                          l/d >= inclination_l_over_d_min
-//   Lichtarowicz1965       Re 10 to 2e4, l/d 2 to 10
-//   Constant               always
-// An inclined hole on any correlation but Idelchik1966Thick reads false (its
-// Cd refuses the geometry).
+// Which inputs of a discharge-hole correlation lie outside the range its
+// source fitted or tabulated, by variable. INFORMATION to report beside the
+// result, never a selector and never a warning: Cd is returned regardless,
+// held or continued as each correlation documents, and the caller can do
+// nothing better than know which variable is outside. The ranges are the
+// sources' own:
+//   re        Idelchik1966* below 25 or above 1e6 (table held at its ends);
+//             McGreehanSchotsch1988 below re_min (value held); Lichtarowicz1965
+//             below 10 (Eq. 12 continued to re_floor; no upper bound, Eq. 7 is
+//             the high-Re asymptote); an inclined Thick hole at or below
+//             diagram 3-2's Re 1e4
+//   l_over_d  Idelchik1966Sharp above 0.015; Idelchik1966Thick above 4
+//             (zeta' held at its table end, only bore friction grows, a gentle
+//             fall); McGreehanSchotsch1988 above l_over_d_max (10; Eq. 14's g
+//             keeps falling); Lichtarowicz1965 outside 2 to 10 (held at 10);
+//             an inclined Thick hole below inclination_l_over_d_min
+//   edge      Idelchik1966Beveled / Rounded beyond their bevel or r/d table;
+//             an inclined hole on any correlation but Idelchik1966Thick (its
+//             Cd refuses the geometry)
+// Constant is always inside.
+struct DischargeCdEnvelope {
+    bool re = false;
+    bool l_over_d = false;
+    bool edge = false;
+    bool in_range() const { return !(re || l_over_d || edge); }
+};
+
+DischargeCdEnvelope discharge_cd_envelope(DischargeCdCorrelation id,
+                                          const DischargeHoleGeometry& hole,
+                                          const DischargeHoleState& flow);
+
+// True when no input lies outside the source's range:
+// discharge_cd_envelope(...).in_range(). A FLAG, never a selector.
 bool discharge_cd_in_range(DischargeCdCorrelation id,
                            const DischargeHoleGeometry& hole,
                            const DischargeHoleState& flow);

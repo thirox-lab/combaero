@@ -110,6 +110,13 @@ UNIT_MAP: dict[str, str] = {
     "area_ratio": "-",  # Phase 2 name
     "is_correlation": "-",
     "Cd_in_range": "-",  # 1 inside the discharge correlation's source range
+    # 1 per variable outside the hole Cd's source range (info, not a warning)
+    "Cd_extrapolated_Re": "-",
+    "Cd_extrapolated_l_d": "-",
+    "Cd_extrapolated_edge": "-",
+    "Cd_crossflow_extrapolated_velocity_ratio": "-",  # Rogers & Hersh Vi/V_inf
+    "Cd_crossflow_extrapolated_l_d": "-",
+    "Cd_crossflow_extrapolated_grazing_velocity": "-",
     "Cd_inclination_dzeta": "-",  # inclined-inlet increment on zeta' (0 when off or at 90 deg)
     # Opt-in exit-crossflow Cd term (#1074), emitted only when opted in.
     "Cd_no_exit_crossflow": "-",
