@@ -1765,7 +1765,9 @@ documents:
     e/D_H; Nu ~ Re^0.6 and Re-independent passage f stated; coefficients only PLOTTED (Figs 9, 11 digitised).
   status: implemented
   verdict: 'First non-Texas A&M rib source: taslim_spring_1987 rib-ratio sets (fitted from digitised markers);
-    fidelity on own data and cross-source accuracy against han_1988_orthogonal.'
+    fidelity on own data and cross-source accuracy against han_1988_orthogonal and (friction, since 2026-11-10)
+    han_park_1988_angled: the 8 two-sided Fig. 11 friction series, all out of domain, han_park bias -45% to
+    +19% per series (-11.8% on the e/D 0.083 square channel).'
   read_for: ['#403/#444 independent rib source', '#452 aspect-ratio rib friction']
   issues: [339, 437, 439, 443, 444, 447, 451, 452, 701, 704]
   records: [validation/cooling/extractions/taslim_spring_1987_aspect_ratio.md, validation/cooling/data/taslim_spring1987/metadata.yaml]
@@ -2090,14 +2092,20 @@ documents:
     angle 30-90 deg, W/H 1-4, Re 10,000-60,000; local Nu distributions and friction, plotted, with R/G
     correlation.
   status: implemented
-  verdict: Original paper behind han_park_1988_angled (Eq. 4.17/4.18, alpha 30-90, W/H 1-4) and Fig. 4.47
-    / Fig. 4.43 data. The set was extracted through the book; no record shows the coefficients cross-checked
-    against this PDF.
+  verdict: 'Original paper behind han_park_1988_angled (Eq. 4.17/4.18, alpha 30-90, W/H 1-4) and Fig. 4.47
+    / Fig. 4.43 data. The set was extracted through the book. Read 2026-11-10 for the friction basis: fbar
+    is the MEASURED passage average of two opposite ribbed walls (p. 186), R is built on the four-sided f =
+    fbar + (H/W)(fbar - f(FD)) (Eq. 6, f(FD) = 0.046 Re^-0.2, Eq. 8), and fbar is predicted by inverting
+    Eqs. 7-9 (p. 193), so the set declares f_channel_two_ribbed. Eq. 9 (12.31/-27.07/17.86, m 0/0.35, W/H
+    capped at 2) and the Fig. 14 box match the shipped set. The paper STATES +-6% (R, Eq. 9) and +-8% (G,
+    Eq. 12) for 95% of its data; the set still carries the project-measured 10.5%/8.8%.'
   read_for: ['#374 angled-rib set', '#369 Fig. 4.47 digitisation', han_ribbed.md item 23 (Fig. 4.46 vs
       4.47 are different papers)]
   issues: [334, 369, 374, 402, 434]
-  records: [validation/cooling/extractions/han_ribbed.md, validation/cooling/data/han2012/metadata.yaml]
-  code: ['include/rib_correlation.h: han_park_1988_angled', 'src/rib_correlation.cpp: han_park_1988_angled']
+  records: [validation/cooling/extractions/han_ribbed.md, validation/cooling/data/han2012/metadata.yaml,
+    validation/cooling/extractions/naik_2014_te_wedge_ribs.md]
+  code: ['include/rib_correlation.h: han_park_1988_angled', 'src/rib_correlation.cpp: han_park_1988_angled',
+    'validation/cooling/conventions.py: SET_ALSO_PRODUCES f_channel_two_ribbed']
   notes: Renamed 2026-10-01 from han/han_park_1998.pdf (year off by a decade). Also the acknowledgement
     that names grant NAS3-24227 (link to NASA CR-4015).
 - file: sources/heat_transfer/hollworth/393_1_Hollworth_1980_part_II.pdf
@@ -2731,8 +2739,8 @@ documents:
     is scored by all four eligible 45 deg parallel sets. han_park_1988_angled has bias -14.8% (-16.2/-8.7/-19.5%,
     1 of 3 within 9.5%); han_1989_narrow_channel +45.1%, han_zhang_lee_1991_45par +34.2%,
     rallabandi_2009_high_re +24.6%. The han_park Nu miss barely moves with W/H above 2 (<2%). Fig. 17 f/f0 is
-    unscored by rule: no 45 deg set declares passage friction. Off the harness, han_park_1988_angled''s fbar
-    would read +42/+64/+44%, growing with W/H through Han''s decomposition. Broken and chevron ribs map to no
+    scored (2026-11-10) by han_park_1988_angled, the one 45 deg set declaring passage friction: +42/+64/+44%
+    (bias +49.9%, 0 of 3 within 10%), growing with W/H through Han''s decomposition. Broken and chevron ribs map to no
     set (context). Fig. 18 is mis-computed in the paper: the own points are 3 (Nu/Nu0)/(f/f0) to 0.3%, not
     Eq. 6; the reprints follow Eq. 6 to 0.13%. Never a tuner; no fidelity use.'
   read_for: ['high-aspect-ratio / triangular rib channel coverage', 'an independent (non Texas A&M) rib source',

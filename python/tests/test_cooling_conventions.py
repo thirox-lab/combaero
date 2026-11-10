@@ -101,6 +101,8 @@ def test_the_whole_dataset_resolves(dataset) -> None:
     # +1 Naik et al. 2014 Fig. 16 angled-tapered Nu/Nu0, already Dittus-Boelter.
     assert len(statuses[C.STATUS_DIRECT]) == 133
     # +12 CR-4396 Figs. 6.1/6.2, Kays-Perkins to Dittus-Boelter (#452).
+    # +1 Naik et al. 2014 Fig. 17 angled-tapered f/f0 -> passage fbar, once
+    # han_park_1988_angled declared the passage friction it predicts.
     cr4396 = [
         f"johnson1993/fig{fig}_{wall}_seg{seg}"
         for fig in ("6.1", "6.2")
@@ -110,6 +112,7 @@ def test_the_whole_dataset_resolves(dataset) -> None:
     assert sorted(statuses[C.STATUS_CONVERTED]) == sorted(
         [
             *cr4396,
+            "naik2014/fig17_angled_tapered",
             "rohde1969/fig10_rd0_triangles",
             "rohde1969/fig10_rd0p195_squares",
             "rohde1969/fig10_rd0p488_circles",

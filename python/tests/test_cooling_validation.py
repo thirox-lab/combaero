@@ -657,6 +657,11 @@ def test_figure_448_R_axis_is_linear_not_log(dataset) -> None:
             )
 
 
+# Both sets that declare the passage-average friction (f_channel_two_ribbed)
+# and bind 90 deg transverse ribs, so both are eligible by rule for every
+# two-wall Taslim friction series.
+TASLIM_FRICTION_SETS = ("han_1988_orthogonal", "han_park_1988_angled")
+
 TASLIM_SQUARE = {
     "taslim_spring1987/fig11_ar_1.0_solid_circles_2_sides_eDh_0.083": 0.083,
     "taslim_spring1987/fig11_ar_1.0_solid_tri_2_sides_eDh_0.167": 0.167,
@@ -680,16 +685,18 @@ def test_taslim_square_channel_friction_is_scored_against_han(records) -> None:
     rows = {}
     for r in records:
         if r.series.label in TASLIM_SQUARE:
-            rows.setdefault(r.series.label, []).append(r)
-    assert set(rows) == set(TASLIM_SQUARE)
-    for label, rs in rows.items():
+            rows.setdefault((r.series.label, r.scored_by), []).append(r)
+    assert set(rows) == {(label, name) for label in TASLIM_SQUARE for name in TASLIM_FRICTION_SETS}
+    for (label, name), rs in rows.items():
         assert all(r.predicted is not None for r in rs), label
         assert all(r.extrapolated for r in rs), f"{label}: e/D above Han's band"
         assert all(20_000 <= r.re_used <= 110_000 for r in rs), label
         bias = sum(r.rel_error for r in rs) / len(rs)
-        assert bias < 0.0, f"{label}: Han should under-predict, bias {bias:+.1%}"
+        assert bias < 0.0, f"{label} @{name}: Han should under-predict, bias {bias:+.1%}"
 
-    near = rows["taslim_spring1987/fig11_ar_1.0_solid_circles_2_sides_eDh_0.083"]
+    near = rows[
+        ("taslim_spring1987/fig11_ar_1.0_solid_circles_2_sides_eDh_0.083", "han_1988_orthogonal")
+    ]
     bias = sum(r.rel_error for r in near) / len(near)
     assert -0.20 < bias < -0.10, f"recorded at -14.9% when #403 item 2 closed, now {bias:+.1%}"
 
@@ -711,15 +718,60 @@ def test_taslim_friction_is_scored_at_every_aspect_ratio(records) -> None:
     rows = {}
     for r in records:
         if r.series.label in TASLIM_OTHER_AR:
-            rows.setdefault(r.series.label, []).append(r)
-    assert set(rows) == set(TASLIM_OTHER_AR)
-    for label, rs in rows.items():
+            rows.setdefault((r.series.label, r.scored_by), []).append(r)
+    assert set(rows) == {
+        (label, name) for label in TASLIM_OTHER_AR for name in TASLIM_FRICTION_SETS
+    }
+    for (label, name), rs in rows.items():
         assert all(r.predicted is not None for r in rs), label
-        assert all(r.extrapolated for r in rs), f"{label}: outside Han's domain"
-        assert {r.scored_by for r in rs} == {"han_1988_orthogonal"}, label
-    narrow = [r for label, rs in rows.items() if "_ar_3.5_" in label for r in rs]
-    bias = sum(r.rel_error for r in narrow) / len(narrow)
-    assert -0.45 < bias < -0.30, f"AR 3.5 recorded at about -38%, now {bias:+.1%}"
+        assert all(r.extrapolated for r in rs), f"{label} @{name}: outside the set's domain"
+    for name in TASLIM_FRICTION_SETS:
+        narrow = [
+            r for (label, n), rs in rows.items() if n == name and "_ar_3.5_" in label for r in rs
+        ]
+        bias = sum(r.rel_error for r in narrow) / len(narrow)
+        assert -0.45 < bias < -0.30, f"{name}: AR 3.5 recorded at about -37%, now {bias:+.1%}"
+
+
+# Per-(series, set) friction bias over every two-wall Taslim series, recorded
+# 2026-11-10 when han_park_1988_angled declared the passage friction. Every
+# row is out of both sets' boxes (e/D above 0.078, or W/H 0.286 below 1) and
+# cross-source ACCURACY (Northeastern / GE, not Texas A&M). Pinned so a change
+# to either set's friction, or to _channel_fbar, shows up as a number moving.
+TASLIM_FRICTION_BIAS = {
+    ("fig11_ar_1.0_solid_circles_2_sides_eDh_0.083", "han_1988_orthogonal"): -0.149,
+    ("fig11_ar_1.0_solid_circles_2_sides_eDh_0.083", "han_park_1988_angled"): -0.118,
+    ("fig11_ar_1.0_solid_tri_2_sides_eDh_0.167", "han_1988_orthogonal"): -0.249,
+    ("fig11_ar_1.0_solid_tri_2_sides_eDh_0.167", "han_park_1988_angled"): -0.205,
+    ("fig11_ar_1.0_solid_half_circles_2_sides_eDh_0.250", "han_1988_orthogonal"): -0.491,
+    ("fig11_ar_1.0_solid_half_circles_2_sides_eDh_0.250", "han_park_1988_angled"): -0.447,
+    ("fig11_ar_0.5_solid_hex_2_sides_eDh_0.250", "han_1988_orthogonal"): -0.117,
+    ("fig11_ar_0.5_solid_hex_2_sides_eDh_0.250", "han_park_1988_angled"): -0.005,
+    ("fig11_ar_0.5_solid_square_2_sides_eDh_0.125", "han_1988_orthogonal"): 0.126,
+    ("fig11_ar_0.5_solid_square_2_sides_eDh_0.125", "han_park_1988_angled"): 0.193,
+    ("fig11_ar_3.5_solid_tri_down_2_sides_eDh_0.053", "han_1988_orthogonal"): -0.346,
+    ("fig11_ar_3.5_solid_tri_down_2_sides_eDh_0.053", "han_park_1988_angled"): -0.336,
+    ("fig11_ar_3.5_solid_tri_left_2_sides_eDh_0.107", "han_1988_orthogonal"): -0.343,
+    ("fig11_ar_3.5_solid_tri_left_2_sides_eDh_0.107", "han_park_1988_angled"): -0.328,
+    ("fig11_ar_3.5_solid_tri_right_2_sides_eDh_0.161", "han_1988_orthogonal"): -0.437,
+    ("fig11_ar_3.5_solid_tri_right_2_sides_eDh_0.161", "han_park_1988_angled"): -0.420,
+}
+
+
+def test_taslim_friction_bias_per_set_is_pinned(records) -> None:
+    """Each set keeps its own row; nothing is pooled or picked between them."""
+    got: dict[tuple[str, str], list[float]] = {}
+    for r in records:
+        if (
+            r.series.source.name == "taslim_spring1987"
+            and r.series.y_axis == "f_fanning_passage"
+            and r.rel_error is not None
+        ):
+            got.setdefault((r.series.path.stem, r.scored_by), []).append(r.rel_error)
+    assert set(got) == set(TASLIM_FRICTION_BIAS)
+    for key, bias in TASLIM_FRICTION_BIAS.items():
+        mean = sum(got[key]) / len(got[key])
+        assert mean == pytest.approx(bias, abs=0.005), f"{key}: {mean:+.3f}"
 
 
 def test_taslim_friction_is_compared_as_fbar_not_four_sided_f() -> None:
@@ -1492,41 +1544,44 @@ def test_naik2014_nu_axis_and_convention_must_agree(dataset) -> None:
     assert "Dittus-Boelter basis, unconverted" in (refused[0].reason or "")
 
 
-def test_naik2014_friction_is_refused_by_rule_and_the_conversion_is_definition(
-    dataset, monkeypatch
+def test_naik2014_friction_is_scored_by_rule_and_the_conversion_is_definition(
+    dataset, records
 ) -> None:
-    """f/f0 is unscored because no 45 deg set declares the passage-average
-    friction (only han_1988_orthogonal does, and it binds transverse 90 deg ribs), so
-    eligible_sets is empty -- refused by the existing rule, not by choice.
+    """f/f0 is scored by han_park_1988_angled, the one set eligible by rule:
+    the only 45 deg set that declares the passage-average friction
+    (f_channel_two_ribbed). han_1988_orthogonal declares it too but binds
+    transverse 90 deg ribs, so it refuses on angle, not on quantity.
 
-    The conversion is still registered and exercised: declaring
-    f_channel_two_ribbed for han_park_1988_angled (monkeypatched here, NOT
-    shipped) makes the measured side exactly (f/f0) * Eq. 5. What it would
-    read is the record's business, not a score."""
+    The measured side is exactly (f/f0) * Eq. 5 -- the registered conversion,
+    definition, not a fit. Every row is out of the set's box (W/H 6.64 > 4,
+    e/D 0.089 > 0.078) and cross-source ACCURACY. Recorded 2026-11-10: the
+    set reads +42/+64/+44% HIGH, none inside the paper's 10% friction band."""
     from validation.cooling import conventions
-    from validation.cooling.runner import eligible_sets
+    from validation.cooling.runner import eligible_sets, sets_for
+    from validation.cooling.scorecard import basis_of
 
     s = _naik(dataset, "fig17_angled_tapered")
-    assert s.scores is None and eligible_sets(s) == ()
-    refused = run_series(s, set_name="han_park_1988_angled")
-    assert all(r.predicted is None for r in refused)
-    assert "unregistered" in (refused[0].reason or "")
+    assert sets_for(s) == eligible_sets(s) == ("han_park_1988_angled",)
+    resolution = conventions.resolve(s, "han_park_1988_angled")
+    assert resolution.status == conventions.STATUS_CONVERTED
+    assert resolution.detail == "f_ratio_passage_petukhov -> f_channel_two_ribbed"
+    assert basis_of(s, "han_park_1988_angled") == "accuracy"
     orthogonal = run_series(s, set_name="han_1988_orthogonal")
     assert all(r.predicted is None for r in orthogonal)
     assert "binds Transverse ribs only" in (orthogonal[0].reason or "")
 
-    monkeypatch.setitem(
-        conventions.SET_ALSO_PRODUCES,
-        "han_park_1988_angled",
-        (*conventions.SET_ALSO_PRODUCES["han_park_1988_angled"], "f_channel_two_ribbed"),
-    )
-    scored = run_series(s, set_name="han_park_1988_angled")
+    rs = [r for r in records if r.series is s]
     digitised = _naik_points(dataset, "17", "angled_tapered")
-    for r in scored:
-        assert r.predicted is not None
+    assert len(rs) == 3
+    for r in rs:
+        assert r.scored_by == "han_park_1988_angled"
+        assert r.predicted is not None and r.extrapolated
         assert r.measured == pytest.approx(
             digitised[r.x] * 2.0 / (2.236 * math.log(r.x) - 4.639) ** 2
         )
+        assert not r.within_uncertainty
+    bias = sum(r.rel_error for r in rs) / len(rs)
+    assert bias == pytest.approx(0.499, abs=0.005)
 
 
 def test_naik_petukhov_is_fanning() -> None:
@@ -1597,7 +1652,7 @@ def test_naik2014_unscored_series_have_no_eligible_set(dataset) -> None:
     naik = [s for s in dataset if s.source.name == "naik2014"]
     assert len(naik) == 21
     scored = [s.path.stem for s in naik if s.scores]
-    assert scored == ["fig16_angled_tapered"]
+    assert scored == ["fig16_angled_tapered", "fig17_angled_tapered"]
     for s in naik:
         if s.scores is None:
             assert eligible_sets(s) == (), s.label

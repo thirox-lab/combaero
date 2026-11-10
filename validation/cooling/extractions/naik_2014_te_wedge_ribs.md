@@ -17,15 +17,15 @@ Baden and Moscow. Data: `data/naik2014/`.
    against a ribbed-wall truth. That is inside the 9.5% band but not nothing.
    It is recorded, not corrected. A digitisation of Fig. 11c would tighten
    it, but would not settle the definition.
-2. **The friction is not scored, by the existing rule.** Only
-   `han_1988_orthogonal` declares the passage-average friction
-   (`f_channel_two_ribbed`), and it binds transverse 90 deg ribs. So
-   `eligible_sets` is empty for Fig. 17. Declaring it for
-   `han_park_1988_angled` is a one-line change to `SET_ALSO_PRODUCES`. It
-   would also make that set eligible for all 8 two-sided Taslim & Spring
-   friction series, which would gain rows. What it would read on Naik is
-   below ("Friction, off the harness"). This is your call; the commit does
-   not make it.
+2. **The friction is scored (decided 2026-11-10).** Han and Park (1988)
+   measure the passage-average fbar of a channel with two opposite ribbed
+   walls (p. 186), build R on the four-sided f = fbar + (H/W)(fbar - f(FD))
+   (Eq. 6) and say fbar "can be predicted by combining equations (7)-(9)"
+   (p. 193). So `han_park_1988_angled` now declares `f_channel_two_ribbed`,
+   and `runner._channel_fbar` is that inverse. It is the one 45 deg set
+   eligible for Fig. 17; it reads +50% (below). The same declaration added
+   `han_park_1988_angled` rows to all 8 two-sided Taslim & Spring friction
+   series.
 3. **Uncertainty is the stated 9.5% / 10%, not the drawn +-15%.** Fig. 16
    draws +-15% bars on every point (read: 14.9-15.0%). The text gives HTC
    9.5% and f 10% (Moffat, p. 5) and does not say what the bars are. The
@@ -168,10 +168,13 @@ extrapolation effect. At W/H 1 (the square branch) the same inputs read
 +8/+20/+8%. The measured ratio is flat from 60k to 145k (2.15 to 2.14); every
 set falls with Re.
 
-**Friction, off the harness** (reviewer item 2; not a score). The measured
-fbar is (f/f0) f0(Re) = 0.0460 / 0.0397 / 0.0453 at 22k / 60k / 145k. If
-`han_park_1988_angled` declared the passage friction, its fbar at W/H 6.64
-would be 0.0653 / 0.0651 / 0.0650, which is +42 / +64 / +44% (mean +50%).
+**Friction, scored** (reviewer item 2, decided 2026-11-10). The measured
+fbar is (f/f0) f0(Re) = 0.0460 / 0.0397 / 0.0453 at 22k / 60k / 145k.
+`han_park_1988_angled`, the one eligible set, predicts 0.0653 / 0.0651 /
+0.0650 at W/H 6.64: +42 / +64 / +44% (bias +49.9%, 0 of 3 inside the
+paper's 10% band). Out of domain and cross-source accuracy; pinned by
+`test_naik2014_friction_is_scored_by_rule_and_the_conversion_is_definition`.
+The W/H sweep that follows is off the harness (same set, other W/H).
 Unlike Nu, this grows with W/H through Han's four-sided decomposition
 `fbar = (f W/H + f_s)/(W/H + 1)`, which weights the ribbed walls by W/H. The
 same set and inputs read -11 / +2 / -11% at W/H 2 and +22 / +41 / +23% at
@@ -184,8 +187,8 @@ W/H 4. With e/Dh held at its in-box 0.078, W/H 6.64 still reads +26 / +45 /
   real high-AR wedge passage, measured by an independent lab, on heat
   transfer. It also gives evidence for an envelope decision on W/H > 4.
   For Nu the evidence is that W/H above 2 barely moves the prediction, and
-  the miss is a level. For friction (off the harness) it is that the
-  decomposition drives a growing over-prediction.
+  the miss is a level. For friction it is that the decomposition
+  drives a growing over-prediction.
 - **Cannot**: fidelity. There is no correlation of Naik's. It cannot
   separate W/H from the wedge shape, the taper or e/Dh: one geometry varies
   all four at once. It cannot tune anything. With 3 points, 1 of them
@@ -211,3 +214,7 @@ offset. None is fitted for.
 - 2026-11-09: promoted to `data/naik2014/` and scored. Fig. 16 angled-tapered
   goes against the four eligible sets, all accuracy and out of domain.
   Friction is unscored by rule, and the decision is left to the reviewer.
+- 2026-11-10: friction scored. Han and Park (1988) p. 186 / Eq. 6 / p. 193
+  confirm the correlation predicts the passage-average fbar, so
+  `han_park_1988_angled` declares `f_channel_two_ribbed`. Fig. 17 angled-
+  tapered reads +49.9% (accuracy, out of domain).

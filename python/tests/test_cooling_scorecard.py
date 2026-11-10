@@ -812,5 +812,15 @@ def test_naik2014_rows_are_accuracy_out_of_domain_and_an_upper_bound(cells) -> N
     assert all(0.20 < c.bias < 0.50 and c.within == 0.0 for c in others)
 
     unscored = [c for c in cells if c.series_label.startswith("naik2014/") and c.scored_by is None]
-    assert len(unscored) == 20
+    assert len(unscored) == 19
     assert all(c.n_scored == 0 for c in unscored)
+
+    # Fig. 17 friction: one row, the one 45 deg set declaring passage friction.
+    # Converted (f/f0 -> fbar), out of domain, accuracy; reads ~50% high.
+    friction = [c for c in cells if c.series_label == "naik2014/fig17_angled_tapered"]
+    assert len(friction) == 1
+    (f,) = friction
+    assert f.scored_by == "han_park_1988_angled"
+    assert f.basis == "accuracy" and f.domain == "out-of-domain"
+    assert f.convention == "converted" and f.n_scored == 3
+    assert f.bias == pytest.approx(0.499, abs=0.005) and f.within == 0.0
