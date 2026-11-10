@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 import combaero as cb
@@ -45,9 +46,18 @@ def test_chamber_static_state_unchanged_at_a_physical_Tt() -> None:
 def test_a_probe_with_a_garbage_chamber_Tt_is_rejected_not_a_crash() -> None:
     """The cascaded branching manifold (test_tee_network, xfail: no root at
     its near-choke ratio) is where the audit found the probes: reversed
-    iterates mix a chamber Tt of -4e18 K. Those evaluations now raise the
-    refusal, which the solver records as rejected probes; the solve returns
-    its best iterate (main: the same |F|, the probes ending at the Newton cap)."""
+    iterates mix a chamber Tt of -1.4e19 K (node mc3_str). Such an evaluation
+    raises the refusal, which the solver records as a rejected probe; the
+    solve returns its best iterate.
+
+    Whether the Newton path visits such an iterate depends on the last bits
+    of the arithmetic (the iterate that gives -1.4e19 K, rounded to four
+    digits, gives a physical Tt), and the same commit built with GCC 15
+    instead of GCC 14 (the ubuntu-26.04 runner image) takes a path that
+    never does. So the test plants one: the first probe evaluation gets
+    mc3_str's mixed Tt replaced by the audit's value after state
+    propagation, and the rest -- the C++ refusal, the probe record, the
+    penalty step, the returned iterate -- is the solver's own path."""
     import sys
     from pathlib import Path
 
@@ -56,15 +66,32 @@ def test_a_probe_with_a_garbage_chamber_Tt_is_rejected_not_a_crash() -> None:
 
     from combaero.network import NetworkSolver
 
-    with pytest.warns(UserWarning):
-        sol = NetworkSolver(tee._cascaded_branching_manifold()).solve()
+    solver = NetworkSolver(tee._cascaded_branching_manifold())
+    propagate = solver._propagate_states
+    planted: list[float] = []
+
+    def propagate_with_a_garbage_Tt(x: np.ndarray, with_relay: bool = True) -> dict:
+        relay = propagate(x, with_relay=with_relay)
+        if solver._eval_phase == "probe" and not with_relay and not planted:
+            _, Y, mix_res = solver._derived_states["mc3_str"]
+            solver._derived_states["mc3_str"] = (-1.393323e19, Y, mix_res)
+            planted.append(-1.393323e19)
+        return relay
+
+    solver._propagate_states = propagate_with_a_garbage_Tt  # type: ignore[method-assign]
+    with pytest.warns(RuntimeWarning, match="unphysical intermediate state"):
+        sol = solver.solve()
+    assert planted
     refused = [
         e
         for e in sol["__caught_exceptions__"]
         if "chamber_static_state: Tt must be finite and > 0" in e["message"]
     ]
     assert refused
+    assert "mc3_str" in refused[0]["where"]
     assert all(e["phase"] == "probe" and e["type"] == "ValueError" for e in refused)
+    # Rejected, not a crash: the solve returned a result with a finite iterate.
+    assert all(math.isfinite(v) for v in sol["__x_solution__"])
 
 
 # --- R12 (#944) --------------------------------------------------------------
