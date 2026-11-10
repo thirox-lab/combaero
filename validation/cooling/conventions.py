@@ -129,6 +129,9 @@ CONVENTION_NOTES: dict[str, str] = {
 
 SOURCE_PUBLISHES: dict[tuple[str, str], str] = {
     ("rohde1969", "Cd"): "Cd_total",
+    # Kaddah's C = Lj/Lth with Vj from P1 - pj (approach TOTAL to jet static),
+    # against K = (P1 - pj)/(P1 - p1), Rohde's VHR. Read by kaddah_runner.
+    ("kaddah1964", "Cd"): "Cd_total",
     ("mcgreehan_schotsch1988", "Cd"): "Cd_static",
     # Unscored today (no angle or two-sided crossflow term in combaero);
     # declared so a future set must meet the basis explicitly.
