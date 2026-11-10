@@ -284,7 +284,12 @@ double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_d
   return k;
 }
 
-double rowbury_2001_k_fit_max(Rowbury2001Set set) { return rowbury_envelope(set).k_fit; }
+double rowbury_2001_k_fit_max(Rowbury2001Set set) {
+  const rowbury2001::Envelope& e = rowbury_envelope(set);
+  return std::max(e.k_data, e.k_applied);
+}
+
+double rowbury_2001_k_data_max(Rowbury2001Set set) { return rowbury_envelope(set).k_data; }
 
 bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg) {
   const rowbury2001::Envelope& e = rowbury_envelope(set);

@@ -878,15 +878,18 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   `exit_crossflow_orientation_deg` its alpha, the radial orientation from the
   surface normal, in [0, 90). Crossover is built in inside the fitted k: a
   strongly blowing hole's Cd rises. Beyond the k_perp the set's Table 1 rows
-  provably reach (`cb.rowbury_2001_k_fit_max`: 4.7 pressure, 4.3 leading
-  edge, 0.58 suction, 0.13 / 0.054 fan) the -C offset fades (our
+  provably reach, or -- where larger -- the authors themselves applied it
+  at (`cb.rowbury_2001_k_fit_max`: 4.7 pressure, 4.3 leading edge, 0.13 /
+  0.054 fan, all data; 3.8 suction, the authors' Fig. 9, its data reaching
+  0.58, `cb.rowbury_2001_k_data_max`) the -C offset fades (our
   extrapolation, our threshold), so Cd returns to Cd0 continuously as the
-  mainstream vanishes. Cd can exceed 1 with the leading-edge set at Cd0 near
+  mainstream vanishes. `exit_crossflow_faded` reports the tier: 0 inside
+  the data, 0.5 inside only the authors' application, 1 faded. Cd can exceed 1 with the leading-edge set at Cd0 near
   1 (not capped). Below a k floor the term is held. Reported when on:
   `Cd_no_exit_crossflow`, `Cd_exit_crossflow_ratio`, `exit_crossflow_rho_u2`
   [Pa], `exit_crossflow_k_perp` (actual), `exit_crossflow_k_used`,
   `exit_crossflow_k_floor`, `exit_crossflow_delta`, `exit_crossflow_held`,
-  `exit_crossflow_faded`, `exit_crossflow_floor_above_fit` (the hold covers
+  `exit_crossflow_faded` (0 / 0.5 / 1, the k tier), `exit_crossflow_floor_above_fit` (the hold covers
   the whole fitted k range: info), `exit_crossflow_in_range` (Table 1's angle
   span). Fidelity (the authors' Fig. 9 predictions) and cross-source accuracy
   (Gritsch 1998, Hay 1983): `validation/cooling/exit_crossflow_cd_runner.py`.

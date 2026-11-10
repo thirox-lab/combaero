@@ -307,8 +307,7 @@ def test_the_elements_cd_is_eqs_7_8_on_its_own_cd0(make) -> None:
 
 def test_crossflow_lowers_cd_at_low_k_and_raises_it_at_high_k() -> None:
     # Eq. 8's crossover: delta > 0 while A k^-B > C, < 0 beyond, inside the
-    # set's fitted k (the leading-edge rows reach k_perp 4.3; the suction
-    # rows only 0.58, below the 30 deg hole's crossover at 1.0).
+    # set's fitted k (the leading-edge rows reach k_perp 4.3).
     lo = _solve(_net(_film(cd_exit_crossflow="rowbury_2001"), m_gas=4.0, dp=0.01))[1]
     le = _film(
         angle_deg=88.0,
@@ -377,35 +376,39 @@ def test_fidelity_reproduces_the_authors_fig9_predictions() -> None:
         assert max(abs(x) for x in d) < 0.003
     d03 = [cd - read for m, pr, read, cd in rows if m == 0.3 and pr > 1.05]
     assert max(abs(x) for x in d03) < 0.008
-    # As shipped, the offset fades beyond the suction rows' k_fit 0.58: the
-    # same everywhere the authors stayed inside it (all of Ma_m 0.6 and 1.2,
-    # Ma_m 0.3 to PR 1.09), and below their markers where they did not (Ma_m
-    # 0.3 at PR 1.13 / 1.20 / 1.35 / 1.55, k_perp 0.6 / 0.9 / 1.5 / 2.2:
-    # -0.002 / -0.006 / -0.015 / -0.019; our extrapolation, reported).
+    # As shipped the suction set fades only beyond the authors' own Fig. 9
+    # application (k_fit 3.8, tier 2): every marker is Eq. 8 as printed.
     shipped = xr.fidelity_rows(as_printed=False)
-    for (m, pr, read, c1), (_, _, _, c2) in zip(rows, shipped, strict=True):
-        if m > 0.3 or pr < 1.12:
-            assert c2 == pytest.approx(c1, abs=1e-12)
-        else:
-            assert -0.025 < c2 - read < 0.0
+    for (_, _, _, c1), (_, _, _, c2) in zip(rows, shipped, strict=True):
+        assert c2 == pytest.approx(c1, abs=1e-12)
     # The first version's rho(Tt_c, p_m) missed Ma_m 1.2 by +0.008 (the bug).
     old = xr.fidelity_rows(rho_h_supply_tt=True)
     d12 = [cd - read for m, _, read, cd in old if m == 1.2]
     assert sum(d12) / len(d12) > 0.006
 
 
+def test_the_suction_sets_tier_2_is_the_authors_fig9_reach() -> None:
+    # Fig. 9's Ma_m 0.3 prediction runs to PR 2.0; there k_perp is 3.8 on
+    # the authors' own curve (Cd,no 0.776, isentropic exit density).
+    _, k, _ = xr.solve_point(
+        xr.GRITSCH_RIG, 2.0, 0.3, True, False, cd_no=xr.LICHTAROWICZ_CDU_L_OVER_D_6, as_printed=True
+    )
+    assert k == pytest.approx(cb.rowbury_2001_k_fit_max(SUCTION), abs=0.05)
+    assert cb.rowbury_2001_k_data_max(SUCTION) == 0.58
+
+
 def test_accuracy_before_and_after() -> None:
     got = dict(xr.accuracy())
     expect = {
         # (bias off, bias on), inclination term on: cross-source accuracy.
-        "gritsch1998/fig3_Mac0p0_Mam0p3": (0.008, -0.035),
-        "gritsch1998/fig3_Mac0p0_Mam0p6": (0.159, 0.031),
+        "gritsch1998/fig3_Mac0p0_Mam0p3": (0.008, -0.028),
+        "gritsch1998/fig3_Mac0p0_Mam0p6": (0.159, 0.032),
         "gritsch1998/fig3_Mac0p0_Mam1p2": (0.468, 0.086),
         # 90 deg: outside the suction rows (30-78 deg); depends on the
-        # k_unique margin (M 0.25 / 0.5 / 0.75 / 1.0: -1.5 / -6.0 / -8.7 / -10.6%).
-        "hay1983/fig6_open_circles": (0.112, -0.060),
-        "hay1983/fig8_open_circles": (0.114, 0.060),
-        "hay1983/fig12_open_circles": (0.123, 0.082),
+        # k_unique margin (M 0.25 / 0.5 / 0.75 / 1.0: -0.2 / -4.6 / -7.4 / -9.3%).
+        "hay1983/fig6_open_circles": (0.112, -0.046),
+        "hay1983/fig8_open_circles": (0.114, 0.068),
+        "hay1983/fig12_open_circles": (0.123, 0.088),
     }
     for label, (off, on) in expect.items():
         assert xr.summary(got[label], True, False)[0] == pytest.approx(off, abs=0.003)
@@ -431,3 +434,15 @@ class _Probe:
         self.m_dot, self.Tt, self.Y = m_dot, Tt, Y
         self.P = self.Pt = 5e5
         self.X = list(cb.mass_to_mole(Y))
+
+
+def test_the_faded_flag_reports_the_k_tier() -> None:
+    # 0 inside the suction rows' data (k_perp <= 0.58), 0.5 inside only the
+    # authors' Fig. 9 application (<= 3.8, Eq. 8 unfaded), 1 beyond (faded).
+    tiers = {}
+    for m_gas, dp in ((4.0, 0.01), (1.5, 0.10), (0.03, 0.03)):
+        _, r = _solve(_net(_film(cd_exit_crossflow="rowbury_2001"), m_gas=m_gas, dp=dp))
+        d = r["__element_diag__"]["eff"]
+        tiers[d["exit_crossflow_faded"]] = d["exit_crossflow_k_used"]
+    assert set(tiers) == {0.0, 0.5, 1.0}
+    assert tiers[0.0] <= 0.58 < tiers[0.5] <= 3.8 < tiers[1.0]

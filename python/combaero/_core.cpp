@@ -765,8 +765,11 @@ PYBIND11_MODULE(_core, m) {
         "max(ROWBURY_2001_K_PERP_MIN, k_unique), k_unique (B > 1 only) keeping\n"
         "the hole's flow a unique root.");
   m.def("rowbury_2001_k_fit_max", &combaero::rowbury_2001_k_fit_max, py::arg("set"),
-        "The largest k_perp the set's fitted Table 1 rows provably reach (design\n"
-        "PR, or the printed Fig. 5-8 sweep); beyond it the offset C fades.");
+        "k_fit = max(k_data, k_applied): beyond it the offset C fades. k_data,\n"
+        "the k_perp the set's Table 1 rows provably reach; k_applied, the\n"
+        "largest at which the authors applied the set (Fig. 9, suction).");
+  m.def("rowbury_2001_k_data_max", &combaero::rowbury_2001_k_data_max, py::arg("set"),
+        "Tier 1 of k_fit: the k_perp the set's Table 1 rows provably reach.");
   m.def("rowbury_2001_in_range", &combaero::rowbury_2001_in_range, py::arg("set"),
         py::arg("theta_deg"), py::arg("alpha_deg"),
         "True inside the set's Table 1 (theta, alpha) span.");

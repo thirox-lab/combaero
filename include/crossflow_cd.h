@@ -145,8 +145,10 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 //
 // THE TWO ENDS OF Eq. 8 ARE NOT THE PAPER'S RANGE. Our extrapolations:
 //
-// * k > k_fit, the largest k_perp the set's fitted rows provably reach
-//   (rowbury_2001_k_fit_max; Figs. 5-9 plot Cd against PR, and the one k
+// * k > k_fit = max(k_data, k_applied) (rowbury_2001_k_fit_max), two tiers
+//   kept apart (rowbury_2001_k_data_max reports the first):
+//   k_data, TIER 1, the largest k_perp the set's fitted rows provably reach
+//   (Figs. 5-9 plot Cd against PR, and the one k
 //   axis, Fig. 4, is k_out of row 1 alone: 0.2-3.3, which is k_perp
 //   0.07-1.2 at its theta 21). Per Table 1 row, from its Ma_m, theta, alpha
 //   and design PR (and, for rows 1, 10, 14, the PR its Fig. 5-8 sweep
@@ -164,8 +166,18 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 //   Row 1 at its Fig. 5 sweep (PR 1.6, Cd 0.72) gives k_out 2.4, consistent
 //   with Fig. 4's 3.3 nearer PR 1.8. These are LOWER BOUNDS on the fitted
 //   top: the other rows were swept above design PR too (not printed), so the
-//   true range cannot be pinned from the paper, and the threshold is
-//   combaero's choice, set where the data provably reach. A large k is a jet
+//   true range cannot be pinned from the paper.
+//   k_applied, TIER 2, the largest k_perp at which the authors themselves
+//   applied the correlation in the paper (their own use holds weight, less
+//   than data; user decision 2026-11-10). The generalised curves of Figs.
+//   6-8 stay inside tier 1 (row 1 to PR 1.65: 0.88; row 10 to PR 1.45: 2.6;
+//   row 14 fan to PR 2.5: 0.054); Fig. 9 applies the SUCTION set to Gritsch's
+//   30 deg hole, its Ma_m 0.3 curve to PR 2.0, which is k_perp 3.8 (our
+//   evaluation of their curve: Cd 0.792, isentropic exit density). So:
+//     cylindrical pressure 4.7, leading edge 4.3, fan pressure 0.13 and fan
+//     suction 0.054 are tier 1 (data); cylindrical suction 3.8 is tier 2
+//     (the authors' application; its data reach only 0.58).
+//   Either way the threshold is combaero's choice. A large k is a jet
 //   that dominates the crossflow, where the outlet loss must vanish (Cd ->
 //   Cd,no); Eq. 8 instead tends to -C, a fitted offset, and would jump to
 //   Cd,no at u_m = 0 exactly (the authors' own "Predict Mm = 0" is Cd,no by
@@ -205,7 +217,8 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 //       starts where A k^-B = M (1 - C) / (B - 1): for B near 1 (a normal
 //       hole, suction set: B 1.18, k_floor 0.23) once the term has cut Cd by
 //       a third or more; for larger B sooner. Off Table 1's angles k_floor
-//       can exceed k_fit (suction set at theta 90, alpha 60: 1.43 > 0.58),
+//       can exceed k_fit (fan pressure set at theta 90, alpha 60: 0.88 >
+//       0.13),
 //       i.e. the whole fitted k range is held: rowbury_2001_k_floor reports it.
 //
 // Cd > 1. The -C crossover lets Cd exceed Cd,no, and with the leading-edge
@@ -240,16 +253,18 @@ constexpr Row kFanSuction{0.225, -0.110, 1.0, 0.350, 0.570, 2.8, 0.05};
 // Table 1 angle spans of the rows each set was fitted on [deg]. Fan-shaped
 // rows (p. 259: rows 5-11 are cylindrical only): pressure rows 1-4, suction
 // rows 12-14.
-// k_fit: the largest k_perp the rows provably reach (see "THE TWO ENDS").
+// k_data: tier 1, the largest k_perp the rows provably reach; k_applied:
+// tier 2, the largest at which the authors applied the set (0: nowhere
+// beyond tier 1). See "THE TWO ENDS".
 struct Envelope {
   double theta_min, theta_max, alpha_min, alpha_max;
-  double k_fit;
+  double k_data, k_applied;
 };
-constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0, 4.7};       // rows 1-6
-constexpr Envelope kEnvCylLeadingEdge{83.0, 90.0, 60.0, 60.0, 4.3};  // rows 7-10
-constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0, 0.58};       // rows 11-14
-constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0, 0.13};      // rows 1-4
-constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0, 0.054};      // rows 12-14
+constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0, 4.7, 0.0};       // rows 1-6
+constexpr Envelope kEnvCylLeadingEdge{83.0, 90.0, 60.0, 60.0, 4.3, 0.0};  // rows 7-10
+constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0, 0.58, 3.8};       // rows 11-14; Fig. 9
+constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0, 0.13, 0.0};      // rows 1-4
+constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0, 0.054, 0.0};      // rows 12-14
 }  // namespace rowbury2001
 
 constexpr double ROWBURY_2001_K_PERP_MIN = 0.01;
@@ -267,8 +282,10 @@ struct Rowbury2001Coefficients {
 Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
                                                   double alpha_deg);
 
-// The k_perp beyond which the offset fades: the set's k_fit (see above).
+// The k_perp beyond which the offset fades: k_fit = max(k_data, k_applied).
 double rowbury_2001_k_fit_max(Rowbury2001Set set);
+// Tier 1 alone: the k_perp the set's Table 1 rows provably reach.
+double rowbury_2001_k_data_max(Rowbury2001Set set);
 
 // The k_perp below which the term is held (see above).
 double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_deg);

@@ -426,8 +426,17 @@ TEST(Rowbury2001, FitRangeIsTheLargestKTheRowsReach) {
               k(58, 0, 0.05, 1.02, 0.70, 1.0), 0.05);  // row 6
   EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalLeadingEdge),
               k(90, 60, 0.04, 1.02, 0.70, 1.0), 0.05);  // row 7
-  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalSuctionSurface),
+  EXPECT_NEAR(combaero::rowbury_2001_k_data_max(Rowbury2001Set::CylindricalSuctionSurface),
               k(78, 0, 0.32, 1.09, 0.70, 1.0), 0.005);  // row 11
+  // Tier 2: the authors' own application, Fig. 9 Ma_m 0.3 to PR 2.0 (the
+  // runner's evaluation of their curve; python test_exit_crossflow_cd).
+  EXPECT_EQ(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalSuctionSurface), 3.8);
+  for (const auto set : {Rowbury2001Set::CylindricalPressureSurface,
+                         Rowbury2001Set::CylindricalLeadingEdge,
+                         Rowbury2001Set::FanShapedPressureSurface,
+                         Rowbury2001Set::FanShapedSuctionSurface}) {
+    EXPECT_EQ(rowbury_2001_k_fit_max(set), combaero::rowbury_2001_k_data_max(set));
+  }
   EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::FanShapedPressureSurface),
               k(30, 7, 0.08, 1.02, 0.70, 2.9), 0.005);  // row 4
   EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::FanShapedSuctionSurface),

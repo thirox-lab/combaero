@@ -1302,9 +1302,10 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 // normal; Table 1 settles it), rho_h the isentropic exit-plane density.
 // A, B, C: Table 2 per set at (theta, alpha). Held below
 // rowbury_2001_k_floor (Cd -> 0 and, for B > 1, no root of the hole's flow
-// below it). Beyond rowbury_2001_k_fit_max(set) -- the largest k_perp the
-// set's Table 1 rows provably reach (4.7 / 4.3 / 0.58 / 0.13 / 0.054;
-// combaero's choice, a lower bound on the unprinted fitted top) -- the
+// below it). Beyond rowbury_2001_k_fit_max(set) = max(tier 1: the k_perp the
+// set's Table 1 rows provably reach, rowbury_2001_k_data_max; tier 2: the
+// largest the authors applied it at) -- 4.7 / 4.3 / 3.8 (suction, tier 2,
+// Fig. 9; data 0.58) / 0.13 / 0.054, combaero's choice -- the
 // offset C fades (w = 1/(1 + (ln(k/k_fit)/FADE_WIDTH)^2), C1), so Cd -> Cd0 as
 // k -> inf. Table 1's angle span is a flag, not a refusal. Cd > 1 can occur
 // with the leading-edge set at Cd0 near 1 (not capped).
@@ -1313,7 +1314,8 @@ enum class Rowbury2001Set { CylindricalPressureSurface, CylindricalLeadingEdge,
                             FanShapedSuctionSurface };
 constexpr double ROWBURY_2001_K_PERP_MIN = 0.01, ROWBURY_2001_FADE_WIDTH = 1.0,
                  ROWBURY_2001_UNIQUE_MARGIN = 0.5;
-double rowbury_2001_k_fit_max(Rowbury2001Set set);
+double rowbury_2001_k_fit_max(Rowbury2001Set set);   // max(k_data, k_applied)
+double rowbury_2001_k_data_max(Rowbury2001Set set);  // tier 1 alone
 struct Rowbury2001Coefficients { double A, B, C; };
 Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
                                                   double alpha_deg);  // throws A, B <= 0

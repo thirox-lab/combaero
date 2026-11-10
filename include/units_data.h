@@ -419,6 +419,7 @@ inline constexpr Entry function_units[] = {
     {"Rowbury2001ExitDensity::drho_dY", "kg/m^3", "kg/m^3"},
     {"Rowbury2001Cd::faded", "-", "- (bool)"},
     {"rowbury_2001_k_fit_max", "set: -", "- (k_perp)"},
+    {"rowbury_2001_k_data_max", "set: -", "- (k_perp)"},
     {"ROWBURY_2001_FADE_WIDTH", "-", "- (ln k)"},
     {"Rowbury2001KPerp::k", "-", "-"},
     {"Rowbury2001KPerp::dk_dG", "1/(kg/(m^2*s))", "1/(kg/(m^2*s))"},

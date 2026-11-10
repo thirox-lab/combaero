@@ -5923,9 +5923,20 @@ class OrificeElement(NetworkElement):
             "exit_crossflow_k_floor": k_floor,
             "exit_crossflow_delta": float(r.delta) if r is not None else 0.0,
             "exit_crossflow_held": float(r.held) if r is not None else 0.0,
-            # Beyond the set's fitted k (rowbury_2001_k_fit_max): the offset
-            # fades (info).
-            "exit_crossflow_faded": float(r.faded) if r is not None else 0.0,
+            # Where k_used sits against the set's k tiers (info): 0 inside
+            # what its Table 1 rows provably reach (tier 1, data), 0.5 beyond
+            # that but inside the authors' own application of the set (tier
+            # 2, Fig. 9 for the suction set; Eq. 8 unfaded), 1 beyond both:
+            # the offset fades.
+            "exit_crossflow_faded": (
+                0.0
+                if r is None
+                else 1.0
+                if r.faded
+                else 0.5
+                if r.k_used > cb.rowbury_2001_k_data_max(cset)
+                else 0.0
+            ),
             # Off Table 1's angles the floor can lie above the fitted k
             # range: the whole fitted range is then held (info).
             "exit_crossflow_floor_above_fit": float(k_floor > cb.rowbury_2001_k_fit_max(cset)),
