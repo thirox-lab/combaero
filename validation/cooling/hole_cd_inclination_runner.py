@@ -1,4 +1,5 @@
-"""The opt-in hole-inclination Cd term against Hay 1983 and Gritsch 1998.
+"""The hole-inclination Cd term (default for cylindrical holes since the
+2026-11-10 hole-Cd audit) against Hay 1983 and Gritsch 1998.
 
 WHAT IS COMPARED: ACCURACY, CROSS-SOURCE. The term is Idelchik's (diagram
 3-2 composed into Eq. 4-20's inlet coefficient of the thick-walled hole, see

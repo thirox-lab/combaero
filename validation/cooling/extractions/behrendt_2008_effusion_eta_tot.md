@@ -350,22 +350,24 @@ above are unchanged.
 
 | curve | measured | chamber + rad | err | flat + rad | err | q_rad [kW/m2] | eps_g |
 |---|---|---|---|---|---|---|---|
-| E20 dp 2% Tc 540 K | 0.790 | 0.897 | +13.5% | 0.833 | +5.5% | 37 | 0.132 |
-| E20 dp 3% Tc 540 K | 0.800 | 0.908 | +13.5% | 0.850 | +6.3% | 37 | 0.132 |
-| E20 dp 4% Tc 540 K | 0.805 | 0.915 | +13.6% | 0.861 | +6.9% | 38 | 0.132 |
-| E30 dp 3% Tc 470 K | 0.778 | 0.895 | +15.0% | 0.830 | +6.6% | 38 | 0.132 |
-| E30 dp 3.1% Tc 540 K | 0.727 | 0.895 | +23.1% | 0.830 | +14.2% | 37 | 0.132 |
-| E30 dp 3% Tc 580 K | 0.688 | 0.893 | +29.8% | 0.828 | +20.3% | 36 | 0.132 |
-| E30 dp 2% Tc 470 K | 0.768 | 0.883 | +14.9% | 0.812 | +5.7% | 38 | 0.132 |
-| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.888 | +17.9% | 0.815 | +8.3% | 51 | 0.198 |
-| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.877 | +19.2% | 0.799 | +8.6% | 51 | 0.198 |
+| E20 dp 2% Tc 540 K | 0.790 | 0.891 | +12.8% | 0.825 | +4.4% | 37 | 0.132 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.903 | +12.9% | 0.842 | +5.3% | 37 | 0.132 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.910 | +13.0% | 0.853 | +5.9% | 37 | 0.132 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.889 | +14.3% | 0.821 | +5.5% | 38 | 0.132 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.889 | +22.4% | 0.822 | +13.1% | 37 | 0.132 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.888 | +29.0% | 0.820 | +19.1% | 36 | 0.132 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.877 | +14.1% | 0.803 | +4.5% | 38 | 0.132 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.881 | +17.1% | 0.806 | +7.0% | 51 | 0.198 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.870 | +18.3% | 0.789 | +7.3% | 50 | 0.198 |
 
-Per vertex (821 points): +18.0% (chamber) and +9.2% (flat plate), against
-+17.6% / +8.9% with Eq. 8.11 and +21.8% / +12.6% without radiation. At 5 bar
+Per vertex (821 points): +17.2% (chamber) and +8.1% (flat plate), against
++16.8% / +7.8% with Eq. 8.11 and +21.2% / +11.6% without radiation (all with
+the inclination default of the 2026-11-10 hole-Cd audit; before it +18.0% /
++9.2%, +17.6% / +8.9% and +21.8% / +12.6%). At 5 bar
 the two emissivities nearly agree (0.132 against 0.137); at 10 bar the WSGG
 is 24% lower (0.198 against 0.262) and so is the radiative flux. The
-pressure trend therefore closes less: p_h dp 3% -0.007 / -0.015 (0.30 /
-0.58x measured) against Eq. 8.11's 0.6 / 0.84x and 0.39 / 0.68x without
+pressure trend therefore closes less: p_h dp 3% -0.008 / -0.015 (0.32 /
+0.61x measured) against Eq. 8.11's 0.63 / 0.89x and 0.42 / 0.71x without
 radiation: from 5 to 10 bar the WSGG flux grows 1.35x while the convective
 one grows faster, so radiation's share falls with pressure and the trend
 ends below the no-radiation one. The other trends move by less than 0.0003.

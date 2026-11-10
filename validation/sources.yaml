@@ -4077,7 +4077,8 @@ documents:
     curves re-solved with the shipped kernel, 16 Gauss-Legendre ordinates per hemisphere (converged; at the
     paper''s 6 they leave max 1.42%, mean 0.44%): max 1.25%, mean 0.28% (validation/radiation/bordbar2021_slab.py).
     DLR 2008 effusion rows (accuracy, cross-source): eps_g 0.132 / 0.198 at 5 / 10 bar, flat-plate eta per
-    vertex +9.2% against +8.9% with Eq. 8.11, pressure trend 0.58x against 0.84x -- no improvement on that rig.
+    vertex +8.1% against +7.8% with Eq. 8.11, pressure trend 0.61x against 0.89x -- no improvement on that rig
+    (with the hole Cd''s inclination default of 2026-11-10; before it +9.2% / +8.9%, 0.58x / 0.84x).
     Screened 2026-10-28: the pressure coverage Bordbar et al. (2014) lacked -- gas-turbine liners at
     10-40 bar sit inside 0.1-80 atm -- the candidate non-luminous gas emissivity at combustor pressure. LICENCE:
     the article is CC BY 4.0 (printed on p. 1; the publisher''s permissions page states no permission is needed
@@ -4510,7 +4511,7 @@ documents:
     the jet momentum flux, the gas dynamic head, theta), and crossover (delta < 0, Cd raised) is built in. Limits:
     coefficients fitted on one NGV''s rows (curved, accelerating surfaces), so a flat liner takes the suction-
     surface set as the authors did for Gritsch; C > 0 floors delta at -C, so at the large momentum ratios of
-    effusion (DLR k_perp ~8-12) it RAISES Cd by ~3-4% -- the wrong direction for DLR''s 1.5x coolant-flow excess,
+    effusion (DLR k_perp ~8-12) it RAISES Cd by ~3-4% -- the wrong direction for DLR''s ~1.4x coolant-flow excess (1.5x before the inclination default),
     which this paper therefore does not explain. Scoring: Gritsch 1998 (held, digitised, same 30 deg geometry the
     authors predict in Fig. 9: cross-source for the coefficients, which come from the CHTT) and Hay 1983 exit-
     crossflow points are the accuracy sets. Internal (inlet) crossflow is not covered (the authors: analogous,

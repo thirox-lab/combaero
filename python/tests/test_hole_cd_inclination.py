@@ -175,6 +175,10 @@ def test_a_normal_hole_is_unchanged_by_the_term(make, inc: str) -> None:
     # Bit for bit: every solved unknown and every diagnostic.
     off = _solve(make(angle_deg=90.0, cd_inclination="none"))
     on = _solve(make(angle_deg=90.0, cd_inclination=inc))
+    # "auto" on a normal hole names what it applies: no inclined inlet.
+    assert make(angle_deg=90.0, cd_inclination=inc).cd_inclination == (
+        "none" if inc == "auto" else "idelchik_3_2"
+    )
     assert {k: v for k, v in on.items() if not k.startswith("__")} == {
         k: v for k, v in off.items() if not k.startswith("__")
     }

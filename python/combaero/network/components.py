@@ -4786,19 +4786,21 @@ _DISCHARGE_SELECTORS = {
 # 'IdelchikThick' only; any other correlation refuses it.
 # "none": the angle enters the Cd only through the drilled length t/sin.
 # "auto" (the default since the 2026-11-10 hole-Cd audit): "idelchik_3_2"
-# for a CYLINDRICAL hole on 'IdelchikThick', "none" otherwise. Cross-source,
-# the term moves every 30 deg cylindrical cell of Gritsch 1998 and Hay 1983
-# toward the data, and it worsens shaped holes (Gritsch fan -2 -> -11 %,
-# laidback 0 -> -10 %) because no shape term offsets it, so a shaped hole
-# stays off until one exists. At 90 deg the term is exactly zero.
+# for an INCLINED (< 90 deg) CYLINDRICAL hole on 'IdelchikThick', "none"
+# otherwise -- a normal hole has no inclined inlet (the term is exactly zero
+# there), so its element reads "none". ACCURACY, CROSS-SOURCE (Gritsch 1998,
+# Hay 1983; neither is Idelchik's): the term moves every 30 deg cylindrical
+# cell toward the data, and it worsens shaped holes (Gritsch fan -2 -> -11 %,
+# laidback 0 -> -10 % bias without crossflow) because no shape term offsets
+# it, so a shaped hole stays off until one exists.
 CD_INCLINATION_MODELS = ("auto", "none", "idelchik_3_2")
 
 
 def _resolve_cd_inclination(
-    name: str, cd_inclination: str, correlation: str, hole_type: str
+    name: str, cd_inclination: str, correlation: str, hole_type: str, angle_deg: float
 ) -> str:
-    """The inclination model an inclined cooling hole is built with: "auto"
-    resolved from the correlation and the hole type, an explicit choice
+    """The inclination model a cooling hole is built with: "auto" resolved
+    from the correlation, the hole type and the angle, an explicit choice
     kept (and refused by _cd_inclination_deg where it cannot compose)."""
     if cd_inclination not in CD_INCLINATION_MODELS:
         raise ValueError(
@@ -4807,7 +4809,7 @@ def _resolve_cd_inclination(
         )
     if cd_inclination != "auto":
         return cd_inclination
-    if correlation == "IdelchikThick" and hole_type == "cylindrical":
+    if correlation == "IdelchikThick" and hole_type == "cylindrical" and angle_deg < 90.0:
         return "idelchik_3_2"
     return "none"
 
@@ -7100,7 +7102,8 @@ class EffusionPlateElement(OrificeElement):
     dzeta = 0.3 cos(angle) + 0.2 cos^2(angle), added to diagram 4-18a's
     inlet coefficient (Eq. 4-20); reported as ``Cd_inclination_dzeta``
     (exactly 0 at 90 deg). ``cd_inclination='auto'`` (default) applies it
-    with IdelchikThick and leaves it off with any other correlation;
+    to an inclined hole with IdelchikThick (a 90 deg hole resolves to
+    'none') and leaves it off with any other correlation;
     ``'idelchik_3_2'`` forces it (any other correlation refuses it) and
     ``'none'`` switches it off. Outside its range (Re > 1e4, l/d >= 2) the
     Cd is flagged by ``Cd_in_range``, not refused.
@@ -7374,7 +7377,7 @@ class EffusionPlateElement(OrificeElement):
         # Inclined-inlet Cd term (CD_INCLINATION_MODELS): the model in use,
         # "auto" resolved (an effusion hole is cylindrical).
         self.cd_inclination = _resolve_cd_inclination(
-            f"EffusionPlateElement {id!r}", cd_inclination, correlation, "cylindrical"
+            f"EffusionPlateElement {id!r}", cd_inclination, correlation, "cylindrical", angle_deg
         )
         self._cd_inclination_deg = _cd_inclination_deg(
             f"EffusionPlateElement {id!r}", self.cd_inclination, correlation, angle_deg
@@ -8104,7 +8107,9 @@ class FilmCoolingElement(OrificeElement):
     inclined-inlet loss to the IdelchikThick Cd of a CYLINDRICAL hole (see
     EffusionPlateElement) and leaves a shaped hole without it: the plain-hole
     Cd on the metering area has no shape term, and the inclination term
-    alone moves the shaped holes away from Gritsch 1998's data.
+    alone moves the shaped holes away from Gritsch 1998's data (ACCURACY,
+    CROSS-SOURCE: fan -2 -> -11 %, laidback 0 -> -10 % bias without
+    crossflow).
     ``'idelchik_3_2'`` forces it, ``'none'`` switches it off; reported as
     ``Cd_inclination_dzeta``.
     """
@@ -8194,7 +8199,9 @@ class FilmCoolingElement(OrificeElement):
         self.injection_angle_deg = float(angle_deg)
         # Inclined-inlet Cd term (CD_INCLINATION_MODELS): the model in use,
         # "auto" resolved from the correlation and the hole type.
-        self.cd_inclination = _resolve_cd_inclination(name, cd_inclination, correlation, hole_type)
+        self.cd_inclination = _resolve_cd_inclination(
+            name, cd_inclination, correlation, hole_type, angle_deg
+        )
         self._cd_inclination_deg = _cd_inclination_deg(
             name, self.cd_inclination, correlation, angle_deg
         )

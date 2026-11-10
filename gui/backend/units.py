@@ -110,7 +110,7 @@ UNIT_MAP: dict[str, str] = {
     "area_ratio": "-",  # Phase 2 name
     "is_correlation": "-",
     "Cd_in_range": "-",  # 1 inside the discharge correlation's source range
-    "Cd_inclination_dzeta": "-",  # opt-in inclined-inlet increment on zeta' (0 when off)
+    "Cd_inclination_dzeta": "-",  # inclined-inlet increment on zeta' (0 when off or at 90 deg)
     # Opt-in exit-crossflow Cd term (#1074), emitted only when opted in.
     "Cd_no_exit_crossflow": "-",
     "Cd_exit_crossflow_ratio": "-",

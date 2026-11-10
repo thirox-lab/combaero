@@ -863,9 +863,12 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   IdelchikThick and leaves it off for a shaped hole and for every other
   correlation; `"none"` switches it off; `"idelchik_3_2"` forces it, and any
   other correlation (`"fixed"` included) then raises. The attribute holds the
-  resolved model. Shaped holes stay off because no shape term offsets it:
+  resolved model ("none" for "auto" on a 90 deg hole, which has no inclined
+  inlet). Shaped holes stay off because no shape term offsets it:
   alone it moves Gritsch 1998's fan and laidback holes from -2% / 0% to
-  -11% / -10%. Outside Re > 1e4 and l/d >= 2 `Cd_in_range` reads 0.
+  -11% / -10% (accuracy, cross-source). Outside diagram 3-2's Re > 1e4 and
+  l/d >= 2 `Cd_in_range` reads 0, so with the default more inclined
+  cylindrical holes read 0 than before (low-Re effusion plates, for one).
   Cross-source accuracy on Hay 1983 and Gritsch 1998:
   `validation/cooling/hole_cd_inclination_runner.py`.
 - **Exit-crossflow Cd term, opt-in (#1074).** `cd_exit_crossflow="rowbury_2001"`

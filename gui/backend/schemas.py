@@ -516,8 +516,9 @@ class EffusionPlateData(BaseModel):
     # for the flat plate, so switching back keeps it without refusing.
     gas_baseline: Literal["chamber", "flat_plate"] = "chamber"
     gas_start_length: float | None = Field(default=None, ge=0.0)
-    # Opt-in hole-angle Cd term (Idelchik diagram 3-2 on IdelchikThick's
-    # inlet coefficient); read only with IdelchikThick, like Cd with 'fixed'.
+    # Hole-angle Cd term (Idelchik diagram 3-2 on IdelchikThick's inlet
+    # coefficient): "auto" (default) on for an inclined hole, "none" off,
+    # "idelchik_3_2" forced; read only with IdelchikThick, like Cd with 'fixed'.
     cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
     # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
     # flowing discharge chamber (the element refuses it otherwise). No
@@ -595,8 +596,8 @@ class FilmCoolingData(BaseModel):
         "IdelchikThick"
     )
     Cd: float = 0.6
-    # Opt-in hole-angle Cd term, read only with IdelchikThick (see
-    # EffusionPlateData).
+    # Hole-angle Cd term, read only with IdelchikThick (see EffusionPlateData);
+    # "auto" leaves a shaped hole without it.
     cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
     # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
     # flowing discharge chamber (the element refuses it otherwise). No
