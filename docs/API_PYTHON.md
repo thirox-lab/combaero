@@ -919,7 +919,9 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   McGreehan-Schotsch beyond l/d 10 (its length function keeps falling: Cd
   0.49 at l/d 40) or below Re 1e4 (value held; this used to print a C++
   warning on every call); Lichtarowicz below Re 10 or outside l/d 2-10. Above
-  Re 2e4 Lichtarowicz is at its Eq. (7) high-Re asymptote and is in range.
+  Re 2e4 Lichtarowicz is at its Eq. (7) constant (design recommendation (2))
+  and in range up to 1e5, where its collected data end; above that
+  `Cd_extrapolated_Re` reads 1.
   0.0 for a metering or `'fixed'` Cd. `EffusionLiner` reports Re and l/d as
   "any panel".
 
@@ -3617,7 +3619,10 @@ are crossflow.
   used) beside `Cd_own`. Where Rogers & Hersh's law acts (not capped), the
   inputs outside CR-2681's envelope are named, 1.0 each, as information:
   `Cd_crossflow_extrapolated_velocity_ratio` (Vi/V_inf = Cd q outside
-  0.004-0.9), `Cd_crossflow_extrapolated_l_d` (hole L/D outside 0.12-2.0),
+  Fig. 11's 0.004-0.5), `Cd_crossflow_extrapolated_l_d` (injecting: hole L/D
+  outside 0.12-2.0, or outside 0.6-1.0 above Vi/V_inf 0.35; a reversed jet,
+  the suction branch: outside 0.6-1.0, since CR-2681 finds the L/D effect
+  considerable there and its fit is L/D 1),
   `Cd_crossflow_extrapolated_grazing_velocity` (G_c / rho of the channel
   outside 24-85 m/s); C++ `cb.rogers_hersh_1976_envelope`. `ImpingementArray`
   reports each as "any row". A cold solve that fails is retried once from the

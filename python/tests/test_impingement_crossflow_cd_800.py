@@ -193,8 +193,8 @@ def test_an_unknown_law_is_refused() -> None:
 
 
 def test_the_envelope_is_reported_where_the_law_acts() -> None:
-    """Rogers & Hersh's envelope (CR-2681: Vi/V_inf 0.004-0.9, L/D
-    0.12-2.0, V_inf 24-85 m/s), reported per variable as information, never
+    """Rogers & Hersh's envelope (CR-2681: Vi/V_inf 0.004-0.5, branch-aware
+    L/D, V_inf 24-85 m/s), reported per variable as information, never
     a warning, and only on rows where the law acts. At mc/mj 0.99 the
     first row's jet barely moves (Vi/V_inf below 0.004) and the rows the
     cap holds (the hole's own Cd) carry no flag."""

@@ -558,12 +558,17 @@ constexpr double trans_c0  = 0.005;
 constexpr double trans_c1  = 7.5;
 constexpr double trans_c2  = 0.00015;
 
-// Eq. (12)'s fitted Re range. The upper end is NOT an envelope edge: Eq. (7)
-// is the "ultimate" high-Re Cd, measured at Re = 2e4 from data collected to
-// about 1e5 (the paper's summary), and Eq. (12) reduces to it above 2e4 to
-// within 2.2e-4. So discharge_cd_envelope flags Re below re_validated_min only.
+// Eq. (12)'s fitted Re range. Its upper end is NOT the envelope's: design
+// recommendation (2) (p. 218) takes Cd "substantially constant for values of
+// Re greater than 2 x 10^4", given by Eq. (7), the "ultimate" Cd measured at
+// Re = 2e4; Eq. (12) approaches it from below (|Cd12 - Cd7| 1.2e-3 at l/d 2
+// to 2.8e-3 at l/d 10 at Re 2e4, about 2e-4 by 1e5). The data the paper
+// collects stop at about 1e5 (summary), so re_data_max is the envelope's
+// upper edge: discharge_cd_envelope flags Re below re_validated_min or above
+// re_data_max.
 constexpr double re_validated_min = 10.0;
 constexpr double re_validated_max = 2.0e4;
+constexpr double re_data_max = 1.0e5;
 
 // Re is held at this floor rather than allowed to reach zero, where the
 // 20/Re term diverges and Cd collapses to zero. The source plots Eq. (12)
@@ -1032,8 +1037,10 @@ std::unique_ptr<DischargeCorrelationBase> make_discharge_correlation(
 // sources' own:
 //   re        Idelchik1966* below 25 or above 1e6 (table held at its ends);
 //             McGreehanSchotsch1988 below re_min (value held); Lichtarowicz1965
-//             below 10 (Eq. 12 continued to re_floor; no upper bound, Eq. 7 is
-//             the high-Re asymptote); an inclined Thick hole at or below
+//             below 10 (Eq. 12 continued to re_floor) or above re_data_max
+//             (1e5, the end of the collected data; Eq. 7 held, flat). 2e4 to
+//             1e5 is in range: Eq. 7, design recommendation (2); an inclined
+//             Thick hole at or below
 //             diagram 3-2's Re 1e4
 //   l_over_d  Idelchik1966Sharp above 0.015; Idelchik1966Thick above 4
 //             (zeta' held at its table end, only bore friction grows, a gentle

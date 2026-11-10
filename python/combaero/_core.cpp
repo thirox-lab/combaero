@@ -714,6 +714,10 @@ PYBIND11_MODULE(_core, m) {
   m.attr("ROGERS_HERSH_1976_VELOCITY_RATIO_MAX") = combaero::ROGERS_HERSH_1976_VELOCITY_RATIO_MAX;
   m.attr("ROGERS_HERSH_1976_L_OVER_D_MIN") = combaero::ROGERS_HERSH_1976_L_OVER_D_MIN;
   m.attr("ROGERS_HERSH_1976_L_OVER_D_MAX") = combaero::ROGERS_HERSH_1976_L_OVER_D_MAX;
+  m.attr("ROGERS_HERSH_1976_INJECTION_L_OVER_D_RATIO_MAX") =
+      combaero::ROGERS_HERSH_1976_INJECTION_L_OVER_D_RATIO_MAX;
+  m.attr("ROGERS_HERSH_1976_SUCTION_L_OVER_D_MIN") = combaero::ROGERS_HERSH_1976_SUCTION_L_OVER_D_MIN;
+  m.attr("ROGERS_HERSH_1976_SUCTION_L_OVER_D_MAX") = combaero::ROGERS_HERSH_1976_SUCTION_L_OVER_D_MAX;
   m.attr("ROGERS_HERSH_1976_V_INF_MIN") = combaero::ROGERS_HERSH_1976_V_INF_MIN;
   m.attr("ROGERS_HERSH_1976_V_INF_MAX") = combaero::ROGERS_HERSH_1976_V_INF_MAX;
   py::class_<combaero::RogersHersh1976Envelope>(m, "RogersHersh1976Envelope")
@@ -722,11 +726,13 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("grazing_velocity", &combaero::RogersHersh1976Envelope::grazing_velocity)
       .def("in_range", &combaero::RogersHersh1976Envelope::in_range);
   m.def("rogers_hersh_1976_envelope", &combaero::rogers_hersh_1976_envelope,
-        py::arg("Vi_over_V_inf"), py::arg("L_over_D"), py::arg("V_inf"),
-        "Which inputs lie outside Rogers & Hersh (1976)'s envelope, by variable:\n"
-        "velocity_ratio (Vi/V_inf outside 0.004-0.9), l_over_d (L/D outside\n"
-        "0.12-2.0), grazing_velocity (V_inf outside 24-85 m/s). Information to\n"
-        "report, never a selector: rogers_hersh_1976_cd returns the fit anyway.");
+        py::arg("Vi_over_V_inf"), py::arg("L_over_D"), py::arg("V_inf"), py::arg("suction"),
+        "Which inputs lie outside Rogers & Hersh (1976)'s envelope, by variable\n"
+        "and branch: velocity_ratio (Vi/V_inf outside 0.004-0.5, Fig. 11),\n"
+        "l_over_d (injection: L/D outside 0.12-2.0, or outside 0.6-1.0 above\n"
+        "Vi/V_inf 0.35; suction: outside 0.6-1.0, around Fig. 11's L/D 1),\n"
+        "grazing_velocity (V_inf outside 24-85 m/s). Information to report,\n"
+        "never a selector: rogers_hersh_1976_cd returns the fit anyway.");
   m.def("florschuetz_metzger_su_1982_has_plate",
         &combaero::florschuetz_metzger_su_1982_has_plate, py::arg("xn_d"), py::arg("yn_d"),
         py::arg("z_d"), "True when CR-3630 Table 4.1 covers the jet plate.");

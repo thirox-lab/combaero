@@ -1456,12 +1456,15 @@ TEST(DischargeCdInRange, FlagsEachSourcesOwnEnvelope) {
                                       wall_flow(1.0e4)));
     EXPECT_FALSE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 1.8e-3, 0.0, 0.0),
                                        wall_flow(1.0e4)));
-    // Above Eq. (12)'s fitted 2e4 the Cd IS Eq. (7), the source's "ultimate"
-    // high-Re value: not an extrapolation, so in range.
+    // Above Eq. (12)'s fitted 2e4 the source takes Cd constant at Eq. (7)
+    // (design recommendation (2)): in range up to the end of its collected
+    // data, about 1e5; beyond that the held Eq. (7) is an extrapolation.
     EXPECT_TRUE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
                                       wall_flow(3.0e4)));
     EXPECT_TRUE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
-                                      wall_flow(1.0e6)));
+                                      wall_flow(1.0e5)));
+    EXPECT_FALSE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
+                                       wall_flow(1.0e6)));
     EXPECT_FALSE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
                                        wall_flow(5.0)));
     // Idelchik 4-18a: Re 25 to 1e6, l/d up to 4.
@@ -1508,11 +1511,15 @@ TEST(DischargeCdEnvelope, NamesTheVariableOutsideTheSourcesRange) {
     e = env(C::McGreehanSchotsch1988, 40e-3, 5e4);
     EXPECT_FALSE(e.re);
     EXPECT_TRUE(e.l_over_d);
-    // Lichtarowicz: l/d beyond 10 (held at 10); Re below 10; none above 2e4.
+    // Lichtarowicz: l/d beyond 10 (held at 10); Re below 10 or above 1e5;
+    // 2e4-1e5 is Eq. (7), in range.
     e = env(C::Lichtarowicz1965, 12e-3, 5e4);
     EXPECT_TRUE(e.l_over_d);
     EXPECT_FALSE(e.re);
     EXPECT_TRUE(env(C::Lichtarowicz1965, 3e-3, 5.0).re);
+    e = env(C::Lichtarowicz1965, 3e-3, 2e5);
+    EXPECT_TRUE(e.re);
+    EXPECT_FALSE(e.l_over_d);
     // Rounded beyond its r/d table: the edge axis.
     e = discharge_cd_envelope(C::Idelchik1966Rounded, wall_hole(1e-3, 0.0, 0.5e-3, 0.0),
                               wall_flow(1e5));

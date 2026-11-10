@@ -61,12 +61,12 @@ def test_a_thick_hole_beyond_its_table_names_l_d_only() -> None:
     assert all(inside[k] == 0.0 for k in KEYS) and inside["Cd_in_range"] == 1.0
 
 
-def test_lichtarowicz_at_its_high_re_asymptote_is_in_range() -> None:
-    # Eq. (7) is the source's "ultimate" high-Re Cd: above Eq. (12)'s fitted
-    # Re 2e4 the Cd IS that asymptote, not an extrapolation.
+def test_lichtarowicz_at_its_high_re_constant_is_in_range() -> None:
+    # Above Eq. (12)'s fitted Re 2e4 the source takes Cd constant at Eq. (7)
+    # (design recommendation (2)), in range to the end of its data (~1e5).
     d = _solve(_film(4.0, "Lichtarowicz", d=5e-3), p_in=1.6e5)
     re = 4.0 * abs(d["m_dot"]) / 4 / (math.pi * 5e-3 * 1.85e-5)
-    assert re > 2.0e4
+    assert 2.0e4 < re < 1.0e5
     assert d["Cd_in_range"] == 1.0
     assert all(d[k] == 0.0 for k in KEYS)
 
@@ -102,8 +102,11 @@ def test_the_flags_are_the_c_plus_plus_envelope() -> None:
         cb.discharge_cd_in_range(C.McGreehanSchotsch1988, h, cb.DischargeHoleState(Re=5e4)) is False
     )
     h = cb.DischargeHoleGeometry(d=1e-3, L=4e-3)
-    e = cb.discharge_cd_envelope(C.Lichtarowicz1965, h, cb.DischargeHoleState(Re=1e6))
+    e = cb.discharge_cd_envelope(C.Lichtarowicz1965, h, cb.DischargeHoleState(Re=5e4))
     assert e.in_range()
+    # Beyond the collected data (about 1e5) the held Eq. (7) is extrapolated.
+    e = cb.discharge_cd_envelope(C.Lichtarowicz1965, h, cb.DischargeHoleState(Re=1e6))
+    assert (e.re, e.l_over_d) == (True, False)
 
 
 def test_a_fixed_cd_carries_no_envelope_flags() -> None:
@@ -119,10 +122,18 @@ def test_a_fixed_cd_carries_no_envelope_flags() -> None:
 @pytest.mark.parametrize(
     "args,named",
     [
-        ((0.1, 1.0, 50.0), ()),
-        ((0.001, 1.0, 50.0), ("velocity_ratio",)),
-        ((0.1, 6.0, 50.0), ("l_over_d",)),
-        ((0.1, 1.0, 120.0), ("grazing_velocity",)),
+        ((0.1, 1.0, 50.0, False), ()),
+        ((0.1, 1.0, 50.0, True), ()),
+        ((0.001, 1.0, 50.0, False), ("velocity_ratio",)),
+        ((0.7, 1.0, 50.0, True), ("velocity_ratio",)),
+        ((0.1, 6.0, 50.0, False), ("l_over_d",)),
+        # Injection keeps L/D 0.12-2.0; suction only Fig. 11's band 0.6-1.0.
+        ((0.1, 2.0, 50.0, False), ()),
+        ((0.1, 2.0, 50.0, True), ("l_over_d",)),
+        ((0.1, 0.4, 50.0, True), ("l_over_d",)),
+        # Above Vi/V_inf 0.35 the injection L/D independence is unconfirmed.
+        ((0.45, 2.0, 50.0, False), ("l_over_d",)),
+        ((0.1, 1.0, 120.0, False), ("grazing_velocity",)),
     ],
 )
 def test_rogers_hersh_envelope_names_each_variable(args: tuple, named: tuple) -> None:

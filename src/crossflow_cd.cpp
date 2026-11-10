@@ -102,12 +102,20 @@ CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool su
 }
 
 RogersHersh1976Envelope rogers_hersh_1976_envelope(double Vi_over_V_inf, double L_over_D,
-                                                   double V_inf) {
+                                                   double V_inf, bool suction) {
   RogersHersh1976Envelope env;
   env.velocity_ratio = !(Vi_over_V_inf >= ROGERS_HERSH_1976_VELOCITY_RATIO_MIN &&
                          Vi_over_V_inf <= ROGERS_HERSH_1976_VELOCITY_RATIO_MAX);
-  env.l_over_d =
-      !(L_over_D >= ROGERS_HERSH_1976_L_OVER_D_MIN && L_over_D <= ROGERS_HERSH_1976_L_OVER_D_MAX);
+  const bool in_suction_band = L_over_D >= ROGERS_HERSH_1976_SUCTION_L_OVER_D_MIN &&
+                               L_over_D <= ROGERS_HERSH_1976_SUCTION_L_OVER_D_MAX;
+  if (suction) {
+    env.l_over_d = !in_suction_band;
+  } else {
+    const bool tested =
+        L_over_D >= ROGERS_HERSH_1976_L_OVER_D_MIN && L_over_D <= ROGERS_HERSH_1976_L_OVER_D_MAX;
+    env.l_over_d = !tested || (Vi_over_V_inf > ROGERS_HERSH_1976_INJECTION_L_OVER_D_RATIO_MAX &&
+                               !in_suction_band);
+  }
   env.grazing_velocity =
       !(V_inf >= ROGERS_HERSH_1976_V_INF_MIN && V_inf <= ROGERS_HERSH_1976_V_INF_MAX);
   return env;

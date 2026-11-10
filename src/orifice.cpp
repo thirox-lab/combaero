@@ -1271,7 +1271,7 @@ DischargeCdEnvelope discharge_cd_envelope(DischargeCdCorrelation id,
             env.edge = hole.r_over_d() > I::rounded_r_over_d[I::rounded_n - 1];
             break;
         case DischargeCdCorrelation::Lichtarowicz1965:
-            env.re = re < L::re_validated_min;
+            env.re = re < L::re_validated_min || re > L::re_data_max;
             env.l_over_d = ld < L::l_over_d_split || ld > L::l_over_d_max;
             break;
         case DischargeCdCorrelation::Constant:

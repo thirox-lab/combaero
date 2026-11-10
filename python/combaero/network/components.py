@@ -9415,8 +9415,10 @@ class ImpingementPlateElement(OrificeElement):
         """Where Rogers & Hersh's law ACTS (not capped), which of its inputs
         lie outside CR-2681's envelope, by variable (C++
         rogers_hersh_1976_envelope): the velocity ratio Vi/V_inf = Cd q (the
-        law's equal-density reading), the hole's L/D, and the grazing velocity
-        G_c / rho of the channel. INFORMATION stated in the results, never a
+        law's equal-density reading), the hole's L/D against the branch's own
+        band (a reversed jet is the suction branch, whose L/D effect CR-2681
+        calls considerable), and the grazing velocity G_c / rho of the
+        channel. INFORMATION stated in the results, never a
         warning. 0.0 everywhere for another law, or where the hole's own Cd
         holds."""
         out = {
@@ -9438,7 +9440,7 @@ class ImpingementPlateElement(OrificeElement):
             return out
         rho_c = float(cb.density(float(state_out.T), float(state_out.P), list(state_out.X)))
         env = cb.rogers_hersh_1976_envelope(
-            float(r.Cd) * G_i / G_c, self.plate_thickness / self.d_jet, G_c / rho_c
+            float(r.Cd) * G_i / G_c, self.plate_thickness / self.d_jet, G_c / rho_c, not forward
         )
         out["Cd_crossflow_extrapolated_velocity_ratio"] = float(env.velocity_ratio)
         out["Cd_crossflow_extrapolated_l_d"] = float(env.l_over_d)
