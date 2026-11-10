@@ -1141,6 +1141,33 @@ alternatives, Eqs. 8.12-8.14 in the fuel C/H ratio (Lefebvre & Herbert
 and with Eq. 8.15, so pass `L` directly to use one. On a ThermalWall, see
 "Radiation (liner)" below.
 
+#### Pressure-dependent WSGG gas emissivity (#1071)
+
+Bordbar, Coelho, Fraga, Franca & Hostikka (2021), Int. J. Heat Mass Transfer
+173, 121207 (CC BY 4.0): a composition-based, NON-luminous H2O-CO2 emissivity
+fitted to line-by-line data, 300-3000 K, x_H2O/x_CO2 0.1-4, ten pressure sets
+0.1-80 atm. `include/wsgg_bordbar2021.h` holds the formulation, the
+interpolation between the sets and the clamps.
+
+```python
+# Across the sets: eps interpolated in ln P, each set at the actual path.
+e = cb.gas_emissivity_bordbar2021(T_g=1567.0, P=5e5, x_h2o=0.0697, x_co2=0.0613, l_b=0.126)
+e.eps, e.deps_dT, e.deps_dP, e.deps_dx_h2o, e.deps_dx_co2, e.deps_dl_b   # 0.1325, ...
+
+# From mass fractions, deps_dY chained through x_H2O and x_CO2.
+m = cb.gas_emissivity_bordbar2021_mixture(T_g=1567.0, P=5e5, Y=Y, l_b=0.126)
+m.eps, m.deps_dT, m.deps_dP, m.deps_dl_b, m.deps_dY
+
+# One tabulated set's gray gases (Eqs. 8, 10, 11), for an RTE solve; unclamped.
+g = cb.wsgg_bordbar2021_gray_gases(p_set_atm=30.0, T=1500.0, Mr=2.0)
+g.a, g.kappa          # 4 weights [-], 4 kappas [1/(atm m)]
+```
+
+Clamped, with zero partials there: T to 300-3000 K (`cb.WSGG_BORDBAR2021_T_MIN`
+/ `_T_MAX`), Mr to 0.1-4 (no CO2, e.g. hydrogen products, is Mr = 4: an
+extrapolation), eps to [0, 1]; outside 0.1-80 atm the end set is used. The
+fidelity check is `validation/radiation/bordbar2021_slab.py`.
+
 ### Network Heat Transfer
 
 #### ConvectiveSurface
@@ -1343,6 +1370,10 @@ Ballal print it (Ch. 8):
   kPa). `Tg` is the side's stream Tt, `P` its static pressure and `q` its
   fuel/air ratio from its elements (`cb.elemental_fuel_air_ratio`), unless
   `T_gas`, `pressure` or `fuel_air_ratio` is given.
+  `emissivity_model="bordbar2021"` (opt-in, #1071) takes `eps_g` from the
+  Bordbar et al. (2021) WSGG instead (`cb.gas_emissivity_bordbar2021_mixture`,
+  the side's x_H2O and x_CO2), non-luminous; it refuses `fuel_air_ratio` and
+  a `luminosity` other than 1.
 - `CasingRadiation`: `R2 = sigma eps_w eps_c / (eps_c + eps_w (1 - eps_c)
   A_w/A_c) (Tw^4 - Tc^4)` out of the face, to a casing at the side's stream
   Tt (the book's T3) unless `T_casing` is given. The heat goes into that

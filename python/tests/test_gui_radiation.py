@@ -99,6 +99,26 @@ def test_a_wall_side_builds_the_chosen_spec_on_its_own_face() -> None:
     assert isinstance(swapped.radiation_b, GasRadiation)
 
 
+def test_the_bordbar_emissivity_builds_without_the_lefebvre_fields() -> None:
+    """emissivity_model "bordbar2021" (#1071): the node keeps its luminosity
+    and fuel-air ratio, which the WSGG does not read, and builds without
+    them; the default is Eq. 8.11."""
+    gas = {**_GAS, "emissivity_model": "bordbar2021"}
+    w = _build(_wall_graph(radiation_a=gas)).walls["w"]
+    assert w.radiation_a == GasRadiation(
+        beam_length=0.04,
+        emissivity_wall=0.8,
+        T_gas=1700.0,
+        pressure=2.0e5,
+        emissivity_model="bordbar2021",
+    )
+    assert (
+        _build(_wall_graph(radiation_a=_GAS)).walls["w"].radiation_a.emissivity_model == "lefebvre"
+    )
+    with pytest.raises(ValueError, match="emissivity_model"):
+        _build(_wall_graph(radiation_a={**_GAS, "emissivity_model": "wsgg"}))
+
+
 def test_the_gui_defaults_are_the_libraries_with_working_geometry() -> None:
     w = _build(_wall_graph(radiation_a={"kind": "gas"}, radiation_b={"kind": "casing"})).walls["w"]
     assert w.radiation_a == GasRadiation(beam_length=0.05)

@@ -7,12 +7,15 @@ import UnitInput from "./UnitInput";
 // liner's hot face) or WallRadiationData (a thermal wall side), which build
 // the library's GasRadiation / CasingRadiation. Kind "none" builds nothing.
 export type RadiationKind = "none" | "gas" | "casing";
+// The gas emissivity (#1071): Lefebvre Eq. 8.11 or Bordbar (2021) WSGG.
+export type EmissivityModel = "lefebvre" | "bordbar2021";
 
 export interface RadiationData {
 	kind?: RadiationKind;
 	beam_length?: number;
 	emissivity_wall?: number;
 	luminosity?: number;
+	emissivity_model?: EmissivityModel;
 	T_gas?: number | null;
 	fuel_air_ratio?: number | null;
 	pressure?: number | null;
@@ -53,6 +56,7 @@ const RadiationEditor: React.FC<RadiationEditorProps> = ({
 }) => {
 	const v: RadiationData = value ?? {};
 	const kind: RadiationKind = v.kind ?? "none";
+	const model: EmissivityModel = v.emissivity_model ?? "lefebvre";
 	const set = (patch: Partial<RadiationData>) => onChange({ ...v, ...patch });
 	const num = (
 		key: keyof RadiationData,
@@ -135,14 +139,34 @@ const RadiationEditor: React.FC<RadiationEditorProps> = ({
 						0,
 						1,
 					)}
-					{num(
-						"luminosity",
-						"Luminosity Factor [-] (1: non-luminous)",
-						RADIATION_DEFAULTS.luminosity,
-						0,
-					)}
+					<div className="flex flex-col gap-1">
+						<label htmlFor={`${id}_emissivity_model`} className={labelCls}>
+							Gas Emissivity
+						</label>
+						<select
+							id={`${id}_emissivity_model`}
+							className="p-2 border rounded bg-white text-xs border-stone-200"
+							value={model}
+							onChange={(e) =>
+								set({ emissivity_model: e.target.value as EmissivityModel })
+							}
+						>
+							<option value="lefebvre">Lefebvre Eq. 8.11 (kerosine)</option>
+							<option value="bordbar2021">
+								Bordbar 2021 WSGG (H2O-CO2, non-luminous)
+							</option>
+						</select>
+					</div>
+					{model === "lefebvre" &&
+						num(
+							"luminosity",
+							"Luminosity Factor [-] (1: non-luminous)",
+							RADIATION_DEFAULTS.luminosity,
+							0,
+						)}
 					{optional("T_gas", "Gas Temperature Override [K]")}
-					{optional("fuel_air_ratio", "Fuel-Air Ratio Override [-]")}
+					{model === "lefebvre" &&
+						optional("fuel_air_ratio", "Fuel-Air Ratio Override [-]")}
 					<UnitInput
 						id={`${id}_pressure`}
 						label="Gas Pressure Override"
@@ -152,7 +176,7 @@ const RadiationEditor: React.FC<RadiationEditorProps> = ({
 					/>
 					<p className="text-[10px] text-gray-500 leading-snug">
 						Blank overrides take the face's stream: its Tt, its fuel-air ratio
-						by elements and its static pressure.
+						by elements (Bordbar: its H2O and CO2) and its static pressure.
 					</p>
 				</>
 			)}

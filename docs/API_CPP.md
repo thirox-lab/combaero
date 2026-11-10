@@ -1536,6 +1536,33 @@ WallAdiabaticFace wall_adiabatic_face(
     double T_aw, double h, int kind, double T_src, double k);
 ```
 
+### Pressure-Dependent WSGG Emissivity (`wsgg_bordbar2021.h`, #1071)
+
+Bordbar et al. (2021), Int. J. Heat Mass Transfer 173, 121207 (CC BY 4.0):
+non-luminous H2O-CO2, 300-3000 K, Mr = x_H2O/x_CO2 0.1-4, ten pressure sets
+0.1-80 atm. The header's comment block holds Eqs. 7-11, the interpolation
+between the sets and the clamps; the constants are Appendix A's, in
+`wsgg_bordbar2021_data.h`.
+
+```cpp
+// Constants: WSGG_BORDBAR2021_T_REF = 1500 K, _T_MIN/_T_MAX = 300/3000 K,
+// _MR_MIN/_MR_MAX = 0.1/4, WSGG_PA_PER_ATM = 101325.
+
+// One tabulated set's gray gases (Eqs. 8, 10, 11): a[4] [-], kappa[4] [1/(atm m)].
+// Unclamped: throws outside the fitted range or off a tabulated pressure.
+WsggGrayGases wsgg_bordbar2021_gray_gases(double p_set_atm, double T, double Mr);
+
+// eps across the sets (linear in ln P, each set at the actual path), clamped.
+WsggEmissivityResult gas_emissivity_bordbar2021(double T_g, double P,
+                                                double x_h2o, double x_co2,
+                                                double l_b);
+// {eps, deps_dT, deps_dP, deps_dx_h2o, deps_dx_co2, deps_dl_b}
+
+// The same from mass fractions: {eps, deps_dT, deps_dP, deps_dl_b, deps_dY}.
+WsggMixtureEmissivityResult gas_emissivity_bordbar2021_mixture(
+    double T_g, double P, const std::vector<double>& Y, double l_b);
+```
+
 ### Data Structures
 ```cpp
 struct ChannelResult {

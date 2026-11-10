@@ -413,7 +413,9 @@ class GasRadiationData(BaseModel):
     50 mm gas layer, ``3.4 V/A`` of a liner a few cm deep), not a fact about
     any geometry: the user's own is ``cb.mean_beam_length(V, A)``. The other
     defaults are GasRadiation's. A None override is the side's own stream
-    value (Tt, elemental fuel-air ratio, static P).
+    value (Tt, elemental fuel-air ratio, static P). ``emissivity_model``
+    "bordbar2021" swaps Eq. 8.11 for the Bordbar et al. (2021) WSGG; it reads
+    neither ``luminosity`` nor ``fuel_air_ratio``.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -421,6 +423,7 @@ class GasRadiationData(BaseModel):
     beam_length: float = 0.05
     emissivity_wall: float = 0.7
     luminosity: float = 1.0
+    emissivity_model: Literal["lefebvre", "bordbar2021"] = "lefebvre"
     T_gas: float | None = None
     fuel_air_ratio: float | None = None
     pressure: float | None = None

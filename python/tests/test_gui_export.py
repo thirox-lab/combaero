@@ -323,8 +323,10 @@ def test_a_compressor_and_turbine_round_trip(eta: dict) -> None:
     _same(direct, gui, ["comp.m_dot", "b.Tt", "c.Tt", "comp.power", "turb.power"])
 
 
-def test_wall_radiation_round_trips() -> None:
-    """#1071: each face's radiation has a GUI form, so it is exported, not dropped."""
+@pytest.mark.parametrize("model", ["lefebvre", "bordbar2021"])
+def test_wall_radiation_round_trips(model: str) -> None:
+    """#1071: each face's radiation has a GUI form, so it is exported, not
+    dropped -- the emissivity model included."""
     net = FlowNetwork()
     net.add_node(PressureBoundary("h_in", Pt=1.2e5, Tt=1600.0, Y=AIR))
     net.add_node(PressureBoundary("h_out", Pt=1.1e5, Tt=1600.0, Y=AIR))
@@ -343,13 +345,18 @@ def test_wall_radiation_round_trips() -> None:
             "cold",
             layers=[WallLayer(0.002, 20.0)],
             contact_area=0.01,
-            radiation_a=GasRadiation(beam_length=0.08, fuel_air_ratio=0.03),
+            radiation_a=(
+                GasRadiation(beam_length=0.08, emissivity_model="bordbar2021")
+                if model == "bordbar2021"
+                else GasRadiation(beam_length=0.08, fuel_air_ratio=0.03)
+            ),
             radiation_b=CasingRadiation(area_ratio=0.7),
         )
     )
     doc, d, g = _both(net)
     wall = next(e for e in doc["edges"] if e["id"] == "w")["data"]
     assert wall["radiation_a"]["kind"] == "gas" and wall["radiation_a"]["beam_length"] == 0.08
+    assert wall["radiation_a"]["emissivity_model"] == model
     assert wall["radiation_b"] == {
         "kind": "casing",
         "area_ratio": 0.7,

@@ -1329,6 +1329,13 @@ class GasRadiation:
         (``cb.elemental_fuel_air_ratio``).
     pressure : float | None
         Gas pressure [Pa]; None (default): the side's static pressure.
+    emissivity_model : str
+        The gas emissivity eps_g (#1071). ``"lefebvre"`` (default): Eq. 8.11
+        above. ``"bordbar2021"``: Bordbar et al. (2021) pressure-dependent
+        WSGG, ``cb.gas_emissivity_bordbar2021_mixture``, from the side's
+        H2O and CO2 mole fractions, non-luminous (no soot), 300-3000 K,
+        x_H2O/x_CO2 0.1-4, 0.1-80 atm, each clamped at its end. It takes no
+        ``fuel_air_ratio`` and no ``luminosity`` (both raise when set).
     """
 
     beam_length: float
@@ -1337,8 +1344,27 @@ class GasRadiation:
     T_gas: float | None = None
     fuel_air_ratio: float | None = None
     pressure: float | None = None
+    emissivity_model: str = "lefebvre"
+
+    EMISSIVITY_MODELS = ("lefebvre", "bordbar2021")
 
     def __post_init__(self) -> None:
+        if self.emissivity_model not in self.EMISSIVITY_MODELS:
+            raise ValueError(
+                f"GasRadiation: emissivity_model must be one of {self.EMISSIVITY_MODELS}, "
+                f"not {self.emissivity_model!r}"
+            )
+        if self.emissivity_model == "bordbar2021":
+            if self.fuel_air_ratio is not None:
+                raise ValueError(
+                    "GasRadiation: emissivity_model 'bordbar2021' takes the H2O and CO2 of the "
+                    "side's composition; fuel_air_ratio does not apply"
+                )
+            if self.luminosity != 1.0:
+                raise ValueError(
+                    "GasRadiation: emissivity_model 'bordbar2021' is non-luminous (no soot); "
+                    "luminosity does not apply"
+                )
         if not (math.isfinite(self.beam_length) and self.beam_length > 0.0):
             raise ValueError(f"GasRadiation: beam_length must be > 0, not {self.beam_length}")
         if not 0.0 < self.emissivity_wall <= 1.0:
@@ -1418,7 +1444,12 @@ def _radiation_face(
     if spec is None:
         return _RadiationFace()
     needs_gas = (
-        (spec.T_gas is None or spec.fuel_air_ratio is None or spec.pressure is None)
+        (
+            spec.T_gas is None
+            or spec.fuel_air_ratio is None
+            or spec.pressure is None
+            or spec.emissivity_model == "bordbar2021"
+        )
         if isinstance(spec, GasRadiation)
         else spec.T_casing is None
     )
@@ -1428,22 +1459,29 @@ def _radiation_face(
         Tt, P, Y = gas if gas is not None else (math.nan, math.nan, None)
         T_g = float(spec.T_gas) if spec.T_gas is not None else float(Tt)
         P_g = float(spec.pressure) if spec.pressure is not None else float(P)
-        if spec.fuel_air_ratio is not None:
-            q, dq_dY = float(spec.fuel_air_ratio), None
-        else:
-            q, dq_dY = cb.elemental_fuel_air_ratio(list(Y))
-        e = cb.gas_emissivity_luminous(T_g, P_g, q, spec.beam_length, spec.luminosity)
         c = 0.5 * cb.STEFAN_BOLTZMANN * (1.0 + spec.emissivity_wall) * scale
         from_stream = spec.T_gas is None
+        if spec.emissivity_model == "bordbar2021":
+            w = cb.gas_emissivity_bordbar2021_mixture(T_g, P_g, list(Y), spec.beam_length)
+            eps, deps_dT, deps_dP = w.eps, w.deps_dT, w.deps_dP
+            dk_dY = [c * float(v) for v in w.deps_dY]
+        else:
+            if spec.fuel_air_ratio is not None:
+                q, dq_dY = float(spec.fuel_air_ratio), None
+            else:
+                q, dq_dY = cb.elemental_fuel_air_ratio(list(Y))
+            e = cb.gas_emissivity_luminous(T_g, P_g, q, spec.beam_length, spec.luminosity)
+            eps, deps_dT, deps_dP = e.eps, e.deps_dT, e.deps_dP
+            dk_dY = None if dq_dY is None else [c * e.deps_dq * float(v) for v in dq_dY]
         return _RadiationFace(
             kind=1,
             T_src=T_g,
-            k=c * e.eps,
+            k=c * eps,
             dTsrc_dTt=1.0 if from_stream else 0.0,
-            dk_dTt=c * e.deps_dT if from_stream else 0.0,
-            dk_dP=c * e.deps_dP if spec.pressure is None else 0.0,
-            dk_dY=None if dq_dY is None else [c * e.deps_dq * float(v) for v in dq_dY],
-            eps_g=float(e.eps),
+            dk_dTt=c * deps_dT if from_stream else 0.0,
+            dk_dP=c * deps_dP if spec.pressure is None else 0.0,
+            dk_dY=dk_dY,
+            eps_g=float(eps),
         )
     T_c = float(spec.T_casing) if spec.T_casing is not None else float(gas[0])
     F = cb.liner_casing_exchange_factor(

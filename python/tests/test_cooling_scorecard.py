@@ -639,8 +639,16 @@ def test_behrendt_rows_report_each_gas_baseline_apart(dataset) -> None:
         "andrews_1986_effusion_internal  [eta_tot, flat_plate gas side + gas radiation]  [acc] "
         f"{OUT_OF_DOMAIN_MARK}"
     ]
-    assert len(rows) == 4, sorted(rows)
-    for r in (chamber, flat, chamber_rad, flat_rad):
+    chamber_wsgg = rows[
+        "andrews_1986_effusion_internal  [eta_tot, chamber gas side + gas radiation "
+        "(Bordbar 2021 WSGG)]  [acc]"
+    ]
+    flat_wsgg = rows[
+        "andrews_1986_effusion_internal  [eta_tot, flat_plate gas side + gas radiation "
+        f"(Bordbar 2021 WSGG)]  [acc] {OUT_OF_DOMAIN_MARK}"
+    ]
+    assert len(rows) == 6, sorted(rows)
+    for r in (chamber, flat, chamber_rad, flat_rad, chamber_wsgg, flat_wsgg):
         assert r.basis == "accuracy" and r.sampling == "complete"
         # Nine curves, the x/d 18-50 vertices of each.
         assert r.n_scored == 821
@@ -653,6 +661,10 @@ def test_behrendt_rows_report_each_gas_baseline_apart(dataset) -> None:
     # Gas radiation (#1071) lowers both by 3-5 points and closes neither.
     assert 0.15 < chamber_rad.bias < chamber.bias - 0.03
     assert 0.07 < flat_rad.bias < flat.bias - 0.03
+    # The Bordbar 2021 WSGG emissivity (#1071), on its own rows: lower than
+    # Eq. 8.11 at 10 bar, so a little less radiation and a little more bias.
+    assert chamber_rad.bias < chamber_wsgg.bias < chamber.bias - 0.03
+    assert flat_rad.bias < flat_wsgg.bias < flat.bias - 0.03
 
 
 # ---------------------------------------------------------------------------

@@ -333,6 +333,47 @@ scored) radiation together with the coolant flow held at the printed M put
 six curves within -0.8 to +2.7%; the printed M are the authors' own
 estimates (footnote 3), so that is suggestive, not a result.
 
+## Scored: gas radiation with the Bordbar 2021 WSGG emissivity (#1071; accuracy, cross-source)
+
+`GasRadiation(..., emissivity_model="bordbar2021")`: the same Eq. 8.7 flux,
+beam length, wall emissivity and stream state, with eps_g from the Bordbar
+et al. (2021) pressure-dependent H2O-CO2 WSGG (fitted to HITEMP2010
+line-by-line data, non-luminous) in place of Eq. 8.11. Its fidelity is on
+Bordbar's own slab results (`validation/radiation/bordbar2021_slab.py`);
+on this rig it is cross-source like Eq. 8.11. Own rows; the Eq. 8.11 rows
+above are unchanged.
+
+| curve | measured | chamber + rad | err | flat + rad | err | q_rad [kW/m2] | eps_g |
+|---|---|---|---|---|---|---|---|
+| E20 dp 2% Tc 540 K | 0.790 | 0.897 | +13.5% | 0.833 | +5.5% | 37 | 0.132 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.908 | +13.5% | 0.850 | +6.3% | 37 | 0.132 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.915 | +13.6% | 0.861 | +6.9% | 38 | 0.132 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.895 | +15.0% | 0.830 | +6.6% | 38 | 0.132 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.895 | +23.1% | 0.830 | +14.2% | 37 | 0.132 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.893 | +29.8% | 0.828 | +20.3% | 36 | 0.132 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.883 | +14.9% | 0.812 | +5.7% | 38 | 0.132 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.888 | +17.9% | 0.815 | +8.3% | 51 | 0.198 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.877 | +19.2% | 0.799 | +8.6% | 51 | 0.198 |
+
+Per vertex (821 points): +18.0% (chamber) and +9.2% (flat plate), against
++17.6% / +8.9% with Eq. 8.11 and +21.8% / +12.6% without radiation. At 5 bar
+the two emissivities nearly agree (0.132 against 0.137); at 10 bar the WSGG
+is 24% lower (0.198 against 0.262) and so is the radiative flux. The
+pressure trend therefore closes less: p_h dp 3% -0.007 / -0.015 (0.30 /
+0.58x measured) against Eq. 8.11's 0.6 / 0.84x and 0.39 / 0.68x without
+radiation: from 5 to 10 bar the WSGG flux grows 1.35x while the convective
+one grows faster, so radiation's share falls with pressure and the trend
+ends below the no-radiation one. The other trends move by less than 0.0003.
+
+Reading. The composition-based emissivity does not improve the score: it
+removes part of the radiation that Eq. 8.11's pressure scaling supplied and
+that happened to close the pressure trend. Eq. 8.11 (P L, i.e. linear in
+pressure in the exponent) grows faster with pressure than the line-by-line
+fit, which saturates. Neither is tuned; the remaining gap is the one below.
+Not verified: the rig's gas composition (n-heptane surrogate for kerosene,
+x_H2O 0.070, x_CO2 0.061, Mr 1.14) and that the gas was non-luminous beyond
+the authors' spectral remark.
+
 **What remains (not fixed here).** A diagnostic inversion of the element's own
 wall (never applied) puts the gas-side h the plateaus need at 1.6-1.8x this
 flat plate on seven curves and 2.3 / 2.7x on the two hot-coolant E30 curves.
@@ -352,3 +393,5 @@ approximate, footnote 3). Neither is a tuning target.
   baseline to add ("flat plate approach now, it is what we hold").
 - 2026-11-09: gas radiation on the plate's hot face scored on its own rows
   (#1071); the user chose radiation before the orifice correlations.
+- 2026-11-10: the Bordbar 2021 WSGG emissivity scored on its own rows
+  (#1071, opt-in `emissivity_model="bordbar2021"`; user-approved 2026-11-10).

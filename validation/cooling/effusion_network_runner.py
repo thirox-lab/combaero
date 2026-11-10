@@ -68,6 +68,12 @@ Its inputs are rig boundary conditions too:
   `sensitivity`.
 * Gas: T_h, the chamber's static P, the hot gas's composition (q from its
   elements) -- the spec's stream defaults.
+
+A SECOND EMISSIVITY ON ITS OWN ROWS: `emissivity_model="bordbar2021"`, the
+Bordbar et al. (2021) pressure-dependent H2O-CO2 WSGG in place of Eq. 8.11,
+same beam length, wall emissivity and stream state; non-luminous like L = 1.
+Both are ACCURACY rows, cross-source (neither emissivity was fitted to this
+rig). The Lefebvre rows are unchanged.
 """
 
 from __future__ import annotations
@@ -93,7 +99,9 @@ from validation.cooling.schema import SeriesMetadata, load_points
 SOURCE = "behrendt2008"
 SET = "andrews_1986_effusion_internal"
 BASELINES = ("chamber", "flat_plate")
-RADIATION = (False, True)
+# Gas radiation rows: none, Lefebvre Eq. 8.11 (True, the first radiation
+# rows) and Bordbar 2021 WSGG.
+RADIATION: tuple[bool | str, ...] = (False, True, "bordbar2021")
 
 # The rig (pp. 1803-1804 and ICAS 2006-152).
 A_DUCT = 80.0e3 * 1e-6  # [m^2]
@@ -173,8 +181,22 @@ def owns(series: SeriesMetadata) -> bool:
     return series.source.name == SOURCE
 
 
-def _group(baseline: str, radiation: bool = False) -> str:
-    return f"eta_tot, {baseline} gas side" + (" + gas radiation" if radiation else "")
+def _emissivity_model(radiation: bool | str) -> str | None:
+    """None (no radiation), or GasRadiation's emissivity_model: True is the
+    spec's default, Lefebvre Eq. 8.11."""
+    if radiation is False or radiation is None:
+        return None
+    return "lefebvre" if radiation is True else str(radiation)
+
+
+def _group(baseline: str, radiation: bool | str = False) -> str:
+    model = _emissivity_model(radiation)
+    suffix = {
+        None: "",
+        "lefebvre": " + gas radiation",
+        "bordbar2021": " + gas radiation (Bordbar 2021 WSGG)",
+    }[model]
+    return f"eta_tot, {baseline} gas side" + suffix
 
 
 @lru_cache(maxsize=None)
@@ -193,11 +215,11 @@ def _solve(
     x_start_over_d: float,
     length_over_d: float,
     dh: float | None,
-    radiation: tuple[float, float] | None = None,
+    radiation: tuple[float, float, str] | None = None,
     cd_exit_crossflow: str = "none",
 ) -> dict[str, float]:
-    """`radiation` = (beam length, wall emissivity), or None for none.
-    `cd_exit_crossflow` is the plate's opt-in exit-crossflow Cd term
+    """`radiation` = (beam length, wall emissivity, emissivity model), or None
+    for none. `cd_exit_crossflow` is the plate's opt-in exit-crossflow Cd term
     (#1074), reported by exit_crossflow_cd_runner, never scored here."""
     y_gas, _ = hot_gas()
     y_gas = list(y_gas)
@@ -218,7 +240,9 @@ def _solve(
     if baseline == "flat_plate":
         kw = {"gas_baseline": "flat_plate", "gas_start_length": x_start_over_d * d}
     if radiation is not None:
-        kw["radiation"] = GasRadiation(beam_length=radiation[0], emissivity_wall=radiation[1])
+        kw["radiation"] = GasRadiation(
+            beam_length=radiation[0], emissivity_wall=radiation[1], emissivity_model=radiation[2]
+        )
     g.add_element(
         EffusionPlateElement(
             "eff",
@@ -250,7 +274,7 @@ def predict(
     bleed_over_d: float = BLEED_OVER_D,
     window_over_d: tuple[float, float] = WINDOW_OVER_D,
     dh: float | None = None,
-    radiation: bool = False,
+    radiation: bool | str = False,
     beam: float | None = None,
     eps_wall: float = EPS_WALL,
     cd_exit_crossflow: str = "none",
@@ -260,7 +284,8 @@ def predict(
     `bleed_over_d` and `window_over_d` set the flat plate's x range: the
     boundary layer starts `bleed_over_d` upstream of the sample's leading
     edge and the panel covers the window. `radiation` adds gas radiation at
-    `beam` (default `beam_length()`) and `eps_wall`. Defaults are the rig's.
+    `beam` (default `beam_length()`) and `eps_wall`: True with Lefebvre Eq.
+    8.11, "bordbar2021" with the Bordbar 2021 WSGG. Defaults are the rig's.
     """
     g = series.geometry or {}
     lo, hi = window_over_d
@@ -279,7 +304,9 @@ def predict(
         bleed_over_d + lo,
         hi - lo,
         dh,
-        (beam if beam is not None else beam_length(), eps_wall) if radiation else None,
+        (beam if beam is not None else beam_length(), eps_wall, model)
+        if (model := _emissivity_model(radiation)) is not None
+        else None,
         cd_exit_crossflow,
     )
 
@@ -359,7 +386,7 @@ def trends(dataset: list[SeriesMetadata]) -> list[dict[str, float | str]]:
         row: dict[str, float | str] = {"trend": name, "measured": plateau(sb) - plateau(sa)}
         for baseline in BASELINES:
             for rad in RADIATION:
-                key = baseline + ("+rad" if rad else "")
+                key = baseline + {False: "", True: "+rad", "bordbar2021": "+rad_bordbar"}[rad]
                 row[key] = (
                     predict(sb, baseline, radiation=rad)["eta_overall"]
                     - predict(sa, baseline, radiation=rad)["eta_overall"]
@@ -403,6 +430,9 @@ def sensitivity(series: SeriesMetadata) -> dict[str, float]:
         "flat_plate_rad_eps_alt": predict(
             series, "flat_plate", radiation=True, eps_wall=EPS_WALL_ALT
         )["eta_overall"],
+        "flat_plate_rad_bordbar": predict(series, "flat_plate", radiation="bordbar2021")[
+            "eta_overall"
+        ],
     }
     return out
 
@@ -413,17 +443,23 @@ def _main() -> None:
     ds = load_dataset()
     print("eta_tot plateau x/d 18-50, gas_augmentation 1.0 -- ACCURACY, cross-source")
     print(f"{'series':34s} {'meas':>6s} {'chamber':>8s} {'err':>7s} {'flat':>7s} {'err':>7s} "
-          f"{'ch+rad':>7s} {'err':>7s} {'fp+rad':>7s} {'err':>7s} {'q_rad':>6s} {'eps_g':>6s}")
+          f"{'ch+rad':>7s} {'err':>7s} {'fp+rad':>7s} {'err':>7s} {'q_rad':>6s} {'eps_g':>6s} | "
+          f"Bordbar 2021: {'ch+rad':>7s} {'err':>7s} {'fp+rad':>7s} {'err':>7s} {'q_rad':>6s} {'eps_g':>6s}")
     for s in scored(ds):
         m = plateau(s)
         dc, df = predict(s, "chamber"), predict(s, "flat_plate")
         rc, rf = predict(s, "chamber", radiation=True), predict(s, "flat_plate", radiation=True)
+        bc = predict(s, "chamber", radiation="bordbar2021")
+        bf = predict(s, "flat_plate", radiation="bordbar2021")
         print(
             f"{s.path.stem:34s} {m:6.3f} {dc['eta_overall']:8.3f} "
             f"{dc['eta_overall'] / m - 1:+7.1%} {df['eta_overall']:7.3f} "
             f"{df['eta_overall'] / m - 1:+7.1%} {rc['eta_overall']:7.3f} "
             f"{rc['eta_overall'] / m - 1:+7.1%} {rf['eta_overall']:7.3f} "
-            f"{rf['eta_overall'] / m - 1:+7.1%} {rf['q_rad_hot'] * 1e-3:6.1f} {rf['eps_g']:6.3f}"
+            f"{rf['eta_overall'] / m - 1:+7.1%} {rf['q_rad_hot'] * 1e-3:6.1f} {rf['eps_g']:6.3f} | "
+            f"{'':14s}{bc['eta_overall']:7.3f} {bc['eta_overall'] / m - 1:+7.1%} "
+            f"{bf['eta_overall']:7.3f} {bf['eta_overall'] / m - 1:+7.1%} "
+            f"{bf['q_rad_hot'] * 1e-3:6.1f} {bf['eps_g']:6.3f}"
         )
     for row in trends(ds):
         print(
