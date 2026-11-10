@@ -43,6 +43,12 @@ When updating tool versions or Python targets, ensure the following files remain
 5. `.pre-commit-config.yaml`
 6. `Makefile` and the `.sh` scripts in `scripts/`
 
+When updating frontend tool versions, keep these synchronized: `gui/frontend/package.json`, `biome.json`
+(`$schema` version), `.pre-commit-config.yaml` (biome rev and the `@biomejs/biome` pin) and `ci.yml`
+(`setup-biome` version). `scripts/check_version_sync.py` enforces the biome set (CI and pre-commit).
+
+Releases, Dependabot rounds and dependency floors: see [RELEASING.md](RELEASING.md).
+
 ## Pre-commit Hooks
 
 The project uses `pre-commit` to ensure code style and basic checks pass before every commit.
