@@ -284,6 +284,8 @@ double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_d
   return k;
 }
 
+double rowbury_2001_k_fit_max(Rowbury2001Set set) { return rowbury_envelope(set).k_fit; }
+
 bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg) {
   const rowbury2001::Envelope& e = rowbury_envelope(set);
   constexpr double tol = 1e-9;
@@ -312,11 +314,12 @@ Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2
     const double ak = c.A * std::pow(k, -c.B);
     double w = 1.0;
     double dw_dk = 0.0;
-    if (k > ROWBURY_2001_K_PERP_MAX) {
+    const double k_fit = rowbury_2001_k_fit_max(set);
+    if (k > k_fit) {
       // Beyond the fitted range the offset C fades: w = 1 / (1 + (x/s)^2),
-      // x = ln(k / k_max); w(0) = 1, w'(0) = 0 (C1 at k_max).
+      // x = ln(k / k_fit); w(0) = 1, w'(0) = 0 (C1 at k_fit).
       out.faded = true;
-      const double xs = std::log(k / ROWBURY_2001_K_PERP_MAX) / ROWBURY_2001_FADE_WIDTH;
+      const double xs = std::log(k / k_fit) / ROWBURY_2001_FADE_WIDTH;
       const double den = 1.0 + xs * xs;
       w = 1.0 / den;
       dw_dk = -2.0 * xs / (den * den) / (ROWBURY_2001_FADE_WIDTH * k);

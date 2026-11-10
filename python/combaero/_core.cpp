@@ -729,7 +729,6 @@ PYBIND11_MODULE(_core, m) {
       .value("FanShapedSuctionSurface", combaero::Rowbury2001Set::FanShapedSuctionSurface);
   m.attr("ROWBURY_2001_K_PERP_MIN") = combaero::ROWBURY_2001_K_PERP_MIN;
   m.attr("ROWBURY_2001_UNIQUE_MARGIN") = combaero::ROWBURY_2001_UNIQUE_MARGIN;
-  m.attr("ROWBURY_2001_K_PERP_MAX") = combaero::ROWBURY_2001_K_PERP_MAX;
   m.attr("ROWBURY_2001_FADE_WIDTH") = combaero::ROWBURY_2001_FADE_WIDTH;
   py::class_<combaero::Rowbury2001Coefficients>(m, "Rowbury2001Coefficients")
       .def_readonly("A", &combaero::Rowbury2001Coefficients::A)
@@ -765,6 +764,9 @@ PYBIND11_MODULE(_core, m) {
         "k_perp below which the exit-crossflow loss is held:\n"
         "max(ROWBURY_2001_K_PERP_MIN, k_unique), k_unique (B > 1 only) keeping\n"
         "the hole's flow a unique root.");
+  m.def("rowbury_2001_k_fit_max", &combaero::rowbury_2001_k_fit_max, py::arg("set"),
+        "The largest k_perp the set's fitted Table 1 rows provably reach (design\n"
+        "PR, or the printed Fig. 5-8 sweep); beyond it the offset C fades.");
   m.def("rowbury_2001_in_range", &combaero::rowbury_2001_in_range, py::arg("set"),
         py::arg("theta_deg"), py::arg("alpha_deg"),
         "True inside the set's Table 1 (theta, alpha) span.");
@@ -774,7 +776,7 @@ PYBIND11_MODULE(_core, m) {
         "Cd of a film hole under an EXIT crossflow, Rowbury, Oldfield & Lock\n"
         "(2001) Eqs. 7-8: 1/Cd^2 = 1/Cd0^2 + A k^-B - C, Cd0 the no-crossflow\n"
         "Cd, k = k_perp held at rowbury_2001_k_floor; beyond\n"
-        "ROWBURY_2001_K_PERP_MAX the offset C fades (Cd -> Cd0 as k -> inf).\n"
+        "rowbury_2001_k_fit_max(set) the offset C fades (Cd -> Cd0 as k -> inf).\n"
         "Analytic dCd/dCd0, dCd/dk.");
   m.def("rowbury_2001_k_perp", &combaero::rowbury_2001_k_perp, py::arg("G_h"),
         py::arg("rho_h"), py::arg("rho_m_u_m2"), py::arg("theta_deg"),

@@ -395,8 +395,8 @@ dzeta = cb.discharge_inclination_dzeta(30.0)  # 0.41
 # Rowbury, Oldfield & Lock (2001) Eqs. 7-8, 1/Cd^2 = 1/Cd0^2 + A k^-B - C on
 # the no-crossflow Cd0, k = k_perp the perpendicular outlet momentum flux
 # ratio on the hole's ACTUAL flow. Table 2 per set (a flat wall takes the
-# suction surface's); held below rowbury_2001_k_floor; beyond the fitted
-# k_perp (ROWBURY_2001_K_PERP_MAX 3.3) the offset C fades, Cd -> Cd0;
+# suction surface's); held below rowbury_2001_k_floor; beyond the k_perp the
+# set's fitted rows reach (rowbury_2001_k_fit_max) the offset C fades, Cd -> Cd0;
 # Table 1's angle span is a flag (rowbury_2001_in_range), A or B <= 0 raises.
 S = cb.Rowbury2001Set.CylindricalSuctionSurface
 c = cb.rowbury_2001_coefficients(S, 30.0, 0.0)  # A 0.101, B 0.794, C 0.10
@@ -871,14 +871,16 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   share of the jet velocity (Fig. 3), `rho_h` the coolant's isentropic
   exit-plane density, `rho_m u_m^2` the APPROACHING mainstream's: the
   discharge `MomentumChamberNode`'s main-inlet flow over its area, on the
-  chamber's static density. Needs such a chamber with an approaching
+  main stream's density at the chamber's main face. Needs such a chamber with an approaching
   mainstream (refused otherwise). `exit_crossflow_region` picks Table 2's set
   (`"suction_surface"`, the flat-wall default the authors use for Gritsch
   1998; `"pressure_surface"`; `"leading_edge"`, cylindrical only) and
   `exit_crossflow_orientation_deg` its alpha, the radial orientation from the
-  surface normal, in [0, 90). Crossover is built in inside the paper's fitted
-  k (k_perp <= 3.3): a strongly blowing hole's Cd rises. Beyond it the -C
-  offset fades (our extrapolation), so Cd returns to Cd0 continuously as the
+  surface normal, in [0, 90). Crossover is built in inside the fitted k: a
+  strongly blowing hole's Cd rises. Beyond the k_perp the set's Table 1 rows
+  provably reach (`cb.rowbury_2001_k_fit_max`: 4.7 pressure, 4.3 leading
+  edge, 0.58 suction, 0.13 / 0.054 fan) the -C offset fades (our
+  extrapolation, our threshold), so Cd returns to Cd0 continuously as the
   mainstream vanishes. Cd can exceed 1 with the leading-edge set at Cd0 near
   1 (not capped). Below a k floor the term is held. Reported when on:
   `Cd_no_exit_crossflow`, `Cd_exit_crossflow_ratio`, `exit_crossflow_rho_u2`

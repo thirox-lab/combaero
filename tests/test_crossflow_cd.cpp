@@ -256,7 +256,8 @@ TEST(Rowbury2001, RefusesAnglesWhereEq8HasNoMeaning) {
 
 TEST(Rowbury2001, Eq7AndEq8) {
   const auto c = rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0);
-  for (const double k : {0.05, 0.3, 1.0, combaero::ROWBURY_2001_K_PERP_MAX}) {
+  for (const double k : {0.05, 0.3, combaero::rowbury_2001_k_fit_max(
+                                        Rowbury2001Set::CylindricalSuctionSurface)}) {
     const auto r =
         rowbury_2001_exit_crossflow_cd(0.776, k, Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0);
     const double delta = c.A * std::pow(k, -c.B) - c.C;
@@ -267,12 +268,14 @@ TEST(Rowbury2001, Eq7AndEq8) {
 }
 
 TEST(Rowbury2001, CrossoverInsideTheFitAndCd0AtInfiniteK) {
-  // Inside the fitted k the -C offset raises Cd above Cd0 (crossover);
-  // beyond it the offset fades, and k = inf (no mainstream) is Cd0 exactly.
-  const auto set = Rowbury2001Set::CylindricalSuctionSurface;
+  // Inside the fitted k the -C offset raises Cd above Cd0 (crossover; the
+  // leading-edge rows reach it, k_fit 4.3); beyond it the offset fades, and
+  // k = inf (no mainstream) is Cd0 exactly.
+  const auto le = Rowbury2001Set::CylindricalLeadingEdge;
   const double cd0 = 0.8;
-  const double kmax = combaero::ROWBURY_2001_K_PERP_MAX;
-  EXPECT_GT(rowbury_2001_exit_crossflow_cd(cd0, kmax, set, 30.0, 0.0).Cd, cd0);
+  EXPECT_GT(rowbury_2001_exit_crossflow_cd(cd0, combaero::rowbury_2001_k_fit_max(le), le, 88.0, 60.0).Cd,
+            cd0);
+  const auto set = Rowbury2001Set::CylindricalSuctionSurface;
   const auto inf =
       rowbury_2001_exit_crossflow_cd(cd0, std::numeric_limits<double>::infinity(), set, 30.0, 0.0);
   EXPECT_EQ(inf.Cd, cd0);
@@ -289,7 +292,7 @@ TEST(Rowbury2001, CrossoverInsideTheFitAndCd0AtInfiniteK) {
 
 TEST(Rowbury2001, TheFadeJoinsEq8C1AtTheFittedKMax) {
   const auto set = Rowbury2001Set::CylindricalLeadingEdge;
-  const double kmax = combaero::ROWBURY_2001_K_PERP_MAX;
+  const double kmax = combaero::rowbury_2001_k_fit_max(set);
   const auto c = rowbury_2001_coefficients(set, 88.0, 60.0);
   const double e = 1e-9 * kmax;
   const auto lo = rowbury_2001_exit_crossflow_cd(0.7, kmax - e, set, 88.0, 60.0);
@@ -407,6 +410,28 @@ TEST(Rowbury2001, FlowRootIsUniqueAboveTheFloor) {
       }
     }
   }
+}
+
+TEST(Rowbury2001, FitRangeIsTheLargestKTheRowsReach) {
+  // k_perp = Cd^2 Ma_j^2 / Ma_m^2 f / AR^2 at the row's design PR (Cd 0.70)
+  // or printed sweep, gamma 1.4 (see crossflow_cd.h, "THE TWO ENDS").
+  auto k = [](double th, double al, double mm, double pr, double cd, double ar) {
+    const double mj2 = 2.0 / 0.4 * (std::pow(pr, 0.4 / 1.4) - 1.0);
+    const double ct = th < 90.0 ? 1.0 / std::tan(th * M_PI / 180.0) : 0.0;
+    const double ta = std::tan(al * M_PI / 180.0);
+    return cd * cd * mj2 / (mm * mm) / std::sqrt(ct * ct + 1.0 + ta * ta) / (ar * ar);
+  };
+  using combaero::rowbury_2001_k_fit_max;
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalPressureSurface),
+              k(58, 0, 0.05, 1.02, 0.70, 1.0), 0.05);  // row 6
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalLeadingEdge),
+              k(90, 60, 0.04, 1.02, 0.70, 1.0), 0.05);  // row 7
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalSuctionSurface),
+              k(78, 0, 0.32, 1.09, 0.70, 1.0), 0.005);  // row 11
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::FanShapedPressureSurface),
+              k(30, 7, 0.08, 1.02, 0.70, 2.9), 0.005);  // row 4
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::FanShapedSuctionSurface),
+              k(30, 6, 0.96, 2.5, 0.75, 2.9), 0.0005);  // row 14, Fig. 8
 }
 
 TEST(Rowbury2001, InRangeIsTable1) {

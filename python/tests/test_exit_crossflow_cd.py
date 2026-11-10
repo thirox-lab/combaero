@@ -65,14 +65,32 @@ def _film(**kw) -> FilmCoolingElement:
 
 
 def _net(
-    element, m_gas: float = 2.0, dp: float = 0.03, area: float = 0.01, mixed_supply: bool = False
+    element,
+    m_gas: float = 2.0,
+    dp: float = 0.03,
+    area: float = 0.01,
+    mixed_supply: bool = False,
+    mixed_main: bool = False,
 ) -> FlowNetwork:
     """Hot gas through a merge chamber the holes discharge into, as the
     Behrendt 2008 network runner builds it. ``mixed_supply``: the coolant
     plenum is fed by two streams of different T and composition, so its Tt
     and Y move with the feed orifices' flows (unknowns)."""
     g = FlowNetwork()
-    g.add_node(MassFlowBoundary("gas_in", m_dot=m_gas, Tt=1500.0, Y=Y_AIR))
+    if mixed_main:
+        # The main stream mixes two gases first: its Tt and Y move with
+        # their flows, through the plenum the feed draws from.
+        i_co2 = cb.species_index_from_name("CO2")
+        y_co2 = [0.6 * y + (0.4 if i == i_co2 else 0.0) for i, y in enumerate(Y_AIR)]
+        g.add_node(PressureBoundary("ga", Pt=5.3e5, Tt=1300.0, Y=Y_AIR))
+        g.add_node(PressureBoundary("gb", Pt=5.3e5, Tt=1700.0, Y=y_co2))
+        g.add_node(PlenumNode("gas_in"))
+        for eid, src, d in (("ga_o", "ga", 0.06), ("gb_o", "gb", 0.05)):
+            g.add_element(
+                OrificeElement(eid, src, "gas_in", Cd=0.7, diameter=d, correlation="fixed")
+            )
+    else:
+        g.add_node(MassFlowBoundary("gas_in", m_dot=m_gas, Tt=1500.0, Y=Y_AIR))
     ex = PressureBoundary("exit")
     ex.Pt, ex.Tt, ex.Y = 5e5, 1500.0, Y_AIR
     g.add_node(ex)
@@ -229,8 +247,9 @@ def test_the_mainstream_is_the_approaching_flow_not_the_holes() -> None:
     qa = a["__element_diag__"]["eff"]["exit_crossflow_rho_u2"]
     qb = b["__element_diag__"]["eff"]["exit_crossflow_rho_u2"]
     assert b["eff.m_dot"] > 1.3 * a["eff.m_dot"]
-    # Only the chamber density moves (its static state reads the total).
-    assert qb == pytest.approx(qa, rel=0.02)
+    # The main stream's face density barely moves (the side streams'
+    # impulse shifts the face pressure slightly): 0.06% for 1.3x the flow.
+    assert qb == pytest.approx(qa, rel=2e-3)
     assert _fd_rel_error(s, a) < 1e-6
 
 
@@ -240,6 +259,14 @@ def test_the_jacobian_reads_a_mixed_coolant_supply() -> None:
     # depend on the feed orifices' flows (unknowns).
     g = _net(_film(cd_exit_crossflow="rowbury_2001"), mixed_supply=True)
     s, r = _solve(g)
+    assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
+    assert _fd_rel_error(s, r) < 1e-6
+
+
+def test_the_jacobian_reads_a_mixed_main_stream() -> None:
+    # rho_m, the main stream's face density, reads its Tt and composition:
+    # the main gas mixes two streams first, so both move with their flows.
+    s, r = _solve(_net(_plate(cd_exit_crossflow="rowbury_2001"), mixed_main=True))
     assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
 
@@ -279,10 +306,17 @@ def test_the_elements_cd_is_eqs_7_8_on_its_own_cd0(make) -> None:
 
 
 def test_crossflow_lowers_cd_at_low_k_and_raises_it_at_high_k() -> None:
-    # Eq. 8's crossover: delta > 0 while A k^-B > C, < 0 beyond (inside the
-    # fitted k, k_perp <= 3.3).
+    # Eq. 8's crossover: delta > 0 while A k^-B > C, < 0 beyond, inside the
+    # set's fitted k (the leading-edge rows reach k_perp 4.3; the suction
+    # rows only 0.58, below the 30 deg hole's crossover at 1.0).
     lo = _solve(_net(_film(cd_exit_crossflow="rowbury_2001"), m_gas=4.0, dp=0.01))[1]
-    hi = _solve(_net(_film(cd_exit_crossflow="rowbury_2001"), m_gas=1.5, dp=0.10))[1]
+    le = _film(
+        angle_deg=88.0,
+        cd_exit_crossflow="rowbury_2001",
+        exit_crossflow_region="leading_edge",
+        exit_crossflow_orientation_deg=60.0,
+    )
+    hi = _solve(_net(le, m_gas=1.5, dp=0.10))[1]
     dlo, dhi = lo["__element_diag__"]["eff"], hi["__element_diag__"]["eff"]
     assert dlo["exit_crossflow_delta"] > 0.0 and dlo["Cd_exit_crossflow_ratio"] < 1.0
     assert dhi["exit_crossflow_faded"] == 0.0
@@ -337,13 +371,23 @@ def test_fidelity_reproduces_the_authors_fig9_predictions() -> None:
     # Ma_m 0.3's two lowest-PR markers (PR 1.016: -0.036, 1.028: -0.014) sit
     # on a near-vertical part of the curve where a 0.005 PR reading error is
     # 0.03 in Cd; the other six are within 0.008.
-    for printed in (True, False):  # Eq. 8 as printed, and as shipped (fade)
-        rows = xr.fidelity_rows(as_printed=printed)
-        for mach in (0.6, 1.2):
-            d = [cd - read for m, _, read, cd in rows if m == mach]
-            assert max(abs(x) for x in d) < 0.003
-        d03 = [cd - read for m, pr, read, cd in rows if m == 0.3 and pr > 1.05]
-        assert max(abs(x) for x in d03) < 0.008
+    rows = xr.fidelity_rows(as_printed=True)
+    for mach in (0.6, 1.2):
+        d = [cd - read for m, _, read, cd in rows if m == mach]
+        assert max(abs(x) for x in d) < 0.003
+    d03 = [cd - read for m, pr, read, cd in rows if m == 0.3 and pr > 1.05]
+    assert max(abs(x) for x in d03) < 0.008
+    # As shipped, the offset fades beyond the suction rows' k_fit 0.58: the
+    # same everywhere the authors stayed inside it (all of Ma_m 0.6 and 1.2,
+    # Ma_m 0.3 to PR 1.09), and below their markers where they did not (Ma_m
+    # 0.3 at PR 1.13 / 1.20 / 1.35 / 1.55, k_perp 0.6 / 0.9 / 1.5 / 2.2:
+    # -0.002 / -0.006 / -0.015 / -0.019; our extrapolation, reported).
+    shipped = xr.fidelity_rows(as_printed=False)
+    for (m, pr, read, c1), (_, _, _, c2) in zip(rows, shipped, strict=True):
+        if m > 0.3 or pr < 1.12:
+            assert c2 == pytest.approx(c1, abs=1e-12)
+        else:
+            assert -0.025 < c2 - read < 0.0
     # The first version's rho(Tt_c, p_m) missed Ma_m 1.2 by +0.008 (the bug).
     old = xr.fidelity_rows(rho_h_supply_tt=True)
     d12 = [cd - read for m, _, read, cd in old if m == 1.2]
@@ -354,14 +398,14 @@ def test_accuracy_before_and_after() -> None:
     got = dict(xr.accuracy())
     expect = {
         # (bias off, bias on), inclination term on: cross-source accuracy.
-        "gritsch1998/fig3_Mac0p0_Mam0p3": (0.008, -0.028),
-        "gritsch1998/fig3_Mac0p0_Mam0p6": (0.159, 0.032),
+        "gritsch1998/fig3_Mac0p0_Mam0p3": (0.008, -0.035),
+        "gritsch1998/fig3_Mac0p0_Mam0p6": (0.159, 0.031),
         "gritsch1998/fig3_Mac0p0_Mam1p2": (0.468, 0.086),
         # 90 deg: outside the suction rows (30-78 deg); depends on the
-        # k_unique margin (M 0.25 / 0.5 / 0.75 / 1.0: -0.3 / -4.7 / -7.5 / -9.4%).
-        "hay1983/fig6_open_circles": (0.112, -0.047),
-        "hay1983/fig8_open_circles": (0.114, 0.068),
-        "hay1983/fig12_open_circles": (0.123, 0.088),
+        # k_unique margin (M 0.25 / 0.5 / 0.75 / 1.0: -1.5 / -6.0 / -8.7 / -10.6%).
+        "hay1983/fig6_open_circles": (0.112, -0.060),
+        "hay1983/fig8_open_circles": (0.114, 0.060),
+        "hay1983/fig12_open_circles": (0.123, 0.082),
     }
     for label, (off, on) in expect.items():
         assert xr.summary(got[label], True, False)[0] == pytest.approx(off, abs=0.003)

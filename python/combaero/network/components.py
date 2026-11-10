@@ -5156,6 +5156,7 @@ class OrificeElement(NetworkElement):
         self._exit_xf: _ExitCrossflowSpec | None = None
         self._exit_xf_node: Any = None
         self._exit_xf_mainstream: tuple[str, ...] = ()
+        self._exit_xf_main_src: str | None = None
 
         # A bore of zero is a CLOSED restriction (#1024); a negative or
         # non-finite one is no geometry.
@@ -5649,10 +5650,9 @@ class OrificeElement(NetworkElement):
                    authors' own Fig. 9 predictions are reproduced (the
                    supply-Tt density left Ma_m 1.2 0.008 high);
           rho_m u_m^2  the APPROACHING mainstream's momentum flux, G_m^2 /
-                   rho_m: G_m the chamber's main-inlet flow (or, without
-                   one, every inflow but the cooling holes) over its area,
-                   rho_m the chamber's static density
-                   (_mainstream_momentum_flux).
+                   rho_m: G_m the chamber's main-inlet flow over its area,
+                   rho_m the main stream's density at the chamber's main
+                   face (_mainstream_momentum_flux).
         No mainstream momentum: Cd0. Eq. 8's own limit there is -C; the
         offset fades beyond the fitted k range, so Cd -> Cd0 continuously as
         u_m -> 0 (include/crossflow_cd.h). Reverse (ingesting) flow takes
@@ -5695,15 +5695,18 @@ class OrificeElement(NetworkElement):
         crossflow they blow into)."""
         node = graph.nodes.get(self.to_node)
         self._exit_xf_node = node
-        if getattr(node, "main_inlet", None) is not None:
-            self._exit_xf_mainstream = (node.main_inlet,)
+        self._exit_xf_main_src = None
+        main = getattr(node, "main_inlet", None)
+        if main is not None:
+            # A chamber with several inflows must declare its main inlet, so
+            # for a hole discharging into a flowing chamber this is the case.
+            self._exit_xf_mainstream = (main,)
+            elem = graph.elements.get(main)
+            self._exit_xf_main_src = getattr(elem, "from_node", None)
             return
-        holes = (FilmCoolingElement, EffusionPlateElement, SlotFilmElement)
-        self._exit_xf_mainstream = tuple(
-            e.id
-            for e in (graph.get_upstream_elements(self.to_node) if node is not None else [])
-            if not isinstance(e, holes)
-        )
+        # Without one the chamber's only inflow is this hole: no mainstream
+        # (refused at validate).
+        self._exit_xf_mainstream = ()
 
     def _mainstream_momentum_flux(
         self, state_out: "NetworkMixtureState"
@@ -5711,25 +5714,40 @@ class OrificeElement(NetworkElement):
         """rho_m u_m^2 of the approaching mainstream and its derivatives by
         name, or (0, {}) where the discharge node has none.
 
-        G_m = (the mainstream elements' flow into the chamber) / A, rho_m the
-        chamber's static density; d/d(own m_dot) through rho_m's chamber
-        closure is keyed _DCD_DM_VIA_CHAMBER (see there)."""
+        G_m = (the main inlet's flow into the chamber) / A, rho_m the main
+        stream's density at the chamber's MAIN FACE: the face's static state
+        (MomentumChamberNode.main_face_state, C++ chamber_merge_face_state)
+        on the main stream's isentrope from (Pt_face, Tt_main, Y_main) to
+        P_face. Not the chamber's own static density, whose Tt and Y are the
+        mixed outlet's, holes included. d/d(own m_dot) through the face
+        (the outlet flow and the side streams' impulse include this hole's)
+        is keyed _DCD_DM_VIA_CHAMBER (see there)."""
         node = self._exit_xf_node
         if not isinstance(node, MomentumChamberNode) or not node.area > 0.0:
             return 0.0, {}
-        ids = set(getattr(self, "_exit_xf_mainstream", ()))
-        m_m = 0.0
-        dm: dict[str, float] = {}
+        main = getattr(node, "main_inlet", None)
+        main_st, dm = None, {}
         for eid, st, names in getattr(node, "_inflows", []):
-            if eid in ids:
-                m_m += float(st.m_dot)
-                for var, c in names.items():
-                    dm[var] = dm.get(var, 0.0) + c
-        if m_m == 0.0:
+            if eid == main:
+                main_st, dm = st, names
+        if main_st is None or float(main_st.m_dot) == 0.0:
             return 0.0, {}
-        rho, drho = node.static_density(state_out)
-        if not rho > 0.0:
-            return 0.0, {}
+        m_m = float(main_st.m_dot)
+        P_f, Pt_f, dPf, dPtf = node.main_face_state(state_out)
+        ex = cb.rowbury_2001_exit_density(Pt_f, float(main_st.Tt), P_f, main_st.X)
+        rho = float(ex.rho)
+        drho: dict[str, float] = {}
+        for src, coef in ((dPf, float(ex.drho_dP)), (dPtf, float(ex.drho_dPt))):
+            for var, d in src.items():
+                drho[var] = drho.get(var, 0.0) + coef * d
+        src_node = getattr(self, "_exit_xf_main_src", None)
+        if src_node is not None:
+            key = f"{src_node}.Tt"
+            drho[key] = drho.get(key, 0.0) + float(ex.drho_dTt)
+            for k, d in enumerate(ex.drho_dY):
+                if d != 0.0:
+                    key = f"{src_node}.Y[{k}]"
+                    drho[key] = drho.get(key, 0.0) + float(d)
         A = node.area
         q = (m_m / A) ** 2 / rho
         own = f"{self.id}.m_dot"
@@ -5905,11 +5923,12 @@ class OrificeElement(NetworkElement):
             "exit_crossflow_k_floor": k_floor,
             "exit_crossflow_delta": float(r.delta) if r is not None else 0.0,
             "exit_crossflow_held": float(r.held) if r is not None else 0.0,
-            # Beyond the paper's fitted k (Fig. 4: 3.3): the offset fades (info).
+            # Beyond the set's fitted k (rowbury_2001_k_fit_max): the offset
+            # fades (info).
             "exit_crossflow_faded": float(r.faded) if r is not None else 0.0,
             # Off Table 1's angles the floor can lie above the fitted k
             # range: the whole fitted range is then held (info).
-            "exit_crossflow_floor_above_fit": float(k_floor > cb.ROWBURY_2001_K_PERP_MAX),
+            "exit_crossflow_floor_above_fit": float(k_floor > cb.rowbury_2001_k_fit_max(cset)),
             "exit_crossflow_in_range": float(cb.rowbury_2001_in_range(cset, th, al)),
         }
 

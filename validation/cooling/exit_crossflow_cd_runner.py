@@ -18,9 +18,10 @@ REPORTS, it does not score into the scorecard.
    they are a reproduction check, not a dataset. Fidelity therefore means:
    the implementation reproduces the authors' generalised curves to the
    reading accuracy. It is judged on Eq. 8 AS PRINTED (`as_printed`); the
-   shipped term also fades Eq. 8's offset beyond the paper's fitted k
-   (k_perp > 3.3, include/crossflow_cd.h), our extrapolation, which the
-   authors' Ma_m 0.3 markers above PR ~1.5 already reach; both are reported.
+   shipped term also fades Eq. 8's offset beyond the k_perp the set's
+   fitted rows provably reach (suction set: 0.58, rowbury_2001_k_fit_max,
+   include/crossflow_cd.h), our extrapolation, which the authors' own Fig. 9
+   markers pass at Ma_m 0.3 and 0.6; both are reported.
 
 2. ACCURACY -- CROSS-SOURCE. Gritsch et al. 1998 (Karlsruhe, digitised,
    validation/cooling/data/gritsch1998, Fig. 3: Ma_c 0, Ma_m 0.3/0.6/1.2) and
@@ -314,7 +315,7 @@ def _main() -> None:
     print("1. FIDELITY: the authors' Fig. 9 predictions (eye-read, +-0.005), Cd,no 0.776")
     variants = (
         (False, True, "Eq. 8 as printed, rho_h isentropic exit (the element's)"),
-        (False, False, "as shipped: offset faded beyond k_perp 3.3"),
+        (False, False, "as shipped: offset faded beyond k_fit (suction 0.58)"),
         (True, True, "Eq. 8 as printed, rho_h = rho(Tt_c, p_m) (sensitivity)"),
     )
     for supply, printed, tag in variants:

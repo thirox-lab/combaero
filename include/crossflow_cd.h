@@ -136,31 +136,53 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 // (sin theta at alpha = 0). The (1 + sin alpha) factors in Table 2 multiply
 // A and B IN ADDITION: the k definition (p. 262 and the nomenclature) is the
 // geometric normal component, and nothing in the text says alpha is folded
-// into A, B instead. AMBIGUITY, stated: Fig. 3 draws alpha from the normal,
-// but "relative to ... local wall surface" could be read as from the wall,
-// which would give u_perp / u_h = 0.87 instead of 0.50 for the leading-edge
-// rows (theta ~90, alpha 60): k_perp 1.7x larger there. The figure's reading
-// is taken. Pressure- and suction-side rows have alpha <= 7 deg, where both
-// readings agree to 0.8%.
+// into A, B instead. Table 1 SETTLES the reading of alpha: rows 1-6 and
+// 11-14 are streamwise-inclined holes listed with alpha 0-7 deg, which only
+// fits alpha measured from the surface NORMAL in the cross-stream plane
+// (measured from the wall they would read about 90). The leading-edge rows
+// (theta 83-90, alpha 60) are then holes tilted 60 deg spanwise off the
+// normal, u_perp / u_h = 0.50.
 //
 // THE TWO ENDS OF Eq. 8 ARE NOT THE PAPER'S RANGE. Our extrapolations:
 //
-// * k > ROWBURY_2001_K_PERP_MAX = 3.3, the top of the one k range the paper
-//   prints (Fig. 4, row 1: k_out 0.2-3.3; Figs. 5-9 plot Cd against PR, not
-//   k). A large k is a jet that dominates the crossflow, where the outlet
-//   loss must vanish (Cd -> Cd,no); Eq. 8 instead tends to -C, a fitted
-//   offset, and would jump to Cd,no at u_m = 0 exactly (the authors' own
-//   "Predict Mm = 0" is Cd,no by definition). Beyond k_max the OFFSET fades:
-//     delta = A k^-B - C w(x),  x = ln(k / k_max),
+// * k > k_fit, the largest k_perp the set's fitted rows provably reach
+//   (rowbury_2001_k_fit_max; Figs. 5-9 plot Cd against PR, and the one k
+//   axis, Fig. 4, is k_out of row 1 alone: 0.2-3.3, which is k_perp
+//   0.07-1.2 at its theta 21). Per Table 1 row, from its Ma_m, theta, alpha
+//   and design PR (and, for rows 1, 10, 14, the PR its Fig. 5-8 sweep
+//   reaches), k_perp = Cd^2 Ma_j^2 / Ma_m^2 f / AR^2, Ma_j the isentropic
+//   jet Mach at that PR (gamma 1.4, the CHTT coolant's), Cd 0.70 at a
+//   design point (the figures' range) or read off the figure, AR the fan
+//   holes' exit/inlet area ratio at its smallest, 2.9 (the largest k):
+//     cylindrical pressure (rows 1-6): row 6, Ma_m 0.05, PR 1.02 -> 4.7
+//     cylindrical leading edge (7-10): row 7, Ma_m 0.04, PR 1.02 -> 4.3
+//       (row 10's Fig. 7 sweep to PR 1.45: 2.6)
+//     cylindrical suction (11-14):     row 11, Ma_m 0.32, PR 1.09 -> 0.58
+//       (row 14's Fig. 8 sweep to PR 2.5: 0.46)
+//     fan pressure (rows 1-4):         row 4, Ma_m 0.08, PR 1.02 -> 0.13
+//     fan suction (rows 12-14):        row 14, Fig. 8 to PR 2.5 -> 0.054
+//   Row 1 at its Fig. 5 sweep (PR 1.6, Cd 0.72) gives k_out 2.4, consistent
+//   with Fig. 4's 3.3 nearer PR 1.8. These are LOWER BOUNDS on the fitted
+//   top: the other rows were swept above design PR too (not printed), so the
+//   true range cannot be pinned from the paper, and the threshold is
+//   combaero's choice, set where the data provably reach. A large k is a jet
+//   that dominates the crossflow, where the outlet loss must vanish (Cd ->
+//   Cd,no); Eq. 8 instead tends to -C, a fitted offset, and would jump to
+//   Cd,no at u_m = 0 exactly (the authors' own "Predict Mm = 0" is Cd,no by
+//   definition). Beyond k_fit the OFFSET fades:
+//     delta = A k^-B - C w(x),  x = ln(k / k_fit),
 //     w = 1 / (1 + (x / ROWBURY_2001_FADE_WIDTH)^2)
-//   w(0) = 1 and w'(0) = 0, so delta and its slope are continuous at k_max;
+//   w(0) = 1 and w'(0) = 0, so delta and its slope are continuous at k_fit;
 //   delta -> 0 as k -> infinity (A k^-B decays too), so Cd -> Cd,no and
 //   u_m -> 0 is continuous. Low slope: |d delta / d ln k| <= B A k^-B + 0.65
-//   C / width. Not monotone where delta(k_max) < 0: the power law is still
-//   falling at k_max and the faded offset must come back to 0, so delta dips
-//   at most a few hundredths below delta(k_max) before rising; C1 and
+//   C / width. Not monotone where delta(k_fit) < 0: the power law is still
+//   falling at k_fit and the faded offset must come back to 0, so delta dips
+//   at most a few hundredths below delta(k_fit) before rising; C1 and
 //   monotone cannot both hold there, and C1 is what a Newton solve needs.
-//   FADE_WIDTH = 1 (one e-fold of k halves the offset) is OUR choice.
+//   As the mainstream flow m_m -> 0+, k ~ 1/m_m^2 and the offset decays as
+//   1/ln^2 k, so dCd/dm_m ~ 1/(m_m ln^3 k): finite at every m_m > 0 but
+//   unbounded towards 0 (slowly). FADE_WIDTH = 1 (one e-fold of k halves
+//   the offset) is OUR choice.
 //
 // * k -> 0 (no hole flow, or a mainstream overwhelming it): A k^-B diverges
 //   and Cd -> 0, so a solver iterating on the hole's own flow sees a
@@ -183,12 +205,12 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 //       starts where A k^-B = M (1 - C) / (B - 1): for B near 1 (a normal
 //       hole, suction set: B 1.18, k_floor 0.23) once the term has cut Cd by
 //       a third or more; for larger B sooner. Off Table 1's angles k_floor
-//       can exceed k_max (pressure set at theta 90, alpha 60: 2.9), i.e. the
-//       whole fitted k range is held: rowbury_2001_k_floor reports it.
+//       can exceed k_fit (suction set at theta 90, alpha 60: 1.43 > 0.58),
+//       i.e. the whole fitted k range is held: rowbury_2001_k_floor reports it.
 //
 // Cd > 1. The -C crossover lets Cd exceed Cd,no, and with the leading-edge
 // set (C 0.28) inside the fitted k range Cd exceeds 1 for Cd,no above about
-// 0.9 (Cd,no 0.98 at theta 90, alpha 60, k 3.3: Cd 1.09). Not capped: the
+// 0.91 (Cd,no 0.98 at theta 90, alpha 60, k 4.3: Cd 1.10). Not capped: the
 // source's model allows it and a cap would put a kink in the hole's flow.
 //
 // FITTED ENVELOPE (Table 1, CHTT rows): flagged by rowbury_2001_in_range,
@@ -218,18 +240,19 @@ constexpr Row kFanSuction{0.225, -0.110, 1.0, 0.350, 0.570, 2.8, 0.05};
 // Table 1 angle spans of the rows each set was fitted on [deg]. Fan-shaped
 // rows (p. 259: rows 5-11 are cylindrical only): pressure rows 1-4, suction
 // rows 12-14.
+// k_fit: the largest k_perp the rows provably reach (see "THE TWO ENDS").
 struct Envelope {
   double theta_min, theta_max, alpha_min, alpha_max;
+  double k_fit;
 };
-constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0};       // rows 1-6
-constexpr Envelope kEnvCylLeadingEdge{83.0, 90.0, 60.0, 60.0};  // rows 7-10
-constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0};        // rows 11-14
-constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0};       // rows 1-4
-constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0};        // rows 12-14
+constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0, 4.7};       // rows 1-6
+constexpr Envelope kEnvCylLeadingEdge{83.0, 90.0, 60.0, 60.0, 4.3};  // rows 7-10
+constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0, 0.58};       // rows 11-14
+constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0, 0.13};      // rows 1-4
+constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0, 0.054};      // rows 12-14
 }  // namespace rowbury2001
 
 constexpr double ROWBURY_2001_K_PERP_MIN = 0.01;
-constexpr double ROWBURY_2001_K_PERP_MAX = 3.3;
 constexpr double ROWBURY_2001_FADE_WIDTH = 1.0;
 constexpr double ROWBURY_2001_UNIQUE_MARGIN = 0.5;
 
@@ -244,6 +267,9 @@ struct Rowbury2001Coefficients {
 Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
                                                   double alpha_deg);
 
+// The k_perp beyond which the offset fades: the set's k_fit (see above).
+double rowbury_2001_k_fit_max(Rowbury2001Set set);
+
 // The k_perp below which the term is held (see above).
 double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_deg);
 
@@ -257,7 +283,7 @@ struct Rowbury2001Cd {
   double delta = 0.0;    // delta_out at the k used
   double k_used = 0.0;   // max(k_perp, k_floor)
   bool held = false;     // k_perp < k_floor
-  bool faded = false;    // k_used > ROWBURY_2001_K_PERP_MAX: the offset fades
+  bool faded = false;    // k_used > rowbury_2001_k_fit_max: the offset fades
 };
 
 // Cd with the exit-crossflow loss, from the no-crossflow Cd0 > 0 and
