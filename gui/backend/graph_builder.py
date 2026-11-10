@@ -1545,6 +1545,9 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                     data.gas_start_length if data.gas_baseline == "flat_plate" else None
                 ),
                 cd_inclination=_cd_inclination(data),
+                cd_exit_crossflow=data.cd_exit_crossflow,
+                exit_crossflow_region=data.exit_crossflow_region,
+                exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,
                 radiation=_radiation(data.radiation),
             )
             net.add_element(elem)
@@ -1569,6 +1572,9 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 correlation=data.correlation,
                 Cd=_fixed_cd(data),
                 cd_inclination=_cd_inclination(data),
+                cd_exit_crossflow=data.cd_exit_crossflow,
+                exit_crossflow_region=data.exit_crossflow_region,
+                exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,
             )
             net.add_element(elem)
         elif elem_type == "slot_film":

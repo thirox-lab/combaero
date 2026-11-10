@@ -141,3 +141,13 @@ def test_the_hole_angle_cd_term_is_read_only_with_idelchik_thick() -> None:
         )
     )
     assert net.elements["eff"].cd_inclination == "none"
+
+
+def test_the_exit_crossflow_cd_term_threads_through() -> None:
+    off = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
+    assert off.elements["eff"].cd_exit_crossflow == "none"
+    on = build_network_from_schema(
+        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_exit_crossflow": "rowbury_2001"}))
+    )
+    assert on.elements["eff"].cd_exit_crossflow == "rowbury_2001"
+    assert on.elements["eff"].exit_crossflow_region == "suction_surface"

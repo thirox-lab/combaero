@@ -1294,6 +1294,30 @@ bool florschuetz_metzger_su_1982_has_plate(double xn_d, double yn_d, double z_d)
 CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
                                            double G_ideal, double G_c);
 
+// EXIT (external) crossflow on a film-cooling hole (#1074, crossflow_cd.h):
+// Rowbury, Oldfield & Lock (2001) Eqs. 7-8, an additive outlet loss on the
+// no-crossflow Cd0, 1/Cd^2 = 1/Cd0^2 + A k_perp^-B - C, k_perp = rho_h u_h
+// u_h,perp / (rho_m u_m^2) on the hole's ACTUAL flow. A, B, C: Table 2 per
+// set at (theta, alpha). Held below rowbury_2001_k_floor (Cd -> 0 and, for
+// B > 1, no root of the hole's flow below it). A vanishing mainstream gives
+// the -C asymptote, not Cd0: the caller applies the term only to a
+// mainstream with momentum. Table 1's angle spans are a flag, not a refusal.
+enum class Rowbury2001Set { CylindricalPressureSurface, CylindricalLeadingEdge,
+                            CylindricalSuctionSurface, FanShapedPressureSurface,
+                            FanShapedSuctionSurface };
+constexpr double ROWBURY_2001_K_PERP_MIN = 0.01, ROWBURY_2001_UNIQUE_MARGIN = 0.5;
+struct Rowbury2001Coefficients { double A, B, C; };
+Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
+                                                  double alpha_deg);  // throws A, B <= 0
+double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_deg);
+bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg);
+struct Rowbury2001Cd { double Cd, dCd_dCd0, dCd_dk, delta, k_used; bool held; };
+Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2001Set set,
+                                             double theta_deg, double alpha_deg);
+struct Rowbury2001KPerp { double k, dk_dG, dk_drho_h, dk_dq_m; };
+Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2,
+                                     double theta_deg);
+
 // Merge chamber (#471): the main-inlet face from the impulse balance
 //   P_f + m_main^2 R T_f / (P_f A^2) = P + m_out^2/(rho A^2) - J/A
 // with Tt and Tt_main STAGNATION temperatures (#578): the face's static T_f

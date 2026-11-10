@@ -111,6 +111,14 @@ UNIT_MAP: dict[str, str] = {
     "is_correlation": "-",
     "Cd_in_range": "-",  # 1 inside the discharge correlation's source range
     "Cd_inclination_dzeta": "-",  # opt-in inclined-inlet increment on zeta' (0 when off)
+    # Opt-in exit-crossflow Cd term (#1074), emitted only when opted in.
+    "Cd_no_exit_crossflow": "-",
+    "Cd_exit_crossflow_ratio": "-",
+    "exit_crossflow_rho_u2": "Pa",  # mainstream momentum flux rho_m u_m^2
+    "exit_crossflow_k_perp": "-",
+    "exit_crossflow_delta": "-",
+    "exit_crossflow_held": "-",
+    "exit_crossflow_in_range": "-",
     # --- Impingement plate / crossflow (#465) ---
     "n_holes": "-",
     "Re_j": "-",
@@ -513,6 +521,7 @@ INPUT_UNIT_MAP: dict[str, str] = {
     "mixing_area": "m^2",
     # Angles
     "angle_deg": "deg",
+    "exit_crossflow_orientation_deg": "deg",  # Rowbury 2001 compound angle alpha (#1074)
     "alpha_deg": "deg",
     "theta_deg": "deg",
     # Speeds

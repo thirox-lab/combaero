@@ -2,9 +2,12 @@
 
 #include "inner_solve.h"
 #include "input_validation.h"
+#include "math_constants.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace combaero {
 
@@ -196,6 +199,146 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
   const double sb = u - (1.0 - w);
   const double f = u - sb * sb / (4.0 * w);
   return from_q(plate->cd0 * f, (1.0 - sb / (2.0 * w)) * dcdf_dq, q, G_c);
+}
+
+// ---- Rowbury, Oldfield & Lock (2001): exit crossflow -----------------------
+
+namespace {
+
+const rowbury2001::Row& rowbury_row(Rowbury2001Set set) {
+  switch (set) {
+    case Rowbury2001Set::CylindricalPressureSurface:
+      return rowbury2001::kCylPressure;
+    case Rowbury2001Set::CylindricalLeadingEdge:
+      return rowbury2001::kCylLeadingEdge;
+    case Rowbury2001Set::CylindricalSuctionSurface:
+      return rowbury2001::kCylSuction;
+    case Rowbury2001Set::FanShapedPressureSurface:
+      return rowbury2001::kFanPressure;
+    case Rowbury2001Set::FanShapedSuctionSurface:
+      return rowbury2001::kFanSuction;
+  }
+  throw std::invalid_argument("rowbury_2001: unknown coefficient set");
+}
+
+const rowbury2001::Envelope& rowbury_envelope(Rowbury2001Set set) {
+  switch (set) {
+    case Rowbury2001Set::CylindricalPressureSurface:
+      return rowbury2001::kEnvCylPressure;
+    case Rowbury2001Set::CylindricalLeadingEdge:
+      return rowbury2001::kEnvCylLeadingEdge;
+    case Rowbury2001Set::CylindricalSuctionSurface:
+      return rowbury2001::kEnvCylSuction;
+    case Rowbury2001Set::FanShapedPressureSurface:
+      return rowbury2001::kEnvFanPressure;
+    case Rowbury2001Set::FanShapedSuctionSurface:
+      return rowbury2001::kEnvFanSuction;
+  }
+  throw std::invalid_argument("rowbury_2001: unknown coefficient set");
+}
+
+double sin_deg(double deg) { return std::sin(deg * M_PI / 180.0); }
+
+}  // namespace
+
+Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
+                                                  double alpha_deg) {
+  if (!(theta_deg > 0.0 && theta_deg <= 90.0)) {
+    throw std::invalid_argument(
+        "rowbury_2001: theta (hole axis to the surface) must be in (0, 90] deg");
+  }
+  if (!(alpha_deg >= 0.0 && alpha_deg <= 90.0)) {
+    throw std::invalid_argument(
+        "rowbury_2001: alpha (orientation / compound angle) must be in [0, 90] deg");
+  }
+  const rowbury2001::Row& r = rowbury_row(set);
+  // sin(90 deg) is exactly 1 in floating point; sin(0) exactly 0.
+  const double st = sin_deg(theta_deg);
+  const double sa = sin_deg(alpha_deg);
+  Rowbury2001Coefficients c;
+  c.A = (r.a1 * st + r.a0) * (1.0 + r.sa * sa);
+  c.B = (r.b1 * st + r.b0) * (1.0 + r.sb * sa);
+  c.C = r.c;
+  if (!(c.A > 0.0 && c.B > 0.0)) {
+    throw std::invalid_argument(
+        "rowbury_2001: Table 2 gives A = " + std::to_string(c.A) + ", B = " +
+        std::to_string(c.B) + " at theta = " + std::to_string(theta_deg) +
+        " deg; Eq. 8 needs A > 0 and B > 0 (the hole is shallower than the "
+        "set's fitted angles reach).");
+  }
+  return c;
+}
+
+double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_deg) {
+  const Rowbury2001Coefficients c = rowbury_2001_coefficients(set, theta_deg, alpha_deg);
+  double k = ROWBURY_2001_K_PERP_MIN;
+  if (c.B > 1.0) {
+    // (B - 1) A k^-B = M (1 - C)
+    const double k_unique =
+        std::pow((c.B - 1.0) * c.A / (ROWBURY_2001_UNIQUE_MARGIN * (1.0 - c.C)), 1.0 / c.B);
+    k = std::max(k, k_unique);
+  }
+  return k;
+}
+
+bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg) {
+  const rowbury2001::Envelope& e = rowbury_envelope(set);
+  constexpr double tol = 1e-9;
+  return theta_deg >= e.theta_min - tol && theta_deg <= e.theta_max + tol &&
+         alpha_deg >= e.alpha_min - tol && alpha_deg <= e.alpha_max + tol;
+}
+
+Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2001Set set,
+                                             double theta_deg, double alpha_deg) {
+  if (!(Cd0 > 0.0 && Cd0 <= 1.0)) {
+    throw std::invalid_argument("rowbury_2001_exit_crossflow_cd: Cd0 must be in (0, 1]");
+  }
+  if (!(k_perp >= 0.0) || std::isnan(k_perp)) {
+    throw std::invalid_argument("rowbury_2001_exit_crossflow_cd: k_perp must be >= 0");
+  }
+  const Rowbury2001Coefficients c = rowbury_2001_coefficients(set, theta_deg, alpha_deg);
+  const double k_floor = rowbury_2001_k_floor(set, theta_deg, alpha_deg);
+  Rowbury2001Cd out;
+  out.held = k_perp < k_floor;
+  out.k_used = out.held ? k_floor : k_perp;
+  // k = +inf (a vanishing mainstream on a flowing hole) gives A k^-B = 0:
+  // the -C asymptote, finite.
+  const double ak = std::isinf(out.k_used) ? 0.0 : c.A * std::pow(out.k_used, -c.B);
+  out.delta = ak - c.C;
+  const double x = 1.0 / (Cd0 * Cd0) + out.delta;
+  if (!(x > 0.0)) {
+    throw std::invalid_argument(
+        "rowbury_2001_exit_crossflow_cd: 1/Cd0^2 + delta_out <= 0, no discharge coefficient");
+  }
+  out.Cd = 1.0 / std::sqrt(x);
+  const double cd3 = out.Cd * out.Cd * out.Cd;
+  // x = Cd0^-2 + delta: dCd/dCd0 = (-x^-3/2 / 2)(-2 Cd0^-3) = Cd^3 / Cd0^3.
+  out.dCd_dCd0 = cd3 / (Cd0 * Cd0 * Cd0);
+  // d delta/dk = -B A k^-B / k; dCd/dk = -Cd^3 / 2 d delta/dk. Zero where held.
+  if (!out.held && !std::isinf(out.k_used)) {
+    out.dCd_dk = 0.5 * cd3 * c.B * ak / out.k_used;
+  }
+  return out;
+}
+
+Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2,
+                                     double theta_deg) {
+  if (!(G_h >= 0.0) || !std::isfinite(G_h)) {
+    throw std::invalid_argument("rowbury_2001_k_perp: G_h must be finite and >= 0");
+  }
+  validation::require_finite_positive(rho_h, "rowbury_2001_k_perp: rho_h must be > 0");
+  validation::require_finite_positive(
+      rho_m_u_m2, "rowbury_2001_k_perp: the mainstream momentum flux rho_m u_m^2 must be > 0");
+  if (!(theta_deg > 0.0 && theta_deg <= 90.0)) {
+    throw std::invalid_argument("rowbury_2001_k_perp: theta must be in (0, 90] deg");
+  }
+  const double s = sin_deg(theta_deg);
+  Rowbury2001KPerp out;
+  out.k = G_h * G_h * s / (rho_h * rho_m_u_m2);
+  out.dk_dG = 2.0 * G_h * s / (rho_h * rho_m_u_m2);
+  out.dk_drho_h = -out.k / rho_h;
+  out.dk_dq_m = -out.k / rho_m_u_m2;
+  return out;
 }
 
 }  // namespace combaero
