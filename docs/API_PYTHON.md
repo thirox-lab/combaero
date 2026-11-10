@@ -395,13 +395,16 @@ dzeta = cb.discharge_inclination_dzeta(30.0)  # 0.41
 # Rowbury, Oldfield & Lock (2001) Eqs. 7-8, 1/Cd^2 = 1/Cd0^2 + A k^-B - C on
 # the no-crossflow Cd0, k = k_perp the perpendicular outlet momentum flux
 # ratio on the hole's ACTUAL flow. Table 2 per set (a flat wall takes the
-# suction surface's); held below rowbury_2001_k_floor; Table 1's angle span
-# is a flag (rowbury_2001_in_range), A or B <= 0 raises.
+# suction surface's); held below rowbury_2001_k_floor; beyond the fitted
+# k_perp (ROWBURY_2001_K_PERP_MAX 3.3) the offset C fades, Cd -> Cd0;
+# Table 1's angle span is a flag (rowbury_2001_in_range), A or B <= 0 raises.
 S = cb.Rowbury2001Set.CylindricalSuctionSurface
 c = cb.rowbury_2001_coefficients(S, 30.0, 0.0)  # A 0.101, B 0.794, C 0.10
-kp = cb.rowbury_2001_k_perp(G_h=150.0, rho_h=1.2, rho_m_u_m2=2.0e4, theta_deg=30.0)
+rho_h = cb.rowbury_2001_exit_density(Pt=1.5e5, Tt=300.0, P=1e5, X=X).rho  # isentropic
+kp = cb.rowbury_2001_k_perp(G_h=150.0, rho_h=rho_h, rho_m_u_m2=2.0e4, theta_deg=30.0,
+                            alpha_deg=0.0)  # u_perp/u = 1/sqrt(cot^2 th + 1 + tan^2 al)
 r = cb.rowbury_2001_exit_crossflow_cd(0.776, kp.k, S, 30.0, 0.0)
-r.Cd, r.dCd_dCd0, r.dCd_dk, r.delta, r.k_used, r.held
+r.Cd, r.dCd_dCd0, r.dCd_dk, r.delta, r.k_used, r.held, r.faded
 
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
@@ -863,23 +866,30 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   (`EffusionPlateElement` and `FilmCoolingElement`, any correlation including
   `"fixed"`, with or without `cd_inclination`) puts Rowbury, Oldfield & Lock
   (2001) Eqs. 7-8 on the no-crossflow Cd: `1/Cd^2 = 1/Cd0^2 + A k^-B - C`,
-  `k = G_h^2 sin(angle) / (rho_h rho_m u_m^2)` on the hole's actual flux
-  (a shaped film hole: at its exit plane, `G / area_ratio`), `rho_h` the
-  coolant at the chamber static P and its supply Tt, `rho_m u_m^2` the
-  discharge chamber's. Needs a `MomentumChamberNode` discharge with an area
-  (refused otherwise). `exit_crossflow_region` picks Table 2's set
+  `k = G_h^2 f / (rho_h rho_m u_m^2)` on the hole's actual flux (a shaped
+  film hole: at its exit plane, `G / area_ratio`), `f` the surface-normal
+  share of the jet velocity (Fig. 3), `rho_h` the coolant's isentropic
+  exit-plane density, `rho_m u_m^2` the APPROACHING mainstream's: the
+  discharge `MomentumChamberNode`'s main-inlet flow over its area, on the
+  chamber's static density. Needs such a chamber with an approaching
+  mainstream (refused otherwise). `exit_crossflow_region` picks Table 2's set
   (`"suction_surface"`, the flat-wall default the authors use for Gritsch
   1998; `"pressure_surface"`; `"leading_edge"`, cylindrical only) and
-  `exit_crossflow_orientation_deg` its compound angle alpha. Crossover is
-  built in: the loss is positive at small k and floors at `-C`, so a strongly
-  blowing hole's Cd RISES (+3% on Behrendt 2008's 30 deg plates). Reported
-  when on: `Cd_no_exit_crossflow`, `Cd_exit_crossflow_ratio`,
-  `exit_crossflow_rho_u2` [Pa], `exit_crossflow_k_perp`, `exit_crossflow_delta`,
-  `exit_crossflow_held`, `exit_crossflow_in_range` (Table 1's angle span).
-  Fidelity (the authors' Fig. 9 predictions) and cross-source accuracy (Gritsch
-  1998, Hay 1983): `validation/cooling/exit_crossflow_cd_runner.py`. Off is
-  the default and bit-identical. No GUI Inspector control yet (the node
-  fields load from network JSON).
+  `exit_crossflow_orientation_deg` its alpha, the radial orientation from the
+  surface normal, in [0, 90). Crossover is built in inside the paper's fitted
+  k (k_perp <= 3.3): a strongly blowing hole's Cd rises. Beyond it the -C
+  offset fades (our extrapolation), so Cd returns to Cd0 continuously as the
+  mainstream vanishes. Cd can exceed 1 with the leading-edge set at Cd0 near
+  1 (not capped). Below a k floor the term is held. Reported when on:
+  `Cd_no_exit_crossflow`, `Cd_exit_crossflow_ratio`, `exit_crossflow_rho_u2`
+  [Pa], `exit_crossflow_k_perp` (actual), `exit_crossflow_k_used`,
+  `exit_crossflow_k_floor`, `exit_crossflow_delta`, `exit_crossflow_held`,
+  `exit_crossflow_faded`, `exit_crossflow_floor_above_fit` (the hold covers
+  the whole fitted k range: info), `exit_crossflow_in_range` (Table 1's angle
+  span). Fidelity (the authors' Fig. 9 predictions) and cross-source accuracy
+  (Gritsch 1998, Hay 1983): `validation/cooling/exit_crossflow_cd_runner.py`.
+  Off is the default and bit-identical. No GUI Inspector control yet (the
+  node fields load from network JSON).
 
 ##### Duct-fed: the effusion liner (#471)
 

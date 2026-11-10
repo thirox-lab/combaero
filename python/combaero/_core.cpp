@@ -729,6 +729,8 @@ PYBIND11_MODULE(_core, m) {
       .value("FanShapedSuctionSurface", combaero::Rowbury2001Set::FanShapedSuctionSurface);
   m.attr("ROWBURY_2001_K_PERP_MIN") = combaero::ROWBURY_2001_K_PERP_MIN;
   m.attr("ROWBURY_2001_UNIQUE_MARGIN") = combaero::ROWBURY_2001_UNIQUE_MARGIN;
+  m.attr("ROWBURY_2001_K_PERP_MAX") = combaero::ROWBURY_2001_K_PERP_MAX;
+  m.attr("ROWBURY_2001_FADE_WIDTH") = combaero::ROWBURY_2001_FADE_WIDTH;
   py::class_<combaero::Rowbury2001Coefficients>(m, "Rowbury2001Coefficients")
       .def_readonly("A", &combaero::Rowbury2001Coefficients::A)
       .def_readonly("B", &combaero::Rowbury2001Coefficients::B)
@@ -739,7 +741,15 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("dCd_dk", &combaero::Rowbury2001Cd::dCd_dk)
       .def_readonly("delta", &combaero::Rowbury2001Cd::delta)
       .def_readonly("k_used", &combaero::Rowbury2001Cd::k_used)
-      .def_readonly("held", &combaero::Rowbury2001Cd::held);
+      .def_readonly("held", &combaero::Rowbury2001Cd::held)
+      .def_readonly("faded", &combaero::Rowbury2001Cd::faded);
+  py::class_<combaero::Rowbury2001ExitDensity>(m, "Rowbury2001ExitDensity")
+      .def_readonly("rho", &combaero::Rowbury2001ExitDensity::rho)
+      .def_readonly("T", &combaero::Rowbury2001ExitDensity::T)
+      .def_readonly("drho_dPt", &combaero::Rowbury2001ExitDensity::drho_dPt)
+      .def_readonly("drho_dTt", &combaero::Rowbury2001ExitDensity::drho_dTt)
+      .def_readonly("drho_dP", &combaero::Rowbury2001ExitDensity::drho_dP)
+      .def_readonly("drho_dY", &combaero::Rowbury2001ExitDensity::drho_dY);
   py::class_<combaero::Rowbury2001KPerp>(m, "Rowbury2001KPerp")
       .def_readonly("k", &combaero::Rowbury2001KPerp::k)
       .def_readonly("dk_dG", &combaero::Rowbury2001KPerp::dk_dG)
@@ -763,11 +773,20 @@ PYBIND11_MODULE(_core, m) {
         py::arg("alpha_deg"),
         "Cd of a film hole under an EXIT crossflow, Rowbury, Oldfield & Lock\n"
         "(2001) Eqs. 7-8: 1/Cd^2 = 1/Cd0^2 + A k^-B - C, Cd0 the no-crossflow\n"
-        "Cd, k = k_perp held at rowbury_2001_k_floor. Analytic dCd/dCd0, dCd/dk.");
+        "Cd, k = k_perp held at rowbury_2001_k_floor; beyond\n"
+        "ROWBURY_2001_K_PERP_MAX the offset C fades (Cd -> Cd0 as k -> inf).\n"
+        "Analytic dCd/dCd0, dCd/dk.");
   m.def("rowbury_2001_k_perp", &combaero::rowbury_2001_k_perp, py::arg("G_h"),
         py::arg("rho_h"), py::arg("rho_m_u_m2"), py::arg("theta_deg"),
-        "Perpendicular outlet momentum flux ratio k_perp = G_h^2 sin(theta) /\n"
-        "(rho_h rho_m u_m^2) and its partials.");
+        py::arg("alpha_deg") = 0.0,
+        "Perpendicular outlet momentum flux ratio k_perp = G_h^2 f /\n"
+        "(rho_h rho_m u_m^2), f = 1/sqrt(cot^2 theta + 1 + tan^2 alpha) (Fig. 3),\n"
+        "and its partials.");
+  m.def("rowbury_2001_exit_density", &combaero::rowbury_2001_exit_density, py::arg("Pt"),
+        py::arg("Tt"), py::arg("P"), py::arg("X"),
+        "Coolant exit-plane static density for k_perp: isentropic expansion\n"
+        "from (Pt, Tt) to the discharge static P, variable cp; analytic\n"
+        "partials, drho_dY over mass fractions.");
   m.attr("STATION_KAPPA_MERGE_NORMAL") = combaero::STATION_KAPPA_MERGE_NORMAL;
   m.attr("STATION_KAPPA_BLEED_BASSETT") = combaero::STATION_KAPPA_BLEED_BASSETT;
   m.attr("WALL_HTC_KNEE") = combaero::WALL_HTC_KNEE;

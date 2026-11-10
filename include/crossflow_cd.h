@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 // Discharge coefficient of a wall hole under a grazing crossflow (#800).
 //
 // A hole whose exit (or entrance) faces a fast stream passing along the wall
@@ -100,11 +102,12 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 //   delta_out = A k_perp^-B - C                                      (Eq. 8)
 //   k_perp    = rho_h u_h u_h,perp / (rho_m u_m^2)
 //
-// rho_h u_h the hole's ACTUAL mass flux at its exit plane, u_h,perp = u_h
-// sin(theta) the component normal to the surface (theta the hole axis to
-// the surface; see "PERPENDICULAR" below), rho_m u_m^2 the mainstream's
+// rho_h u_h the hole's ACTUAL mass flux at its exit plane, rho_h the
+// coolant's exit-plane density ("h = coolant at the hole exit plane", p.
+// 264), u_h,perp the "component of coolant exit velocity perpendicular to
+// the vane surface" (p. 264), rho_m u_m^2 the APPROACHING mainstream's
 // momentum flux. A, B, C are Table 2 (p. 263) per vane region and hole
-// shape, functions of theta and the orientation (compound) angle alpha:
+// shape, functions of theta and alpha:
 //
 //   cylindrical, pressure surface (rows 1-6):
 //     A = (2.95 sin th - 0.88)(1 + sin al)  B = (0.714 sin th + 0.393)(1 + sin al)  C = 0.10
@@ -121,21 +124,48 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 // For a fan-shaped hole the authors take the momentum flux at the hole EXIT
 // plane (p. 262), i.e. the metering mass flux over the exit/inlet area ratio.
 //
-// THE TWO ENDS OF Eq. 8 ARE NOT THE PAPER'S RANGE, and are handled here:
+// ANGLES (Fig. 3). theta, "conventional angle to surface (inclination), what
+// you see on a plane section view": the hole axis's angle to the surface in
+// the STREAMWISE-normal plane. alpha, "conventional definition of radial
+// orientation, relative to the engine axis (or local wall surface)": drawn
+// in the CROSS-STREAM plane, measured from the surface NORMAL (the vertical
+// edge of the figure's end box). The plan-view angle (beta) and the "true"
+// exit angle (zeta) are derived, not inputs. So the hole axis runs along
+// (cot theta, 1, tan alpha) in (streamwise, normal, spanwise) and
+//   u_h,perp / u_h = 1 / sqrt(cot^2 theta + 1 + tan^2 alpha)
+// (sin theta at alpha = 0). The (1 + sin alpha) factors in Table 2 multiply
+// A and B IN ADDITION: the k definition (p. 262 and the nomenclature) is the
+// geometric normal component, and nothing in the text says alpha is folded
+// into A, B instead. AMBIGUITY, stated: Fig. 3 draws alpha from the normal,
+// but "relative to ... local wall surface" could be read as from the wall,
+// which would give u_perp / u_h = 0.87 instead of 0.50 for the leading-edge
+// rows (theta ~90, alpha 60): k_perp 1.7x larger there. The figure's reading
+// is taken. Pressure- and suction-side rows have alpha <= 7 deg, where both
+// readings agree to 0.8%.
 //
-// * k -> infinity (no mainstream, u_m -> 0): delta -> -C, NOT 0. Eq. 8 has
-//   crossover built in (the paper's Fig. 9 Ma_m 0.3 prediction rises above
-//   its Ma_m 0 one at PR > 1.5), but its no-crossflow prediction is Cd,no by
-//   definition (Fig. 9, "Predict Mm = 0", flat at Lichtarowicz's 0.776). So
-//   the limit is discontinuous at u_m = 0 exactly; the caller applies the
-//   term only to a mainstream with momentum (rho_m u_m^2 > 0) and returns
-//   Cd,no otherwise. No upper k is printed (Fig. 4 spans k_out 0.2-3.3 for
-//   row 1 only), so none is imposed.
+// THE TWO ENDS OF Eq. 8 ARE NOT THE PAPER'S RANGE. Our extrapolations:
+//
+// * k > ROWBURY_2001_K_PERP_MAX = 3.3, the top of the one k range the paper
+//   prints (Fig. 4, row 1: k_out 0.2-3.3; Figs. 5-9 plot Cd against PR, not
+//   k). A large k is a jet that dominates the crossflow, where the outlet
+//   loss must vanish (Cd -> Cd,no); Eq. 8 instead tends to -C, a fitted
+//   offset, and would jump to Cd,no at u_m = 0 exactly (the authors' own
+//   "Predict Mm = 0" is Cd,no by definition). Beyond k_max the OFFSET fades:
+//     delta = A k^-B - C w(x),  x = ln(k / k_max),
+//     w = 1 / (1 + (x / ROWBURY_2001_FADE_WIDTH)^2)
+//   w(0) = 1 and w'(0) = 0, so delta and its slope are continuous at k_max;
+//   delta -> 0 as k -> infinity (A k^-B decays too), so Cd -> Cd,no and
+//   u_m -> 0 is continuous. Low slope: |d delta / d ln k| <= B A k^-B + 0.65
+//   C / width. Not monotone where delta(k_max) < 0: the power law is still
+//   falling at k_max and the faded offset must come back to 0, so delta dips
+//   at most a few hundredths below delta(k_max) before rising; C1 and
+//   monotone cannot both hold there, and C1 is what a Newton solve needs.
+//   FADE_WIDTH = 1 (one e-fold of k halves the offset) is OUR choice.
 //
 // * k -> 0 (no hole flow, or a mainstream overwhelming it): A k^-B diverges
 //   and Cd -> 0, so a solver iterating on the hole's own flow sees a
 //   spurious zero-flow root; and with B > 1 (near-normal holes, compound
-//   angles) Eq. 7-8 solved on the actual flow have NO root at all below some
+//   angles) Eqs. 7-8 solved on the actual flow have NO root at all below some
 //   k (the m = Cd(m) K fixed point turns over). The term is therefore HELD
 //   at k_floor = max(ROWBURY_2001_K_PERP_MIN, k_unique) -- value kept, slope
 //   zero, the pattern of the discharge correlations' Re floor:
@@ -148,16 +178,18 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 //       (1 - C) a bound for any Cd,no, and the margin leaves the
 //       self-consistent solve a slope d ln Cd / d ln m <= B / (2B - 1) < 1
 //       from this term (room for the Re dependence of Cd,no). OUR choice,
-//       not the paper's. The hold starts where A k^-B = M (1 - C) / (B - 1):
-//       for B near 1 (a normal hole, suction set: B 1.18, k_floor 0.23) only
-//       once the term has cut Cd by a third or more; for larger B sooner.
+//       not the paper's, and results there depend on it: Hay 1983's 90 deg
+//       holes (outside the suction rows' 30-78 deg) move with M. The hold
+//       starts where A k^-B = M (1 - C) / (B - 1): for B near 1 (a normal
+//       hole, suction set: B 1.18, k_floor 0.23) once the term has cut Cd by
+//       a third or more; for larger B sooner. Off Table 1's angles k_floor
+//       can exceed k_max (pressure set at theta 90, alpha 60: 2.9), i.e. the
+//       whole fitted k range is held: rowbury_2001_k_floor reports it.
 //
-// PERPENDICULAR. Fig. 3 measures theta in the plane section and alpha in
-// plan view; for alpha = 0 the surface-normal velocity is u_h sin(theta)
-// exactly. With a compound angle the true normal component also depends on
-// alpha; the authors fold alpha into A, B through (1 + sin alpha) instead,
-// so u_h,perp = u_h sin(theta) is used throughout (theta read as the hole
-// axis to the surface, the elements' angle_deg).
+// Cd > 1. The -C crossover lets Cd exceed Cd,no, and with the leading-edge
+// set (C 0.28) inside the fitted k range Cd exceeds 1 for Cd,no above about
+// 0.9 (Cd,no 0.98 at theta 90, alpha 60, k 3.3: Cd 1.09). Not capped: the
+// source's model allows it and a cap would put a kink in the hole's flow.
 //
 // FITTED ENVELOPE (Table 1, CHTT rows): flagged by rowbury_2001_in_range,
 // never refused. Coefficients with A <= 0 or B <= 0 (theta below the set's
@@ -184,19 +216,21 @@ constexpr Row kFanPressure{0.435, -0.140, 1.0, 0.350, 0.570, 1.0, 0.02};
 constexpr Row kFanSuction{0.225, -0.110, 1.0, 0.350, 0.570, 2.8, 0.05};
 
 // Table 1 angle spans of the rows each set was fitted on [deg]. Fan-shaped
-// rows (p. 259: all but rows 5-10 and 11 were also run fan-shaped): pressure
-// rows 1-4, suction rows 12-14.
+// rows (p. 259: rows 5-11 are cylindrical only): pressure rows 1-4, suction
+// rows 12-14.
 struct Envelope {
   double theta_min, theta_max, alpha_min, alpha_max;
 };
-constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0};    // rows 1-6
+constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0};       // rows 1-6
 constexpr Envelope kEnvCylLeadingEdge{83.0, 90.0, 60.0, 60.0};  // rows 7-10
-constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0};     // rows 11-14
-constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0};    // rows 1-4
-constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0};     // rows 12-14
+constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0};        // rows 11-14
+constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0};       // rows 1-4
+constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0};        // rows 12-14
 }  // namespace rowbury2001
 
 constexpr double ROWBURY_2001_K_PERP_MIN = 0.01;
+constexpr double ROWBURY_2001_K_PERP_MAX = 3.3;
+constexpr double ROWBURY_2001_FADE_WIDTH = 1.0;
 constexpr double ROWBURY_2001_UNIQUE_MARGIN = 0.5;
 
 struct Rowbury2001Coefficients {
@@ -205,7 +239,7 @@ struct Rowbury2001Coefficients {
   double C = 0.0;
 };
 
-// Table 2 at (theta, alpha) [deg]; theta in (0, 90], alpha in [0, 90].
+// Table 2 at (theta, alpha) [deg]; theta in (0, 90], alpha in [0, 90).
 // Throws std::invalid_argument outside those, or where A <= 0 or B <= 0.
 Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
                                                   double alpha_deg);
@@ -223,11 +257,11 @@ struct Rowbury2001Cd {
   double delta = 0.0;    // delta_out at the k used
   double k_used = 0.0;   // max(k_perp, k_floor)
   bool held = false;     // k_perp < k_floor
+  bool faded = false;    // k_used > ROWBURY_2001_K_PERP_MAX: the offset fades
 };
 
-// Cd with the exit-crossflow loss, from the no-crossflow Cd0 (0 < Cd0 <= 1)
-// and k_perp >= 0. Throws where 1/Cd0^2 + delta <= 0 (cannot happen for
-// Cd0 <= 1, C < 1).
+// Cd with the exit-crossflow loss, from the no-crossflow Cd0 > 0 and
+// k_perp >= 0 (+inf: Cd0). Throws where 1/Cd0^2 + delta <= 0.
 Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2001Set set,
                                              double theta_deg, double alpha_deg);
 
@@ -238,10 +272,25 @@ struct Rowbury2001KPerp {
   double dk_dq_m = 0.0;    // [1/Pa]
 };
 
-// k_perp = G_h^2 sin(theta) / (rho_h rho_m u_m^2), G_h >= 0 the hole's
-// actual exit-plane mass flux, rho_h > 0, rho_m u_m^2 > 0 (the caller turns
-// the term off at no mainstream momentum).
+// k_perp = G_h^2 f / (rho_h rho_m u_m^2), f = u_h,perp / u_h =
+// 1 / sqrt(cot^2 theta + 1 + tan^2 alpha); G_h >= 0 the hole's actual
+// exit-plane mass flux, rho_h > 0, rho_m u_m^2 > 0 (the caller turns the
+// term off at no mainstream momentum), alpha in [0, 90).
 Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2,
-                                     double theta_deg);
+                                     double theta_deg, double alpha_deg);
+
+// The coolant's exit-plane static density for k_perp: the isentropic
+// expansion from the supply (Pt, Tt) to the discharge static P, variable cp,
+// s(T, P, X) = s(Tt, Pt, X). The fully expanded state also past choking
+// (the sonic exit plane of a choked hole is not resolved). Partials
+// analytic; drho_dY over mass fractions (the solver's unknowns).
+struct Rowbury2001ExitDensity {
+  double rho = 0.0;  // [kg/m^3]
+  double T = 0.0;    // [K]
+  double drho_dPt = 0.0, drho_dTt = 0.0, drho_dP = 0.0;
+  std::vector<double> drho_dY;
+};
+Rowbury2001ExitDensity rowbury_2001_exit_density(double Pt, double Tt, double P,
+                                                 const std::vector<double>& X);
 
 }  // namespace combaero
