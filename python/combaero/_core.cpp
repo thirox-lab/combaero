@@ -717,6 +717,57 @@ PYBIND11_MODULE(_core, m) {
         "CR-3630 Table 4.1 / Eq. 4.2 Cd of a B-size impingement plate under its\n"
         "crossflow, resolved in q = G_ideal / G_c; the table's own Cd (no Cd0).\n"
         "Raises for a plate the table does not cover. Analytic derivatives.");
+  py::enum_<combaero::Rowbury2001Set>(
+      m, "Rowbury2001Set",
+      "Rowbury, Oldfield & Lock (2001) Table 2 coefficient set: vane region\n"
+      "and hole shape. A flat wall takes the suction-surface set, as the\n"
+      "authors do for Gritsch et al. (1998) in their Fig. 9.")
+      .value("CylindricalPressureSurface", combaero::Rowbury2001Set::CylindricalPressureSurface)
+      .value("CylindricalLeadingEdge", combaero::Rowbury2001Set::CylindricalLeadingEdge)
+      .value("CylindricalSuctionSurface", combaero::Rowbury2001Set::CylindricalSuctionSurface)
+      .value("FanShapedPressureSurface", combaero::Rowbury2001Set::FanShapedPressureSurface)
+      .value("FanShapedSuctionSurface", combaero::Rowbury2001Set::FanShapedSuctionSurface);
+  m.attr("ROWBURY_2001_K_PERP_MIN") = combaero::ROWBURY_2001_K_PERP_MIN;
+  m.attr("ROWBURY_2001_UNIQUE_MARGIN") = combaero::ROWBURY_2001_UNIQUE_MARGIN;
+  py::class_<combaero::Rowbury2001Coefficients>(m, "Rowbury2001Coefficients")
+      .def_readonly("A", &combaero::Rowbury2001Coefficients::A)
+      .def_readonly("B", &combaero::Rowbury2001Coefficients::B)
+      .def_readonly("C", &combaero::Rowbury2001Coefficients::C);
+  py::class_<combaero::Rowbury2001Cd>(m, "Rowbury2001Cd")
+      .def_readonly("Cd", &combaero::Rowbury2001Cd::Cd)
+      .def_readonly("dCd_dCd0", &combaero::Rowbury2001Cd::dCd_dCd0)
+      .def_readonly("dCd_dk", &combaero::Rowbury2001Cd::dCd_dk)
+      .def_readonly("delta", &combaero::Rowbury2001Cd::delta)
+      .def_readonly("k_used", &combaero::Rowbury2001Cd::k_used)
+      .def_readonly("held", &combaero::Rowbury2001Cd::held);
+  py::class_<combaero::Rowbury2001KPerp>(m, "Rowbury2001KPerp")
+      .def_readonly("k", &combaero::Rowbury2001KPerp::k)
+      .def_readonly("dk_dG", &combaero::Rowbury2001KPerp::dk_dG)
+      .def_readonly("dk_drho_h", &combaero::Rowbury2001KPerp::dk_drho_h)
+      .def_readonly("dk_dq_m", &combaero::Rowbury2001KPerp::dk_dq_m);
+  m.def("rowbury_2001_coefficients", &combaero::rowbury_2001_coefficients, py::arg("set"),
+        py::arg("theta_deg"), py::arg("alpha_deg"),
+        "Rowbury, Oldfield & Lock (2001) Table 2: (A, B, C) of\n"
+        "delta_out = A k_perp^-B - C at hole inclination theta (to the surface)\n"
+        "and orientation alpha [deg]. Raises where A <= 0 or B <= 0.");
+  m.def("rowbury_2001_k_floor", &combaero::rowbury_2001_k_floor, py::arg("set"),
+        py::arg("theta_deg"), py::arg("alpha_deg"),
+        "k_perp below which the exit-crossflow loss is held:\n"
+        "max(ROWBURY_2001_K_PERP_MIN, k_unique), k_unique (B > 1 only) keeping\n"
+        "the hole's flow a unique root.");
+  m.def("rowbury_2001_in_range", &combaero::rowbury_2001_in_range, py::arg("set"),
+        py::arg("theta_deg"), py::arg("alpha_deg"),
+        "True inside the set's Table 1 (theta, alpha) span.");
+  m.def("rowbury_2001_exit_crossflow_cd", &combaero::rowbury_2001_exit_crossflow_cd,
+        py::arg("Cd0"), py::arg("k_perp"), py::arg("set"), py::arg("theta_deg"),
+        py::arg("alpha_deg"),
+        "Cd of a film hole under an EXIT crossflow, Rowbury, Oldfield & Lock\n"
+        "(2001) Eqs. 7-8: 1/Cd^2 = 1/Cd0^2 + A k^-B - C, Cd0 the no-crossflow\n"
+        "Cd, k = k_perp held at rowbury_2001_k_floor. Analytic dCd/dCd0, dCd/dk.");
+  m.def("rowbury_2001_k_perp", &combaero::rowbury_2001_k_perp, py::arg("G_h"),
+        py::arg("rho_h"), py::arg("rho_m_u_m2"), py::arg("theta_deg"),
+        "Perpendicular outlet momentum flux ratio k_perp = G_h^2 sin(theta) /\n"
+        "(rho_h rho_m u_m^2) and its partials.");
   m.attr("STATION_KAPPA_MERGE_NORMAL") = combaero::STATION_KAPPA_MERGE_NORMAL;
   m.attr("STATION_KAPPA_BLEED_BASSETT") = combaero::STATION_KAPPA_BLEED_BASSETT;
   m.attr("WALL_HTC_KNEE") = combaero::WALL_HTC_KNEE;

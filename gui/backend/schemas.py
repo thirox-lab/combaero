@@ -516,6 +516,14 @@ class EffusionPlateData(BaseModel):
     # Opt-in hole-angle Cd term (Idelchik diagram 3-2 on IdelchikThick's
     # inlet coefficient); read only with IdelchikThick, like Cd with 'fixed'.
     cd_inclination: Literal["none", "idelchik_3_2"] = "none"
+    # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
+    # flowing discharge chamber (the element refuses it otherwise). No
+    # Inspector control yet: set in the network JSON.
+    cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none"
+    exit_crossflow_region: Literal["suction_surface", "pressure_surface", "leading_edge"] = (
+        "suction_surface"
+    )
+    exit_crossflow_orientation_deg: float = Field(default=0.0, ge=0.0, le=90.0)
     turbulence_intensity: float = Field(default=0.05, gt=0.0)
     gas_heat_flux: float = 0.0
     # The plate's alloy, for its wall temperature limit only (#998): the hot
@@ -587,6 +595,14 @@ class FilmCoolingData(BaseModel):
     # Opt-in hole-angle Cd term, read only with IdelchikThick (see
     # EffusionPlateData).
     cd_inclination: Literal["none", "idelchik_3_2"] = "none"
+    # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
+    # flowing discharge chamber (the element refuses it otherwise). No
+    # Inspector control yet: set in the network JSON.
+    cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none"
+    exit_crossflow_region: Literal["suction_surface", "pressure_surface", "leading_edge"] = (
+        "suction_surface"
+    )
+    exit_crossflow_orientation_deg: float = Field(default=0.0, ge=0.0, le=90.0)
     label: str | None = None
 
 

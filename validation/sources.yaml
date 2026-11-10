@@ -4406,13 +4406,16 @@ documents:
     ACCURACY, not scored): fig3_Mac0p0_Mam0p0 (the one plenum-to-plenum 30 deg series) against IdelchikThick at
     L/D 6, ideal flow total-to-static to choking on the inlet area, exit 1 atm assumed: mean error +6.4% with
     the angle via length only, -4.3% with the opt-in diagram 3-2 term; the measured rise with PR (0.73 to 0.80)
-    is in neither.'
+    is in neither. Used 2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not
+    scored) for the opt-in Rowbury 2001 exit-crossflow term: fig3 Ma_m 0.3 / 0.6 / 1.2, mean error with the
+    inclination term +0.8% -> -2.7%, +15.9% -> +3.6%, +46.8% -> +9.9% (without it +12.0% -> +8.5%, +28.9% ->
+    +15.1%, +63.2% -> +20.0%).'
   read_for: ['#807/#813 inlet-crossflow Cd of duct-fed holes vs McGreehan-Schotsch U1/Vi', 'exit-side crossflow Cd
       to Ma_m 1.2', shaped-hole (fan, laidback) Cd for FilmCoolingElement hole_type shaped, 'hole-inclination Cd
-      term, 30 deg no-crossflow accuracy']
-  issues: [386, 807, 813]
+      term, 30 deg no-crossflow accuracy', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']
+  issues: [386, 807, 813, 1074]
   records: [validation/cooling/data/gritsch1998/metadata.yaml, validation/cooling/extractions/gritsch_1998_shaped_hole_cd.md,
-    validation/cooling/hole_cd_inclination_runner.py]
+    validation/cooling/hole_cd_inclination_runner.py, validation/cooling/exit_crossflow_cd_runner.py]
   notes: 'Arrived 2026-11-02 in sources/new/ (from the user) as 557_1.pdf; moved from the wanted list. Companion
     papers (not held): Gritsch et al. 1998 J. Turbomach. 120, 549 (adiabatic effectiveness of the same holes); Thole
     et al. 1998 J. Turbomach. 120, 327 (flowfields); Hay & Lampard 1995 ASME 95-GT-15 (flared-hole Cd, Ma_m <= 0.3).
@@ -4456,7 +4459,7 @@ documents:
     at the iterate''s Re_h. Fig. 9: predicts Gritsch et al. 1998''s 30 deg cylindrical hole at Mm 0, 0.3, 0.6, 1.2
     with the SUCTION-surface coefficients (a flat wall); over-predicts at low PR, under-predicts near PR 2.
     Figs. 6-8: rows 1, 10, 14 measured vs generalised. No scatter statistics printed.'
-  status: screened
+  status: implemented
   verdict: 'Screened 2026-11-09 (#1074 open gap: exit crossflow). The one printed, angle-general exit-crossflow
     Cd correction: it plugs combaero''s missing exit-side Cd for film and effusion holes (Hay 1983 at Minf 0.31 stays
     +12% with the inclination term on). The model form needs only quantities the elements already have (Cd,no,
@@ -4467,11 +4470,29 @@ documents:
     which this paper therefore does not explain. Scoring: Gritsch 1998 (held, digitised, same 30 deg geometry the
     authors predict in Fig. 9: cross-source for the coefficients, which come from the CHTT) and Hay 1983 exit-
     crossflow points are the accuracy sets. Internal (inlet) crossflow is not covered (the authors: analogous,
-    not done).'
+    not done). IMPLEMENTED 2026-11-10 (#1074, user: "useful beyond DLR") as the opt-in
+    cd_exit_crossflow="rowbury_2001" on FilmCoolingElement and EffusionPlateElement. Table 2 re-read off the
+    600 dpi page: all five sets as screened, no difference. Table 1 / p. 259 give 14 cylindrical rows plus fan rows
+    1-4 and 12-14 (21 sets) where the text says 20: unresolved, immaterial to the coefficients. Our choices (not
+    the paper''s): rho_h = rho(Tt_c, p_m); the term held below k_floor = max(0.01, k_unique) (0.01: the lowest
+    k_perp of the authors'' own Fig. 9 Ma_m 1.2 prediction, back-calculated; k_unique keeps the hole flow a
+    unique root where B > 1); off at zero mainstream momentum (their "Predict Mm = 0" is Cd,no; Eq. 8''s own
+    k -> inf limit is -C). FIDELITY (exit_crossflow_cd_runner, on the authors'' Fig. 9 predicted markers read by
+    eye, +-0.005, Cd,no = Lichtarowicz 0.776): Ma_m 0.6 mean +0.003 (max 0.005), Ma_m 1.2 +0.008 (max 0.011),
+    Ma_m 0.3 within 0.008 above PR 1.05 (the two markers below sit on a near-vertical branch); with the
+    isentropic exit density instead of rho(Tt_c, p_m), Ma_m 1.2 is -0.0015 -- the authors evidently took the
+    exit-plane static density, which the element does not (yet). ACCURACY, CROSS-SOURCE (mean error, Cd,no
+    IdelchikThick with the inclination term, off -> on): Gritsch 30 deg Ma_m 0.3 +0.8% -> -2.7%, 0.6 +15.9% ->
+    +3.6%, 1.2 +46.8% -> +9.9%; Hay Minf 0.31 90 deg +11.2% -> -4.1% (outside the suction rows'' 30-78 deg),
+    30 deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%. Behrendt 2008 E30 plates (k_perp 8-12):
+    Cd and coolant flow +2.8-3.1%, eta_overall +0.0014 -- the wrong direction for DLR''s coolant-flow excess, as
+    screened; E20 (20 deg) is refused (suction-set A < 0 below 20.6 deg).'
   read_for: ['#1074 exit-crossflow Cd of film and effusion holes', 'Hay 1983 Minf 0.31 residual', 'DLR 2008
       coolant-flow excess (no: wrong sign at high k)']
   issues: [386, 1074]
-  records: []
+  records: [validation/cooling/exit_crossflow_cd_runner.py, python/tests/test_exit_crossflow_cd.py]
+  code: ['include/crossflow_cd.h: rowbury_2001_* (Eqs. 7-8, Table 2, Table 1 envelope)', 'python/combaero/network/components.py:
+      OrificeElement._exit_crossflow, cd_exit_crossflow on FilmCoolingElement / EffusionPlateElement']
   notes: 'Was on the wanted list as the 2000 ASME paper; this is the journal version. Its ref. [21] corrects the
     Gritsch "ISABE 1997" wanted citation to AIAA J. 36(6), 976-980 (1998). Its refs [22,23] (Hay, Khaldi &
     Lampard 1987; Hay, Lampard & Khaldi 1994, ASME 94-GT-180) carry delta_out-k_out data for rounded holes.'
@@ -4564,13 +4585,16 @@ documents:
     diagram 3-2 hole-inclination term: carpets Mc 0 Minf ~0 (the plenum-to-plenum corners) 30 deg +10.4% ->
     -0.6% (parallel), +13.5% -> +2.2% (perpendicular), 90 deg unchanged (-0.5%, +3.4%); predicted
     Cd(30)/Cd(90) 1.00 -> 0.90 against 0.85-0.94 (Figs. 8/6, Mc 0, Minf .31) and 0.90/0.91 (carpets). The Mc
-    0, Minf .31 series keep a +11-12% bias from their low-PR, exit-crossflow points either way.'
+    0, Minf .31 series keep a +11-12% bias from their low-PR, exit-crossflow points either way. Used
+    2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not scored) for the
+    opt-in Rowbury 2001 exit-crossflow term on those Mc 0, Minf .31 series (inclination term on): 90 deg +11.2%
+    -> -4.1%, 30 deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%.'
   read_for: ['#813 duct-fed hole Cd reference pressure and coolant-side crossflow', '#800/#818 cross-source check
       of the exit-side grazing Cd', '#807 L/D effect (none usable)', 'hole-inclination Cd term, 30/90 deg
-      ratio']
-  issues: [800, 807, 813]
+      ratio', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']
+  issues: [800, 807, 813, 1074]
   records: [validation/cooling/data/hay1983/metadata.yaml, validation/cooling/extractions/hay_1983_crossflow_cd.md,
-    validation/cooling/hole_cd_inclination_runner.py]
+    validation/cooling/hole_cd_inclination_runner.py, validation/cooling/exit_crossflow_cd_runner.py]
   notes: Arrived 2026-10-28 as docs/new/243_1_Bensamour_1983.pdf (was on the wanted list). Its detailed data are in
     Benmansour's M.Phil. thesis (Nottingham, 1983), not digitised online; dropped from wanted (user, 2026-10-28) --
     Hay & Lampard 1996 Fig. 4 reprints its inlet-crossflow points.

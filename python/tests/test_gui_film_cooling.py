@@ -119,3 +119,23 @@ def test_the_hole_angle_cd_term_threads_through_with_idelchik_thick_only() -> No
 def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:
     with pytest.raises(ValueError, match="not a film provider"):
         build_network_from_schema(NetworkGraphSchema(**_schema({**FILM, "film": "hin"})))
+
+
+def test_the_exit_crossflow_cd_term_threads_through() -> None:
+    assert FilmCoolingData().cd_exit_crossflow == "none"
+    off = build_network_from_schema(NetworkGraphSchema(**_schema())).elements["film"]
+    assert off.cd_exit_crossflow == "none" and off._exit_xf is None
+    on = build_network_from_schema(
+        NetworkGraphSchema(
+            **_schema(
+                holes={
+                    "cd_exit_crossflow": "rowbury_2001",
+                    "exit_crossflow_region": "pressure_surface",
+                    "exit_crossflow_orientation_deg": 5.0,
+                }
+            )
+        )
+    ).elements["film"]
+    assert on.cd_exit_crossflow == "rowbury_2001"
+    assert on.exit_crossflow_region == "pressure_surface"
+    assert on.exit_crossflow_orientation_deg == 5.0

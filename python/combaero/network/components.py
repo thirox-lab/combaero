@@ -4772,6 +4772,93 @@ def _cd_inclination_deg(
     return float(angle_deg)
 
 
+# The EXIT (external) crossflow loss of a cooling hole's Cd, OPT-IN (#1074;
+# default "none": the discharge node's gas velocity never reaches the Cd).
+# "rowbury_2001": Rowbury, Oldfield & Lock (2001) Eqs. 7-8, an additive
+# outlet loss on top of the hole's no-crossflow Cd (the correlation's, with
+# any inclination term, or a 'fixed' one), 1/Cd^2 = 1/Cd0^2 + A k^-B - C,
+# k the perpendicular outlet momentum flux ratio on the hole's actual flow;
+# see rowbury_2001_* in include/crossflow_cd.h. The mainstream is the
+# discharge MomentumChamberNode's gas, the same stream the plate's blowing
+# ratio reads.
+CD_EXIT_CROSSFLOW_MODELS = ("none", "rowbury_2001")
+#: The Table 2 region; a flat wall takes the suction surface's, as the
+#: authors do for Gritsch et al. (1998) in their Fig. 9.
+CD_EXIT_CROSSFLOW_REGIONS = ("suction_surface", "pressure_surface", "leading_edge")
+
+# Unknown-name key of d(Cd)/d(own m_dot) THROUGH THE DISCHARGE CHAMBER'S
+# through-flow (the hole's flow is one of the chamber's inflows). The
+# self-consistent solves vary the hole flow at fixed chamber state, so this
+# part is not the inner slope; the residuals fold it into the m_dot column
+# as an ordinary dependency (_fold_chamber_own_flow).
+_DCD_DM_VIA_CHAMBER = "__dCd_dm_via_chamber__"
+
+
+def _own_flow_key(name: str, element_id: str) -> str:
+    """Fold _DCD_DM_VIA_CHAMBER into the element's own m_dot column."""
+    return f"{element_id}.m_dot" if name == _DCD_DM_VIA_CHAMBER else name
+
+
+@dataclass(frozen=True)
+class _ExitCrossflowSpec:
+    """The resolved opt-in: Table 2 set, angles [deg], and the exit/inlet
+    area ratio the momentum flux is taken at (1, or a fan's)."""
+
+    coefficient_set: Any
+    theta_deg: float
+    alpha_deg: float
+    exit_area_ratio: float
+
+
+def _exit_crossflow_spec(
+    name: str,
+    model: str,
+    region: str,
+    alpha_deg: float,
+    theta_deg: float,
+    fan_shaped: bool,
+    exit_area_ratio: float,
+) -> _ExitCrossflowSpec | None:
+    """None (term off) unless ``model`` opts in; refuses a region Table 2
+    has no set for, and angles where its A or B is not positive."""
+    if model not in CD_EXIT_CROSSFLOW_MODELS:
+        raise ValueError(
+            f"{name}: cd_exit_crossflow {model!r} is not one of {list(CD_EXIT_CROSSFLOW_MODELS)}."
+        )
+    if region not in CD_EXIT_CROSSFLOW_REGIONS:
+        raise ValueError(
+            f"{name}: exit_crossflow_region {region!r} is not one of "
+            f"{list(CD_EXIT_CROSSFLOW_REGIONS)}."
+        )
+    if not (math.isfinite(alpha_deg) and 0.0 <= alpha_deg <= 90.0):
+        raise ValueError(
+            f"{name}: exit_crossflow_orientation_deg = {alpha_deg!r} must be in [0, 90]."
+        )
+    if model == "none":
+        return None
+    S = cb.Rowbury2001Set
+    if fan_shaped:
+        if region == "leading_edge":
+            raise ValueError(
+                f"{name}: Rowbury et al. (2001) Table 2 has no fan-shaped leading-edge set "
+                "(N/A): use 'suction_surface' or 'pressure_surface'."
+            )
+        cset = (
+            S.FanShapedSuctionSurface if region == "suction_surface" else S.FanShapedPressureSurface
+        )
+    else:
+        cset = {
+            "suction_surface": S.CylindricalSuctionSurface,
+            "pressure_surface": S.CylindricalPressureSurface,
+            "leading_edge": S.CylindricalLeadingEdge,
+        }[region]
+    try:
+        cb.rowbury_2001_coefficients(cset, theta_deg, alpha_deg)
+    except ValueError as exc:
+        raise ValueError(f"{name}: cd_exit_crossflow='rowbury_2001': {exc}") from exc
+    return _ExitCrossflowSpec(cset, float(theta_deg), float(alpha_deg), float(exit_area_ratio))
+
+
 # Below this Cd an orifice kernel is evaluated at Cd = 1 and scaled: the
 # kernels are linear in Cd and refuse A_eff <= 0 (OrificeElement._kernel_from).
 _KERNEL_CD_MIN = 1e-12
@@ -5062,6 +5149,11 @@ class OrificeElement(NetworkElement):
         # inclination term, CD_INCLINATION_MODELS). 90: no term. Only the
         # inclined cooling-hole subclasses set it.
         self._cd_inclination_deg = 90.0
+        # The opt-in exit-crossflow Cd term (CD_EXIT_CROSSFLOW_MODELS). None:
+        # off. Only the film and effusion subclasses set it, and their
+        # resolve_topology the discharge node it reads the mainstream from.
+        self._exit_xf: _ExitCrossflowSpec | None = None
+        self._exit_xf_node: Any = None
 
         # A bore of zero is a CLOSED restriction (#1024); a negative or
         # non-finite one is no geometry.
@@ -5529,7 +5621,109 @@ class OrificeElement(NetworkElement):
         state_out: "NetworkMixtureState",
         flows: dict[str, float] | None = None,
     ) -> float:
-        """Return effective Cd: from correlation or user-supplied fixed value."""
+        """Return effective Cd: from correlation or user-supplied fixed value,
+        with the opt-in exit-crossflow loss on top (_exit_crossflow)."""
+        cd0 = self._cd_without_exit_crossflow(state_in, state_out, flows)
+        if self._exit_xf is None or self._orifice_geom is None:
+            return cd0
+        return self._exit_crossflow(cd0, state_in, state_out)[0]
+
+    def _exit_crossflow(
+        self,
+        cd0: float,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+    ) -> tuple[float, Any, dict[str, float]]:
+        """(Cd, C++'s Rowbury2001Cd or None, dk_perp/d(name)) of the opt-in
+        exit-crossflow term (#1074, rowbury_2001_* in crossflow_cd.h).
+
+        k_perp = G_h^2 sin(theta) / (rho_h rho_m u_m^2):
+          G_h      the hole's ACTUAL mass flux, |m| / (A_holes AR), AR the
+                   exit/inlet area ratio of a fan-shaped hole (the authors
+                   take the exit-plane flux, p. 262), 1 otherwise;
+          rho_h    the coolant at the discharge static pressure and its
+                   supply stagnation temperature, rho(Tt_in, P_out). The
+                   paper does not define it further; the isentropic exit
+                   static density would be higher by (Pt/P)^(1 - 1/gamma)
+                   (22% at PR 2), lowering k there, where the term is near
+                   its -C asymptote and k barely moves it;
+          rho_m u_m^2  the discharge chamber's momentum flux, G_m^2 /
+                   rho_m on its through-flow and static density
+                   (MomentumChamberNode.static_density), the gas velocity
+                   the blowing ratio reads.
+        No mainstream momentum (a chamber with no flow): the term is off and
+        Cd0 returned. Eq. 8's own limit there is the -C asymptote, not Cd0
+        (include/crossflow_cd.h); the paper's no-crossflow prediction is
+        Cd,no by definition, and so is this one. Reverse (ingesting) flow
+        takes the same Cd at |m|: the source covers injection only.
+        """
+        spec = self._exit_xf
+        q, dq = self._mainstream_momentum_flux(state_out)
+        if spec is None or not q > 0.0:
+            return cd0, None, {}
+        X = state_in.X
+        rho_h = float(cb.density(state_in.Tt, state_out.P, X))
+        m = float(state_in.m_dot)
+        a_exit = self.area * spec.exit_area_ratio
+        kp = cb.rowbury_2001_k_perp(abs(m) / a_exit, rho_h, q, spec.theta_deg)
+        r = cb.rowbury_2001_exit_crossflow_cd(
+            min(max(cd0, 1e-12), 1.0), kp.k, spec.coefficient_set, spec.theta_deg, spec.alpha_deg
+        )
+        dk: dict[str, float] = {}
+        if m != 0.0:
+            dk[f"{self.id}.m_dot"] = kp.dk_dG * (1.0 if m > 0.0 else -1.0) / a_exit
+        # rho_h = P W / (R Tt): ideal gas at the coolant's composition.
+        dk_drho = float(kp.dk_drho_h)
+        dk[f"{self.to_node}.P"] = dk.get(f"{self.to_node}.P", 0.0) + dk_drho * rho_h / state_out.P
+        dk[f"{self.from_node}.Tt"] = -dk_drho * rho_h / state_in.Tt
+        W = float(cb.mwmix(X))
+        for k, y in enumerate(state_in.Y):
+            if y > 0.0:
+                key = f"{self.from_node}.Y[{k}]"
+                dk[key] = dk.get(key, 0.0) - dk_drho * rho_h * W / float(cb.species_molar_mass(k))
+        for name, d in dq.items():
+            dk[name] = dk.get(name, 0.0) + float(kp.dk_dq_m) * d
+        return float(r.Cd), r, dk
+
+    def _mainstream_momentum_flux(
+        self, state_out: "NetworkMixtureState"
+    ) -> tuple[float, dict[str, float]]:
+        """rho_m u_m^2 of the discharge chamber and its derivatives by name,
+        or (0, {}) where the discharge node has no flowing gas.
+
+        G_m = m_chamber / A on the chamber's through-flow; d/d(own m_dot)
+        through it is keyed _DCD_DM_VIA_CHAMBER (see there)."""
+        node = self._exit_xf_node
+        if not isinstance(node, MomentumChamberNode) or not node.area > 0.0:
+            return 0.0, {}
+        m_t = float(getattr(node, "_total_m_dot", 0.0))
+        if m_t == 0.0:
+            return 0.0, {}
+        rho, drho = node.static_density(state_out)
+        if not rho > 0.0:
+            return 0.0, {}
+        A = node.area
+        q = (m_t / A) ** 2 / rho
+        own = f"{self.id}.m_dot"
+        dq: dict[str, float] = {}
+        dq_dm = 2.0 * m_t / (A * A * rho)
+        for var, coeff in getattr(node, "_upstream_m_dot_jac", {}).items():
+            if coeff != 0.0:
+                key = _DCD_DM_VIA_CHAMBER if var == own else var
+                dq[key] = dq.get(key, 0.0) + dq_dm * coeff
+        for var, d in drho.items():
+            key = _DCD_DM_VIA_CHAMBER if var == own else var
+            dq[key] = dq.get(key, 0.0) - q / rho * d
+        return q, dq
+
+    def _cd_without_exit_crossflow(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        flows: dict[str, float] | None = None,
+    ) -> float:
+        """The Cd without the exit-crossflow term: the correlation's (with any
+        opt-in inclination term) or the user's fixed value."""
         if not self.use_correlation or self._orifice_geom is None:
             # Clamp manual Cd strictly <= 1.0 to strictly preserve vena contracta physics (A_eff <= A_geom).
             # A correlation with no geometry (before resolve_topology, or
@@ -5633,6 +5827,43 @@ class OrificeElement(NetworkElement):
             "Cd_inclination_dzeta": float(cb.discharge_inclination_dzeta(self._cd_inclination_deg))
         }
 
+    def _validate_exit_crossflow(self) -> None:
+        """The exit-crossflow opt-in needs a mainstream: a flowing discharge
+        chamber. Refused, not ignored, on anything else (a plenum has no gas
+        velocity, and the term would silently do nothing)."""
+        if self._exit_xf is None:
+            return
+        node = self._exit_xf_node
+        if not (isinstance(node, MomentumChamberNode) and node.area > 0.0):
+            raise ValueError(
+                f"{type(self).__name__} {self.id!r}: cd_exit_crossflow="
+                f"{getattr(self, 'cd_exit_crossflow', '')!r} reads the mainstream's momentum "
+                f"flux from the discharge node, which must be a MomentumChamberNode with an "
+                f"area; {self.to_node!r} has no gas velocity."
+            )
+
+    def _exit_crossflow_diagnostics(
+        self, state_in: "NetworkMixtureState", state_out: "NetworkMixtureState", flows: Any
+    ) -> dict[str, float]:
+        """The opt-in exit-crossflow term's state; empty when off, so a
+        default element reports exactly what it did before."""
+        spec = self._exit_xf
+        if spec is None or self._orifice_geom is None:
+            return {}
+        cd0 = self._cd_without_exit_crossflow(state_in, state_out, flows)
+        cd, r, _ = self._exit_crossflow(cd0, state_in, state_out)
+        q, _ = self._mainstream_momentum_flux(state_out)
+        in_range = cb.rowbury_2001_in_range(spec.coefficient_set, spec.theta_deg, spec.alpha_deg)
+        return {
+            "Cd_no_exit_crossflow": float(cd0),
+            "Cd_exit_crossflow_ratio": float(cd / cd0) if cd0 > 0.0 else math.nan,
+            "exit_crossflow_rho_u2": float(q),
+            "exit_crossflow_k_perp": float(r.k_used) if r is not None else math.nan,
+            "exit_crossflow_delta": float(r.delta) if r is not None else 0.0,
+            "exit_crossflow_held": float(r.held) if r is not None else 0.0,
+            "exit_crossflow_in_range": float(in_range),
+        }
+
     def validate(self) -> None:
         # Lichtarowicz refuses short holes (l/d < 1.5, the source's own
         # hysteresis warning). Ask it once here, so the refusal names this
@@ -5671,7 +5902,32 @@ class OrificeElement(NetworkElement):
         flows: dict[str, float] | None = None,
         continue_re_floor: bool = False,
     ) -> dict[str, float]:
-        """d(Cd)/d(unknown), keyed by name, analytic.
+        """d(Cd)/d(unknown) with the opt-in exit-crossflow term: the chain
+        rule dCd/dCd0 dCd0/dx + dCd/dk dk/dx (_exit_crossflow). The own-flow
+        column through the discharge chamber rides under
+        _DCD_DM_VIA_CHAMBER (see there)."""
+        d0 = self._dCd0_dnames(state_in, state_out, flows, continue_re_floor)
+        if self._exit_xf is None or self._orifice_geom is None:
+            return d0
+        cd0 = self._cd_without_exit_crossflow(state_in, state_out, flows)
+        _, r, dk = self._exit_crossflow(cd0, state_in, state_out)
+        if r is None:
+            return d0
+        out = {name: float(r.dCd_dCd0) * v for name, v in d0.items()}
+        if r.dCd_dk != 0.0:
+            for name, v in dk.items():
+                out[name] = out.get(name, 0.0) + float(r.dCd_dk) * v
+        return out
+
+    def _dCd0_dnames(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        flows: dict[str, float] | None = None,
+        continue_re_floor: bool = False,
+    ) -> dict[str, float]:
+        """d(Cd)/d(unknown) of the Cd WITHOUT the exit-crossflow term, keyed
+        by name, analytic.
 
         Only the discharge-hole family carries it (C++'s
         discharge_cd_and_derivatives): through the hole Reynolds number
@@ -5845,6 +6101,7 @@ class OrificeElement(NetworkElement):
         # where m_calc is linear in Cd; between pipes k(beta, C) adds to it.
         if effective_cd > 0.0:
             for name, dcd in self._dCd_dnames(state_in, state_out, flows).items():
+                name = _own_flow_key(name, self.id)
                 jac[0][name] = jac[0].get(name, 0.0) - dm_dcd * dcd
 
         return res, jac
@@ -5863,6 +6120,10 @@ class OrificeElement(NetworkElement):
         family on a correlation. The ISO metering family also reads Re_D but
         carries no dCd/dRe (its documented gap), so it keeps the iterate form.
         """
+        if self._exit_xf is not None and self._orifice_geom is not None:
+            # The exit-crossflow loss reads the hole's own flow through
+            # k_perp, whatever the Cd0 (a 'fixed' one included).
+            return True
         return (
             self.use_correlation
             and self._orifice_geom is not None
@@ -6181,8 +6442,11 @@ class OrificeElement(NetworkElement):
         partial.pop(_DM_DCD, None)
         denom = 1.0 - aK * cd_m
         # Cd's other dependencies (a duct-fed hole's U1/Vi), at m*.
+        # The exit-crossflow term's chamber through-flow reads the ITERATE's
+        # own m_dot, not m*: an ordinary column here (_DCD_DM_VIA_CHAMBER).
         for name, dcd in self._dCd_dnames(probe, state_out, flows).items():
             if name != m_key:
+                name = _own_flow_key(name, self.id)
                 partial[name] = partial.get(name, 0.0) + K * dcd
 
         row: dict[str, float] = {m_key: 1.0}
@@ -6282,7 +6546,11 @@ class OrificeElement(NetworkElement):
         hp = 1.0 - slope
         part.pop(m_key, None)
         if own_cd:
-            cd_cols = {k: v for k, v in dcd.items() if k != m_key}
+            cd_cols: dict[str, float] = {}
+            for k, v in dcd.items():
+                if k != m_key:
+                    k = _own_flow_key(k, self.id)
+                    cd_cols[k] = cd_cols.get(k, 0.0) + v
         else:
             cd_cols = self._dCd_dnames(state_in, state_out, flows) if cd_iterate > 0.0 else {}
         row: dict[str, float] = {m_key: 1.0}
@@ -6792,6 +7060,11 @@ class EffusionPlateElement(OrificeElement):
         gas_start_length: float | None = None,
         cd_inclination: Literal["none", "idelchik_3_2"] = "none",
         radiation: GasRadiation | None = None,
+        cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none",
+        exit_crossflow_region: Literal[
+            "suction_surface", "pressure_surface", "leading_edge"
+        ] = "suction_surface",
+        exit_crossflow_orientation_deg: float = 0.0,
     ) -> None:
         if hole_diameter <= 0.0:
             raise ValueError("EffusionPlateElement: hole_diameter must be positive")
@@ -6964,6 +7237,19 @@ class EffusionPlateElement(OrificeElement):
         self._cd_inclination_deg = _cd_inclination_deg(
             f"EffusionPlateElement {id!r}", cd_inclination, correlation, angle_deg
         )
+        # Opt-in exit-crossflow Cd term (CD_EXIT_CROSSFLOW_MODELS).
+        self.cd_exit_crossflow = cd_exit_crossflow
+        self.exit_crossflow_region = exit_crossflow_region
+        self.exit_crossflow_orientation_deg = float(exit_crossflow_orientation_deg)
+        self._exit_xf = _exit_crossflow_spec(
+            f"EffusionPlateElement {id!r}",
+            cd_exit_crossflow,
+            exit_crossflow_region,
+            self.exit_crossflow_orientation_deg,
+            angle_deg,
+            False,
+            1.0,
+        )
 
     def _hole_count(self) -> float:
         return float(self.n_holes)
@@ -6979,6 +7265,7 @@ class EffusionPlateElement(OrificeElement):
         self._orifice_geom.r = self.edge_radius
         self.beta = 0.0
         self._discharge_node = graph.nodes.get(self.to_node)
+        self._exit_xf_node = self._discharge_node
         # A supply node a channel runs THROUGH feeds the holes with a
         # crossflow. This 2-port plate is plenum-fed: McGreehan-Schotsch's
         # U1/Vi stays 0 and Andrews' coolant side assumes a still plenum, so
@@ -7069,6 +7356,7 @@ class EffusionPlateElement(OrificeElement):
                 f"into; {self.to_node!r} has no gas velocity (a plenum takes the "
                 "imposed gas_heat_flux, and no baseline applies)."
             )
+        self._validate_exit_crossflow()
         if self.porosity >= 1.0:
             raise ValueError(
                 f"EffusionPlateElement {self.id!r}: porosity is "
@@ -7610,6 +7898,7 @@ class EffusionPlateElement(OrificeElement):
             # into a healthy net outflow. Say it instead.
             "is_ingesting": float(dP_drive <= 0.0),
             **self._inclination_diagnostics(),
+            **self._exit_crossflow_diagnostics(state_in, state_out, flows),
         }
         # Coolant-side heat transfer, when there is flow to carry it, and the
         # plate's own wall with the gas side its discharge node decides.
@@ -7696,6 +7985,11 @@ class FilmCoolingElement(OrificeElement):
         Cd: float | None = None,
         edge_radius: float = 0.0,
         cd_inclination: Literal["none", "idelchik_3_2"] = "none",
+        cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none",
+        exit_crossflow_region: Literal[
+            "suction_surface", "pressure_surface", "leading_edge"
+        ] = "suction_surface",
+        exit_crossflow_orientation_deg: float = 0.0,
     ) -> None:
         name = f"FilmCoolingElement {id!r}"
         if hole_diameter <= 0.0 or lateral_pitch <= 0.0 or wall_thickness <= 0.0:
@@ -7755,6 +8049,20 @@ class FilmCoolingElement(OrificeElement):
         # Opt-in inclined-inlet Cd term (CD_INCLINATION_MODELS).
         self.cd_inclination = cd_inclination
         self._cd_inclination_deg = _cd_inclination_deg(name, cd_inclination, correlation, angle_deg)
+        # Opt-in exit-crossflow Cd term (CD_EXIT_CROSSFLOW_MODELS). A shaped
+        # hole takes Table 2's fan-shaped sets and the exit-plane flux.
+        self.cd_exit_crossflow = cd_exit_crossflow
+        self.exit_crossflow_region = exit_crossflow_region
+        self.exit_crossflow_orientation_deg = float(exit_crossflow_orientation_deg)
+        self._exit_xf = _exit_crossflow_spec(
+            name,
+            cd_exit_crossflow,
+            exit_crossflow_region,
+            self.exit_crossflow_orientation_deg,
+            angle_deg,
+            hole_type == "shaped",
+            float(area_ratio) if hole_type == "shaped" else 1.0,
+        )
 
     def _hole_count(self) -> float:
         return float(self.n_holes)
@@ -7767,10 +8075,12 @@ class FilmCoolingElement(OrificeElement):
         self._orifice_geom.t = self.hole_length
         self._orifice_geom.r = self.edge_radius
         self.beta = 0.0
+        self._exit_xf_node = graph.nodes.get(self.to_node)
         self._resolve_plate_against_chambers(graph)
 
     def validate(self) -> None:
         super().validate()
+        self._validate_exit_crossflow()
         if self.correlation in _METERING_SELECTORS:
             raise ValueError(
                 f"FilmCoolingElement {self.id!r}: {self.correlation!r} is a NORMED "
@@ -7848,6 +8158,7 @@ class FilmCoolingElement(OrificeElement):
                 "dP_drive": float(dP_drive),
                 "is_ingesting": float(dP_drive <= 0.0),
                 **self._inclination_diagnostics(),
+                **self._exit_crossflow_diagnostics(state_in, state_out, flows),
             }
         )
         return base

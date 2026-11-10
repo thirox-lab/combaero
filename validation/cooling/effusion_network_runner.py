@@ -194,8 +194,11 @@ def _solve(
     length_over_d: float,
     dh: float | None,
     radiation: tuple[float, float] | None = None,
+    cd_exit_crossflow: str = "none",
 ) -> dict[str, float]:
-    """`radiation` = (beam length, wall emissivity), or None for none."""
+    """`radiation` = (beam length, wall emissivity), or None for none.
+    `cd_exit_crossflow` is the plate's opt-in exit-crossflow Cd term
+    (#1074), reported by exit_crossflow_cd_runner, never scored here."""
     y_gas, _ = hot_gas()
     y_gas = list(y_gas)
     x_gas = list(cb.mass_to_mole(y_gas))
@@ -230,6 +233,7 @@ def _solve(
             angle_deg=angle,
             wall_conductivity=cb.get_material_conductivity("nimonic75", T_WALL_REF),
             material="nimonic75",
+            cd_exit_crossflow=cd_exit_crossflow,
             **kw,
         )
     )
@@ -249,6 +253,7 @@ def predict(
     radiation: bool = False,
     beam: float | None = None,
     eps_wall: float = EPS_WALL,
+    cd_exit_crossflow: str = "none",
 ) -> dict[str, float]:
     """The plate's diagnostics for one series' operating point.
 
@@ -275,6 +280,7 @@ def predict(
         hi - lo,
         dh,
         (beam if beam is not None else beam_length(), eps_wall) if radiation else None,
+        cd_exit_crossflow,
     )
 
 

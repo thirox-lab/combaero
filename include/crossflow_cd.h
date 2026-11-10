@@ -89,4 +89,159 @@ bool florschuetz_metzger_su_1982_has_plate(double xn_d, double yn_d, double z_d)
 CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d, double G_ideal,
                                            double G_c);
 
+// -------------------------------------------------------------------------
+// EXIT (external) crossflow on a film-cooling hole (#1074, #386)
+// -------------------------------------------------------------------------
+//
+// Rowbury, Oldfield & Lock (2001), ASME J. Turbomach. 123, 258-265: an
+// additive OUTLET loss on top of the hole's no-crossflow Cd,
+//
+//   delta_out = 1/Cd^2 - 1/Cd,no^2                                   (Eq. 7)
+//   delta_out = A k_perp^-B - C                                      (Eq. 8)
+//   k_perp    = rho_h u_h u_h,perp / (rho_m u_m^2)
+//
+// rho_h u_h the hole's ACTUAL mass flux at its exit plane, u_h,perp = u_h
+// sin(theta) the component normal to the surface (theta the hole axis to
+// the surface; see "PERPENDICULAR" below), rho_m u_m^2 the mainstream's
+// momentum flux. A, B, C are Table 2 (p. 263) per vane region and hole
+// shape, functions of theta and the orientation (compound) angle alpha:
+//
+//   cylindrical, pressure surface (rows 1-6):
+//     A = (2.95 sin th - 0.88)(1 + sin al)  B = (0.714 sin th + 0.393)(1 + sin al)  C = 0.10
+//   cylindrical, leading edge (rows 7-10):
+//     A = 0.079 sin th (1 + sin al)         B = (4.795 sin th - 4.487)(1 + sin al)  C = 0.28
+//   cylindrical, suction surface (rows 11-14):
+//     A = (0.682 sin th - 0.24)(1 + sin al) B = (0.777 sin th + 0.405)(1 + sin al)  C = 0.10
+//   fan-shaped, pressure surface:
+//     A = (0.435 sin th - 0.140)(1 + sin al) B = (0.350 sin th + 0.570)(1 + sin al) C = 0.02
+//   fan-shaped, suction surface:
+//     A = (0.225 sin th - 0.110)(1 + sin al) B = (0.350 sin th + 0.570)(1 + 2.8 sin al) C = 0.05
+//   (no fan-shaped leading-edge set: "N/A")
+//
+// For a fan-shaped hole the authors take the momentum flux at the hole EXIT
+// plane (p. 262), i.e. the metering mass flux over the exit/inlet area ratio.
+//
+// THE TWO ENDS OF Eq. 8 ARE NOT THE PAPER'S RANGE, and are handled here:
+//
+// * k -> infinity (no mainstream, u_m -> 0): delta -> -C, NOT 0. Eq. 8 has
+//   crossover built in (the paper's Fig. 9 Ma_m 0.3 prediction rises above
+//   its Ma_m 0 one at PR > 1.5), but its no-crossflow prediction is Cd,no by
+//   definition (Fig. 9, "Predict Mm = 0", flat at Lichtarowicz's 0.776). So
+//   the limit is discontinuous at u_m = 0 exactly; the caller applies the
+//   term only to a mainstream with momentum (rho_m u_m^2 > 0) and returns
+//   Cd,no otherwise. No upper k is printed (Fig. 4 spans k_out 0.2-3.3 for
+//   row 1 only), so none is imposed.
+//
+// * k -> 0 (no hole flow, or a mainstream overwhelming it): A k^-B diverges
+//   and Cd -> 0, so a solver iterating on the hole's own flow sees a
+//   spurious zero-flow root; and with B > 1 (near-normal holes, compound
+//   angles) Eq. 7-8 solved on the actual flow have NO root at all below some
+//   k (the m = Cd(m) K fixed point turns over). The term is therefore HELD
+//   at k_floor = max(ROWBURY_2001_K_PERP_MIN, k_unique) -- value kept, slope
+//   zero, the pattern of the discharge correlations' Re floor:
+//     ROWBURY_2001_K_PERP_MIN = 0.01: the lowest k_perp the authors evaluate
+//       their own correlation at -- Fig. 9's Ma_m 1.2 prediction starts at
+//       PR ~1.11, Cd ~0.425, which is k_perp ~0.010 (back-calculated, ours).
+//     k_unique (B > 1 only): where (B - 1) A k^-B = M (1 - C), M =
+//       ROWBURY_2001_UNIQUE_MARGIN. On the actual flow the fixed point is
+//       unique while (B - 1) A k^-B < 1/Cd,no^2 - C; 1/Cd,no^2 >= 1 makes
+//       (1 - C) a bound for any Cd,no, and the margin leaves the
+//       self-consistent solve a slope d ln Cd / d ln m <= B / (2B - 1) < 1
+//       from this term (room for the Re dependence of Cd,no). OUR choice,
+//       not the paper's. The hold starts where A k^-B = M (1 - C) / (B - 1):
+//       for B near 1 (a normal hole, suction set: B 1.18, k_floor 0.23) only
+//       once the term has cut Cd by a third or more; for larger B sooner.
+//
+// PERPENDICULAR. Fig. 3 measures theta in the plane section and alpha in
+// plan view; for alpha = 0 the surface-normal velocity is u_h sin(theta)
+// exactly. With a compound angle the true normal component also depends on
+// alpha; the authors fold alpha into A, B through (1 + sin alpha) instead,
+// so u_h,perp = u_h sin(theta) is used throughout (theta read as the hole
+// axis to the surface, the elements' angle_deg).
+//
+// FITTED ENVELOPE (Table 1, CHTT rows): flagged by rowbury_2001_in_range,
+// never refused. Coefficients with A <= 0 or B <= 0 (theta below the set's
+// zero crossing) give Eq. 8 no meaning and are refused.
+enum class Rowbury2001Set {
+  CylindricalPressureSurface,
+  CylindricalLeadingEdge,
+  CylindricalSuctionSurface,
+  FanShapedPressureSurface,
+  FanShapedSuctionSurface,
+};
+
+namespace rowbury2001 {
+// Table 2: A = (a1 sin th + a0)(1 + sa sin al), B = (b1 sin th + b0)(1 + sb sin al), C.
+struct Row {
+  double a1, a0, sa;
+  double b1, b0, sb;
+  double c;
+};
+constexpr Row kCylPressure{2.95, -0.88, 1.0, 0.714, 0.393, 1.0, 0.10};
+constexpr Row kCylLeadingEdge{0.079, 0.0, 1.0, 4.795, -4.487, 1.0, 0.28};
+constexpr Row kCylSuction{0.682, -0.24, 1.0, 0.777, 0.405, 1.0, 0.10};
+constexpr Row kFanPressure{0.435, -0.140, 1.0, 0.350, 0.570, 1.0, 0.02};
+constexpr Row kFanSuction{0.225, -0.110, 1.0, 0.350, 0.570, 2.8, 0.05};
+
+// Table 1 angle spans of the rows each set was fitted on [deg]. Fan-shaped
+// rows (p. 259: all but rows 5-10 and 11 were also run fan-shaped): pressure
+// rows 1-4, suction rows 12-14.
+struct Envelope {
+  double theta_min, theta_max, alpha_min, alpha_max;
+};
+constexpr Envelope kEnvCylPressure{20.0, 58.0, 0.0, 7.0};    // rows 1-6
+constexpr Envelope kEnvCylLeadingEdge{83.0, 90.0, 60.0, 60.0};  // rows 7-10
+constexpr Envelope kEnvCylSuction{30.0, 78.0, 0.0, 6.0};     // rows 11-14
+constexpr Envelope kEnvFanPressure{20.0, 30.0, 0.0, 7.0};    // rows 1-4
+constexpr Envelope kEnvFanSuction{30.0, 40.0, 0.0, 6.0};     // rows 12-14
+}  // namespace rowbury2001
+
+constexpr double ROWBURY_2001_K_PERP_MIN = 0.01;
+constexpr double ROWBURY_2001_UNIQUE_MARGIN = 0.5;
+
+struct Rowbury2001Coefficients {
+  double A = 0.0;
+  double B = 0.0;
+  double C = 0.0;
+};
+
+// Table 2 at (theta, alpha) [deg]; theta in (0, 90], alpha in [0, 90].
+// Throws std::invalid_argument outside those, or where A <= 0 or B <= 0.
+Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
+                                                  double alpha_deg);
+
+// The k_perp below which the term is held (see above).
+double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_deg);
+
+// Inside the set's Table 1 angle span (to 1e-9 deg).
+bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg);
+
+struct Rowbury2001Cd {
+  double Cd = 0.0;
+  double dCd_dCd0 = 0.0;
+  double dCd_dk = 0.0;   // 0 where held
+  double delta = 0.0;    // delta_out at the k used
+  double k_used = 0.0;   // max(k_perp, k_floor)
+  bool held = false;     // k_perp < k_floor
+};
+
+// Cd with the exit-crossflow loss, from the no-crossflow Cd0 (0 < Cd0 <= 1)
+// and k_perp >= 0. Throws where 1/Cd0^2 + delta <= 0 (cannot happen for
+// Cd0 <= 1, C < 1).
+Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2001Set set,
+                                             double theta_deg, double alpha_deg);
+
+struct Rowbury2001KPerp {
+  double k = 0.0;
+  double dk_dG = 0.0;      // [1/(kg/(m^2 s))]
+  double dk_drho_h = 0.0;  // [m^3/kg]
+  double dk_dq_m = 0.0;    // [1/Pa]
+};
+
+// k_perp = G_h^2 sin(theta) / (rho_h rho_m u_m^2), G_h >= 0 the hole's
+// actual exit-plane mass flux, rho_h > 0, rho_m u_m^2 > 0 (the caller turns
+// the term off at no mainstream momentum).
+Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2,
+                                     double theta_deg);
+
 }  // namespace combaero

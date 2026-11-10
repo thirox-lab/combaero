@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
+#include <limits>
 #include <stdexcept>
 
 #include "crossflow_cd.h"
@@ -186,4 +187,179 @@ TEST(FlorschuetzMetzgerSu1982, AnalyticPartials) {
   for (const double Gi : {35.0, 60.0, 5.0}) {
     expect_partials(law81, Gi, kGc, 1e-6);
   }
+}
+
+// ---- Rowbury, Oldfield & Lock (2001): exit crossflow -----------------------
+
+using combaero::Rowbury2001Coefficients;
+using combaero::Rowbury2001Set;
+using combaero::rowbury_2001_coefficients;
+using combaero::rowbury_2001_exit_crossflow_cd;
+using combaero::rowbury_2001_in_range;
+using combaero::rowbury_2001_k_floor;
+using combaero::rowbury_2001_k_perp;
+
+namespace {
+
+double sind(double deg) { return std::sin(deg * 3.14159265358979323846 / 180.0); }
+
+}  // namespace
+
+TEST(Rowbury2001, CoefficientsAreTable2) {
+  // Table 2, p. 263, evaluated by hand at theta 40, alpha 6 (a suction row).
+  const double st = sind(40.0);
+  const double sa = sind(6.0);
+  struct Case {
+    Rowbury2001Set set;
+    double A, B, C;
+  };
+  const Case cases[] = {
+      {Rowbury2001Set::CylindricalPressureSurface, (2.95 * st - 0.88) * (1 + sa),
+       (0.714 * st + 0.393) * (1 + sa), 0.10},
+      {Rowbury2001Set::CylindricalSuctionSurface, (0.682 * st - 0.24) * (1 + sa),
+       (0.777 * st + 0.405) * (1 + sa), 0.10},
+      {Rowbury2001Set::FanShapedPressureSurface, (0.435 * st - 0.140) * (1 + sa),
+       (0.350 * st + 0.570) * (1 + sa), 0.02},
+      {Rowbury2001Set::FanShapedSuctionSurface, (0.225 * st - 0.110) * (1 + sa),
+       (0.350 * st + 0.570) * (1 + 2.8 * sa), 0.05},
+  };
+  for (const auto& c : cases) {
+    const auto k = rowbury_2001_coefficients(c.set, 40.0, 6.0);
+    EXPECT_NEAR(k.A, c.A, 1e-14);
+    EXPECT_NEAR(k.B, c.B, 1e-14);
+    EXPECT_EQ(k.C, c.C);
+  }
+  // The leading edge at its own rows' angles (theta 84, alpha 60).
+  const auto le = rowbury_2001_coefficients(Rowbury2001Set::CylindricalLeadingEdge, 84.0, 60.0);
+  EXPECT_NEAR(le.A, 0.079 * sind(84.0) * (1 + sind(60.0)), 1e-14);
+  EXPECT_NEAR(le.B, (4.795 * sind(84.0) - 4.487) * (1 + sind(60.0)), 1e-14);
+  EXPECT_EQ(le.C, 0.28);
+}
+
+TEST(Rowbury2001, RefusesAnglesWhereEq8HasNoMeaning) {
+  // Suction cylindrical A crosses zero at sin(theta) = 0.24/0.682 (20.6 deg),
+  // the leading edge's B at 4.487/4.795 (69.3 deg).
+  EXPECT_THROW(rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 20.0, 0.0),
+               std::invalid_argument);
+  EXPECT_NO_THROW(rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 21.0, 0.0));
+  EXPECT_THROW(rowbury_2001_coefficients(Rowbury2001Set::CylindricalLeadingEdge, 60.0, 60.0),
+               std::invalid_argument);
+  EXPECT_THROW(rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 0.0, 0.0),
+               std::invalid_argument);
+  EXPECT_THROW(rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 30.0, -1.0),
+               std::invalid_argument);
+}
+
+TEST(Rowbury2001, Eq7AndEq8) {
+  const auto c = rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0);
+  for (const double k : {0.05, 0.3, 1.0, 5.0}) {
+    const auto r =
+        rowbury_2001_exit_crossflow_cd(0.776, k, Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0);
+    const double delta = c.A * std::pow(k, -c.B) - c.C;
+    EXPECT_NEAR(r.delta, delta, 1e-14);
+    EXPECT_NEAR(1.0 / (r.Cd * r.Cd) - 1.0 / (0.776 * 0.776), delta, 1e-12);
+    EXPECT_FALSE(r.held);
+  }
+}
+
+TEST(Rowbury2001, CrossoverAndTheInfiniteKAsymptote) {
+  // delta -> -C: Cd above Cd0 (crossover), finite at k = inf.
+  const double cd0 = 0.8;
+  const auto r = rowbury_2001_exit_crossflow_cd(cd0, std::numeric_limits<double>::infinity(),
+                                                Rowbury2001Set::CylindricalSuctionSurface, 30.0,
+                                                0.0);
+  EXPECT_NEAR(r.Cd, 1.0 / std::sqrt(1.0 / (cd0 * cd0) - 0.10), 1e-14);
+  EXPECT_GT(r.Cd, cd0);
+  EXPECT_EQ(r.dCd_dk, 0.0);
+}
+
+TEST(Rowbury2001, PartialsMatchCentralDifferences) {
+  for (const auto set : {Rowbury2001Set::CylindricalSuctionSurface,
+                         Rowbury2001Set::CylindricalPressureSurface,
+                         Rowbury2001Set::FanShapedSuctionSurface}) {
+    for (const double k : {0.4, 1.5, 9.0}) {
+      const double cd0 = 0.75;
+      const auto r = rowbury_2001_exit_crossflow_cd(cd0, k, set, 40.0, 3.0);
+      const double hk = 1e-6 * k;
+      const double hc = 1e-6;
+      const double fd_k = (rowbury_2001_exit_crossflow_cd(cd0, k + hk, set, 40.0, 3.0).Cd -
+                           rowbury_2001_exit_crossflow_cd(cd0, k - hk, set, 40.0, 3.0).Cd) /
+                          (2.0 * hk);
+      const double fd_c = (rowbury_2001_exit_crossflow_cd(cd0 + hc, k, set, 40.0, 3.0).Cd -
+                           rowbury_2001_exit_crossflow_cd(cd0 - hc, k, set, 40.0, 3.0).Cd) /
+                          (2.0 * hc);
+      EXPECT_NEAR(r.dCd_dk, fd_k, 1e-7 * std::abs(fd_k) + 1e-12);
+      EXPECT_NEAR(r.dCd_dCd0, fd_c, 1e-7 * std::abs(fd_c) + 1e-12);
+    }
+  }
+}
+
+TEST(Rowbury2001, HeldBelowTheFloorValueKeptSlopeZero) {
+  const auto set = Rowbury2001Set::CylindricalSuctionSurface;
+  // B < 1 at 30 deg: the floor is the authors' lowest evaluated k.
+  EXPECT_EQ(rowbury_2001_k_floor(set, 30.0, 0.0), combaero::ROWBURY_2001_K_PERP_MIN);
+  const double kf = rowbury_2001_k_floor(set, 30.0, 0.0);
+  const auto at = rowbury_2001_exit_crossflow_cd(0.8, kf, set, 30.0, 0.0);
+  const auto below = rowbury_2001_exit_crossflow_cd(0.8, 0.0, set, 30.0, 0.0);
+  EXPECT_FALSE(at.held);
+  EXPECT_TRUE(below.held);
+  EXPECT_EQ(below.Cd, at.Cd);
+  EXPECT_EQ(below.dCd_dk, 0.0);
+  EXPECT_GT(below.Cd, 0.0);
+  // B > 1 (a normal hole): (B - 1) A k^-B = M (1 - C) at the floor.
+  const auto c = rowbury_2001_coefficients(set, 90.0, 0.0);
+  ASSERT_GT(c.B, 1.0);
+  const double ku = rowbury_2001_k_floor(set, 90.0, 0.0);
+  EXPECT_NEAR((c.B - 1.0) * c.A * std::pow(ku, -c.B),
+              combaero::ROWBURY_2001_UNIQUE_MARGIN * (1.0 - c.C), 1e-12);
+}
+
+TEST(Rowbury2001, FlowRootIsUniqueAboveTheFloor) {
+  // m = Cd(m) K with k ~ m^2: d ln Cd / d ln m = B Cd^2 A k^-B must stay
+  // below 1 on the unheld branch, for the worst B of every set at Table 1's
+  // angles and any Cd0 <= 1.
+  for (const auto set :
+       {Rowbury2001Set::CylindricalPressureSurface, Rowbury2001Set::CylindricalLeadingEdge,
+        Rowbury2001Set::CylindricalSuctionSurface, Rowbury2001Set::FanShapedPressureSurface,
+        Rowbury2001Set::FanShapedSuctionSurface}) {
+    for (const double th : {35.0, 60.0, 85.0, 90.0}) {
+      for (const double al : {0.0, 60.0}) {
+        Rowbury2001Coefficients c;
+        try {
+          c = rowbury_2001_coefficients(set, th, al);
+        } catch (const std::invalid_argument&) {
+          continue;
+        }
+        const double kf = rowbury_2001_k_floor(set, th, al);
+        for (const double cd0 : {0.5, 0.8, 1.0}) {
+          const auto r = rowbury_2001_exit_crossflow_cd(cd0, kf, set, th, al);
+          const double slope = c.B * r.Cd * r.Cd * c.A * std::pow(kf, -c.B);
+          EXPECT_LT(slope, 1.0) << "theta " << th << " alpha " << al << " Cd0 " << cd0;
+        }
+      }
+    }
+  }
+}
+
+TEST(Rowbury2001, InRangeIsTable1) {
+  EXPECT_TRUE(rowbury_2001_in_range(Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0));
+  EXPECT_TRUE(rowbury_2001_in_range(Rowbury2001Set::CylindricalSuctionSurface, 78.0, 6.0));
+  EXPECT_FALSE(rowbury_2001_in_range(Rowbury2001Set::CylindricalSuctionSurface, 90.0, 0.0));
+  EXPECT_TRUE(rowbury_2001_in_range(Rowbury2001Set::CylindricalLeadingEdge, 89.0, 60.0));
+  EXPECT_FALSE(rowbury_2001_in_range(Rowbury2001Set::CylindricalLeadingEdge, 89.0, 0.0));
+  EXPECT_FALSE(rowbury_2001_in_range(Rowbury2001Set::FanShapedSuctionSurface, 50.0, 0.0));
+}
+
+TEST(Rowbury2001, KPerpAndItsPartials) {
+  const double G = 120.0, rho = 2.0, q = 3.0e4, th = 35.0;
+  const auto r = rowbury_2001_k_perp(G, rho, q, th);
+  EXPECT_NEAR(r.k, G * G * sind(th) / (rho * q), 1e-14);
+  const double h = 1e-6;
+  EXPECT_NEAR(r.dk_dG,
+              (rowbury_2001_k_perp(G + h, rho, q, th).k - rowbury_2001_k_perp(G - h, rho, q, th).k) /
+                  (2 * h),
+              1e-7 * std::abs(r.dk_dG));
+  EXPECT_NEAR(r.dk_drho_h, -r.k / rho, 1e-14);
+  EXPECT_NEAR(r.dk_dq_m, -r.k / q, 1e-18);
+  EXPECT_THROW(rowbury_2001_k_perp(G, rho, 0.0, th), std::invalid_argument);
 }

@@ -391,6 +391,18 @@ tilted = cb.DischargeHoleGeometry(d=1e-3, L=4e-3, inclination_deg=30.0)
 Cd30 = cb.discharge_cd(cb.DischargeCdCorrelation.Idelchik1966Thick, tilted, flow)
 dzeta = cb.discharge_inclination_dzeta(30.0)  # 0.41
 
+# EXIT (external) crossflow, OPT-IN on the film/effusion elements (#1074):
+# Rowbury, Oldfield & Lock (2001) Eqs. 7-8, 1/Cd^2 = 1/Cd0^2 + A k^-B - C on
+# the no-crossflow Cd0, k = k_perp the perpendicular outlet momentum flux
+# ratio on the hole's ACTUAL flow. Table 2 per set (a flat wall takes the
+# suction surface's); held below rowbury_2001_k_floor; Table 1's angle span
+# is a flag (rowbury_2001_in_range), A or B <= 0 raises.
+S = cb.Rowbury2001Set.CylindricalSuctionSurface
+c = cb.rowbury_2001_coefficients(S, 30.0, 0.0)  # A 0.101, B 0.794, C 0.10
+kp = cb.rowbury_2001_k_perp(G_h=150.0, rho_h=1.2, rho_m_u_m2=2.0e4, theta_deg=30.0)
+r = cb.rowbury_2001_exit_crossflow_cd(0.776, kp.k, S, 30.0, 0.0)
+r.Cd, r.dCd_dCd0, r.dCd_dk, r.delta, r.k_used, r.held
+
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
 # applies between pipes (C_pipe = Cd_wall * R, R -> 1 as beta -> 0)
@@ -789,7 +801,10 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=3.27e-3,
                              gas_baseline="chamber",      # or "flat_plate"
                              gas_start_length=None,       # [m], flat_plate only
                              cd_inclination="none",       # or "idelchik_3_2"
-                             radiation=None)              # or GasRadiation(beam_length=...)
+                             radiation=None,              # or GasRadiation(beam_length=...)
+                             cd_exit_crossflow="none",    # or "rowbury_2001"
+                             exit_crossflow_region="suction_surface",
+                             exit_crossflow_orientation_deg=0.0)
 diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
 ```
 
@@ -844,6 +859,27 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   l/d >= 2 `Cd_in_range` reads 0. Cross-source accuracy on Hay 1983 and
   Gritsch 1998 (`validation/cooling/hole_cd_inclination_runner.py`): see the
   runner; off is the default and bit-identical.
+- **Exit-crossflow Cd term, opt-in (#1074).** `cd_exit_crossflow="rowbury_2001"`
+  (`EffusionPlateElement` and `FilmCoolingElement`, any correlation including
+  `"fixed"`, with or without `cd_inclination`) puts Rowbury, Oldfield & Lock
+  (2001) Eqs. 7-8 on the no-crossflow Cd: `1/Cd^2 = 1/Cd0^2 + A k^-B - C`,
+  `k = G_h^2 sin(angle) / (rho_h rho_m u_m^2)` on the hole's actual flux
+  (a shaped film hole: at its exit plane, `G / area_ratio`), `rho_h` the
+  coolant at the chamber static P and its supply Tt, `rho_m u_m^2` the
+  discharge chamber's. Needs a `MomentumChamberNode` discharge with an area
+  (refused otherwise). `exit_crossflow_region` picks Table 2's set
+  (`"suction_surface"`, the flat-wall default the authors use for Gritsch
+  1998; `"pressure_surface"`; `"leading_edge"`, cylindrical only) and
+  `exit_crossflow_orientation_deg` its compound angle alpha. Crossover is
+  built in: the loss is positive at small k and floors at `-C`, so a strongly
+  blowing hole's Cd RISES (+3% on Behrendt 2008's 30 deg plates). Reported
+  when on: `Cd_no_exit_crossflow`, `Cd_exit_crossflow_ratio`,
+  `exit_crossflow_rho_u2` [Pa], `exit_crossflow_k_perp`, `exit_crossflow_delta`,
+  `exit_crossflow_held`, `exit_crossflow_in_range` (Table 1's angle span).
+  Fidelity (the authors' Fig. 9 predictions) and cross-source accuracy (Gritsch
+  1998, Hay 1983): `validation/cooling/exit_crossflow_cd_runner.py`. Off is
+  the default and bit-identical. No GUI Inspector control yet (the node
+  fields load from network JSON).
 
 ##### Duct-fed: the effusion liner (#471)
 
@@ -1398,6 +1434,7 @@ net.add_element(FilmCoolingElement(
     hole_type="shaped", area_ratio=3.5, breakout_width=3e-3,  # Colban
     # hole_type="cylindrical", turbulence_intensity=0.05      # Baldauf
     # cd_inclination="idelchik_3_2"  # opt-in hole-angle Cd term (IdelchikThick)
+    # cd_exit_crossflow="rowbury_2001"  # opt-in exit-crossflow Cd term (chamber discharge)
 ))
 net.add_wall(ThermalWall(
     id="liner", element_a="hot_duct", element_b="backside",
