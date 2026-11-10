@@ -118,6 +118,10 @@ Table 15 (C5) is handwritten.
 `uv run python -m validation.cooling.kaddah_runner` prints the full report: modes, U1 definitions,
 envelope classes, read confidence, and K bands. Each score is predicted/measured - 1 on Cd_static.
 
+**Headline: U1 = mean** (combaero's mean of the approaching and departing duct flow, which is what a user
+of the element gets); the approach-velocity rows (Kaddah's own V1) are kept beside it and are never
+dropped (user decision, 2026-11-10). The runner itself takes no default.
+
 **Eq. 17** is anchored on each table's own no-cross-flow block (the source's own way of validating Eq. 17)
 and scored on the 80 and 130 ft/s rows. Clean inputs:
 
