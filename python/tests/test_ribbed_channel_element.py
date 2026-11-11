@@ -4,12 +4,12 @@ The correlation gives the RIBBED SIDE. Combining it with the smooth walls is
 the element's job, because how many walls are ribbed is a design choice rather
 than a property of the correlation.
 
-Two asymmetries are pinned here because both follow from the source rather than
-from convenience:
+Friction and heat transfer are weighted alike (#1106):
 
-- friction needs no wall weighting -- the `f` in the roughness function's
-  definition is already the four-sided channel value
-- heat transfer does
+- the set's `f` is Han's FOUR-SIDED FANNING factor; the channel's drop uses
+  the Darcy `4 [phi f + (1 - phi) f_s]`, Han's own area weighting (Han and
+  Park 1988 Eq. 6), which is his measured two-wall `fbar` for n = 2
+- heat transfer is the same area weighting of ribbed and smooth walls
 """
 
 from __future__ import annotations
@@ -76,24 +76,97 @@ def test_the_documented_gap_and_the_knob_that_closes_it() -> None:
     assert tuned.h / plain.h == pytest.approx(1.20, abs=0.02)
 
 
-def test_friction_comes_from_the_correlation_not_from_a_multiplier() -> None:
-    """Correlations own their f. A ribbed channel's f is the four-sided value
-    the roughness function is defined against, not pipe friction scaled by
-    something -- the round-trip #331 removed moved a drop by -24.7%."""
-    r = _run(_surface())
-    direct = cb.evaluate_rib(
-        cb.han_1988_orthogonal(),
-        cb.RibGeometry(e_D=0.06, p_e=10.0, W_H=1.0, alpha_deg=90.0),
-        r.Re,
-    )
-    assert r.f == pytest.approx(direct.f, rel=1e-12)
+GEOM = cb.RibGeometry(e_D=0.06, p_e=10.0, W_H=1.0, alpha_deg=90.0)
 
 
-def test_friction_does_not_depend_on_the_wall_count() -> None:
-    """Only heat transfer is weighted: f is already a channel-level quantity."""
+def _han_fbar(re: float, n_walls: int, w_h: float = 1.0) -> float:
+    """Han's passage-average FANNING friction, written out from the source.
+
+    Independent of `rib_channel_friction`: Han and Park (1988) form the
+    four-sided f from the measured two-wall fbar by area weighting (Eq. 6),
+    f = fbar + (H/W)(fbar - f_s), f_s = 0.046 Re^-0.2 (Eq. 8). Ribbed walls
+    of width W; perimeter fraction W/(W+H) per opposite pair.
+    """
+    geom = cb.RibGeometry(e_D=0.06, p_e=10.0, W_H=w_h, alpha_deg=90.0)
+    f4 = cb.evaluate_rib(cb.han_1988_orthogonal(), geom, re).f
+    f_s = 0.046 * re**-0.2
+    phi = {1: 0.5 * w_h / (w_h + 1.0), 2: w_h / (w_h + 1.0), 4: 1.0}[n_walls]
+    return phi * f4 + (1.0 - phi) * f_s
+
+
+@pytest.mark.parametrize("n", [1, 2, 4])
+def test_channel_friction_is_hans_area_weighting_in_darcy_form(n: int) -> None:
+    """f (Darcy) = 4 x Han's wall-weighted Fanning fbar, for every wall count."""
+    r = _run(_surface(n_ribbed_walls=n))
+    assert r.f == pytest.approx(4.0 * _han_fbar(r.Re, n), rel=1e-9)
+
+
+def test_two_ribbed_walls_inverts_hans_eq6_exactly() -> None:
+    """n = 2 recovers the measured fbar Han converted from (Eq. 6 inverted)."""
+    for w_h in (1.0, 2.0, 4.0):
+        geom = cb.RibGeometry(e_D=0.06, p_e=10.0, W_H=w_h, alpha_deg=90.0)
+        re = 3.0e4
+        f4 = cb.evaluate_rib(cb.han_1988_orthogonal(), geom, re).f
+        f_s = 0.046 * re**-0.2
+        fbar = (f4 * w_h + f_s) / (w_h + 1.0)
+        assert f4 == pytest.approx(fbar + (fbar - f_s) / w_h, rel=1e-12)
+        f_d, _ = cb.rib_channel_friction(cb.han_1988_orthogonal(), geom, re, 2)
+        assert f_d == pytest.approx(
+            4.0 * fbar, rel=1e-9
+        )  # C++ floors |Re| smoothly: 1e-10 at Re 3e4
+
+
+def test_four_ribbed_walls_is_the_four_sided_factor_and_re_free() -> None:
+    f_d, df = cb.rib_channel_friction(cb.han_1988_orthogonal(), GEOM, 3.0e4, 4)
+    assert f_d == pytest.approx(4.0 * cb.evaluate_rib(cb.han_1988_orthogonal(), GEOM, 3.0e4).f)
+    assert df == 0.0
+
+
+def test_drop_matches_hans_two_wall_passage_drop() -> None:
+    """The #1106 case: dP = 4 fbar (L/D) rho v^2 / 2 with Han's own fbar.
+
+    The element gave 2884 Pa here before (four-sided Fanning f applied as
+    Darcy), about 2.2x below Han's two-wall passage drop.
+    """
+    r = _run(_surface(n_ribbed_walls=2))
+    rho = cb.density(STATE["T"], STATE["P"], STATE["X"])
+    v = FLOW["velocity"]
+    expect = 4.0 * _han_fbar(r.Re, 2) * FLOW["length"] / FLOW["diameter"] * 0.5 * rho * v * v
+    assert r.dP == pytest.approx(expect, rel=1e-9)
+    assert r.dP > 5000.0
+
+
+@pytest.mark.parametrize("re", [-5.0e4, -10.0, 0.0, 10.0, 3.0e4])
+@pytest.mark.parametrize("n", [1, 2, 4])
+def test_channel_friction_derivative_matches_central_differences(re: float, n: int) -> None:
+    """df_D/dRe is the smooth walls' alone; finite and odd through zero flow."""
+    s = cb.han_1988_orthogonal()
+    f, df = cb.rib_channel_friction(s, GEOM, re, n)
+    h = max(1e-6 * abs(re), 1e-3)
+    fd = (
+        cb.rib_channel_friction(s, GEOM, re + h, n)[0]
+        - cb.rib_channel_friction(s, GEOM, re - h, n)[0]
+    ) / (2.0 * h)
+    assert f > 0.0
+    assert df == pytest.approx(fd, rel=1e-6, abs=1e-12)
+    assert cb.rib_channel_friction(s, GEOM, -re, n)[1] == pytest.approx(-df, abs=1e-15)
+
+
+def test_friction_rises_with_the_wall_count() -> None:
     f_values = {n: _run(_surface(n_ribbed_walls=n)).f for n in (1, 2, 4)}
-    assert f_values[1] == pytest.approx(f_values[2], rel=1e-12)
-    assert f_values[2] == pytest.approx(f_values[4], rel=1e-12)
+    assert f_values[1] < f_values[2] < f_values[4]
+
+
+@pytest.mark.parametrize(("n", "flagged"), [(1, True), (2, False), (4, True)])
+def test_wall_counts_han_did_not_measure_are_flagged(n: int, flagged: bool) -> None:
+    """Every rib set was measured on two opposite ribbed walls; one or four
+    walls is the same weighting outside that configuration: reported, not
+    refused. The probe point is inside han_1988_orthogonal's box otherwise."""
+    s = ConvectiveSurface(area=0.1, model=RibbedModel(e_D=0.06, p_e=10.0, n_ribbed_walls=n))
+    flow = dict(FLOW, velocity=15.0)
+    r = s.htc_and_T(**STATE, **flow)
+    assert 1.0e4 < r.Re < 6.0e4
+    assert r.extrapolated is flagged
 
 
 def test_the_user_knobs_still_apply_on_top() -> None:

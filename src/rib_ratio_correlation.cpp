@@ -223,9 +223,10 @@ constexpr TaslimRow kTaslim1987[] = {
 
 // Re normaliser for both ratios, the paper's own Re_ref.
 constexpr double kTaslimReRef = 1.0e4;
-// Declared Fanning friction baseline the constant f is carried on.
-constexpr double kFanningF0Coeff = 0.046;
-constexpr double kFanningF0Exp = -0.2;
+// Declared Fanning friction baseline the constant f is carried on: Han's
+// smooth-channel f(FD), the same f_s rib_channel_friction uses.
+constexpr double kFanningF0Coeff = HAN_SMOOTH_FANNING_COEF;
+constexpr double kFanningF0Exp = HAN_SMOOTH_FANNING_RE_EXP;
 
 }  // namespace
 

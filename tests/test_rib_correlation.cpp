@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "rib_correlation.h"
@@ -15,6 +16,8 @@ using combaero::cooling::han_zhang_lee_1991;
 using combaero::cooling::RibShape;
 using combaero::cooling::han_park_1988_angled;
 using combaero::cooling::rallabandi_2009_high_re;
+using combaero::cooling::rib_channel_friction;
+using combaero::cooling::rib_ribbed_wall_fraction;
 using combaero::cooling::RibCorrelationSet;
 using combaero::cooling::RibGeometry;
 using combaero::cooling::validate_rib_set;
@@ -822,4 +825,54 @@ TEST(RibCorrelationTest, EarlierSetsDeclareShapeAndPrintNoGbar) {
   auto bad = han_zhang_lee_1991(RibShape::V, 60.0);
   bad.C_Gbar = -1.0;
   EXPECT_THROW(validate_rib_set(bad), std::invalid_argument);
+}
+
+// #1106: the channel's Darcy friction is Han's area weighting (Han and Park
+// 1988 Eq. 6) run forwards, so two ribbed walls give back his measured
+// two-wall fbar, x4 for Darcy.
+TEST(RibCorrelationTest, ChannelFrictionIsHansAreaWeightingInDarcyForm) {
+  const auto s = han_1988_orthogonal();
+  for (const double w_h : {0.5, 1.0, 2.0, 4.0}) {
+    RibGeometry g = ref_geometry();
+    g.W_H = w_h;
+    const double re = 30000.0;
+    const double f4 = evaluate_rib(s, g, re).f;
+    const double f_s = 0.046 * std::pow(re, -0.2);
+    const double fbar = (f4 * w_h + f_s) / (w_h + 1.0);
+    // Eq. 6 holds for the fbar recovered.
+    EXPECT_NEAR(f4, fbar + (fbar - f_s) / w_h, 1e-12);
+    const auto [f2, df2] = rib_channel_friction(s, g, re, 2);
+    EXPECT_NEAR(f2, 4.0 * fbar, 1e-9 * f2);
+    const auto [f_four, df_four] = rib_channel_friction(s, g, re, 4);
+    EXPECT_DOUBLE_EQ(f_four, 4.0 * f4);
+    EXPECT_EQ(df_four, 0.0);
+    const auto [f1, df1] = rib_channel_friction(s, g, re, 1);
+    EXPECT_LT(f1, f2);
+    EXPECT_LT(df1, 0.0);  // smooth walls' f_s falls with Re
+    EXPECT_LT(df1, df2);  // more smooth wall, more Re dependence
+  }
+}
+
+TEST(RibCorrelationTest, ChannelFrictionDerivativeIsFiniteAndOddThroughZero) {
+  const auto s = han_1988_orthogonal();
+  for (const double re : {-4.0e4, -1.0, 0.0, 1.0, 2.0e4}) {
+    const auto [f, df] = rib_channel_friction(s, ref_geometry(), re, 1);
+    const double h = std::max(1e-6 * std::abs(re), 1e-4);
+    const double fd = (std::get<0>(rib_channel_friction(s, ref_geometry(), re + h, 1)) -
+                       std::get<0>(rib_channel_friction(s, ref_geometry(), re - h, 1))) /
+                      (2.0 * h);
+    EXPECT_TRUE(std::isfinite(f));
+    EXPECT_NEAR(df, fd, 1e-6 * std::max(std::abs(fd), 1e-9));
+    EXPECT_DOUBLE_EQ(std::get<1>(rib_channel_friction(s, ref_geometry(), -re, 1)), -df);
+  }
+}
+
+TEST(RibCorrelationTest, RibbedWallFractionAndRefusals) {
+  EXPECT_DOUBLE_EQ(rib_ribbed_wall_fraction(1.0, 2), 0.5);
+  EXPECT_DOUBLE_EQ(rib_ribbed_wall_fraction(2.0, 2), 2.0 / 3.0);
+  EXPECT_DOUBLE_EQ(rib_ribbed_wall_fraction(2.0, 1), 1.0 / 3.0);
+  EXPECT_DOUBLE_EQ(rib_ribbed_wall_fraction(0.25, 4), 1.0);
+  EXPECT_THROW(rib_ribbed_wall_fraction(1.0, 3), std::invalid_argument);
+  EXPECT_THROW(rib_ribbed_wall_fraction(1.0, 0), std::invalid_argument);
+  EXPECT_THROW(rib_ribbed_wall_fraction(0.0, 2), std::invalid_argument);
 }

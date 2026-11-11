@@ -1089,6 +1089,21 @@ RibResult evaluate_rib(const RibCorrelationSet& set,
                        const RibGeometry& geom, double Re);
 // evaluate_rib never throws: Re may be negative or zero and the guards are
 // smooth through both, because the solver probes states that are not physical.
+// RibResult::f is Han's FOUR-SIDED, FANNING factor (#1106).
+
+// Channel friction with some walls ribbed (#1106): Han's area weighting (Han
+// and Park 1988 Eq. 6) run forwards, in Darcy form for dP = f_D (L/D) rho V^2/2.
+//   f_D = 4 [phi f + (1 - phi) f_s(Re)],  f_s = 0.046 Re^-0.2 (Eq. 8)
+// n = 2 gives exactly Han's measured two-wall passage fbar (x4).
+inline constexpr double HAN_SMOOTH_FANNING_COEF = 0.046;
+inline constexpr double HAN_SMOOTH_FANNING_RE_EXP = -0.2;
+inline constexpr double DARCY_PER_FANNING = 4.0;
+double rib_ribbed_wall_fraction(double W_H, int n_ribbed_walls);
+// W/(W+H) for 2, W/(2(W+H)) for 1, 1 for 4; anything else throws.
+std::tuple<double, double> rib_channel_friction(const RibCorrelationSet& set,
+                                                const RibGeometry& geom,
+                                                double Re, int n_ribbed_walls);
+// (f_D, df_D/dRe); even in Re, |Re| smoothly floored at 1 for f_s.
 
 // Ratio-form rib sets -- rib_ratio_correlation.h (#444). Nu/Nu0 and f/f0 as
 // multipliers on the baseline the SOURCE fitted to, beside the R/G sets, for

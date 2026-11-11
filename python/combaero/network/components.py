@@ -99,8 +99,10 @@ class RibbedModel:
         Dh. The correlation needs the ratio for both the wall-law geometry
         group and the ribbed/smooth area split, so the rib model carries it.
     n_ribbed_walls : int
-        How many of the four walls carry ribs. 2 means two OPPOSITE walls,
-        which is the configuration Han measured.
+        How many of the four walls carry ribs: 1, 2 or 4. 2 means two OPPOSITE
+        walls, which is the configuration Han measured. Heat transfer and
+        friction are both weighted by the ribbed wall fraction (friction:
+        ``cb.rib_channel_friction``, #1106); 1 and 4 report ``extrapolated``.
     smooth_wall_Nu_multiplier : float
         A user knob on the SMOOTH walls' contribution to the channel average.
         It encodes nothing and defaults to 1.0.
@@ -550,16 +552,23 @@ class ConvectiveSurface:
         Two things are asymmetric here and both follow from the source rather
         than from convenience.
 
-        FRICTION NEEDS NO WALL WEIGHTING. The ``f`` in the roughness function's
-        definition is already the equivalent four-sided channel friction
-        factor, so the correlation returns a channel-level value directly. The
-        element does not multiply pipe friction by anything -- correlations own
-        their ``f``, which is what #331 established after a round-trip through
-        a restated friction factor moved a drop by -24.7%.
+        FRICTION IS WALL-WEIGHTED, IN HAN'S OWN FORM. The set's ``f`` is the
+        FOUR-SIDED FANNING factor: Han measured the two-wall passage ``fbar``
+        and converted it by area weighting, ``f = fbar + (H/W)(fbar - f_s)``
+        (Han and Park 1988 Eq. 6, f_s = 0.046 Re^-0.2, Eq. 8). C++
+        ``rib_channel_friction`` runs that weighting forwards for the ribbed
+        wall fraction and returns the channel's DARCY factor,
+        ``4 [phi f + (1 - phi) f_s]`` -- exactly Han's measured fbar for two
+        ribbed walls (#1106). The element does not multiply pipe friction by
+        anything; correlations own their ``f`` (#331).
 
-        HEAT TRANSFER DOES. The correlation gives the ribbed side; the smooth
-        walls come from the base correlation, and the channel average is the
-        area-weighted combination.
+        HEAT TRANSFER IS WEIGHTED THE SAME WAY. The correlation gives the
+        ribbed side; the smooth walls come from the base correlation, and the
+        channel average is the area-weighted combination.
+
+        ONE AND FOUR RIBBED WALLS are the same weighting outside the
+        two-opposite-wall configuration every rib set was measured on, so they
+        report ``extrapolated``.
 
         A DOCUMENTED GAP. Using the plain smooth correlation for the smooth
         walls gives h_s/h_r around 0.42, where Han's own reported channel
@@ -587,6 +596,7 @@ class ConvectiveSurface:
             alpha_deg=model.alpha_deg,
         )
         rib = cb.evaluate_rib(rib_set, geom, Re)
+        f_channel, _ = cb.rib_channel_friction(rib_set, geom, Re, model.n_ribbed_walls)
 
         # Ribbed side, from the correlation's Stanton number.
         k = cs.transport.k
@@ -611,8 +621,8 @@ class ConvectiveSurface:
         frac_ribbed, frac_smooth = self._ribbed_wall_fractions()
         h_avg = frac_ribbed * h_ribbed + frac_smooth * smooth.h
 
-        # The correlation's f is already the four-sided channel value.
-        dP = rib.f * (length / diameter) * 0.5 * rho * velocity * abs(velocity)
+        # Darcy channel friction, wall-weighted in C++ (#1106).
+        dP = f_channel * (length / diameter) * 0.5 * rho * velocity * abs(velocity)
 
         # Wall-coupling derivatives. The ribbed side is h_r = St(Re) rho|v| cp,
         # and BOTH Re and |v| are proportional to the mass flow, so
@@ -645,41 +655,25 @@ class ConvectiveSurface:
             Nu=h_avg * diameter / k if k > 0.0 else 0.0,
             Re=Re,
             Pr=Pr,
-            f=rib.f * self.f_multiplier,
+            f=f_channel * self.f_multiplier,
             dP=dP * self.f_multiplier,
             T_aw=smooth.T_aw,
             e_plus=rib.e_plus,
-            extrapolated=rib.extrapolated,
+            extrapolated=rib.extrapolated or model.n_ribbed_walls != 2,
         )
 
     def _ribbed_wall_fractions(self) -> tuple[float, float]:
         """Area fractions of the ribbed and smooth walls, for a W x H duct.
 
         Han's configuration is two OPPOSITE walls, which for a duct of width W
-        and height H are the two of width W. The ribbed fraction is then
-        W/(W+H) -- the same area weighting the four-sided friction conversion
-        uses, so friction and heat transfer are treated alike.
-
-        One and four ribbed walls follow from the same picture. Anything else
-        is rejected rather than interpolated: "three ribbed walls" has no
-        unambiguous geometry.
+        and height H are the two of width W: ribbed fraction W/(W+H). One wall
+        is half that and four walls all of it. C++
+        ``rib_ribbed_wall_fraction`` owns the rule, so heat transfer here and
+        friction in ``rib_channel_friction`` weight alike; any other count
+        (three walls has no unambiguous geometry) raises ValueError.
         """
-        model = self.model
-        W_H = model.W_H
-        n = model.n_ribbed_walls
-        if n == 4:
-            return 1.0, 0.0
-        if n == 2:
-            ribbed = W_H / (W_H + 1.0)
-            return ribbed, 1.0 - ribbed
-        if n == 1:
-            ribbed = W_H / (2.0 * (W_H + 1.0))
-            return ribbed, 1.0 - ribbed
-        raise ValueError(
-            f"n_ribbed_walls must be 1, 2 or 4, got {n}. 2 means two opposite "
-            "walls, which is the configuration the correlations were measured "
-            "on."
-        )
+        ribbed = cb.rib_ribbed_wall_fraction(self.model.W_H, self.model.n_ribbed_walls)
+        return ribbed, 1.0 - ribbed
 
     def _impingement_result(self, T, P, X, velocity, diameter, length, T_hot, heating):
         """Jet array impingement, one row (Florschuetz, Truman and Metzger 1981).
@@ -10471,7 +10465,8 @@ class ChannelElement(NetworkElement):
     Convective surfaces
         A ``ConvectiveSurface`` adds heat transfer. Ribbed and pin-fin surfaces
         also OWN the drop: their correlations return the channel's friction
-        factor (ribs: the four-sided Darcy value; pins: Metzger's per-row
+        factor (ribs: Han's four-sided Fanning f, area-weighted with the smooth
+        walls and taken to Darcy in ``rib_channel_friction``; pins: Metzger's per-row
         ``dP / (2 rho Vmax^2 N)``), and the element uses it directly rather
         than as a multiplier on pipe friction -- see ``_ribbed_residuals`` and
         ``_pin_fin_residuals``. Impingement surfaces leave the drop to the
@@ -10611,39 +10606,36 @@ class ChannelElement(NetworkElement):
     def _ribbed_residuals(self, state_in: NetworkMixtureState, state_out: NetworkMixtureState):
         """Ribbed channel: the correlation owns the friction factor.
 
-        No multiplier on pipe friction. The `f` the roughness function is
-        defined against is already the equivalent four-sided channel value, so
-        the correlation returns what the channel needs and the element uses it
-        directly. Routing it through a locally restated smooth friction factor
-        is what #331 removed, after the round-trip moved a drop by -24.7%.
+        No multiplier on pipe friction. C++ ``rib_channel_friction`` returns
+        the channel's DARCY factor and its Re derivative,
 
-        The Jacobian is simpler than it looks. `R` carries no `e+` term in this
-        correlation family, so **f does not depend on Reynolds number** and
-        therefore not on mass flow: `df/d(mdot) = 0`. The drop is
-        `f (L/D) rho v |v| / 2` with `v = mdot / (rho A)`, so
+            f_D = 4 [phi f + (1 - phi) f_s(Re)],   f_s = 0.046 Re^-0.2
 
-            dP          = f (L/D) mdot |mdot| / (2 rho A^2)
-            d(dP)/dmdot = f (L/D) |mdot| / (rho A^2)
+        with ``f`` the set's four-sided FANNING factor (Re-independent: R has
+        no e+ term) and ``phi`` the ribbed wall fraction -- Han's own area
+        weighting (Han and Park 1988 Eq. 6), so two ribbed walls give exactly
+        his measured passage fbar, times 4 (#1106). Routing it through a
+        locally restated smooth friction factor is what #331 removed.
 
-        which is even in `mdot` and so does not flip sign at zero -- the drop
-        itself carries the sign. That is the odd-quantity case: magnitude from
-        the correlation, direction from the flow.
+        The drop is ``f_D (L/D) mdot |mdot| / (2 rho A^2)`` with
+        ``Re = mdot D / (mu A)`` (signed), so
 
-        `dP` also depends on upstream temperature and static pressure through
-        `rho(T, P)` -- `d(dP)/d(rho) = -dP/rho`, chained through
-        `density_and_jacobians`' analytic `d(rho)/dT`, `d(rho)/dP` and
-        `_safe_rho`'s own floor derivative. This was a real, measured gap
-        (issue #378): the analytic `A.T` column was exactly 0.0 against a
-        finite-difference value of roughly -486 for a representative case,
-        because `_safe_rho(state_in.density())` computed `rho` without ever
-        differentiating it. Composition (`Y`) sensitivity through molecular
-        weight remains an accepted gap -- no correlation-level Jacobian for
-        it exists yet, and no other channel-friction path in this file
-        exposes one either.
+            d(dP)/dmdot = (L/D)/(2 rho A^2) (2 |mdot| f_D + mdot |mdot| f_D' D/(mu A))
+
+        which is even in ``mdot`` and so does not flip sign at zero -- the drop
+        carries the sign. Only the smooth walls make ``f_D'`` nonzero; it
+        vanishes for four ribbed walls.
+
+        ``dP`` depends on the upstream state through ``rho`` (``-dP/rho``,
+        #378) and, through the smooth walls' f_s, through ``mu`` in Re
+        (``dP/f_D f_D' (-Re/mu) dmu``), both from analytic property
+        derivatives (``density_and_jacobians``, ``viscosity_and_jacobians``).
+        Composition sensitivity at fixed (T, P) remains the accepted gap
+        every channel-friction path here shares.
 
         Where the channel leaves a node at rest (a plenum or a boundary
         reservoir), rho and mu are the duct's own static state there, not the
-        node's (#926, ``_surface_rest_feed``): rho then moves with m_dot and
+        node's (#926, ``_surface_rest_feed``): they then move with m_dot and
         the node's Tt and Pt (and its Y, through the static state).
         """
         m_dot = state_in.m_dot
@@ -10675,13 +10667,19 @@ class ChannelElement(NetworkElement):
 
         dh = self.Dh or self.diameter or 1.0
         if feed is None:
-            mu = cb.complete_state(state_in.Tt, state_in.P, state_in.X).transport.mu
+            mu, dmu_dT, dmu_dP = _solver_tools.viscosity_and_jacobians(
+                state_in.Tt, state_in.P, state_in.X
+            )
+            dmu = {f"{self.from_node}.Tt": dmu_dT, f"{self.from_node}.P": dmu_dP}
         else:
-            mu = cb.complete_state(feed.T, feed.P, state_in.X).transport.mu
-        Re = abs(m_dot) * dh / (area * mu) if mu > 0.0 else 0.0
-        Re = math.copysign(Re, m_dot)
+            mu, dmu_dT, dmu_dP = _solver_tools.viscosity_and_jacobians(feed.T, feed.P, state_in.X)
+            dmu = {
+                k: dmu_dT * feed.dT.get(k, 0.0) + dmu_dP * feed.dP.get(k, 0.0)
+                for k in dict.fromkeys([*feed.dT, *feed.dP])
+            }
+        Re = m_dot * dh / (area * mu) if mu > 0.0 else 0.0
 
-        rib = cb.evaluate_rib(
+        f, df_dRe = cb.rib_channel_friction(
             model.correlation_set or cb.han_1988_orthogonal(),
             cb.RibGeometry(
                 e_D=model.e_D,
@@ -10690,18 +10688,22 @@ class ChannelElement(NetworkElement):
                 alpha_deg=model.alpha_deg,
             ),
             Re,
+            model.n_ribbed_walls,
         )
-        f = rib.f * f_mult
+        f *= f_mult
+        df_dRe *= f_mult
 
-        coeff = f * (self.length / dh) / (2.0 * rho * area * area)
-        dP = coeff * m_dot * abs(m_dot)
-        d_dP_d_mdot = 2.0 * coeff * abs(m_dot)
+        coeff = (self.length / dh) / (2.0 * rho * area * area)
+        dP = coeff * f * m_dot * abs(m_dot)
+        dRe_dmdot = dh / (area * mu) if mu > 0.0 else 0.0
+        d_dP_d_mdot = coeff * (2.0 * abs(m_dot) * f + m_dot * abs(m_dot) * df_dRe * dRe_dmdot)
         q_exit, dq_dmdot = self._exit_head(m_dot, rho, area)
         dP += q_exit
         d_dP_d_mdot += dq_dmdot
-        # dP = K * mdot|mdot| / rho for K independent of rho (the exit head
-        # too), so d(dP)/d(rho) = -dP/rho.
+        # Through rho (dP ~ 1/rho at fixed f, the exit head too) and through
+        # mu in Re (the smooth walls' f_s only).
         d_dP_drho = -dP / rho if rho > 0.0 else 0.0
+        d_dP_dmu = coeff * m_dot * abs(m_dot) * df_dRe * (-Re / mu) if mu > 0.0 else 0.0
 
         res = [state_in.Pt - state_out.Pt - dP]
         row: dict[str, float] = {
@@ -10709,8 +10711,8 @@ class ChannelElement(NetworkElement):
             f"{self.from_node}.Pt": 1.0,
             f"{self.to_node}.Pt": -1.0,
         }
-        for k, v in drho.items():
-            d = d_dP_drho * v
+        for k in dict.fromkeys([*drho, *dmu]):
+            d = d_dP_drho * drho.get(k, 0.0) + d_dP_dmu * dmu.get(k, 0.0)
             row[k] = row[k] - d if k in row else -d
         return res, {0: row}
 

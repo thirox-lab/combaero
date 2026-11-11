@@ -370,6 +370,19 @@ PYBIND11_MODULE(_core, m) {
         py::arg("correlation_set"), py::arg("geometry"), py::arg("Re"),
         "Evaluate the chain. Re may be negative or zero; the guards are "
         "smooth through both.");
+  m.def("rib_ribbed_wall_fraction", &combaero::cooling::rib_ribbed_wall_fraction,
+        py::arg("W_H"), py::arg("n_ribbed_walls"),
+        "Ribbed fraction of a W x H duct's wetted perimeter, ribs on the W "
+        "walls: W/(W+H) for 2 (two opposite walls, Han's configuration), 1 "
+        "for 4, W/(2(W+H)) for 1. Any other count raises.");
+  m.def("rib_channel_friction", &combaero::cooling::rib_channel_friction,
+        py::arg("correlation_set"), py::arg("geometry"), py::arg("Re"),
+        py::arg("n_ribbed_walls"),
+        "(f_D, df_D/dRe): the channel's DARCY friction factor, "
+        "4 [phi f + (1 - phi) 0.046 Re^-0.2], with f the set's four-sided "
+        "Fanning factor and phi the ribbed wall fraction (Han's area "
+        "weighting, Han and Park 1988 Eq. 6). Exactly Han's measured "
+        "two-wall fbar (x4) for n_ribbed_walls=2. Re may be negative or zero.");
 
   // -- Ratio-form rib sets (#444): Nu/Nu0 and f/f0 on a declared baseline --
   py::class_<combaero::cooling::RatioBaseline>(
