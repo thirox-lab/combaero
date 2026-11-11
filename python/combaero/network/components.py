@@ -3493,6 +3493,13 @@ class MomentumChamberNode(NetworkNode):
     Automatically handles mixing when multiple upstream connections exist.
     """
 
+    # to_dict serialises the given geometry, not what resolve_topology
+    # inherited into the same attributes (#1099).
+    _init_kwarg_attrs = {
+        "area": lambda n: None if n._auto_area else n.area,
+        "Dh": lambda n: n.Dh if n._Dh_source == "user" else None,
+    }
+
     def __init__(
         self,
         id: str,
@@ -4461,6 +4468,13 @@ class CombustorNode(NetworkNode):
     # Supplies theta = T_burned / T_unburned - 1 to adjacent PressureLossElement.
     has_theta: bool = True
 
+    # to_dict serialises the given geometry, not what resolve_topology
+    # inherited into the same attributes (#1099).
+    _init_kwarg_attrs = {
+        "area": lambda n: None if n._auto_area else n.area,
+        "Dh": lambda n: n.Dh if n._Dh_source == "user" else None,
+    }
+
     def __init__(
         self,
         id: str,
@@ -4993,6 +5007,16 @@ class OrificeElement(NetworkElement):
     # correlation's (#872). A start guess only: the solved flow does not
     # depend on it.
     _seed_Cd_default: float = _ORIFICE_SEED_CD
+
+    # to_dict serialises the given bore and compressible model, not the ones
+    # resolve_topology defaulted or selected into the same attributes (#1099).
+    _init_kwarg_attrs = {
+        "diameter": lambda e: e.diameter if e._area_source == "user" else None,
+        "area": lambda e: e.area if e._area_source == "user" else None,
+        "compressible_model": lambda e: (
+            e.compressible_model if e._compressible_model_explicit else None
+        ),
+    }
 
     def __init__(
         self,
@@ -8745,6 +8769,7 @@ class EffectiveAreaConnectionElement(OrificeElement):
     """
 
     _selects_compressible_model = False  # keeps the nozzle (#861)
+    _init_kwarg_attrs = {"effective_area": "area"}  # stored as self.area (#1099)
 
     def __init__(self, id: str, from_node: str, to_node: str, effective_area: float) -> None:
         """
@@ -9593,6 +9618,9 @@ class PressureLossElement(NetworkElement):
     #: (1e5-1e9) too heavily; LM then traded every pressure for it (#614).
     residual_scale_kind = "p"
 
+    # to_dict serialises the given area, not the inherited one (#1099).
+    _init_kwarg_attrs = {"area": lambda e: e.area if e._area_source == "user" else None}
+
     def __init__(
         self,
         id: str,
@@ -10146,6 +10174,13 @@ class ChannelElement(NetworkElement):
     #: A crossflow segment solves its duct between its own station states
     #: (#802), so it keeps the node states there.
     _rest_end_state_from_duct: bool = True
+
+    # to_dict serialises the given diameter and Dh, not the inherited ones
+    # (#1099).
+    _init_kwarg_attrs = {
+        "diameter": lambda e: e.diameter if e._area_source == "user" else None,
+        "Dh": lambda e: e.Dh if e._Dh_source == "user" else None,
+    }
 
     def __init__(
         self,
@@ -11425,6 +11460,11 @@ class CrossflowSegmentElement(ChannelElement):
     # Its duct runs between its own station states (#802): see ChannelElement.
     _rest_end_state_from_duct = False
 
+    # The channel's area is re-derived from a diameter, which need not give
+    # the given area back bit for bit, and a constant segment sets area_to
+    # to it (#1099).
+    _init_kwarg_attrs = {"area": "_given_area", "area_to": "_given_area_to"}
+
     def __init__(
         self,
         id: str,
@@ -11479,6 +11519,8 @@ class CrossflowSegmentElement(ChannelElement):
         self.prev_seg = prev_seg
         self.next_seg = next_seg
         self.entry_K = entry_K
+        self._given_area = area
+        self._given_area_to = area_to
         self._prev: NetworkElement | None = None
         self._next: NetworkElement | None = None
 
@@ -11981,6 +12023,11 @@ class ImpingementCrossflowElement(CrossflowSegmentElement):
     # 97-145 cold against 16-17 warm (#706).
     prefers_warm_start = True
 
+    # The parent's ``entry_K`` is resolved from the topology (None unless a
+    # bypass inlet fed from a reservoir); the argument is ``bypass_entry_K``
+    # (#1099).
+    _init_kwarg_attrs = {"entry_K": "bypass_entry_K"}
+
     def __init__(
         self,
         id: str,
@@ -12358,6 +12405,12 @@ class TeeJunctionElement(NetworkElement):
 
     #: RESIDUAL-ROW-SCALING: total-pressure balances, Pa (both rows).
     residual_scale_kind = "p"
+
+    # to_dict serialises the given areas, not the inherited ones (#1099).
+    _init_kwarg_attrs = {
+        "F_C": lambda e: e.F_C if e._area_source == "user" else None,
+        "F_branch": lambda e: e._F_branch if e._F_branch_user else None,
+    }
 
     def __init__(
         self,
@@ -12838,6 +12891,17 @@ class MultiPortChamberBase(NetworkElement):
     # port flows are set by their own internal physics must turn it off -- see
     # `EjectorElement`.
     seeds_ports_by_pressure_split: bool = True
+
+    # to_dict serialises the constructor's per-side angles and the given
+    # port areas, not the merged list or the inherited areas (#1099).
+    _init_kwarg_attrs = {
+        "inlet_angles_deg": lambda e: e.port_angles_deg[: len(e.inlet_nodes)],
+        "outlet_angles_deg": lambda e: e.port_angles_deg[len(e.inlet_nodes) :],
+        "port_areas": lambda e: [
+            a if src == "user" else None
+            for a, src in zip(e.port_areas, e._port_area_sources, strict=True)
+        ],
+    }
 
     def __init__(
         self,

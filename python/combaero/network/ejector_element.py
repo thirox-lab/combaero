@@ -192,6 +192,9 @@ class EjectorElement(MultiPortChamberBase):
     # ejector's ports can be slow while its jet is not.
     validity_mach_keys = ("mach_jet",)
 
+    # to_dict serialises the given mixing area, not the inherited one (#1099).
+    _init_kwarg_attrs = {"mixing_area": lambda e: None if e._auto_mixing else e.mixing_area}
+
     def __init__(
         self,
         id: str,

@@ -1700,7 +1700,7 @@ print(f"System Mass Flow: {results['feed.m_dot']} kg/s")
 ```
 
 > [!TIP]
-> **Agent Hint**: Use `net.to_dict()` to get a JSON-serializable representation of the network, which can be saved or sent to the GUI.
+> **Agent Hint**: Use `net.to_dict()` to get a JSON-serializable representation of the network, and `FlowNetwork.from_dict()` to rebuild it. The GUI saves its own schema (`NetworkRunner`), not this one.
 
 ---
 
