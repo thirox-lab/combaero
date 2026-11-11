@@ -490,9 +490,10 @@ class TestPressureLossElementWallCoupling:
 
 
 def test_builtin_losses_evaluate_in_cpp_with_their_partials() -> None:
-    """evaluate() is the C++ value with every partial (#718); calling the
-    class gives the same (xi, dxi/dtheta). A context with only X (no Y) is
-    converted, so a head loss reads the same density either way."""
+    """evaluate() is the C++ value with every partial (#718), composed by
+    pressure_loss_compose (#725); calling the class gives the same (xi,
+    dxi/dtheta). A context with only X (no Y) is converted, so a head loss
+    reads the same density either way."""
     from types import SimpleNamespace
 
     import combaero as cb
@@ -514,7 +515,8 @@ def test_builtin_losses_evaluate_in_cpp_with_their_partials() -> None:
         LinearThetaHeadLoss(k=1.0, zeta0=3.0, area=0.05),
     ):
         r = corr.evaluate(ctx, Y)
-        assert isinstance(r, cb.CombustorLossResult)
+        assert isinstance(r, cb.PressureLossResult)
+        assert r.dxi_dtheta == (r.dxi_dx[cb.PRESSURE_LOSS_INPUT_THETA] if r.dxi_dx else 0.0)
         assert corr(ctx) == pytest.approx((r.xi, r.dxi_dtheta), rel=1e-12)
         assert corr.evaluate(ctx).xi == pytest.approx(r.xi, rel=1e-12)
         # Below the design flow / for a head loss the flow partial is live.

@@ -17,12 +17,14 @@ All callables return ``(loss_value, d_loss_value_d_theta)`` where
 ``loss_value`` is the *fractional* total-pressure loss (dimensionless)
 consumed by ``Pt_out = Pt_in * (1 - loss_value)``.
 
-WHERE THE LOSS IS EVALUATED. The four built-in classes evaluate in C++
-(``cb.combustor_fraction_loss`` / ``cb.combustor_head_loss``), and their
-``evaluate(ctx, Y_in)`` returns every partial (theta, m_dot, Tt_in, Pt_in, each
-inlet mass fraction). A ``PressureLossElement`` builds its Jacobian from those.
-The C++ ``combustor_residuals_and_jacobians`` also accepts a loss callable,
-but ``CombustorNode`` passes it a zero loss, so that chain does not run in a
+WHERE THE LOSS IS EVALUATED. The four built-in classes are C++ models: each
+resolves to a ``cb.PressureLossModel`` (``pressure_loss_model()``) that one C++
+call, ``cb.pressure_loss_compose``, evaluates with every partial (m_dot, Tt_in,
+Pt_in, each inlet mass fraction, and each generic model input, theta first;
+#725). ``PressureLossElement`` calls it directly, and ``evaluate(ctx, Y_in)``
+returns the same ``PressureLossResult``. The C++
+``combustor_residuals_and_jacobians`` also accepts a loss callable, but
+``CombustorNode`` passes it a zero loss, so that chain does not run in a
 network.
 
 A USER CALLABLE STAYS PYTHON (#718). Any object returning ``(xi, dxi/dtheta)``
@@ -43,11 +45,18 @@ from types import SimpleNamespace
 from typing import Protocol, runtime_checkable
 
 from .._core import (
-    CombustorLossResult,
-    combustor_fraction_loss,
-    combustor_head_loss,
+    PressureLossInputs,
+    PressureLossKind,
+    PressureLossModel,
+    PressureLossResult,
     mole_to_mass,
+    pressure_loss_compose,
 )
+
+# PressureLossModel(kind, k, base, m_ref, area), positional: it is built on
+# every evaluation, and pybind11's keyword parsing doubles its cost.
+_FRACTION = PressureLossKind.Fraction
+_HEAD = PressureLossKind.Head
 
 
 @runtime_checkable
@@ -102,10 +111,31 @@ def _m_ref_arg(m_ref: float | None) -> float:
     return float(m_ref)
 
 
-def _inlet_Y(ctx: object, Y_in: list[float] | None) -> list[float]:
-    if Y_in is not None:
-        return list(Y_in)
-    return list(mole_to_mass(list(ctx.X_in)))  # type: ignore[attr-defined]
+def _evaluate_fraction(
+    model: PressureLossModel, ctx: object, reads_theta: bool
+) -> PressureLossResult:
+    """A fraction model at a context: theta (when the class reads it) and,
+    below a design flow only, m_dot; a context may omit the rest."""
+    x = [float(ctx.theta)] if reads_theta else []  # type: ignore[attr-defined]
+    m = float(ctx.mdot_total) if model.m_ref > 0.0 else 0.0  # type: ignore[attr-defined]
+    return pressure_loss_compose(model, PressureLossInputs(mdot=m, x=x))
+
+
+def _evaluate_head(
+    model: PressureLossModel, ctx: object, Y_in: list[float] | None
+) -> PressureLossResult:
+    """A head model at a context. Without ``Y_in`` the composition is the
+    context's ``X_in``, converted (the density the value reads either way)."""
+    Tt_in, Pt_in = _ctx_inlet(ctx)
+    Y = list(Y_in) if Y_in is not None else list(mole_to_mass(list(ctx.X_in)))  # type: ignore[attr-defined]
+    inp = PressureLossInputs(
+        mdot=float(ctx.mdot_total),  # type: ignore[attr-defined]
+        Tt_in=Tt_in,
+        Pt_in=Pt_in,
+        Y_in=Y,
+        x=[float(ctx.theta)],  # type: ignore[attr-defined]
+    )
+    return pressure_loss_compose(model, inp)
 
 
 @dataclass
@@ -133,11 +163,13 @@ class ConstantFractionLoss:
     xi: float = 0.03
     m_ref: float | None = None
 
-    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> CombustorLossResult:
+    def pressure_loss_model(self) -> PressureLossModel:
+        """The C++ model (``cb.pressure_loss_compose``)."""
+        return PressureLossModel(_FRACTION, 0.0, self.xi, _m_ref_arg(self.m_ref), 0.0)
+
+    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> PressureLossResult:
         """xi and its partials, from C++."""
-        # m_dot matters only below a design flow; a context may omit it.
-        m = float(ctx.mdot_total) if self.m_ref is not None else 0.0  # type: ignore[attr-defined]
-        return combustor_fraction_loss(0.0, m, 0.0, self.xi, _m_ref_arg(self.m_ref))
+        return _evaluate_fraction(self.pressure_loss_model(), ctx, reads_theta=False)
 
     def __call__(self, ctx: object) -> tuple[float, float]:
         r = self.evaluate(ctx)
@@ -171,12 +203,13 @@ class LinearThetaFractionLoss:
     xi0: float = 0.02
     m_ref: float | None = None
 
-    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> CombustorLossResult:
+    def pressure_loss_model(self) -> PressureLossModel:
+        """The C++ model (``cb.pressure_loss_compose``)."""
+        return PressureLossModel(_FRACTION, self.k, self.xi0, _m_ref_arg(self.m_ref), 0.0)
+
+    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> PressureLossResult:
         """xi and its partials, from C++."""
-        theta = float(ctx.theta)  # type: ignore[attr-defined]
-        # m_dot matters only below a design flow; a context may omit it.
-        m = float(ctx.mdot_total) if self.m_ref is not None else 0.0  # type: ignore[attr-defined]
-        return combustor_fraction_loss(theta, m, self.k, self.xi0, _m_ref_arg(self.m_ref))
+        return _evaluate_fraction(self.pressure_loss_model(), ctx, reads_theta=True)
 
     def __call__(self, ctx: object) -> tuple[float, float]:
         r = self.evaluate(ctx)
@@ -191,24 +224,8 @@ class LinearThetaFractionLoss:
 # value is still a *fraction* of Pt_in, xi = zeta * 0.5 rho_in v_in^2 / Pt_in,
 # so Pt_out = Pt_in (1 - xi) holds for both families. The partials in m_dot,
 # Tt_in, Pt_in and composition come from C++ with the value
-# (``cb.combustor_head_loss``).
+# (``cb.pressure_loss_compose`` over ``cb.combustor_head_loss``).
 # ---------------------------------------------------------------------------
-
-
-def _head(
-    ctx: object, Y_in: list[float] | None, k: float, zeta0: float, area: float
-) -> CombustorLossResult:
-    Tt_in, Pt_in = _ctx_inlet(ctx)
-    return combustor_head_loss(
-        float(ctx.theta),  # type: ignore[attr-defined]
-        float(ctx.mdot_total),  # type: ignore[attr-defined]
-        Tt_in,
-        Pt_in,
-        _inlet_Y(ctx, Y_in),
-        k,
-        zeta0,
-        area,
-    )
 
 
 @dataclass
@@ -234,9 +251,13 @@ class ConstantHeadLoss:
     zeta: float = 5.0
     area: float = 0.1
 
-    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> CombustorLossResult:
+    def pressure_loss_model(self) -> PressureLossModel:
+        """The C++ model (``cb.pressure_loss_compose``)."""
+        return PressureLossModel(_HEAD, 0.0, self.zeta, 0.0, self.area)
+
+    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> PressureLossResult:
         """xi and its partials, from C++."""
-        return _head(ctx, Y_in, 0.0, self.zeta, self.area)
+        return _evaluate_head(self.pressure_loss_model(), ctx, Y_in)
 
     def __call__(self, ctx: object) -> tuple[float, float]:
         r = self.evaluate(ctx)
@@ -270,9 +291,13 @@ class LinearThetaHeadLoss:
     zeta0: float = 3.0
     area: float = 0.1
 
-    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> CombustorLossResult:
+    def pressure_loss_model(self) -> PressureLossModel:
+        """The C++ model (``cb.pressure_loss_compose``)."""
+        return PressureLossModel(_HEAD, self.k, self.zeta0, 0.0, self.area)
+
+    def evaluate(self, ctx: object, Y_in: list[float] | None = None) -> PressureLossResult:
         """xi and its partials, from C++."""
-        return _head(ctx, Y_in, self.k, self.zeta0, self.area)
+        return _evaluate_head(self.pressure_loss_model(), ctx, Y_in)
 
     def __call__(self, ctx: object) -> tuple[float, float]:
         r = self.evaluate(ctx)

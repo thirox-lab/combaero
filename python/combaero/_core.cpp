@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "acoustics.h"
@@ -5358,6 +5359,79 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "ideal-gas rho at (Tt_in, Pt_in, Y_in) -- Lefebvre's total-total\n"
         "low-Mach pressure-loss factor -- with its partials in theta, mdot,\n"
         "Tt_in, Pt_in and each inlet mass fraction Y_k (the others held fixed).");
+  // The composition point of PressureLossElement's loss models (#725).
+  m.attr("PRESSURE_LOSS_INPUT_THETA") = combaero::PRESSURE_LOSS_INPUT_THETA;
+  py::enum_<combaero::PressureLossKind>(
+      m, "PressureLossKind", "Loss model kind of pressure_loss_compose.")
+      .value("Fraction", combaero::PressureLossKind::Fraction)
+      .value("Head", combaero::PressureLossKind::Head);
+  py::class_<combaero::PressureLossModel>(
+      m, "PressureLossModel", "Resolved loss model of pressure_loss_compose.")
+      .def(py::init([](combaero::PressureLossKind kind, double k, double base,
+                       double m_ref, double area) {
+             combaero::PressureLossModel mdl;
+             mdl.kind = kind;
+             mdl.k = k;
+             mdl.base = base;
+             mdl.m_ref = m_ref;
+             mdl.area = area;
+             return mdl;
+           }),
+           py::arg("kind") = combaero::PressureLossKind::Fraction,
+           py::arg("k") = 0.0, py::arg("base") = 0.0, py::arg("m_ref") = 0.0,
+           py::arg("area") = 0.0)
+      .def_readwrite("kind", &combaero::PressureLossModel::kind)
+      .def_readwrite("k", &combaero::PressureLossModel::k)
+      .def_readwrite("base", &combaero::PressureLossModel::base)
+      .def_readwrite("m_ref", &combaero::PressureLossModel::m_ref)
+      .def_readwrite("area", &combaero::PressureLossModel::area);
+  py::class_<combaero::PressureLossInputs>(
+      m, "PressureLossInputs", "State a loss model reads (pressure_loss_compose).")
+      .def(py::init([](double mdot, double Tt_in, double Pt_in, std::vector<double> Y_in,
+                       std::vector<double> X_in, std::vector<double> x) {
+             combaero::PressureLossInputs in;
+             in.mdot = mdot;
+             in.Tt_in = Tt_in;
+             in.Pt_in = Pt_in;
+             in.Y_in = std::move(Y_in);
+             in.X_in = std::move(X_in);
+             in.x = std::move(x);
+             return in;
+           }),
+           py::arg("mdot") = 0.0, py::arg("Tt_in") = 0.0, py::arg("Pt_in") = 0.0,
+           py::arg("Y_in") = std::vector<double>{},
+           py::arg("X_in") = std::vector<double>{},
+           py::arg("x") = std::vector<double>{})
+      .def_readwrite("mdot", &combaero::PressureLossInputs::mdot)
+      .def_readwrite("Tt_in", &combaero::PressureLossInputs::Tt_in)
+      .def_readwrite("Pt_in", &combaero::PressureLossInputs::Pt_in)
+      .def_readwrite("Y_in", &combaero::PressureLossInputs::Y_in)
+      .def_readwrite("X_in", &combaero::PressureLossInputs::X_in)
+      .def_readwrite("x", &combaero::PressureLossInputs::x);
+  py::class_<combaero::PressureLossResult>(
+      m, "PressureLossResult", "Composed loss fraction xi and its partials.")
+      .def_readonly("xi", &combaero::PressureLossResult::xi)
+      .def_readonly("dxi_dmdot", &combaero::PressureLossResult::dxi_dmdot)
+      .def_readonly("dxi_dTt_in", &combaero::PressureLossResult::dxi_dTt_in)
+      .def_readonly("dxi_dPt_in", &combaero::PressureLossResult::dxi_dPt_in)
+      .def_readonly("dxi_dY", &combaero::PressureLossResult::dxi_dY)
+      .def_readonly("dxi_dx", &combaero::PressureLossResult::dxi_dx)
+      .def_property_readonly(
+          "dxi_dtheta",
+          [](const combaero::PressureLossResult &r) {
+            return r.dxi_dx.size() > combaero::PRESSURE_LOSS_INPUT_THETA
+                       ? r.dxi_dx[combaero::PRESSURE_LOSS_INPUT_THETA]
+                       : 0.0;
+          },
+          "dxi_dx[PRESSURE_LOSS_INPUT_THETA], 0 for an empty x.");
+  m.def("pressure_loss_compose", &combaero::pressure_loss_compose, py::arg("model"),
+        py::arg("inputs"),
+        "PressureLossElement's loss model in one call: xi (Pt_out = Pt_in (1 -\n"
+        "xi)) and its analytic partials in mdot, Tt_in, Pt_in, each inlet mass\n"
+        "fraction and each generic model input x (x[0] = theta). Fraction:\n"
+        "combustor_fraction_loss; Head: combustor_head_loss, its value at the\n"
+        "state's mole fractions X_in when given. Internal: the composition point\n"
+        "of PressureLossElement's built-in correlations.");
   m.def("combustion_state",
         static_cast<CombustionStateBaseFn>(&combustion_state),
         py::arg("X_fuel"), py::arg("X_ox"), py::arg("phi"),

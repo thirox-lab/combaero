@@ -1,0 +1,1 @@
+- `evaluate(ctx, Y_in)` of the built-in pressure-loss classes returns a `PressureLossResult` instead of a `CombustorLossResult` (#725). It has the same attributes (`xi`, `dxi_dtheta`, `dxi_dmdot`, `dxi_dTt_in`, `dxi_dPt_in`, `dxi_dY`), plus `dxi_dx`, the partials by the model's generic inputs.
