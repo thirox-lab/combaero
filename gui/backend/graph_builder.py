@@ -19,6 +19,7 @@ from combaero.network import (
     FlowSplitter,
     FuelBoundary,
     GasRadiation,
+    HoleCd,
     ImpingementArray,
     ImpingementModel,
     LinearThetaFractionLoss,
@@ -1531,8 +1532,12 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 panel_length=data.panel_length,
                 panel_width=data.panel_width,
                 angle_deg=data.angle_deg,
-                correlation=data.correlation,
-                Cd=_fixed_cd(data),
+                hole_cd=HoleCd(
+                    correlation=data.correlation,
+                    Cd=_fixed_cd(data),
+                    inclination=data.cd_inclination,
+                    exit_crossflow=data.cd_exit_crossflow,
+                ),
                 internal_Nu_multiplier=data.internal_Nu_multiplier,
                 wall_conductivity=data.wall_conductivity,
                 gas_film=data.gas_film,
@@ -1544,8 +1549,6 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 gas_start_length=(
                     data.gas_start_length if data.gas_baseline == "flat_plate" else None
                 ),
-                cd_inclination=data.cd_inclination,
-                cd_exit_crossflow=data.cd_exit_crossflow,
                 exit_crossflow_region=data.exit_crossflow_region,
                 exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,
                 radiation=_radiation(data.radiation),
@@ -1569,10 +1572,12 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 area_ratio=data.area_ratio if shaped else None,
                 breakout_width=data.breakout_width if shaped else None,
                 turbulence_intensity=data.turbulence_intensity,
-                correlation=data.correlation,
-                Cd=_fixed_cd(data),
-                cd_inclination=data.cd_inclination,
-                cd_exit_crossflow=data.cd_exit_crossflow,
+                hole_cd=HoleCd(
+                    correlation=data.correlation,
+                    Cd=_fixed_cd(data),
+                    inclination=data.cd_inclination,
+                    exit_crossflow=data.cd_exit_crossflow,
+                ),
                 exit_crossflow_region=data.exit_crossflow_region,
                 exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,
             )
@@ -1588,8 +1593,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 lip_thickness=data.lip_thickness,
                 turbulence_intensity=data.turbulence_intensity,
                 C_m_multiplier=data.C_m_multiplier,
-                correlation=data.correlation,
-                Cd=_fixed_cd(data),
+                hole_cd=HoleCd(correlation=data.correlation, Cd=_fixed_cd(data)),
                 film_htc=data.film_htc,
             )
             net.add_element(elem)
@@ -1605,9 +1609,11 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 span=data.span,
                 plate_thickness=data.plate_thickness,
                 pattern=data.pattern,
-                correlation=data.correlation,
-                Cd=_fixed_cd(data),
-                cd_crossflow=data.cd_crossflow,
+                hole_cd=HoleCd(
+                    correlation=data.correlation,
+                    Cd=_fixed_cd(data),
+                    exit_crossflow=data.cd_crossflow,
+                ),
                 Nu_multiplier=data.Nu_multiplier * (schema.solver_settings.Nu_multiplier or 1.0),
                 roughness=data.roughness,
                 bypass_length=data.bypass_length,

@@ -17,6 +17,12 @@ A hole's Cd composes, in this order:
      Rogers & Hersh 1976 or Florschuetz, Metzger & Su 1982), which replaces
      the hole's Cd where it acts.
 
+HoleCd is the family's public spec: the model choices (correlation, fixed
+Cd, and each term's model) travel as one frozen object, ``hole_cd=HoleCd(...)``
+on every hole element and builder, like GasRadiation for radiation. The
+element keeps the geometry (bore, angle, hole type, the exit term's region and
+orientation); a field left at None/"auto" is that element's default.
+
 _HoleCdChain holds the resolved options, gathers the chain's inputs from the
 network state, and maps the partials onto unknown names; the composition
 itself -- every term's value and the chain rule between them -- is one C++
@@ -27,7 +33,9 @@ hole count and Reynolds number, its nodes, its duct or crossflow sources);
 that topology is why the inputs and the mapping stay here.
 """
 
+import dataclasses
 import math
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -89,6 +97,188 @@ CD_EXIT_CROSSFLOW_REGIONS = ("suction_surface", "pressure_surface", "leading_edg
 #: ImpingementPlateElement's crossflow Cd laws (#800).
 _CD_CROSSFLOW_LAWS = ("rogers_hersh_1976", "florschuetz_metzger_su_1982", "none")
 
+#: HoleCd.correlation: 'fixed', the normed metering family (ISO 5167) and the
+#: discharge-hole family. Which of them an element takes is the element's
+#: rule (the cooling plates refuse the metering family at validate).
+HOLE_CD_CORRELATIONS = ("fixed", *_METERING_SELECTORS, *_DISCHARGE_SELECTORS)
+#: HoleCd.inlet_crossflow: the supply-side crossflow U1/Vi McGreehan-Schotsch
+#: reads. "auto": read from the backside duct of a duct-fed
+#: EffusionPlateElement (its ``crossflow_segments``), 0 for every other hole.
+HOLE_CD_INLET_CROSSFLOW_MODELS = ("auto", "none", "mcgreehan_schotsch")
+#: HoleCd.exit_crossflow: the crossflow past the hole's exit. Rowbury et al.
+#: (2001) on a film or effusion hole (opt-in, "auto" = "none"); the jet laws
+#: of an impingement row ("auto" = "rogers_hersh_1976", #800).
+HOLE_CD_EXIT_CROSSFLOW_MODELS = (
+    "auto",
+    "none",
+    "rowbury_2001",
+    "rogers_hersh_1976",
+    "florschuetz_metzger_su_1982",
+)
+#: Deprecation of the per-element hole-Cd keywords (HoleCd replaces them).
+HOLE_CD_KWARGS_DEPRECATED_IN = "0.12.0"
+HOLE_CD_KWARGS_REMOVED_IN = "0.13.0"
+
+
+@dataclass(frozen=True)
+class HoleCd:
+    """The discharge coefficient of a hole element, as one spec: the model
+    choices only. The geometry (bore, hole count, angle, hole type, the exit
+    term's region and orientation) stays on the element.
+
+    Taken as ``hole_cd=`` by OrificeElement, EffusionPlateElement,
+    FilmCoolingElement, SlotFilmElement, ImpingementPlateElement and the
+    EffusionLiner and ImpingementArray builders. A field left at None or
+    "auto" is THAT ELEMENT's default, which differs per element (see each
+    field); every default is the element's behaviour before the spec.
+
+    Attributes
+    ----------
+    correlation : str | None
+        One of HOLE_CD_CORRELATIONS. None: the element's default --
+        'ReaderHarrisGallagher' on OrificeElement (or its own ``correlation``
+        keyword), 'IdelchikThick' on the effusion, film and slot elements,
+        'McGreehanSchotsch' on an EffusionLiner's duct-fed panels, 'fixed'
+        on an impingement row.
+    Cd : float | None
+        The 'fixed' correlation's value and nothing else (#872): given with
+        any other correlation it raises. None with 'fixed': the element's
+        documented default (Florschuetz's 0.79 on an impingement row) or a
+        refusal where there is none.
+    inclination : str
+        The inclined-hole inlet term, one of CD_INCLINATION_MODELS. "auto":
+        Idelchik diagram 3-2 on an inclined cylindrical IdelchikThick film or
+        effusion hole, off otherwise (and on every element without an
+        inclined hole). "idelchik_3_2" forces it (IdelchikThick, film or
+        effusion only); "none" switches it off.
+    inlet_crossflow : str
+        The supply-side crossflow, one of HOLE_CD_INLET_CROSSFLOW_MODELS.
+        "auto": McGreehan-Schotsch's U1/Vi from the backside duct of a
+        duct-fed EffusionPlateElement, 0 (plenum-fed) everywhere else.
+        "mcgreehan_schotsch" requires that duct and that correlation; "none"
+        holds U1/Vi at 0 (a duct-fed panel is then taken as plenum-fed, by
+        the caller's choice).
+    exit_crossflow : str
+        The crossflow past the hole exit, one of
+        HOLE_CD_EXIT_CROSSFLOW_MODELS. "auto": 'rogers_hersh_1976' on an
+        impingement row (#800), 'none' on every other hole. 'rowbury_2001'
+        (film and effusion holes discharging into a flowing chamber, #1074);
+        'rogers_hersh_1976' and 'florschuetz_metzger_su_1982' (impingement
+        rows only); 'none' everywhere.
+    """
+
+    correlation: str | None = None
+    Cd: float | None = None
+    inclination: str = "auto"
+    inlet_crossflow: str = "auto"
+    exit_crossflow: str = "auto"
+
+    def __post_init__(self) -> None:
+        if self.correlation is not None and self.correlation not in HOLE_CD_CORRELATIONS:
+            raise ValueError(
+                f"HoleCd: correlation {self.correlation!r} is not one of "
+                f"{list(HOLE_CD_CORRELATIONS)}."
+            )
+        if self.Cd is not None:
+            if not math.isfinite(self.Cd):
+                raise ValueError(f"HoleCd: Cd={self.Cd!r} must be a finite number.")
+            if self.correlation is not None and self.correlation != "fixed":
+                raise ValueError(
+                    f"HoleCd: Cd={self.Cd!r} with correlation={self.correlation!r}. The "
+                    "correlation computes its own Cd and a given one would be ignored. "
+                    "For a fixed discharge coefficient pass correlation='fixed'; to use "
+                    "the correlation, drop Cd."
+                )
+        for name, allowed in (
+            ("inclination", CD_INCLINATION_MODELS),
+            ("inlet_crossflow", HOLE_CD_INLET_CROSSFLOW_MODELS),
+            ("exit_crossflow", HOLE_CD_EXIT_CROSSFLOW_MODELS),
+        ):
+            value = getattr(self, name)
+            if value not in allowed:
+                raise ValueError(f"HoleCd: {name} {value!r} is not one of {list(allowed)}.")
+
+
+#: Each deprecated per-element keyword's HoleCd field.
+_LEGACY_HOLE_CD_FIELDS = {
+    "correlation": "correlation",
+    "Cd": "Cd",
+    "cd_inclination": "inclination",
+    "cd_exit_crossflow": "exit_crossflow",
+    "cd_crossflow": "exit_crossflow",
+}
+
+
+def _hole_cd_spec(
+    name: str, hole_cd: "HoleCd | None", legacy: dict[str, Any], stacklevel: int
+) -> HoleCd:
+    """The element's HoleCd: ``hole_cd``, or one built from the deprecated
+    per-element keywords (``legacy``, None = not given) with one
+    DeprecationWarning naming them. Both together raise."""
+    if hole_cd is not None and not isinstance(hole_cd, HoleCd):
+        raise ValueError(f"{name}: hole_cd is a HoleCd, not {type(hole_cd).__name__}")
+    given = {k: v for k, v in legacy.items() if v is not None}
+    if not given:
+        return hole_cd if hole_cd is not None else HoleCd()
+    kws = ", ".join(given)
+    if hole_cd is not None:
+        raise ValueError(
+            f"{name}: hole_cd=HoleCd(...) and the deprecated keyword(s) {kws} together. "
+            "Put every hole-Cd choice in the HoleCd."
+        )
+    fields = {_LEGACY_HOLE_CD_FIELDS[k]: v for k, v in given.items()}
+    suggest = ", ".join(f"{f}={v!r}" for f, v in fields.items())
+    warnings.warn(
+        f"Hole-Cd keyword(s) {kws} of {name} are deprecated since "
+        f"{HOLE_CD_KWARGS_DEPRECATED_IN} and will be removed in {HOLE_CD_KWARGS_REMOVED_IN}: "
+        f"pass hole_cd=HoleCd({suggest}) instead.",
+        DeprecationWarning,
+        stacklevel=stacklevel,
+    )
+    try:
+        return HoleCd(**fields)
+    except ValueError as exc:
+        raise ValueError(f"{name}: {exc}") from exc
+
+
+def _with_correlation(spec: HoleCd, default: str) -> HoleCd:
+    """``spec`` with its correlation resolved to the element's ``default``
+    where it leaves it at None."""
+    if spec.correlation is not None:
+        return spec
+    return dataclasses.replace(spec, correlation=default)
+
+
+def _refuse_choice(name: str, field_name: str, value: str, allowed: tuple[str, ...]) -> None:
+    """Refuse a HoleCd choice this element has no such term for."""
+    if value not in allowed:
+        raise ValueError(
+            f"{name}: HoleCd({field_name}={value!r}) does not apply to this element; "
+            f"it takes {list(allowed)}."
+        )
+
+
+def _resolve_inlet_crossflow(name: str, spec: HoleCd, duct_fed: bool) -> bool:
+    """Whether the hole reads a supply-duct U1/Vi (_HoleCdChain.supply_duct)."""
+    model = spec.inlet_crossflow
+    if model == "auto":
+        return duct_fed
+    if model == "none":
+        return False
+    if not duct_fed:
+        raise ValueError(
+            f"{name}: HoleCd(inlet_crossflow='mcgreehan_schotsch') reads the supply duct's "
+            "crossflow U1/Vi, and this hole is plenum-fed (U1/Vi = 0); a duct-fed "
+            "EffusionPlateElement names its crossflow_segments."
+        )
+    if spec.correlation != "McGreehanSchotsch":
+        raise ValueError(
+            f"{name}: HoleCd(inlet_crossflow='mcgreehan_schotsch') is McGreehan-Schotsch's "
+            f"own crossflow term; it does not compose with correlation={spec.correlation!r}."
+        )
+    return True
+
+
 # Unknown-name key of d(Cd)/d(own m_dot) THROUGH THE DISCHARGE CHAMBER'S
 # through-flow (the hole's flow is one of the chamber's inflows). The
 # self-consistent solves vary the hole flow at fixed chamber state, so this
@@ -110,7 +300,7 @@ def _resolve_cd_inclination(
     kept (and refused by _cd_inclination_deg where it cannot compose)."""
     if cd_inclination not in CD_INCLINATION_MODELS:
         raise ValueError(
-            f"{name}: cd_inclination {cd_inclination!r} is not one of "
+            f"{name}: HoleCd inclination {cd_inclination!r} is not one of "
             f"{list(CD_INCLINATION_MODELS)}."
         )
     if cd_inclination != "auto":
@@ -130,10 +320,10 @@ def _cd_inclination_deg(
         return 90.0
     if correlation != "IdelchikThick":
         raise ValueError(
-            f"{name}: cd_inclination={cd_inclination!r} is Idelchik diagram 3-2's inclined "
-            "inlet, composed into the thick-walled hole's inlet coefficient (Eq. 4-20); "
-            f"it does not compose with correlation={correlation!r}. Use "
-            "correlation='IdelchikThick', or cd_inclination='none' (or 'auto')."
+            f"{name}: HoleCd(inclination={cd_inclination!r}) is Idelchik diagram 3-2's "
+            "inclined inlet, composed into the thick-walled hole's inlet coefficient "
+            f"(Eq. 4-20); it does not compose with correlation={correlation!r}. Use "
+            "correlation='IdelchikThick', or inclination='none' (or 'auto')."
         )
     return float(angle_deg)
 
@@ -162,7 +352,8 @@ def _exit_crossflow_spec(
     has no set for, and angles where its A or B is not positive."""
     if model not in CD_EXIT_CROSSFLOW_MODELS:
         raise ValueError(
-            f"{name}: cd_exit_crossflow {model!r} is not one of {list(CD_EXIT_CROSSFLOW_MODELS)}."
+            f"{name}: HoleCd exit_crossflow {model!r} is not one of "
+            f"{list(CD_EXIT_CROSSFLOW_MODELS)}."
         )
     if region not in CD_EXIT_CROSSFLOW_REGIONS:
         raise ValueError(
@@ -195,8 +386,21 @@ def _exit_crossflow_spec(
     try:
         cb.rowbury_2001_coefficients(cset, theta_deg, alpha_deg)
     except ValueError as exc:
-        raise ValueError(f"{name}: cd_exit_crossflow='rowbury_2001': {exc}") from exc
+        raise ValueError(f"{name}: HoleCd(exit_crossflow='rowbury_2001'): {exc}") from exc
     return _ExitCrossflowSpec(cset, float(theta_deg), float(alpha_deg), float(exit_area_ratio))
+
+
+def _resolve_jet_row(name: str, spec: HoleCd, xn_d: float, yn_d: float, z_d: float) -> str:
+    """An impingement row's jet crossflow law from its HoleCd ("auto" =
+    'rogers_hersh_1976', #800), refused on a plate CR-3630 Table 4.1 does
+    not cover. The holes are normal to the plate (no inclination term) and
+    plenum-fed (no supply crossflow)."""
+    _refuse_choice(name, "inclination", spec.inclination, ("auto", "none"))
+    _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto",) + _CD_CROSSFLOW_LAWS)
+    _resolve_inlet_crossflow(name, spec, False)
+    law = "rogers_hersh_1976" if spec.exit_crossflow == "auto" else spec.exit_crossflow
+    _check_jet_crossflow_law(law, xn_d, yn_d, z_d)
+    return law
 
 
 def _check_jet_crossflow_law(law: str, xn_d: float, yn_d: float, z_d: float) -> None:
@@ -290,31 +494,47 @@ class _HoleCdChain:
     def configure_cooling_hole(
         self,
         name: str,
+        spec: HoleCd,
         *,
-        correlation: str,
         hole_type: str,
         angle_deg: float,
-        cd_inclination: str,
-        cd_exit_crossflow: str,
         exit_crossflow_region: str,
         exit_crossflow_orientation_deg: float,
         exit_area_ratio: float,
-    ) -> str:
-        """Resolve an inclined cooling hole's inclination and exit-crossflow
-        options (the film and effusion elements); returns the inclination
-        model in use, "auto" resolved."""
-        model = _resolve_cd_inclination(name, cd_inclination, correlation, hole_type, angle_deg)
+        duct_fed: bool = False,
+    ) -> tuple[str, str]:
+        """Resolve an inclined cooling hole's options from its HoleCd (the
+        film and effusion elements, ``spec.correlation`` already resolved):
+        the inclination term ("auto" from the correlation, hole type and
+        angle), the exit-crossflow term ("auto" = "none"; Rowbury et al.
+        2001 opt-in) and the supply crossflow ("auto" = ``duct_fed``).
+        Returns the inclination and exit-crossflow models in use."""
+        correlation = str(spec.correlation)
+        _refuse_choice(
+            name, "exit_crossflow", spec.exit_crossflow, ("auto",) + CD_EXIT_CROSSFLOW_MODELS
+        )
+        model = _resolve_cd_inclination(name, spec.inclination, correlation, hole_type, angle_deg)
         self.inclination_deg = _cd_inclination_deg(name, model, correlation, angle_deg)
+        exit_model = "none" if spec.exit_crossflow == "auto" else spec.exit_crossflow
         self.exit_xf = _exit_crossflow_spec(
             name,
-            cd_exit_crossflow,
+            exit_model,
             exit_crossflow_region,
             float(exit_crossflow_orientation_deg),
             angle_deg,
             hole_type == "shaped",
             exit_area_ratio,
         )
-        return model
+        self.supply_duct = _resolve_inlet_crossflow(name, spec, duct_fed)
+        return model, exit_model
+
+    def configure_plain(self, name: str, spec: HoleCd) -> None:
+        """A hole with no inclination, exit or supply crossflow term (a
+        plain orifice, a film slot): the spec's terms must be "auto" or
+        "none"."""
+        _refuse_choice(name, "inclination", spec.inclination, ("auto", "none"))
+        _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto", "none"))
+        self.supply_duct = _resolve_inlet_crossflow(name, spec, False)
 
     # --- the composed Cd ----------------------------------------------------
 
@@ -827,14 +1047,14 @@ class _HoleCdChain:
         node = self.exit_node
         if not (isinstance(node, MomentumChamberNode) and node.area > 0.0):
             raise ValueError(
-                f"{type(el).__name__} {el.id!r}: cd_exit_crossflow="
-                f"{getattr(el, 'cd_exit_crossflow', '')!r} reads the mainstream's momentum "
+                f"{type(el).__name__} {el.id!r}: HoleCd(exit_crossflow="
+                f"{getattr(el, 'cd_exit_crossflow', '')!r}) reads the mainstream's momentum "
                 f"flux from the discharge node, which must be a MomentumChamberNode with an "
                 f"area; {el.to_node!r} has no gas velocity."
             )
         if not self.exit_mainstream:
             raise ValueError(
-                f"{type(el).__name__} {el.id!r}: cd_exit_crossflow needs an approaching "
+                f"{type(el).__name__} {el.id!r}: HoleCd(exit_crossflow=...) needs an approaching "
                 f"mainstream, and {el.to_node!r} is fed only by cooling holes (declare "
                 "its main_inlet, or feed it a gas stream)."
             )

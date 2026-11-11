@@ -87,6 +87,7 @@ from combaero.network import (
     EffusionPlateElement,
     GasRadiation,
     FlowNetwork,
+    HoleCd,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -219,7 +220,8 @@ def _solve(
     cd_exit_crossflow: str = "none",
 ) -> dict[str, float]:
     """`radiation` = (beam length, wall emissivity, emissivity model), or None
-    for none. `cd_exit_crossflow` is the plate's opt-in exit-crossflow Cd term
+    for none. `cd_exit_crossflow` is the plate's HoleCd(exit_crossflow=...), the
+    opt-in exit-crossflow Cd term
     (#1074), reported by exit_crossflow_cd_runner, never scored here."""
     y_gas, _ = hot_gas()
     y_gas = list(y_gas)
@@ -257,7 +259,7 @@ def _solve(
             angle_deg=angle,
             wall_conductivity=cb.get_material_conductivity("nimonic75", T_WALL_REF),
             material="nimonic75",
-            cd_exit_crossflow=cd_exit_crossflow,
+            hole_cd=HoleCd(exit_crossflow=cd_exit_crossflow),
             **kw,
         )
     )

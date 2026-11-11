@@ -3,7 +3,7 @@
 A crossflow passing the jets' exits lowers their Cd, steeply at large Gc/Gj:
 Rogers & Hersh (1976, NASA CR-2681) on single holes, and Florschuetz,
 Metzger & Su (1982, NASA CR-3630 Table 4.1) on the impingement plates
-themselves. ``cd_crossflow`` selects the law; the default is CR-2681's.
+themselves. ``HoleCd(exit_crossflow=...)`` selects the law; the default is CR-2681's.
 
 The stagnant upstream rows of CR-3630 B(5,4,1) at mc/mj 0.99 (Gc/Gj ~125)
 used to come out with alternating-sign jet flows (#799): a constant Cd makes
@@ -24,6 +24,7 @@ from scipy.optimize._numdiff import approx_derivative
 import combaero as cb
 from combaero.network import (
     FlowNetwork,
+    HoleCd,
     ImpingementPlateElement,
     MassFlowBoundary,
     NetworkSolver,
@@ -65,7 +66,7 @@ def _b541(
     net.add_node(MassFlowBoundary("feed", m_dot=mc * m_j, Tt=T0, Y=Y_AIR))
     arr = ImpingementArray(
         "a", n_rows=N_ROWS, d_jet=D_JET, xn_d=5, yn_d=4, z_d=1, span=SPAN,
-        plate_thickness=D_JET, Cd=0.85, cd_crossflow=law,
+        plate_thickness=D_JET, hole_cd=HoleCd(Cd=0.85, exit_crossflow=law),
     )  # fmt: skip
     arr.add_to(net, "supply", "exit", bypass="feed")
     solver = NetworkSolver(net)
@@ -180,15 +181,18 @@ def test_table_4_1_is_refused_for_a_plate_it_does_not_cover() -> None:
     with pytest.raises(ValueError, match="Table 4.1"):
         ImpingementPlateElement(
             "p", "s", "c", d_jet=D_JET, xn_d=5, yn_d=8, z_d=2, span=SPAN,
-            plate_thickness=D_JET, cd_crossflow="florschuetz_metzger_su_1982",
+            plate_thickness=D_JET,
+            hole_cd=HoleCd(exit_crossflow="florschuetz_metzger_su_1982"),
         )  # fmt: skip
 
 
 def test_an_unknown_law_is_refused() -> None:
-    with pytest.raises(ValueError, match="cd_crossflow"):
+    with pytest.raises(ValueError, match="exit_crossflow 'mcgreehan' is not one of"):
+        HoleCd(exit_crossflow="mcgreehan")
+    with pytest.raises(ValueError, match="does not apply to this element"):
         ImpingementPlateElement(
             "p", "s", "c", d_jet=D_JET, xn_d=5, yn_d=4, z_d=1, span=SPAN,
-            plate_thickness=D_JET, cd_crossflow="mcgreehan",  # type: ignore[arg-type]
+            plate_thickness=D_JET, hole_cd=HoleCd(exit_crossflow="rowbury_2001"),
         )  # fmt: skip
 
 

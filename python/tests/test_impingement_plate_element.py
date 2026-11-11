@@ -21,6 +21,7 @@ from combaero.network import (
     ConvectiveSurface,
     EffusionPlateElement,
     FlowNetwork,
+    HoleCd,
     ImpingementCrossflowElement,
     ImpingementPlateElement,
     NetworkMixtureState,
@@ -121,13 +122,13 @@ def test_lichtarowicz_refuses_a_one_diameter_plate() -> None:
         b = PressureBoundary(n)
         b.Pt, b.Tt, b.Y = (1.03e5 if n == "s" else 1.0e5), 300.0, Y_AIR
         g.add_node(b)
-    g.add_element(_plate(correlation="Lichtarowicz"))
+    g.add_element(_plate(hole_cd=HoleCd(correlation="Lichtarowicz")))
     with pytest.raises(ValueError, match="'p'"):
         NetworkSolver(g).solve()
 
 
 def test_metering_correlations_are_refused() -> None:
-    p = _plate(correlation="ReaderHarrisGallagher")
+    p = _plate(hole_cd=HoleCd(correlation="ReaderHarrisGallagher"))
     g = FlowNetwork()
     g.add_node(PlenumNode("s"))
     g.add_node(PlenumNode("c"))

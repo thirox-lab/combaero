@@ -23,6 +23,7 @@ from combaero.network import (
     EffusionPlateElement,
     FilmCoolingElement,
     FlowNetwork,
+    HoleCd,
     ImpingementArray,
     ImpingementPlateElement,
     NetworkSolver,
@@ -39,7 +40,8 @@ _ISO_GUI = _REPO / "gui" / "examples" / "iso5167_orifice_metering.json"
 
 D = 0.01
 
-# One constructor per orifice-family element, taking (correlation, **cd).
+# One constructor per orifice-family element, taking (correlation, **cd): the
+# plain orifice through its own keywords, every other through its HoleCd.
 _FAMILY = {
     "OrificeElement": lambda corr, **kw: OrificeElement(
         "o", "a", "b", diameter=D, correlation=corr, plate_thickness=3 * D, **kw
@@ -52,8 +54,7 @@ _FAMILY = {
         wall_thickness=3e-3,
         pitch=6e-3,
         panel_area=1e-2,
-        correlation=corr,
-        **kw,
+        hole_cd=HoleCd(correlation=corr, **kw),
     ),
     "FilmCoolingElement": lambda corr, **kw: FilmCoolingElement(
         "o",
@@ -63,11 +64,16 @@ _FAMILY = {
         holes_per_row=10,
         lateral_pitch=4e-3,
         wall_thickness=3e-3,
-        correlation=corr,
-        **kw,
+        hole_cd=HoleCd(correlation=corr, **kw),
     ),
     "SlotFilmElement": lambda corr, **kw: SlotFilmElement(
-        "o", "a", "b", slot_height=2e-3, span=0.1, lip_thickness=6e-3, correlation=corr, **kw
+        "o",
+        "a",
+        "b",
+        slot_height=2e-3,
+        span=0.1,
+        lip_thickness=6e-3,
+        hole_cd=HoleCd(correlation=corr, **kw),
     ),
     "ImpingementPlateElement": lambda corr, **kw: ImpingementPlateElement(
         "o",
@@ -79,8 +85,7 @@ _FAMILY = {
         z_d=2.0,
         span=0.1,
         plate_thickness=2.5e-3,
-        correlation=corr,
-        **kw,
+        hole_cd=HoleCd(correlation=corr, **kw),
     ),
     "ImpingementArray": lambda corr, **kw: ImpingementArray(
         "o",
@@ -91,8 +96,7 @@ _FAMILY = {
         z_d=2.0,
         span=0.1,
         plate_thickness=2.5e-3,
-        correlation=corr,
-        **kw,
+        hole_cd=HoleCd(correlation=corr, **kw),
     ),
 }
 

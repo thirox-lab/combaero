@@ -34,6 +34,7 @@ import pytest
 import combaero as cb
 from combaero.network import (
     FlowNetwork,
+    HoleCd,
     ImpingementCrossflowElement,
     ImpingementPlateElement,
     NetworkMixtureState,
@@ -96,7 +97,7 @@ def _chain(
                 span=span,
                 plate_thickness=D,
                 row=i,
-                **({} if cd_crossflow is None else {"cd_crossflow": cd_crossflow}),
+                hole_cd=HoleCd(exit_crossflow="auto" if cd_crossflow is None else cd_crossflow),
             )
         )
         to = f"c{i + 1}" if i < N_ROWS else "exit"
@@ -180,7 +181,7 @@ def test_without_the_momentum_term_the_supply_stays_uniform() -> None:
     """Why ImpingementCrossflowElement exists: plain channels carry friction
     only, every row sees the same pressure drop, and on the strongest
     crossflow geometry (5, 4, 1) row 10's Gc/Gj comes out at twice Eq. 8.
-    The hole Cd is held constant (``cd_crossflow='none'``) to isolate the
+    The hole Cd is held constant (``HoleCd(exit_crossflow='none')``) to isolate the
     momentum term: at twice Eq. 8 the crossflow Cd (#800) would act too."""
     m, gc, _ = _chain(5.0, 4.0, 1.0, momentum=False, cd_crossflow="none")
     assert max(m) / min(m) < 1.05

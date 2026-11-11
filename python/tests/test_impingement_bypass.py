@@ -16,6 +16,7 @@ import combaero as cb
 from combaero.network import (
     ChannelElement,
     FlowNetwork,
+    HoleCd,
     ImpingementArray,
     ImpingementCrossflowElement,
     MassFlowBoundary,
@@ -113,12 +114,12 @@ def test_starved_rows_are_reported_unresolved() -> None:
     """A row whose plate drop is below 1% of the gap's dynamic head is below
     the crossflow chain's resolution (#729). Closed, no row is; a bypass that
     starves the upstream rows marks them, and only them. With the holes' Cd
-    held constant (``cd_crossflow='none'``): under the crossflow Cd (#800)
+    held constant (``HoleCd(exit_crossflow='none')``): under the crossflow Cd (#800)
     the same starved rows need a drop well above that (next test)."""
     res_c, arr_c = _closed()
     s = arr_c.summarize(res_c["__element_diag__"])
     assert s["n_rows_unresolved"] == 0.0
-    net, arr = _with_bypass(0.05, cd_crossflow="none")
+    net, arr = _with_bypass(0.05, hole_cd=HoleCd(exit_crossflow="none"))
     d = _solve(net)["__element_diag__"]
     s = arr.summarize(d)
     flagged = [i for i, f in enumerate(s["rows_unresolved"], 1) if f]

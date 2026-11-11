@@ -22,6 +22,7 @@ from combaero.network import (
     ChannelElement,
     EffusionPlateElement,
     FlowNetwork,
+    HoleCd,
     MomentumChamberNode,
     NetworkMixtureState,
     NetworkSolver,
@@ -57,8 +58,7 @@ def _liner(angle_deg: float = 30.0, correlation: str = "IdelchikThick", **chambe
             pitch=6e-3,
             panel_area=0.01,
             angle_deg=angle_deg,
-            correlation=correlation,
-            Cd=0.6 if correlation == "fixed" else None,
+            hole_cd=HoleCd(correlation=correlation, Cd=0.6 if correlation == "fixed" else None),
         )
     )
     return g

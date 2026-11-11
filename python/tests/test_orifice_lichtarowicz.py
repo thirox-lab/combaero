@@ -14,6 +14,7 @@ import combaero as cb
 from combaero.network import (
     EffusionPlateElement,
     FlowNetwork,
+    HoleCd,
     NetworkSolver,
     OrificeElement,
     PressureBoundary,
@@ -87,7 +88,7 @@ def test_an_effusion_plate_can_select_it() -> None:
         wall_thickness=4 * D,
         pitch=8 * D,
         panel_area=1e-3,
-        correlation="Lichtarowicz",
+        hole_cd=HoleCd(correlation="Lichtarowicz"),
     )
     diag = _solve(e)
     assert 0.6 < diag["Cd"] < 0.85

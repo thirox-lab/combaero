@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from .components import (
     CasingRadiation,
     GasRadiation,
+    HoleCd,
     ImpingementCrossflowElement,
     ImpingementPlateElement,
     PlenumNode,
@@ -43,6 +44,7 @@ from .components import (
     WallLayer,
     _max_over_min,
 )
+from .hole_cd import _hole_cd_spec
 
 if TYPE_CHECKING:
     from .graph import FlowNetwork
@@ -73,9 +75,18 @@ class ImpingementArray:
         The array's id; every row element and node is namespaced under it.
     n_rows : int
         Spanwise rows, counted from the closed (upstream) end.
-    d_jet, xn_d, yn_d, z_d, span, plate_thickness, pattern, correlation, Cd,
-    Nu_multiplier :
+    d_jet, xn_d, yn_d, z_d, span, plate_thickness, pattern, Nu_multiplier :
         As ``ImpingementPlateElement``; every row shares them.
+    hole_cd : HoleCd or None
+        The holes' Cd, as ``ImpingementPlateElement(hole_cd=...)``; every row
+        shares it. None: the row's defaults ('fixed' at Florschuetz's 0.79,
+        the gap's crossflow on the Cd by Rogers & Hersh 1976, #800).
+        ``HoleCd(exit_crossflow=...)`` picks the crossflow law:
+        'rogers_hersh_1976' ("auto"), 'florschuetz_metzger_su_1982' (CR-3630
+        Table 4.1, the plates it covers) or 'none' (the constant Cd).
+    correlation, Cd, cd_crossflow :
+        Deprecated since 0.12.0, removed in 0.13.0: ``hole_cd=HoleCd(
+        correlation=..., Cd=..., exit_crossflow=...)``.
     roughness : float
         Of the target and jet plate in the gap, for the crossflow friction.
     bypass_length : float or None
@@ -85,10 +96,6 @@ class ImpingementArray:
         Entry loss into the gap, on its dynamic head: 0 for a bypass arriving
         along a duct, 0.5 for an abrupt sharp-edged entry from a large
         plenum. Unused when the gap continues an upstream array's.
-    cd_crossflow : {'rogers_hersh_1976', 'florschuetz_metzger_su_1982', 'none'}
-        The holes' Cd under the gap's crossflow (#800), as
-        ``ImpingementPlateElement``: Rogers & Hersh (1976) by default,
-        CR-3630 Table 4.1 for the plates it covers, or the constant Cd.
     """
 
     id: str
@@ -100,15 +107,14 @@ class ImpingementArray:
     span: float
     plate_thickness: float
     pattern: Literal["inline", "staggered"] = "inline"
-    correlation: str = "fixed"
+    correlation: str | None = None
     Cd: float | None = None
     Nu_multiplier: float = 1.0
     roughness: float = 0.0
     bypass_length: float | None = None
     bypass_entry_K: float = 0.0
-    cd_crossflow: Literal["rogers_hersh_1976", "florschuetz_metzger_su_1982", "none"] = (
-        "rogers_hersh_1976"
-    )
+    cd_crossflow: Literal["rogers_hersh_1976", "florschuetz_metzger_su_1982", "none"] | None = None
+    hole_cd: HoleCd | None = None
     _bypass: str | None = field(default=None, init=False, repr=False)
     _rows: list[tuple[str, str, str]] = field(default_factory=list, init=False, repr=False)
 
@@ -119,14 +125,16 @@ class ImpingementArray:
             raise ValueError(f"ImpingementArray {self.id!r}: bypass_length must be positive")
         if self.bypass_entry_K < 0.0:
             raise ValueError(f"ImpingementArray {self.id!r}: bypass_entry_K must be non-negative")
-        if self.Cd is not None and self.correlation != "fixed":
-            # As ImpingementPlateElement (#872), said at construction.
-            raise ValueError(
-                f"ImpingementArray {self.id!r}: Cd={self.Cd!r} with correlation="
-                f"{self.correlation!r}. The correlation computes its own Cd and a given "
-                "one would be ignored. For a fixed discharge coefficient pass "
-                "correlation='fixed'; to use the correlation, drop Cd."
-            )
+        # The rows' HoleCd: given, or built from the deprecated fields (one
+        # DeprecationWarning, here, not per row). A Cd with a correlation
+        # (#872) is refused here, at construction, by HoleCd.
+        self.hole_cd = _hole_cd_spec(
+            f"ImpingementArray {self.id!r}",
+            self.hole_cd,
+            {"correlation": self.correlation, "Cd": self.Cd, "cd_crossflow": self.cd_crossflow},
+            stacklevel=4,
+        )
+        self.correlation = self.Cd = self.cd_crossflow = None
 
     def plate_id(self, row: int) -> str:
         return f"{self.id}__p{row}"
@@ -180,11 +188,9 @@ class ImpingementArray:
                     span=self.span,
                     plate_thickness=self.plate_thickness,
                     pattern=self.pattern,
-                    correlation=self.correlation,
-                    Cd=self.Cd,
                     row=i,
                     Nu_multiplier=self.Nu_multiplier,
-                    cd_crossflow=self.cd_crossflow,
+                    hole_cd=self.hole_cd,
                 )
             )
             net.add_element(

@@ -35,6 +35,7 @@ import pytest
 import combaero as cb
 from combaero.network import (
     FlowNetwork,
+    HoleCd,
     ImpingementArray,
     MassFlowBoundary,
     NetworkSolver,
@@ -133,7 +134,7 @@ def _solve(key: Test) -> list[dict[str, float]]:
         z_d=z,
         span=SPAN,
         plate_thickness=d,  # Table 3.1: b = d
-        Cd=PLATE_CD[(xn, yn)],
+        hole_cd=HoleCd(Cd=PLATE_CD[(xn, yn)]),
     )
     bypass = None
     if m_c > 0.0:

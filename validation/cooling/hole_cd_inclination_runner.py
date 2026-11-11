@@ -12,7 +12,7 @@ THE NETWORK, NOT THE FORMULA. Each operating point is a rig built as a
 network and solved:
 
     PressureBoundary(coolant, Pt = PR p_inf) -> FilmCoolingElement
-        (cylindrical, IdelchikThick, cd_inclination off / on)
+        (cylindrical, IdelchikThick, HoleCd inclination off / on)
         -> PressureBoundary(exit, p_inf)
 
 and the model's Cd is its solved flow over the papers' ideal flow
@@ -54,7 +54,13 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import combaero as cb
-from combaero.network import FilmCoolingElement, FlowNetwork, NetworkSolver, PressureBoundary
+from combaero.network import (
+    FilmCoolingElement,
+    FlowNetwork,
+    HoleCd,
+    NetworkSolver,
+    PressureBoundary,
+)
 
 from validation.cooling.schema import SeriesMetadata, load_dataset, load_points
 
@@ -119,8 +125,7 @@ def model_cd(
             wall_thickness=l_over_d * d * math.sin(math.radians(alpha)),
             angle_deg=alpha,
             hole_type="cylindrical",
-            correlation="IdelchikThick",
-            cd_inclination=inclination,
+            hole_cd=HoleCd(correlation="IdelchikThick", inclination=inclination),
         )
     )
     r = NetworkSolver(g).solve()

@@ -824,9 +824,9 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=3.27e-3,
                              material=None,               # T_wall_limit only (#998)
                              gas_baseline="chamber",      # or "flat_plate"
                              gas_start_length=None,       # [m], flat_plate only
-                             cd_inclination="auto",       # or "none" / "idelchik_3_2"
+                             hole_cd=HoleCd(),            # or HoleCd(inclination="none",
+                                                          #   exit_crossflow="rowbury_2001")
                              radiation=None,              # or GasRadiation(beam_length=...)
-                             cd_exit_crossflow="none",    # or "rowbury_2001"
                              exit_crossflow_region="suction_surface",
                              exit_crossflow_orientation_deg=0.0)
 diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
@@ -879,12 +879,12 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   `correlation="IdelchikThick"`, Idelchik diagram 3-2's inclined-inlet loss
   added to the thick hole's inlet coefficient, reported as
   `Cd_inclination_dzeta` (exactly 0.0 at 90 deg, so a normal hole is
-  unchanged). `cd_inclination` on `EffusionPlateElement` and
+  unchanged). `HoleCd(inclination=...)` on `EffusionPlateElement` and
   `FilmCoolingElement`: `"auto"` (default) applies it to a cylindrical hole on
   IdelchikThick and leaves it off for a shaped hole and for every other
   correlation; `"none"` switches it off; `"idelchik_3_2"` forces it, and any
-  other correlation (`"fixed"` included) then raises. The attribute holds the
-  resolved model ("none" for "auto" on a 90 deg hole, which has no inclined
+  other correlation (`"fixed"` included) then raises. The `cd_inclination`
+  attribute holds the resolved model ("none" for "auto" on a 90 deg hole, which has no inclined
   inlet). Shaped holes stay off because no shape term offsets it:
   alone it moves Gritsch 1998's fan and laidback holes from -2% / 0% to
   -11% / -10% (accuracy, cross-source). Outside diagram 3-2's Re > 1e4 and
@@ -892,9 +892,9 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   cylindrical holes read 0 than before (low-Re effusion plates, for one).
   Cross-source accuracy on Hay 1983 and Gritsch 1998:
   `validation/cooling/hole_cd_inclination_runner.py`.
-- **Exit-crossflow Cd term, opt-in (#1074).** `cd_exit_crossflow="rowbury_2001"`
+- **Exit-crossflow Cd term, opt-in (#1074).** `HoleCd(exit_crossflow="rowbury_2001")`
   (`EffusionPlateElement` and `FilmCoolingElement`, any correlation including
-  `"fixed"`, with or without `cd_inclination`) puts Rowbury, Oldfield & Lock
+  `"fixed"`, with or without the inclination term) puts Rowbury, Oldfield & Lock
   (2001) Eqs. 7-8 on the no-crossflow Cd: `1/Cd^2 = 1/Cd0^2 + A k^-B - C`,
   `k = G_h^2 f / (rho_h rho_m u_m^2)` on the hole's actual flux (a shaped
   film hole: at its exit plane, `G / area_ratio`), `f` the surface-normal
@@ -954,7 +954,9 @@ from combaero.network import EffusionLiner
 liner = EffusionLiner("ln", n_segments=4, length=0.152, width=0.152, duct_height=0.03,
                       hole_diameter=3.27e-3, wall_thickness=6.3e-3,
                       pitch_x=15.24e-3, pitch_y=15.24e-3,
-                      radiation=None)   # or GasRadiation(...): every panel's hot face
+                      radiation=None,   # or GasRadiation(...): every panel's hot face
+                      hole_cd=None)     # or HoleCd(...): every panel's Cd; its None
+                                        # correlation is McGreehanSchotsch here
 liner.add_to(net, coolant_in="cin", coolant_out="cout", gas="liner_chamber")
 liner.summarize(res["__element_diag__"])   # bleed, U1/Vi, Cd, P_backside, T_wall per station
 ```
@@ -1525,8 +1527,8 @@ net.add_element(FilmCoolingElement(
     n_rows=2, row_pitch=0.01, angle_deg=30.0,
     hole_type="shaped", area_ratio=3.5, breakout_width=3e-3,  # Colban
     # hole_type="cylindrical", turbulence_intensity=0.05      # Baldauf
-    # cd_inclination="auto"  # hole-angle Cd term: on for cylindrical, off for shaped
-    # cd_exit_crossflow="rowbury_2001"  # opt-in exit-crossflow Cd term (chamber discharge)
+    # hole_cd=HoleCd(inclination="auto")  # hole-angle Cd term: on for cylindrical, off for shaped
+    # hole_cd=HoleCd(exit_crossflow="rowbury_2001")  # opt-in exit-crossflow Cd (chamber discharge)
 ))
 net.add_wall(ThermalWall(
     id="liner", element_a="hot_duct", element_b="backside",
@@ -1547,7 +1549,8 @@ net.add_wall(ThermalWall(
   liner's Tu comes from what is upstream of it. `C_m_multiplier` is the
   user's rig-matching factor, never scored. Flow: an orifice of the slot's
   area, `lip_thickness` long, its discharge correlation fed the hydraulic
-  diameter `2SW/(S+W)` (give a measured Cd with `correlation="fixed"`).
+  diameter `2SW/(S+W)` (give a measured Cd with
+  `hole_cd=HoleCd(correlation="fixed", Cd=...)`).
 
   ```python
   net.add_element(SlotFilmElement("ring", "annulus", "gas",
@@ -2114,6 +2117,64 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=0.8e-3,
 ### Network Elements
 
 **Writing or subclassing an element.** Every element declares the units of its residual rows for the solver's row scaling: `residual_scale_kind = "p"` (Pa) or `"mdot"` (kg/s), a class attribute or a property; a junction (`MultiPortChamberBase`) declares `row_scale_kinds()`, one per row. There is no default. `FlowNetwork.validate()` raises `TypeError` unless the declaration sits on the class that defines `residuals` or a subclass of it, so a subclass that rewrites `residuals` re-declares its units. A wrong kind weights the row 1e5-1e9 wrong in the norm the root finder minimises (RESIDUAL-ROW-SCALING in `NetworkSolver._build_residual_scales`). A strict solve (see the safety net above) also checks every declaration against the Jacobian at the converged solution and raises `RowKindMismatchError` (a `TypeError`, in `combaero.network.solver`) on a misfiled row; `solver.check_row_kinds(x)` returns the per-row report (`owner`, `declared`, `measured`, `verdict` = agree / DISAGREE / unclear / untestable) for any `x`, best a converged one.
+
+#### The hole discharge coefficient: `HoleCd`
+
+Every hole element takes its Cd's MODEL CHOICES as one frozen spec,
+`hole_cd=HoleCd(...)` (`combaero.network.HoleCd`, like `GasRadiation` for
+radiation): `OrificeElement`, `EffusionPlateElement`, `FilmCoolingElement`,
+`SlotFilmElement`, `ImpingementPlateElement`, and the builders
+`EffusionLiner` and `ImpingementArray`, which hand it to every panel or
+row. The geometry stays on the element (bore, hole count, angle, hole type,
+and the exit term's `exit_crossflow_region` / `exit_crossflow_orientation_deg`).
+The terms compose in one chain (`python/combaero/network/hole_cd.py`, C++
+`hole_cd_compose`): base correlation with the inclination and inlet
+crossflow terms, then the exit crossflow.
+
+```python
+from combaero.network import HoleCd
+
+HoleCd(
+    correlation=None,        # None: the element's default (below)
+    Cd=None,                 # the 'fixed' correlation's value only (#872)
+    inclination="auto",      # "none" / "idelchik_3_2"
+    inlet_crossflow="auto",  # "none" / "mcgreehan_schotsch"
+    exit_crossflow="auto",   # "none" / "rowbury_2001" / "rogers_hersh_1976"
+)                            #   / "florschuetz_metzger_su_1982"
+```
+
+A field left at None or `"auto"` is THAT ELEMENT's default, exactly its
+behaviour before the spec; the defaults differ per element and are not
+unified:
+
+| Field | `OrificeElement` | `EffusionPlateElement` | `FilmCoolingElement` | `SlotFilmElement` | `ImpingementPlateElement` |
+|---|---|---|---|---|---|
+| `correlation` None | its `correlation` keyword, else `"ReaderHarrisGallagher"` | `"IdelchikThick"` (`"McGreehanSchotsch"` on an `EffusionLiner`) | `"IdelchikThick"` | `"IdelchikThick"` | `"fixed"` (Cd 0.79) |
+| `inclination` `"auto"` | none | Idelchik 3-2 on an inclined IdelchikThick hole | the same, cylindrical holes only | none | none |
+| `inlet_crossflow` `"auto"` | none (U1/Vi = 0) | McGreehan-Schotsch's U1/Vi when duct-fed (`crossflow_segments`) | none | none | none |
+| `exit_crossflow` `"auto"` | none | none (`"rowbury_2001"` opts in) | none (`"rowbury_2001"` opts in) | none | `"rogers_hersh_1976"` |
+
+- **Refusals.** `HoleCd` itself refuses an unknown name in any field, a
+  non-finite `Cd`, and a `Cd` with a correlation other than `"fixed"`. An
+  element refuses a term it does not have: `"idelchik_3_2"` and
+  `"rowbury_2001"` on a plain orifice, a slot or an impingement row; the jet
+  laws on a film or effusion hole; `"mcgreehan_schotsch"` on a plenum-fed
+  hole or with another correlation; `"florschuetz_metzger_su_1982"` on a
+  plate CR-3630 Table 4.1 does not cover. Every refusal names the element.
+- **`inlet_crossflow="none"` on a duct-fed panel** holds U1/Vi at 0: the
+  caller takes the panel as plenum-fed, and the duct-fed refusal of a
+  correlation without the crossflow term no longer applies.
+- **The plain orifice keeps `correlation` and `Cd`** as its own keywords
+  (the ISO 5167 metering use), not deprecated; a `HoleCd` field left at None
+  takes them, and one that disagrees with them raises.
+- **`element.hole_cd`** holds the resolved spec (correlation and Cd as
+  used, the terms as given); `cd_inclination`, `cd_exit_crossflow` (film,
+  effusion) and `cd_crossflow` (impingement) read the models in use, "auto"
+  resolved. Diagnostics keys are unchanged.
+- **Deprecated keywords.** `correlation`, `Cd`, `cd_inclination`,
+  `cd_exit_crossflow` (effusion, film, slot: the first two) and
+  `cd_crossflow` (impingement row and array) still work until 0.13.0; see
+  "Hole-Cd keywords" below.
 
 ```python
 from combaero.network import (
@@ -3495,7 +3556,8 @@ leaving through the gap as crossflow. **This is one configuration**, and
 from combaero.network import ImpingementArray, WallLayer
 
 arr = ImpingementArray("ia", n_rows=10, d_jet=0.00254, xn_d=5.0, yn_d=4.0, z_d=2.0,
-                       span=0.122, plate_thickness=0.00254)
+                       span=0.122, plate_thickness=0.00254,
+                       hole_cd=None)   # or HoleCd(...): every row's Cd (fixed 0.79, Rogers-Hersh)
 arr.add_to(net, supply="supply", exit="exit")            # rows ia__p{i}, ia__x{i}, ia__c{i}
 arr.add_wall(net, "w", hot_element="hot", layers=[WallLayer(0.001, 20.0)],
              radiation_hot=None,       # GasRadiation / CasingRadiation, hot face
@@ -3611,12 +3673,13 @@ The physics is C++'s `cb.jet_row_heat_transfer(set, cb.JetRowGeometry(...),
 m_jet, m_crossflow, mu, k, Pr)`, which returns `h` and its analytic
 derivatives with respect to both flows; the element only decides which flows
 are crossflow.
-- Hole Cd: default `'fixed'` at Florschuetz's 0.79 (measured 0.73-0.85), what an unset `Cd` takes; a `Cd` given with a correlation raises (#872);
+- Hole Cd (`hole_cd=HoleCd(correlation=..., Cd=...)`): default `'fixed'` at Florschuetz's 0.79 (measured 0.73-0.85), what an unset `Cd` takes; a `Cd` given with a correlation raises (#872);
   alternatives `'IdelchikThick'`, `'Lichtarowicz'` (long hole, l/d 2-10)
   and `'McGreehanSchotsch'` (supply-side `U1/Vi = 0`, never Gc/Gj).
   `Cd_in_range` reports whether the plate is inside the chosen source's range.
-- **Crossflow on the holes (#800), `cd_crossflow`** (also on `ImpingementArray`
-  and in the GUI). The gap's crossflow bends the jets over and lowers their Cd,
+- **Crossflow on the holes (#800), `HoleCd(exit_crossflow=...)`** (also on
+  `ImpingementArray`, and in the GUI as `cd_crossflow`; `"auto"` is the
+  default below; the `cd_crossflow` attribute reads the law in use). The gap's crossflow bends the jets over and lowers their Cd,
   steeply at large Gc/Gj. In q = G_ideal / G_c (ideal hole over crossflow mass
   velocity, G_ideal = sqrt(2 rho dP)):
   - `'rogers_hersh_1976'` (default): Rogers & Hersh (1976, NASA CR-2681) Fig. 11,
@@ -4148,6 +4211,31 @@ Stolz's own range (Reader-Harris & Sattary 1996, Table 10: s 0.245 % against
 | `OrificeElement(correlation="Stolz")` | `correlation="ReaderHarrisGallagher"` (the default) | `ValueError` naming the replacement |
 | `cb.MeteringCdCorrelation.Stolz`, C++ `Cd_Stolz` | `cb.MeteringCdCorrelation.ReaderHarrisGallagher`, `Cd_ReaderHarrisGallagher` | `AttributeError` |
 | GUI orifice "Stolz (ISO 5167:1980, deprecated)" and `SolveResponse.deprecations` | Reader-Harris/Gallagher | a saved file with `"correlation": "Stolz"` is refused with a message naming `ReaderHarrisGallagher` |
+
+### Hole-Cd keywords (deprecated in 0.12.0)
+
+The per-element hole-Cd keywords are deprecated since 0.12.0 and **will be
+removed in 0.13.0**; `hole_cd=HoleCd(...)` replaces them (see "The hole
+discharge coefficient: `HoleCd`"). Until then each still builds the same
+element, residuals and Jacobian bit for bit, with ONE `DeprecationWarning`
+per construction naming the keywords given, the `HoleCd` that replaces them
+and the removal release (once per `ImpingementArray`, not per row). Passing
+`hole_cd=` together with any of them raises `ValueError`. `FlowNetwork.to_dict`
+writes `hole_cd`, not these keywords.
+
+| Deprecated keyword | On | `HoleCd` field |
+|---|---|---|
+| `correlation=` | `EffusionPlateElement`, `FilmCoolingElement`, `SlotFilmElement`, `ImpingementPlateElement`, `ImpingementArray` | `correlation` |
+| `Cd=` | the same | `Cd` |
+| `cd_inclination=` (pre-release, never in a release) | `EffusionPlateElement`, `FilmCoolingElement` | `inclination` |
+| `cd_exit_crossflow=` (pre-release, never in a release) | `EffusionPlateElement`, `FilmCoolingElement` | `exit_crossflow` |
+| `cd_crossflow=` | `ImpingementPlateElement`, `ImpingementArray` | `exit_crossflow` |
+
+Not deprecated: `OrificeElement`'s own `correlation`/`Cd` (the metering
+keywords), `DiameterDischargeCoefficientConnectionElement`'s `Cd`, the
+geometry keywords `exit_crossflow_region` / `exit_crossflow_orientation_deg`,
+and the read-only attributes `cd_inclination`, `cd_exit_crossflow`,
+`cd_crossflow`. The GUI's saved-file fields are unchanged.
 
 ### Al 6061 conductivity (#761)
 

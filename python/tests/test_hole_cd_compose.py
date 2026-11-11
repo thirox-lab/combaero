@@ -22,7 +22,7 @@ import pytest
 
 import combaero as cb
 from combaero import _solver_tools
-from combaero.network import NetworkSolver
+from combaero.network import HoleCd, NetworkSolver
 from combaero.network.components import (
     FilmCoolingElement,
     LosslessConnectionElement,
@@ -262,7 +262,7 @@ def _chamber(element, dp: float = 0.03, m_gas: float = 2.0) -> FlowNetwork:  # n
 def _networks() -> dict[str, FlowNetwork]:
     nets: dict[str, FlowNetwork] = {}
     for corr in ("IdelchikThick", "McGreehanSchotsch", "fixed"):
-        cdkw = {"Cd": 0.7} if corr == "fixed" else {}
+        cd = 0.7 if corr == "fixed" else None
         for xf in ("none", "rowbury_2001"):
             for ang in (30.0, 90.0):
                 for dp, m_gas in ((0.03, 2.0), (0.3, 6.0)):
@@ -275,14 +275,12 @@ def _networks() -> dict[str, FlowNetwork]:
                         lateral_pitch=3e-3,
                         wall_thickness=3e-3,
                         angle_deg=ang,
-                        correlation=corr,
-                        cd_exit_crossflow=xf,
-                        **cdkw,
+                        hole_cd=HoleCd(correlation=corr, Cd=cd, exit_crossflow=xf),
                     )
                     nets[f"film|{corr}|{xf}|{ang}|{dp}"] = _chamber(film, dp, m_gas)
     for corr in ("Lichtarowicz", "IdelchikThick"):
         nets[f"slot|{corr}"] = _chamber(
-            SlotFilmElement("h", "cool", "ch", 1e-3, 0.05, 4e-3, correlation=corr)
+            SlotFilmElement("h", "cool", "ch", 1e-3, 0.05, 4e-3, hole_cd=HoleCd(correlation=corr))
         )
     for corr, d in (("ReaderHarrisGallagher", 0.02), ("IdelchikBeveled", 0.01)):
         g = FlowNetwork()
@@ -306,8 +304,7 @@ def _networks() -> dict[str, FlowNetwork]:
                     z_d=1.0,
                     span=12 * 4.0 * D,
                     plate_thickness=D,
-                    correlation=corr,
-                    cd_crossflow=law,
+                    hole_cd=HoleCd(correlation=corr, exit_crossflow=law),
                 ).add_to(g, "sup", "ex")
                 if susp:
                     for el in g.elements.values():

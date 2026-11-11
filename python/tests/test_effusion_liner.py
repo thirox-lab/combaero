@@ -23,6 +23,7 @@ from combaero.network import (
     EffusionLiner,
     EffusionPlateElement,
     FlowNetwork,
+    HoleCd,
     MomentumChamberNode,
     NetworkMixtureState,
     NetworkSolver,
@@ -224,7 +225,7 @@ def test_a_duct_fed_panel_must_use_the_crossflow_correlation() -> None:
         wall_thickness=2e-3,
         pitch=6e-3,
         panel_area=0.01,
-        correlation="IdelchikThick",
+        hole_cd=HoleCd(correlation="IdelchikThick"),
         crossflow_segments=(None, None),
         crossflow_area=1e-3,
     )
