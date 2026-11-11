@@ -212,17 +212,6 @@ def _fixed_cd(
     return data.Cd if data.correlation == "fixed" else None
 
 
-def _cd_inclination(data: EffusionPlateData | FilmCoolingData) -> str:
-    """The hole-angle Cd term an inclined cooling-hole element is built with:
-    the field's value with 'IdelchikThick', the only correlation it composes
-    with, and "none" otherwise ("auto", the default, resolves in the element
-    from the correlation and the hole type). Like _fixed_cd, the node keeps the
-    field whatever its correlation (the Inspector shows it for IdelchikThick
-    only), so switching the correlation does not leave an opt-in the element
-    would refuse."""
-    return data.cd_inclination if data.correlation == "IdelchikThick" else "none"
-
-
 def _radiation(
     data: GasRadiationData | None,
 ) -> GasRadiation | CasingRadiation | None:
@@ -1555,7 +1544,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 gas_start_length=(
                     data.gas_start_length if data.gas_baseline == "flat_plate" else None
                 ),
-                cd_inclination=_cd_inclination(data),
+                cd_inclination=data.cd_inclination,
                 cd_exit_crossflow=data.cd_exit_crossflow,
                 exit_crossflow_region=data.exit_crossflow_region,
                 exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,
@@ -1582,7 +1571,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 turbulence_intensity=data.turbulence_intensity,
                 correlation=data.correlation,
                 Cd=_fixed_cd(data),
-                cd_inclination=_cd_inclination(data),
+                cd_inclination=data.cd_inclination,
                 cd_exit_crossflow=data.cd_exit_crossflow,
                 exit_crossflow_region=data.exit_crossflow_region,
                 exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,

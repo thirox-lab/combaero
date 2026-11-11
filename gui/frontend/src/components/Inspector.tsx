@@ -74,6 +74,18 @@ const ORIFICE_FAMILY_TYPES = new Set([
 	"slot_film",
 ]);
 
+// A cooling hole's correlation change. The hole-angle Cd field shows for
+// IdelchikThick only, and the library refuses an explicit "idelchik_3_2"
+// with any other correlation; leaving IdelchikThick resets that choice to
+// "auto" so no hidden field makes the build fail.
+const withCorrelation = (
+	correlation: string,
+	cdInclination: string | undefined,
+): Record<string, string> =>
+	correlation !== "IdelchikThick" && cdInclination === "idelchik_3_2"
+		? { correlation, cd_inclination: "auto" }
+		: { correlation };
+
 const Inspector = () => {
 	const {
 		nodes,
@@ -2082,7 +2094,9 @@ const Inspector = () => {
 									<select
 										className="p-2 border rounded bg-white text-xs border-stone-200"
 										value={d.correlation || "IdelchikThick"}
-										onChange={(e) => set({ correlation: e.target.value })}
+										onChange={(e) =>
+											set(withCorrelation(e.target.value, d.cd_inclination))
+										}
 									>
 										<option value="IdelchikThick">
 											Deep Hole in Wall (Idelchik 4-18a)
@@ -2333,7 +2347,9 @@ const Inspector = () => {
 									<select
 										className="p-2 border rounded bg-white text-xs border-stone-200"
 										value={d.correlation || "IdelchikThick"}
-										onChange={(e) => set({ correlation: e.target.value })}
+										onChange={(e) =>
+											set(withCorrelation(e.target.value, d.cd_inclination))
+										}
 									>
 										<option value="IdelchikThick">
 											Deep Hole in Wall (Idelchik 4-18a)

@@ -8,10 +8,14 @@ is scored on.
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
+from _asgi_client import request
 
 from combaero.network import FilmCoolingElement
 from gui.backend.graph_builder import build_network_from_schema
+from gui.backend.main import app
 from gui.backend.runner import NetworkRunner
 from gui.backend.schemas import FilmCoolingData, NetworkGraphSchema
 
@@ -102,7 +106,7 @@ def test_cylindrical_holes_drop_the_shaped_geometry() -> None:
     assert e.area_ratio is None and e.breakout_width is None
 
 
-def test_the_hole_angle_cd_term_threads_through_with_idelchik_thick_only() -> None:
+def test_the_hole_angle_cd_term_threads_through() -> None:
     assert FilmCoolingData().cd_inclination == "auto"
     # The node's default hole is shaped, which "auto" leaves without the term;
     # a cylindrical hole gets it.
@@ -116,12 +120,51 @@ def test_the_hole_angle_cd_term_threads_through_with_idelchik_thick_only() -> No
         NetworkGraphSchema(**_schema(FILM, {"cd_inclination": "idelchik_3_2"}))
     ).elements["film"]
     assert on.cd_inclination == "idelchik_3_2"
-    kept = build_network_from_schema(
-        NetworkGraphSchema(
-            **_schema(FILM, {"cd_inclination": "idelchik_3_2", "correlation": "fixed"})
-        )
-    ).elements["film"]
-    assert kept.cd_inclination == "none"
+
+
+CYL = {"hole_type": "cylindrical", "lateral_pitch": 3e-3}
+
+
+def test_auto_applies_the_hole_angle_term_to_an_inclined_cylindrical_hole() -> None:
+    # The builder hands the node's "auto" to the element, which resolves it.
+    e = build_network_from_schema(NetworkGraphSchema(**_schema(FILM, CYL))).elements["film"]
+    assert e.angle_deg == 30.0 and e.correlation == "IdelchikThick"
+    assert e.cd_inclination == "idelchik_3_2" and e._cd_inclination_deg == 30.0
+    assert e._inclination_diagnostics()["Cd_inclination_dzeta"] > 0.0
+
+
+def test_auto_leaves_a_shaped_hole_without_the_hole_angle_term() -> None:
+    e = build_network_from_schema(NetworkGraphSchema(**_schema(FILM))).elements["film"]
+    assert e.hole_type == "shaped" and e.correlation == "IdelchikThick"
+    assert e.cd_inclination == "none" and e._cd_inclination_deg == 90.0
+    assert e._inclination_diagnostics()["Cd_inclination_dzeta"] == 0.0
+
+
+@pytest.mark.parametrize("hole_type", ["shaped", "cylindrical"])
+@pytest.mark.parametrize("correlation", ["fixed", "Lichtarowicz", "McGreehanSchotsch"])
+def test_an_explicit_hole_angle_term_the_correlation_cannot_take_is_refused(
+    hole_type: str, correlation: str
+) -> None:
+    # The builder used to turn this into "none" silently; the element refuses it.
+    holes = {
+        **(CYL if hole_type == "cylindrical" else {}),
+        "correlation": correlation,
+        "cd_inclination": "idelchik_3_2",
+    }
+    with pytest.raises(ValueError, match="does not compose with correlation"):
+        build_network_from_schema(NetworkGraphSchema(**_schema(FILM, holes)))
+
+
+def test_the_refused_hole_angle_term_reaches_the_user_as_a_readable_400() -> None:
+    holes = {"correlation": "fixed", "cd_inclination": "idelchik_3_2"}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = request(app, "POST", "/solve", json_body=_schema(FILM, holes))
+    assert r.status_code == 400, r.text[:300]
+    detail = r.json()["detail"]
+    assert "'film' [" in detail, detail
+    assert "does not compose with correlation='fixed'" in detail, detail
+    assert "Hint: the Hole Angle Cd Term" in detail, detail
 
 
 def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:

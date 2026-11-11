@@ -137,16 +137,24 @@ def test_the_hole_angle_cd_term_is_on_by_default_and_threads_through() -> None:
     assert on.elements["eff"]._cd_inclination_deg == 30.0
 
 
-def test_the_hole_angle_cd_term_is_read_only_with_idelchik_thick() -> None:
-    # The Inspector shows the field for IdelchikThick only; a node switched to
-    # another correlation keeps it, and the builder does not hand the element
-    # an opt-in it would refuse.
-    net = build_network_from_schema(
-        NetworkGraphSchema(
-            **_liner({"correlation": "Lichtarowicz", "cd_inclination": "idelchik_3_2"})
-        )
+def test_auto_applies_the_hole_angle_term_on_idelchik_thick_only() -> None:
+    on = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
+    assert on.elements["eff"]._inclination_diagnostics()["Cd_inclination_dzeta"] > 0.0
+    off = build_network_from_schema(
+        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "correlation": "Lichtarowicz"}))
     )
-    assert net.elements["eff"].cd_inclination == "none"
+    assert off.elements["eff"].cd_inclination == "none"
+    assert off.elements["eff"]._inclination_diagnostics()["Cd_inclination_dzeta"] == 0.0
+
+
+def test_an_explicit_hole_angle_term_off_idelchik_thick_is_refused() -> None:
+    # The builder used to turn this into "none" silently; the element refuses it.
+    with pytest.raises(ValueError, match="does not compose with correlation='Lichtarowicz'"):
+        build_network_from_schema(
+            NetworkGraphSchema(
+                **_liner({"correlation": "Lichtarowicz", "cd_inclination": "idelchik_3_2"})
+            )
+        )
 
 
 def test_the_exit_crossflow_cd_term_threads_through() -> None:
