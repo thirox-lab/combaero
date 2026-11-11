@@ -1,0 +1,2 @@
+- **One C++ call composes a hole element's Cd (`hole_cd_compose`).** The base Cd (fixed, ISO metering, or a discharge-hole correlation with its inclination and inlet-crossflow terms), the opt-in exit-crossflow loss and the impingement crossflow law now compose in C++ (`include/hole_cd.h`; Python `cb.hole_cd_compose` with `HoleCdModel`, `HoleCdInputs`, `HoleCdResult`, `HoleCdBase`, `HoleCdJetCrossflow`, `HOLE_CD_FIXED_MIN`), with analytic partials by input.
+  - It is an internal composition function. Element options, defaults, results and diagnostics are unchanged.

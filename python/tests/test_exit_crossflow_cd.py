@@ -423,10 +423,12 @@ def test_no_mainstream_momentum_returns_the_no_crossflow_cd() -> None:
     e._hole_cd.exit_node._inflows = [
         (eid, _Probe(0.0, 1500.0, Y_AIR), {}) for eid, _, _ in e._hole_cd.exit_node._inflows
     ]
-    cd, res, dk = e._hole_cd.exit_crossflow(
-        0.8, _Probe(1e-3, 600.0, Y_AIR), _Probe(0.0, 1500.0, Y_AIR)
+    r, _ = e._hole_cd._evaluate(
+        _Probe(1e-3, 600.0, Y_AIR), _Probe(0.0, 1500.0, Y_AIR), {}, jet=False
     )
-    assert (cd, res, dk) == (0.8, None, {})
+    assert not r.exit_active
+    assert r.cd_hole == r.cd_base
+    assert r.dCd_dG_h == r.dCd_drho_h == r.dCd_drho_m_u_m2 == 0.0
 
 
 class _Probe:

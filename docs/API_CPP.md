@@ -1342,6 +1342,40 @@ struct Rowbury2001ExitDensity { double rho, T, drho_dPt, drho_dTt, drho_dP;
 Rowbury2001ExitDensity rowbury_2001_exit_density(double Pt, double Tt, double P,
                                                  const std::vector<double>& X);
 
+// The hole-Cd chain in one call (hole_cd.h): the composition point of the
+// network's hole elements (python/combaero/network/hole_cd.py resolves the
+// options, gathers the inputs and maps the partials onto unknown names).
+// Terms, each the kernel's above: 1. base Cd0 -- Fixed (clamped into
+// [HOLE_CD_FIXED_MIN, 1]), Metering (metering_cd_and_dRe at Re_D) or
+// Discharge (the correlation at the hole Re and the inlet U1/Vi, inclination
+// inside DischargeHoleGeometry; dCd/dRe 0 below discharge_cd_re_floor unless
+// continue_re_floor); 2. the opt-in exit crossflow (Rowbury) on Cd0, off at
+// rho_m_u_m2 <= 0; 3. the impingement jet law, which replaces the hole's Cd
+// where it acts (its own partials only; Rogers & Hersh capped: the hole's
+// hold). Partials analytic, by input.
+constexpr double HOLE_CD_FIXED_MIN = 1e-4;
+enum class HoleCdBase { Fixed, Metering, Discharge };
+enum class HoleCdJetCrossflow { Off, RogersHersh1976, FlorschuetzMetzgerSu1982 };
+struct HoleCdModel { HoleCdBase base; double fixed_cd; MeteringCdCorrelation metering;
+                     DischargeCdCorrelation discharge; bool continue_re_floor;
+                     bool exit_crossflow; Rowbury2001Set exit_set;
+                     double exit_theta_deg, exit_alpha_deg;
+                     HoleCdJetCrossflow jet; double xn_d, yn_d, z_d; };
+struct HoleCdInputs { double Re, U1_over_Vi, Re_D, G_h, rho_h, rho_m_u_m2, G_ideal, G_c;
+                      bool suction; };
+struct HoleCdResult {
+    double Cd, dCd_dRe, dCd_dU1_over_Vi, dCd_dRe_D, dCd_dG_h, dCd_drho_h,
+           dCd_drho_m_u_m2, dCd_dG_ideal, dCd_dG_c;
+    double cd_base, cd_hole, dcd_base_dRe, dcd_base_dU1_over_Vi, dcd_base_dRe_D,
+           inclination_dzeta;  // per term
+    bool re_held, exit_active; double exit_ratio;
+    Rowbury2001KPerp k_perp; Rowbury2001Cd exit;
+    double exit_k_floor, exit_k_tier;  // tier 0 data, 0.5 authors' use, 1 faded
+    bool exit_floor_above_fit, exit_in_range, jet_acts, jet_partials, jet_capped;
+};
+HoleCdResult hole_cd_compose(const HoleCdModel& model, const DischargeHoleGeometry& hole,
+                             const OrificeGeometry& orifice, const HoleCdInputs& inputs);
+
 // Merge chamber (#471): the main-inlet face from the impulse balance
 //   P_f + m_main^2 R T_f / (P_f A^2) = P + m_out^2/(rho A^2) - J/A
 // with Tt and Tt_main STAGNATION temperatures (#578): the face's static T_f

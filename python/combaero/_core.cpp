@@ -31,6 +31,7 @@
 #include "friction.h"
 #include "geometry.h"
 #include "heat_transfer.h"
+#include "hole_cd.h"
 #include "humidair.h"
 #include "input_validation.h"
 #include "incompressible.h"
@@ -6659,6 +6660,83 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "    (Cd, dCd/dRe, dCd/d(U1_over_Vi))\n"
       "Analytic throughout. L/d and r/d are geometry and never enter the\n"
       "Jacobian; a Constant correlation returns exactly (Cd, 0, 0).");
+
+  // The hole-Cd chain: every term of a hole element's Cd in one call
+  // (hole_cd.h). Internal composition point of the network's hole elements.
+  m.attr("HOLE_CD_FIXED_MIN") = HOLE_CD_FIXED_MIN;
+  py::enum_<HoleCdBase>(m, "HoleCdBase", "Base Cd of the hole-Cd chain (hole_cd_compose).")
+      .value("Fixed", HoleCdBase::Fixed)
+      .value("Metering", HoleCdBase::Metering)
+      .value("Discharge", HoleCdBase::Discharge);
+  py::enum_<HoleCdJetCrossflow>(m, "HoleCdJetCrossflow",
+                                "Impingement jet-crossflow law of the hole-Cd chain.")
+      .value("Off", HoleCdJetCrossflow::Off)
+      .value("RogersHersh1976", HoleCdJetCrossflow::RogersHersh1976)
+      .value("FlorschuetzMetzgerSu1982", HoleCdJetCrossflow::FlorschuetzMetzgerSu1982);
+  py::class_<HoleCdModel>(m, "HoleCdModel",
+                          "Resolved options of the hole-Cd chain (hole_cd_compose).")
+      .def(py::init<>())
+      .def_readwrite("base", &HoleCdModel::base)
+      .def_readwrite("fixed_cd", &HoleCdModel::fixed_cd)
+      .def_readwrite("metering", &HoleCdModel::metering)
+      .def_readwrite("discharge", &HoleCdModel::discharge)
+      .def_readwrite("continue_re_floor", &HoleCdModel::continue_re_floor)
+      .def_readwrite("exit_crossflow", &HoleCdModel::exit_crossflow)
+      .def_readwrite("exit_set", &HoleCdModel::exit_set)
+      .def_readwrite("exit_theta_deg", &HoleCdModel::exit_theta_deg)
+      .def_readwrite("exit_alpha_deg", &HoleCdModel::exit_alpha_deg)
+      .def_readwrite("jet", &HoleCdModel::jet)
+      .def_readwrite("xn_d", &HoleCdModel::xn_d)
+      .def_readwrite("yn_d", &HoleCdModel::yn_d)
+      .def_readwrite("z_d", &HoleCdModel::z_d);
+  py::class_<HoleCdInputs>(m, "HoleCdInputs", "State the hole-Cd chain reads (hole_cd_compose).")
+      .def(py::init<>())
+      .def_readwrite("Re", &HoleCdInputs::Re)
+      .def_readwrite("U1_over_Vi", &HoleCdInputs::U1_over_Vi)
+      .def_readwrite("Re_D", &HoleCdInputs::Re_D)
+      .def_readwrite("G_h", &HoleCdInputs::G_h)
+      .def_readwrite("rho_h", &HoleCdInputs::rho_h)
+      .def_readwrite("rho_m_u_m2", &HoleCdInputs::rho_m_u_m2)
+      .def_readwrite("G_ideal", &HoleCdInputs::G_ideal)
+      .def_readwrite("G_c", &HoleCdInputs::G_c)
+      .def_readwrite("suction", &HoleCdInputs::suction);
+  py::class_<HoleCdResult>(m, "HoleCdResult", "Composed Cd, its partials and each term.")
+      .def_readonly("Cd", &HoleCdResult::Cd)
+      .def_readonly("dCd_dRe", &HoleCdResult::dCd_dRe)
+      .def_readonly("dCd_dU1_over_Vi", &HoleCdResult::dCd_dU1_over_Vi)
+      .def_readonly("dCd_dRe_D", &HoleCdResult::dCd_dRe_D)
+      .def_readonly("dCd_dG_h", &HoleCdResult::dCd_dG_h)
+      .def_readonly("dCd_drho_h", &HoleCdResult::dCd_drho_h)
+      .def_readonly("dCd_drho_m_u_m2", &HoleCdResult::dCd_drho_m_u_m2)
+      .def_readonly("dCd_dG_ideal", &HoleCdResult::dCd_dG_ideal)
+      .def_readonly("dCd_dG_c", &HoleCdResult::dCd_dG_c)
+      .def_readonly("cd_base", &HoleCdResult::cd_base)
+      .def_readonly("cd_hole", &HoleCdResult::cd_hole)
+      .def_readonly("dcd_base_dRe", &HoleCdResult::dcd_base_dRe)
+      .def_readonly("dcd_base_dU1_over_Vi", &HoleCdResult::dcd_base_dU1_over_Vi)
+      .def_readonly("dcd_base_dRe_D", &HoleCdResult::dcd_base_dRe_D)
+      .def_readonly("inclination_dzeta", &HoleCdResult::inclination_dzeta)
+      .def_readonly("re_held", &HoleCdResult::re_held)
+      .def_readonly("exit_active", &HoleCdResult::exit_active)
+      .def_readonly("exit_ratio", &HoleCdResult::exit_ratio)
+      .def_readonly("k_perp", &HoleCdResult::k_perp)
+      .def_readonly("exit", &HoleCdResult::exit)
+      .def_readonly("exit_k_floor", &HoleCdResult::exit_k_floor)
+      .def_readonly("exit_k_tier", &HoleCdResult::exit_k_tier)
+      .def_readonly("exit_floor_above_fit", &HoleCdResult::exit_floor_above_fit)
+      .def_readonly("exit_in_range", &HoleCdResult::exit_in_range)
+      .def_readonly("jet_acts", &HoleCdResult::jet_acts)
+      .def_readonly("jet_partials", &HoleCdResult::jet_partials)
+      .def_readonly("jet_capped", &HoleCdResult::jet_capped);
+  m.def("hole_cd_compose", &hole_cd_compose, py::arg("model"), py::arg("hole"),
+        py::arg("orifice"), py::arg("inputs"),
+        "The hole-Cd chain in one call: base Cd (fixed, ISO 5167 metering, or a\n"
+        "discharge-hole correlation with its inclination and inlet-crossflow\n"
+        "terms), the opt-in exit-crossflow loss (Rowbury et al. 2001), and the\n"
+        "impingement jet-crossflow law (Rogers & Hersh 1976 / Florschuetz,\n"
+        "Metzger & Su 1982) that replaces it where it acts. Returns the Cd, its\n"
+        "analytic partials by input and each term's value. Internal: the\n"
+        "composition point of the network's hole elements (_HoleCdChain).");
 
   m.def("solve_orifice_mdot",
         [](const OrificeGeometry &geom, double dP, double rho, double mu,

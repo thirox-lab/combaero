@@ -17,16 +17,18 @@ A hole's Cd composes, in this order:
      Rogers & Hersh 1976 or Florschuetz, Metzger & Su 1982), which replaces
      the hole's Cd where it acts.
 
-_HoleCdChain holds the resolved options and evaluates the value, its
-derivatives by unknown name, the range and envelope flags and each term's
-diagnostics. Every hole element holds one (``_hole_cd``) and delegates to it;
-the physics is C++'s (crossflow_cd.h, orifice.h), this is the glue. The
-element supplies the geometry and topology the chain reads (its bore, hole
-count and Reynolds number, its nodes, its duct or crossflow sources).
+_HoleCdChain holds the resolved options, gathers the chain's inputs from the
+network state, and maps the partials onto unknown names; the composition
+itself -- every term's value and the chain rule between them -- is one C++
+call, hole_cd_compose (include/hole_cd.h), over the kernels of orifice.h and
+crossflow_cd.h. Every hole element holds one (``_hole_cd``) and delegates to
+it. The element supplies the geometry and topology the chain reads (its bore,
+hole count and Reynolds number, its nodes, its duct or crossflow sources);
+that topology is why the inputs and the mapping stay here.
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import combaero as cb
@@ -216,6 +218,43 @@ def _check_jet_crossflow_law(law: str, xn_d: float, yn_d: float, z_d: float) -> 
         )
 
 
+# The geometry a base that does not read it is handed (C++ hole_cd_compose
+# reads `hole` for the discharge family, `orifice` for the metering one).
+_NO_HOLE = cb.DischargeHoleGeometry()
+_NO_ORIFICE = cb.OrificeGeometry()
+
+
+@dataclass
+class _JetContext:
+    """What the jet law's partials need to reach the unknowns."""
+
+    up: Any
+    up_id: str
+    down_id: str
+    dP: float
+    rho: float
+    drho_dT: float
+    drho_dP: float
+    G_i: float
+    m_c: float
+
+
+@dataclass
+class _Context:
+    """One evaluation's inputs' own derivatives by name (see _evaluate)."""
+
+    base: str = "fixed"  # "fixed", "metering" or "discharge"
+    Re: float = 0.0  # the Reynolds number the base read (hole, or pipe Re_D)
+    re_d_moves: bool = False  # metering: Re_D follows the flow (pipe, |m| > 0)
+    mu_fallback: bool = False  # metering: mu took the 1.8e-5 fallback
+    du: dict[str, float] = field(default_factory=dict)  # d(U1/Vi)/d(name)
+    q: float = 0.0  # mainstream momentum flux
+    dq: dict[str, float] = field(default_factory=dict)
+    exit_density: Any = None
+    a_exit: float = 0.0
+    jet: _JetContext | None = None
+
+
 class _HoleCdChain:
     """The Cd of one hole element: its resolved options and every term.
 
@@ -287,10 +326,7 @@ class _HoleCdChain:
     ) -> float:
         """The element's Cd: the hole's (hole_cd), under the impingement
         crossflow law where one acts."""
-        base = self.hole_cd(state_in, state_out, flows)
-        if self.jet_crossflow == "none":
-            return base
-        return self.jet_crossflow_cd(state_in, state_out, flows, base)[0]
+        return float(self._evaluate(state_in, state_out, flows, jet=True)[0].Cd)
 
     def dcd(
         self,
@@ -300,13 +336,13 @@ class _HoleCdChain:
         continue_re_floor: bool = False,
     ) -> dict[str, float]:
         """d(cd)/d(unknown) by name: the crossflow law's own partials where
-        it acts (its Cd replaces the hole's), the hole's otherwise."""
-        if self.jet_crossflow != "none" and not self.jet_crossflow_suspended:
-            base = self.hole_cd(state_in, state_out, flows)
-            _, d = self.jet_crossflow_cd(state_in, state_out, flows, base)
-            if d is not None:
-                return d
-        return self.hole_dcd(state_in, state_out, flows, continue_re_floor)
+        it acts (its Cd replaces the hole's), the hole's otherwise. The
+        own-flow column through the discharge chamber rides under
+        _DCD_DM_VIA_CHAMBER (see there)."""
+        r, ctx = self._evaluate(
+            state_in, state_out, flows, jet=True, continue_re_floor=continue_re_floor
+        )
+        return self._dcd_by_name(r, ctx, state_in)
 
     def hole_cd(
         self,
@@ -315,34 +351,229 @@ class _HoleCdChain:
         flows: dict[str, float] | None = None,
     ) -> float:
         """The hole's own Cd: from correlation or user-supplied fixed value,
-        with the opt-in exit-crossflow loss on top (exit_crossflow)."""
-        cd0 = self.base_cd(state_in, state_out, flows)
-        if self.exit_xf is None or self._el._orifice_geom is None:
-            return cd0
-        return self.exit_crossflow(cd0, state_in, state_out)[0]
+        with the opt-in exit-crossflow loss on top; no jet-crossflow law."""
+        return float(self._evaluate(state_in, state_out, flows, jet=False)[0].cd_hole)
 
-    def hole_dcd(
+    # --- one evaluation of the chain (C++ hole_cd_compose) --------------------
+
+    def _evaluate(
         self,
         state_in: "NetworkMixtureState",
         state_out: "NetworkMixtureState",
-        flows: dict[str, float] | None = None,
+        flows: dict[str, float] | None,
+        *,
+        jet: bool,
         continue_re_floor: bool = False,
+    ) -> tuple[Any, "_Context"]:
+        """The chain's inputs from the network state, composed by C++'s
+        hole_cd_compose (include/hole_cd.h). Returns its HoleCdResult and the
+        context the partials' mapping onto unknown names needs (each input's
+        own derivatives by name). ``jet=False``: the hole's own Cd, no
+        jet-crossflow law."""
+        el = self._el
+        geom = el._orifice_geom
+        model = cb.HoleCdModel()
+        inp = cb.HoleCdInputs()
+        ctx = _Context()
+        hole = _NO_HOLE
+        orifice = _NO_ORIFICE
+        if not el.use_correlation or geom is None:
+            # A correlation with no geometry (before resolve_topology, or
+            # bore == pipe, no orifice) has no Cd: the seed's stands in (#872),
+            # clamped <= 1 (A_eff <= A_geom) in C++.
+            model.base = cb.HoleCdBase.Fixed
+            model.fixed_cd = el._seed_Cd
+        else:
+            metering = _METERING_SELECTORS.get(el.correlation)
+            if metering is not None:
+                # The ISO 5167 family reads the PIPE Reynolds number Re_D.
+                model.base = cb.HoleCdBase.Metering
+                model.metering = metering
+                ctx.base = "metering"
+                orifice = geom
+                D_up = geom.D
+                if D_up > 0.0:
+                    mu = cb.transport_state(state_in.Tt, state_in.P, state_in.X).mu
+                    ctx.mu_fallback = not mu > 0.0
+                    mu = 1.8e-5 if ctx.mu_fallback else mu
+                    m_dot_abs = abs(state_in.m_dot)
+                    if m_dot_abs > 1e-12:
+                        inp.Re_D = (4.0 * m_dot_abs) / (math.pi * D_up * mu)
+                        ctx.re_d_moves = True
+                        ctx.Re = inp.Re_D
+                    else:
+                        inp.Re_D = 1e4
+                else:
+                    inp.Re_D = 1e5  # typical reference when no upstream channel
+            elif el.correlation in _DISCHARGE_SELECTORS:
+                # The discharge-hole family reads the HOLE Reynolds number
+                # (Re_D was wrong by 1-8% in a pipe, and froze a plenum-fed
+                # hole at the 1e5 fallback), and McGreehan-Schotsch the
+                # supply-side crossflow U1/Vi (0 for a plenum-fed hole).
+                model.base = cb.HoleCdBase.Discharge
+                model.discharge = _DISCHARGE_SELECTORS[el.correlation]
+                model.continue_re_floor = continue_re_floor
+                hole = self.discharge_hole()
+                inp.U1_over_Vi, ctx.du = self.supply_crossflow(state_in, state_out, flows)
+                inp.Re = ctx.Re = el._hole_reynolds(state_in)
+                ctx.base = "discharge"
+            else:
+                raise ValueError(
+                    f"OrificeElement: unknown correlation {el.correlation!r}. "
+                    "The 'Auto' arm was removed: it picked a correlation from the "
+                    "geometry behind the caller's back, which is how a "
+                    "rounded-entry request came back as Stolz. Name one of "
+                    "'fixed', 'ReaderHarrisGallagher', "
+                    "'IdelchikThick', 'IdelchikBeveled', 'IdelchikRounded', "
+                    "'McGreehanSchotsch', 'Lichtarowicz'."
+                )
+        spec = self.exit_xf
+        if spec is not None and geom is not None:
+            model.exit_crossflow = True
+            model.exit_set = spec.coefficient_set
+            model.exit_theta_deg = spec.theta_deg
+            model.exit_alpha_deg = spec.alpha_deg
+            self._exit_inputs(spec, state_in, state_out, inp, ctx)
+        if jet and self.jet_crossflow != "none" and not self.jet_crossflow_suspended:
+            self._jet_inputs(state_in, state_out, flows, model, inp, ctx)
+        return cb.hole_cd_compose(model, hole, orifice, inp), ctx
+
+    def _exit_inputs(
+        self,
+        spec: _ExitCrossflowSpec,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        inp: Any,
+        ctx: "_Context",
+    ) -> None:
+        """The exit-crossflow term's inputs (#1074, rowbury_2001_* in
+        crossflow_cd.h): k_perp = G_h^2 f / (rho_h rho_m u_m^2), f = u_perp /
+        u_h (Fig. 3):
+          G_h      the hole's ACTUAL mass flux, |m| / (A_holes AR), AR the
+                   exit/inlet area ratio of a fan-shaped hole (the authors
+                   take the exit-plane flux, p. 262), 1 otherwise;
+          rho_h    the coolant's exit-plane static density, the isentropic
+                   expansion from the supply (Pt, Tt) to the discharge
+                   static P (rowbury_2001_exit_density): with it the
+                   authors' own Fig. 9 predictions are reproduced (the
+                   supply-Tt density left Ma_m 1.2 0.008 high);
+          rho_m u_m^2  the APPROACHING mainstream's momentum flux, G_m^2 /
+                   rho_m: G_m the chamber's main-inlet flow over its area,
+                   rho_m the main stream's density at the chamber's main
+                   face (mainstream_momentum_flux).
+        No mainstream momentum: the term is off, Cd = Cd0. Eq. 8's own limit
+        there is -C; the offset fades beyond the fitted k range, so Cd -> Cd0
+        continuously as u_m -> 0 (include/crossflow_cd.h). Reverse
+        (ingesting) flow takes the same Cd at |m|: the source covers
+        injection only."""
+        q, ctx.dq = self.mainstream_momentum_flux(state_out)
+        ctx.q = q
+        if not q > 0.0:
+            return
+        ex = cb.rowbury_2001_exit_density(state_in.Pt, state_in.Tt, state_out.P, state_in.X)
+        ctx.exit_density = ex
+        ctx.a_exit = self._el.area * spec.exit_area_ratio
+        inp.G_h = abs(float(state_in.m_dot)) / ctx.a_exit
+        inp.rho_h = float(ex.rho)
+        inp.rho_m_u_m2 = q
+
+    def _jet_inputs(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+        model: Any,
+        inp: Any,
+        ctx: "_Context",
+    ) -> None:
+        """The impingement crossflow law's inputs (#800). G_ideal = sqrt(2 rho
+        dP) along the flow: supply -> channel injecting, channel -> supply
+        for a reversed jet (CR-2681's suction branch), rho the upstream
+        static density. G_c = |m_c| / channel_area, m_c every crossflow
+        source's flow into ``to_node``."""
+        el = self._el
+        forward = state_in.Pt >= state_out.P
+        up, down = (state_in, state_out) if forward else (state_out, state_in)
+        dP = float(up.Pt) - float(down.P)
+        rho, drho_dT, drho_dP = _solver_tools.density_and_jacobians(
+            float(up.Tt), float(up.P), list(up.X)
+        )
+        G_i = math.sqrt(2.0 * rho * dP) if dP > 0.0 else 0.0
+        m_c = float(sum((flows or {}).get(eid, 0.0) for eid in el._crossflow_sources))
+        if self.jet_crossflow == "rogers_hersh_1976":
+            model.jet = cb.HoleCdJetCrossflow.RogersHersh1976
+        else:
+            model.jet = cb.HoleCdJetCrossflow.FlorschuetzMetzgerSu1982
+            model.xn_d, model.yn_d, model.z_d = el.xn_d, el.yn_d, el.z_d
+        inp.G_ideal = G_i
+        inp.G_c = abs(m_c) / el.channel_area
+        inp.suction = not forward
+        ctx.jet = _JetContext(
+            up=up,
+            up_id=el.from_node if forward else el.to_node,
+            down_id=el.to_node if forward else el.from_node,
+            dP=dP,
+            rho=rho,
+            drho_dT=float(drho_dT),
+            drho_dP=float(drho_dP),
+            G_i=G_i,
+            m_c=m_c,
+        )
+
+    # --- the partials by unknown name -----------------------------------------
+
+    def _dcd_by_name(
+        self, r: Any, ctx: "_Context", state_in: "NetworkMixtureState"
     ) -> dict[str, float]:
-        """d(hole_cd)/d(unknown) with the opt-in exit-crossflow term: the
-        chain rule dCd/dCd0 dCd0/dx + dCd/dk dk/dx (exit_crossflow). The
-        own-flow column through the discharge chamber rides under
-        _DCD_DM_VIA_CHAMBER (see there)."""
-        d0 = self.base_dcd(state_in, state_out, flows, continue_re_floor)
-        if self.exit_xf is None or self._el._orifice_geom is None:
-            return d0
-        cd0 = self.base_cd(state_in, state_out, flows)
-        _, r, dk = self.exit_crossflow(cd0, state_in, state_out)
-        if r is None:
-            return d0
-        out = {name: float(r.dCd_dCd0) * v for name, v in d0.items()}
-        if r.dCd_dk != 0.0:
-            for name, v in dk.items():
-                out[name] = out.get(name, 0.0) + float(r.dCd_dk) * v
+        """C++'s dCd/d(input) mapped onto the network's unknowns: each input's
+        derivatives by name, chained. The jet law's own partials where its Cd
+        replaces the hole's (none at all where it is capped or has no drive),
+        the hole's otherwise: the discharge-hole family through the hole
+        Reynolds number and U1/Vi, the ISO metering family through Re_D,
+        'fixed' none; the exit-crossflow term on top.
+
+        BELOW THE CORRELATION'S Re FLOOR the Cd value is held, so its true
+        dCd/dRe is 0 -- in the m_dot column and in the viscosity columns
+        alike. C++ continues the slope there as a Newton aid; that is only
+        wanted by a search ON Cd (``continue_re_floor=True``, the
+        self-consistent inner solve). Every sensitivity of a flow built on
+        the held value takes the zero: with the continued slope, the
+        implicit-function denominator 1 - K dCd/dm of a McGreehan-Schotsch
+        panel below Re = 1e4 scaled its whole row by ~0.987 (#760, #801).
+        hole_cd_compose applies it."""
+        if r.jet_acts:
+            return self._jet_dcd_by_name(r, ctx.jet) if r.jet_partials else {}
+        el = self._el
+        out: dict[str, float] = {}
+        m = float(state_in.m_dot)
+        if ctx.base == "discharge":
+            # Through the hole Reynolds number (linear in m_dot, so dRe/dm =
+            # Re/m; C++ zeroes dCd/dRe below the correlation's floor unless
+            # continue_re_floor, see discharge_cd_re_floor) and, for a
+            # duct-fed hole, through U1/Vi.
+            Re = ctx.Re
+            dCd_dRe = float(r.dCd_dRe)
+            if abs(m) > 1e-12:
+                out[f"{el.id}.m_dot"] = dCd_dRe * Re / abs(m) * (1.0 if m > 0 else -1.0)
+                if el._orifice_geom.d > 0.0:
+                    for name, d in self._re_viscosity_dnames(state_in, Re).items():
+                        out[name] = out.get(name, 0.0) + dCd_dRe * d
+            dCd_dU = float(r.dCd_dU1_over_Vi)
+            for name, d in ctx.du.items():
+                out[name] = out.get(name, 0.0) + dCd_dU * d
+        elif ctx.base == "metering" and ctx.re_d_moves:
+            # Through the pipe Reynolds number Re_D = 4 |m| / (pi D mu),
+            # linear in the flow. The row's flow column missed it: 1% off on
+            # a 2 cm orifice at 1600 K. Held fixed where Re_D is (no upstream
+            # pipe, |m| <= 1e-12).
+            Re_D = ctx.Re
+            dCd_dRe = float(r.dCd_dRe_D)
+            out[f"{el.id}.m_dot"] = dCd_dRe * Re_D / abs(m) * (1.0 if m > 0 else -1.0)
+            if not ctx.mu_fallback:
+                for name, d in self._re_viscosity_dnames(state_in, Re_D).items():
+                    out[name] = out.get(name, 0.0) + dCd_dRe * d
+        if r.exit_active and r.exit.dCd_dk != 0.0:
+            self._exit_dcd_by_name(r, ctx, m, out)
         return out
 
     def follows_own_flow(self) -> bool:
@@ -377,124 +608,6 @@ class _HoleCdChain:
             hole.inclination_deg = self.inclination_deg
         return hole
 
-    def base_cd(
-        self,
-        state_in: "NetworkMixtureState",
-        state_out: "NetworkMixtureState",
-        flows: dict[str, float] | None = None,
-    ) -> float:
-        """The Cd without the exit-crossflow term: the correlation's (with any
-        opt-in inclination term) or the user's fixed value."""
-        el = self._el
-        if not el.use_correlation or el._orifice_geom is None:
-            # Clamp manual Cd strictly <= 1.0 to strictly preserve vena contracta physics (A_eff <= A_geom).
-            # A correlation with no geometry (before resolve_topology, or
-            # bore == pipe, no orifice) has no Cd: the seed's stands in (#872).
-            return max(1e-4, min(el._seed_Cd, 1.0))
-
-        # Estimate Re_D from current m_dot and upstream viscosity.
-        D_up = el._orifice_geom.D
-        if D_up > 0.0:
-            ts = cb.transport_state(state_in.Tt, state_in.P, state_in.X)
-            mu = ts.mu if ts.mu > 0.0 else 1.8e-5
-            m_dot_abs = abs(state_in.m_dot)
-            Re_D = (4.0 * m_dot_abs) / (math.pi * D_up * mu) if m_dot_abs > 1e-12 else 1e4
-        else:
-            Re_D = 1e5  # typical reference when no upstream channel
-
-        flow_state = cb.OrificeState()
-        flow_state.Re_D = Re_D
-        flow_state.dP = max(state_in.Pt - state_out.P, 1.0)
-        flow_state.rho = cb.density(state_in.Tt, state_in.P, state_in.X)
-        flow_state.mu = cb.transport_state(state_in.Tt, state_in.P, state_in.X).mu
-
-        # The ISO 5167 correlations below are functions of the PIPE Reynolds
-        # number Re_D, but the discharge-hole family (Idelchik,
-        # McGreehan-Schotsch) is a function of the HOLE Reynolds number.
-        # Feeding Re_D to those was wrong by 1-8% in a pipe, and by up to 38%
-        # for a plenum-fed hole where D_up = 0 freezes Re_D at the 1e5
-        # fallback and the correlation stops responding to flow entirely.
-        Re_hole = el._hole_reynolds(state_in)
-
-        # Correlation selection logic
-        metering = _METERING_SELECTORS.get(el.correlation)
-        if metering is not None:
-            return float(cb.metering_cd_and_dRe(metering, el._orifice_geom, flow_state.Re_D)[0])
-        elif el.correlation in _DISCHARGE_SELECTORS:
-            # The discharge-hole family: a hole in a wall, not a plate in a
-            # pipe, so DischargeHoleGeometry and no pipe diameter -- the
-            # reason the old ThickPlate/RoundedEntry arms were wrong: they
-            # multiplied an ISO 5167 metering Cd by a correction factor. The
-            # supply-side crossflow U1/Vi (0 for a plenum-fed hole) only moves
-            # McGreehan-Schotsch; the others have no crossflow term.
-            u1_vi, _ = self.supply_crossflow(state_in, state_out, flows)
-            return float(
-                cb.discharge_cd(
-                    _DISCHARGE_SELECTORS[el.correlation],
-                    self.discharge_hole(),
-                    cb.DischargeHoleState(Re=Re_hole, U1_over_Vi=u1_vi),
-                )
-            )
-        else:
-            raise ValueError(
-                f"OrificeElement: unknown correlation {el.correlation!r}. "
-                "The 'Auto' arm was removed: it picked a correlation from the "
-                "geometry behind the caller's back, which is how a "
-                "rounded-entry request came back as Stolz. Name one of "
-                "'fixed', 'ReaderHarrisGallagher', "
-                "'IdelchikThick', 'IdelchikBeveled', 'IdelchikRounded', "
-                "'McGreehanSchotsch', 'Lichtarowicz'."
-            )
-
-    def base_dcd(
-        self,
-        state_in: "NetworkMixtureState",
-        state_out: "NetworkMixtureState",
-        flows: dict[str, float] | None = None,
-        continue_re_floor: bool = False,
-    ) -> dict[str, float]:
-        """d(Cd)/d(unknown) of the Cd WITHOUT the exit-crossflow term, keyed
-        by name, analytic.
-
-        Only the discharge-hole family carries it (C++'s
-        discharge_cd_and_derivatives): through the hole Reynolds number
-        (linear in m_dot, so dRe/dm = Re/m) and, for a duct-fed hole, through
-        U1/Vi. 'fixed' has none, and the normed metering correlations keep
-        their documented gap.
-
-        BELOW THE CORRELATION'S Re FLOOR the Cd value is held, so its true
-        dCd/dRe is 0 -- in the m_dot column and in the viscosity columns
-        alike. C++ continues the slope there as a Newton aid; that is only
-        wanted by a search ON Cd (``continue_re_floor=True``, the
-        self-consistent inner solve). Every sensitivity of a flow built on
-        the held value takes the zero: with the continued slope, the
-        implicit-function denominator 1 - K dCd/dm of a McGreehan-Schotsch
-        panel below Re = 1e4 scaled its whole row by ~0.987 (#760, #801).
-        """
-        el = self._el
-        if el._orifice_geom is None or not el.use_correlation:
-            return {}
-        selector = _DISCHARGE_SELECTORS.get(el.correlation)
-        if selector is None:
-            return self._metering_dcd(state_in)
-        u1_vi, du = self.supply_crossflow(state_in, state_out, flows)
-        Re = el._hole_reynolds(state_in)
-        _, dCd_dRe, dCd_dU = cb.discharge_cd_and_derivatives(
-            selector, self.discharge_hole(), cb.DischargeHoleState(Re=Re, U1_over_Vi=u1_vi)
-        )
-        if not continue_re_floor and Re < cb.discharge_cd_re_floor(selector):
-            dCd_dRe = 0.0
-        out: dict[str, float] = {}
-        m = float(state_in.m_dot)
-        if abs(m) > 1e-12:
-            out[f"{el.id}.m_dot"] = float(dCd_dRe) * Re / abs(m) * (1.0 if m > 0 else -1.0)
-            if el._orifice_geom.d > 0.0:
-                for name, d in self._re_viscosity_dnames(state_in, Re).items():
-                    out[name] = out.get(name, 0.0) + float(dCd_dRe) * d
-        for name, d in du.items():
-            out[name] = out.get(name, 0.0) + float(dCd_dU) * d
-        return out
-
     def _re_viscosity_dnames(self, state_in: "NetworkMixtureState", Re: float) -> dict[str, float]:
         """d(Re)/d(upstream T, P) through mu: Re ~ |m| / mu, so
         dRe/dx = -Re dmu/dx / mu. The Cd's temperature column, missing until
@@ -516,31 +629,6 @@ class _HoleCdChain:
         for k, d in enumerate(dmu_dY):
             if d != 0.0:
                 out[f"{el.from_node}.Y[{k}]"] = -Re * float(d) / mu
-        return out
-
-    def _metering_dcd(self, state_in: "NetworkMixtureState") -> dict[str, float]:
-        """d(Cd)/d(own m_dot) of the ISO metering family, through the pipe
-        Reynolds number Re_D = 4 |m| / (pi D mu), linear in the flow. The
-        row's flow column missed it: 1% off on a 2 cm orifice at 1600 K. Held
-        fixed where base_cd holds Re_D (no upstream pipe, |m| <= 1e-12).
-        """
-        el = self._el
-        D_up = el._orifice_geom.D
-        m = float(state_in.m_dot)
-        if not (D_up > 0.0) or abs(m) <= 1e-12:
-            return {}
-        mu = cb.transport_state(state_in.Tt, state_in.P, state_in.X).mu
-        mu_fallback = not mu > 0.0
-        mu = 1.8e-5 if mu_fallback else mu
-        Re = 4.0 * abs(m) / (math.pi * D_up * mu)
-        metering = _METERING_SELECTORS.get(el.correlation)
-        if metering is None:
-            return {}
-        dCd_dRe = float(cb.metering_cd_and_dRe(metering, el._orifice_geom, Re)[1])
-        out = {f"{el.id}.m_dot": dCd_dRe * Re / abs(m) * (1.0 if m > 0 else -1.0)}
-        if not mu_fallback:
-            for name, d in self._re_viscosity_dnames(state_in, Re).items():
-                out[name] = out.get(name, 0.0) + dCd_dRe * d
         return out
 
     def supply_crossflow(
@@ -624,63 +712,32 @@ class _HoleCdChain:
 
     # --- 2. the exit-crossflow term (Rowbury et al. 2001) ---------------------
 
-    def exit_crossflow(
-        self,
-        cd0: float,
-        state_in: "NetworkMixtureState",
-        state_out: "NetworkMixtureState",
-    ) -> tuple[float, Any, dict[str, float]]:
-        """(Cd, C++'s Rowbury2001Cd or None, dk_perp/d(name)) of the opt-in
-        exit-crossflow term (#1074, rowbury_2001_* in crossflow_cd.h).
-
-        k_perp = G_h^2 f / (rho_h rho_m u_m^2), f = u_perp / u_h (Fig. 3):
-          G_h      the hole's ACTUAL mass flux, |m| / (A_holes AR), AR the
-                   exit/inlet area ratio of a fan-shaped hole (the authors
-                   take the exit-plane flux, p. 262), 1 otherwise;
-          rho_h    the coolant's exit-plane static density, the isentropic
-                   expansion from the supply (Pt, Tt) to the discharge
-                   static P (rowbury_2001_exit_density): with it the
-                   authors' own Fig. 9 predictions are reproduced (the
-                   supply-Tt density left Ma_m 1.2 0.008 high);
-          rho_m u_m^2  the APPROACHING mainstream's momentum flux, G_m^2 /
-                   rho_m: G_m the chamber's main-inlet flow over its area,
-                   rho_m the main stream's density at the chamber's main
-                   face (mainstream_momentum_flux).
-        No mainstream momentum: Cd0. Eq. 8's own limit there is -C; the
-        offset fades beyond the fitted k range, so Cd -> Cd0 continuously as
-        u_m -> 0 (include/crossflow_cd.h). Reverse (ingesting) flow takes
-        the same Cd at |m|: the source covers injection only.
-        """
+    def _exit_dcd_by_name(self, r: Any, ctx: "_Context", m: float, out: dict[str, float]) -> None:
+        """Add the exit-crossflow term's dCd/dk dk/dx to ``out``: C++'s
+        dCd/dG_h, dCd/drho_h and dCd/d(rho_m u_m^2) through each input's
+        derivatives by name (G_h = |m| / a_exit, rho_h's isentropic exit
+        state, the mainstream's momentum flux at the chamber's main face)."""
         el = self._el
-        spec = self.exit_xf
-        q, dq = self.mainstream_momentum_flux(state_out)
-        if spec is None or not q > 0.0:
-            return cd0, None, {}
-        ex = cb.rowbury_2001_exit_density(state_in.Pt, state_in.Tt, state_out.P, state_in.X)
-        rho_h = float(ex.rho)
-        m = float(state_in.m_dot)
-        a_exit = el.area * spec.exit_area_ratio
-        kp = cb.rowbury_2001_k_perp(abs(m) / a_exit, rho_h, q, spec.theta_deg, spec.alpha_deg)
-        r = cb.rowbury_2001_exit_crossflow_cd(
-            cd0, kp.k, spec.coefficient_set, spec.theta_deg, spec.alpha_deg
-        )
-        dk: dict[str, float] = {}
         if m != 0.0:
-            dk[f"{el.id}.m_dot"] = kp.dk_dG * (1.0 if m > 0.0 else -1.0) / a_exit
-        dk_drho = float(kp.dk_drho_h)
+            key = f"{el.id}.m_dot"
+            out[key] = (
+                out.get(key, 0.0) + float(r.dCd_dG_h) * (1.0 if m > 0.0 else -1.0) / ctx.a_exit
+            )
+        ex = ctx.exit_density
+        c_rho = float(r.dCd_drho_h)
         for key, d in (
             (f"{el.from_node}.Pt", ex.drho_dPt),
             (f"{el.from_node}.Tt", ex.drho_dTt),
             (f"{el.to_node}.P", ex.drho_dP),
         ):
-            dk[key] = dk.get(key, 0.0) + dk_drho * float(d)
+            out[key] = out.get(key, 0.0) + c_rho * float(d)
         for k, d in enumerate(ex.drho_dY):
             if d != 0.0:
                 key = f"{el.from_node}.Y[{k}]"
-                dk[key] = dk.get(key, 0.0) + dk_drho * float(d)
-        for name, d in dq.items():
-            dk[name] = dk.get(name, 0.0) + float(kp.dk_dq_m) * d
-        return float(r.Cd), r, dk
+                out[key] = out.get(key, 0.0) + c_rho * float(d)
+        c_q = float(r.dCd_drho_m_u_m2)
+        for name, d in ctx.dq.items():
+            out[name] = out.get(name, 0.0) + c_q * d
 
     def resolve_exit_mainstream(self, graph: "FlowNetwork") -> None:
         """The discharge node and the elements whose flow into it is the
@@ -784,58 +841,25 @@ class _HoleCdChain:
 
     # --- 3. the impingement jet-crossflow law (#800) --------------------------
 
-    def jet_crossflow_cd(
-        self,
-        state_in: "NetworkMixtureState",
-        state_out: "NetworkMixtureState",
-        flows: dict[str, float] | None,
-        base_cd: float,
-    ) -> tuple[float, dict[str, float] | None]:
-        """(Cd, dCd/d(name)) under the crossflow law; None for the partials
-        where the law holds the hole's own Cd (the base partials then apply).
-
-        G_ideal = sqrt(2 rho dP) along the flow: supply -> channel injecting,
-        channel -> supply for a reversed jet (CR-2681's suction branch), rho
-        the upstream static density. G_c = |m_c| / channel_area, m_c every
-        crossflow source's flow into ``to_node``.
-        """
-        if self.jet_crossflow == "none" or self.jet_crossflow_suspended:
-            return base_cd, None
+    def _jet_dcd_by_name(self, r: Any, jc: "_JetContext") -> dict[str, float]:
+        """The jet law's dCd/dG_ideal and dCd/dG_c by name: G_ideal through
+        the drive dP and the upstream density (T, P and, #964, composition),
+        G_c through every crossflow source's flow into ``to_node``."""
         el = self._el
-        forward = state_in.Pt >= state_out.P
-        up, down = (state_in, state_out) if forward else (state_out, state_in)
-        up_id, down_id = (el.from_node, el.to_node) if forward else (el.to_node, el.from_node)
-        dP = float(up.Pt) - float(down.P)
-        rho, drho_dT, drho_dP = _solver_tools.density_and_jacobians(
-            float(up.Tt), float(up.P), list(up.X)
-        )
-        G_i = math.sqrt(2.0 * rho * dP) if dP > 0.0 else 0.0
-        flows = flows or {}
-        m_c = float(sum(flows.get(eid, 0.0) for eid in el._crossflow_sources))
-        G_c = abs(m_c) / el.channel_area
-        if self.jet_crossflow == "rogers_hersh_1976":
-            r = cb.rogers_hersh_1976_cd(base_cd, G_i, G_c, not forward)
-        else:
-            r = cb.florschuetz_metzger_su_1982_cd(el.xn_d, el.yn_d, el.z_d, G_i, G_c)
-        if r.capped and self.jet_crossflow == "rogers_hersh_1976":
-            return base_cd, None
         out: dict[str, float] = {}
-        if r.capped or not G_i > 0.0:
-            # The table's constant, or no drive: Cd ~ G_i^1.15 has no slope
-            # at G_i = 0 that the flow (~ Cd sqrt(dP)) would feel.
-            return float(r.Cd), out
 
         def add(name: str, v: float) -> None:
             if v != 0.0:
                 out[name] = out.get(name, 0.0) + v
 
+        rho, dP, G_i, up, up_id, down_id = jc.rho, jc.dP, jc.G_i, jc.up, jc.up_id, jc.down_id
         dGi_ddP = rho / G_i
         dGi_drho = dP / G_i
         dcd_dGi = float(r.dCd_dG_ideal)
         add(f"{up_id}.Pt", dcd_dGi * dGi_ddP)
         add(f"{down_id}.P", -dcd_dGi * dGi_ddP)
-        add(f"{up_id}.Tt", dcd_dGi * dGi_drho * float(drho_dT))
-        add(f"{up_id}.P", dcd_dGi * dGi_drho * float(drho_dP))
+        add(f"{up_id}.Tt", dcd_dGi * dGi_drho * jc.drho_dT)
+        add(f"{up_id}.P", dcd_dGi * dGi_drho * jc.drho_dP)
         # rho = P MW / (R_u T) through the composition (#964): at fixed (T, P)
         # d(rho)/dY_k = rho (1 - MW / W_k) on the normalised mass fractions
         # the kernels differentiate (the same along any sum-preserving change).
@@ -843,6 +867,7 @@ class _HoleCdChain:
         c_rho = dcd_dGi * dGi_drho * rho
         for k in range(len(up.Y)):
             add(f"{up_id}.Y[{k}]", c_rho * (1.0 - W / float(cb.species_molar_mass(k))))
+        m_c = jc.m_c
         if m_c != 0.0:
             dcd_dmc = float(r.dCd_dG_c) * (1.0 if m_c > 0.0 else -1.0) / el.channel_area
             for eid in el._crossflow_sources:
@@ -852,7 +877,7 @@ class _HoleCdChain:
                     el.to_node, list(range(len(names)))
                 ).items():
                     add(names[local], dcd_dmc * coeff)
-        return float(r.Cd), out
+        return out
 
     # --- range flags and diagnostics ------------------------------------------
 
@@ -941,48 +966,31 @@ class _HoleCdChain:
         """The opt-in exit-crossflow term's state; empty when off, so a
         default element reports exactly what it did before."""
         el = self._el
-        spec = self.exit_xf
-        if spec is None or el._orifice_geom is None:
+        if self.exit_xf is None or el._orifice_geom is None:
             return {}
-        cd0 = self.base_cd(state_in, state_out, flows)
-        cd, r, _ = self.exit_crossflow(cd0, state_in, state_out)
-        q, _ = self.mainstream_momentum_flux(state_out)
-        cset, th, al = spec.coefficient_set, spec.theta_deg, spec.alpha_deg
-        k_floor = float(cb.rowbury_2001_k_floor(cset, th, al))
-        k = math.nan
-        if r is not None:
-            ex = cb.rowbury_2001_exit_density(state_in.Pt, state_in.Tt, state_out.P, state_in.X)
-            g_h = abs(float(state_in.m_dot)) / (el.area * spec.exit_area_ratio)
-            k = float(cb.rowbury_2001_k_perp(g_h, float(ex.rho), q, th, al).k)
+        r, ctx = self._evaluate(state_in, state_out, flows, jet=False)
+        on = bool(r.exit_active)
         return {
-            "Cd_no_exit_crossflow": float(cd0),
-            "Cd_exit_crossflow_ratio": float(cd / cd0) if cd0 > 0.0 else math.nan,
-            "exit_crossflow_rho_u2": float(q),
+            "Cd_no_exit_crossflow": float(r.cd_base),
+            "Cd_exit_crossflow_ratio": float(r.exit_ratio),
+            "exit_crossflow_rho_u2": float(ctx.q),
             # The actual k_perp, and the one the term was evaluated at (the
             # floor where held).
-            "exit_crossflow_k_perp": k,
-            "exit_crossflow_k_used": float(r.k_used) if r is not None else math.nan,
-            "exit_crossflow_k_floor": k_floor,
-            "exit_crossflow_delta": float(r.delta) if r is not None else 0.0,
-            "exit_crossflow_held": float(r.held) if r is not None else 0.0,
+            "exit_crossflow_k_perp": float(r.k_perp.k) if on else math.nan,
+            "exit_crossflow_k_used": float(r.exit.k_used) if on else math.nan,
+            "exit_crossflow_k_floor": float(r.exit_k_floor),
+            "exit_crossflow_delta": float(r.exit.delta) if on else 0.0,
+            "exit_crossflow_held": float(r.exit.held) if on else 0.0,
             # Where k_used sits against the set's k tiers (info): 0 inside
             # what its Table 1 rows provably reach (tier 1, data), 0.5 beyond
             # that but inside the authors' own application of the set (tier
             # 2, Fig. 9 for the suction set; Eq. 8 unfaded), 1 beyond both:
             # the offset fades.
-            "exit_crossflow_faded": (
-                0.0
-                if r is None
-                else 1.0
-                if r.faded
-                else 0.5
-                if r.k_used > cb.rowbury_2001_k_data_max(cset)
-                else 0.0
-            ),
+            "exit_crossflow_faded": float(r.exit_k_tier),
             # Off Table 1's angles the floor can lie above the fitted k
             # range: the whole fitted range is then held (info).
-            "exit_crossflow_floor_above_fit": float(k_floor > cb.rowbury_2001_k_fit_max(cset)),
-            "exit_crossflow_in_range": float(cb.rowbury_2001_in_range(cset, th, al)),
+            "exit_crossflow_floor_above_fit": float(r.exit_floor_above_fit),
+            "exit_crossflow_in_range": float(r.exit_in_range),
         }
 
     def jet_crossflow_envelope(
