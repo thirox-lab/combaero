@@ -129,15 +129,15 @@ def test_auto_applies_the_hole_angle_term_to_an_inclined_cylindrical_hole() -> N
     # The builder hands the node's "auto" to the element, which resolves it.
     e = build_network_from_schema(NetworkGraphSchema(**_schema(FILM, CYL))).elements["film"]
     assert e.angle_deg == 30.0 and e.correlation == "IdelchikThick"
-    assert e.cd_inclination == "idelchik_3_2" and e._cd_inclination_deg == 30.0
-    assert e._inclination_diagnostics()["Cd_inclination_dzeta"] > 0.0
+    assert e.cd_inclination == "idelchik_3_2" and e._hole_cd.inclination_deg == 30.0
+    assert e._hole_cd.inclination_diagnostics()["Cd_inclination_dzeta"] > 0.0
 
 
 def test_auto_leaves_a_shaped_hole_without_the_hole_angle_term() -> None:
     e = build_network_from_schema(NetworkGraphSchema(**_schema(FILM))).elements["film"]
     assert e.hole_type == "shaped" and e.correlation == "IdelchikThick"
-    assert e.cd_inclination == "none" and e._cd_inclination_deg == 90.0
-    assert e._inclination_diagnostics()["Cd_inclination_dzeta"] == 0.0
+    assert e.cd_inclination == "none" and e._hole_cd.inclination_deg == 90.0
+    assert e._hole_cd.inclination_diagnostics()["Cd_inclination_dzeta"] == 0.0
 
 
 @pytest.mark.parametrize("hole_type", ["shaped", "cylindrical"])
@@ -175,7 +175,7 @@ def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:
 def test_the_exit_crossflow_cd_term_threads_through() -> None:
     assert FilmCoolingData().cd_exit_crossflow == "none"
     off = build_network_from_schema(NetworkGraphSchema(**_schema())).elements["film"]
-    assert off.cd_exit_crossflow == "none" and off._exit_xf is None
+    assert off.cd_exit_crossflow == "none" and off._hole_cd.exit_xf is None
     on = build_network_from_schema(
         NetworkGraphSchema(
             **_schema(

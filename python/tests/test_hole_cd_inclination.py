@@ -155,7 +155,7 @@ def test_the_default_on_a_non_composing_correlation_is_off_not_refused(make, cor
     kw = {"Cd": 0.7} if corr == "fixed" else {}
     e = make(correlation=corr, **kw)
     assert e.cd_inclination == "none"
-    assert e._cd_inclination_deg == 90.0
+    assert e._hole_cd.inclination_deg == 90.0
 
 
 @pytest.mark.parametrize("make", [_plate, _film])

@@ -126,7 +126,7 @@ def _solve(g: FlowNetwork) -> tuple[NetworkSolver, dict]:
 @pytest.mark.parametrize("make", [_plate, _film])
 def test_off_by_default_reports_nothing_new(make) -> None:
     e = make()
-    assert e.cd_exit_crossflow == "none" and e._exit_xf is None
+    assert e.cd_exit_crossflow == "none" and e._hole_cd.exit_xf is None
     _, r = _solve(_net(e))
     d = r["__element_diag__"]["eff"]
     assert not [k for k in d if "exit_crossflow" in k]
@@ -157,8 +157,8 @@ def test_fan_shaped_has_no_leading_edge_set() -> None:
     with pytest.raises(ValueError, match="no fan-shaped leading-edge"):
         _film(cd_exit_crossflow="rowbury_2001", exit_crossflow_region="leading_edge", **shaped)
     e = _film(cd_exit_crossflow="rowbury_2001", **shaped)
-    assert e._exit_xf.coefficient_set == cb.Rowbury2001Set.FanShapedSuctionSurface
-    assert e._exit_xf.exit_area_ratio == 3.0
+    assert e._hole_cd.exit_xf.coefficient_set == cb.Rowbury2001Set.FanShapedSuctionSurface
+    assert e._hole_cd.exit_xf.exit_area_ratio == 3.0
 
 
 @pytest.mark.parametrize(
@@ -242,7 +242,7 @@ def test_the_mainstream_is_the_approaching_flow_not_the_holes() -> None:
         return g
 
     s, a = _solve(net(0.03))
-    assert s.network.elements["eff"]._exit_xf_mainstream == ("feed",)
+    assert s.network.elements["eff"]._hole_cd.exit_mainstream == ("feed",)
     _, b = _solve(net(0.08))
     qa = a["__element_diag__"]["eff"]["exit_crossflow_rho_u2"]
     qb = b["__element_diag__"]["eff"]["exit_crossflow_rho_u2"]
@@ -420,10 +420,12 @@ def test_no_mainstream_momentum_returns_the_no_crossflow_cd() -> None:
     # "Predict Mm = 0"), and the faded Eq. 8 tends to it.
     s, r = _solve(_net(_film(cd_exit_crossflow="rowbury_2001")))
     e = s.network.elements["eff"]
-    e._exit_xf_node._inflows = [
-        (eid, _Probe(0.0, 1500.0, Y_AIR), {}) for eid, _, _ in e._exit_xf_node._inflows
+    e._hole_cd.exit_node._inflows = [
+        (eid, _Probe(0.0, 1500.0, Y_AIR), {}) for eid, _, _ in e._hole_cd.exit_node._inflows
     ]
-    cd, res, dk = e._exit_crossflow(0.8, _Probe(1e-3, 600.0, Y_AIR), _Probe(0.0, 1500.0, Y_AIR))
+    cd, res, dk = e._hole_cd.exit_crossflow(
+        0.8, _Probe(1e-3, 600.0, Y_AIR), _Probe(0.0, 1500.0, Y_AIR)
+    )
     assert (cd, res, dk) == (0.8, None, {})
 
 

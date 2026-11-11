@@ -170,7 +170,7 @@ def test_the_panel_crossflow_ratio_partials_match_finite_differences() -> None:
     st_in = s._get_node_state(node, x)
     st_out = s._get_node_state(g.nodes["gas"], x)
     flows = {"ln__s1": r["ln__s1.m_dot"], "ln__s2": r["ln__s2.m_dot"]}
-    _, d = plate._supply_crossflow(st_in, st_out, flows)
+    _, d = plate._hole_cd.supply_crossflow(st_in, st_out, flows)
 
     def ratio(dP: float = 0.0, dT: float = 0.0, ds1: float = 0.0, ds2: float = 0.0) -> float:
         a = copy.copy(st_in)
@@ -178,7 +178,7 @@ def test_the_panel_crossflow_ratio_partials_match_finite_differences() -> None:
         a.P += dP
         a.Tt += dT
         f = {"ln__s1": flows["ln__s1"] + ds1, "ln__s2": flows["ln__s2"] + ds2}
-        return plate._supply_crossflow(a, st_out, f)[0]
+        return plate._hole_cd.supply_crossflow(a, st_out, f)[0]
 
     hP, hT, hm = 1.0, 1e-3, 1e-6
     fd = {
