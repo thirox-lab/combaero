@@ -151,17 +151,36 @@ jobs:
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
+    env:
+      ACTIONLINT_PY: '1.7.7.23'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # actionlint-py ships an sdist only; building it downloads the actionlint
+      # binary from GitHub's release host, which has returned 504 (#1063). The
+      # cache keeps the built wheel (pruning keeps source-built wheels). Its key
+      # is the pinned version alone: the default glob (uv.lock, pyproject.toml)
+      # would drop it on every dependency bump and collide with the meta job.
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
+          enable-cache: true
           python-version: '3.12'
+          cache-dependency-glob: ''
+          cache-suffix: actionlint-py-${{ env.ACTIONLINT_PY }}
+
+      - name: Build actionlint (retried on a cache miss)
+        run: |
+          for attempt in 1 2 3; do
+            uvx --from "actionlint-py==${ACTIONLINT_PY}" actionlint --version && exit 0
+            echo "::warning::actionlint-py build failed (attempt ${attempt}); retrying"
+            sleep $((attempt * 15))
+          done
+          exit 1
 
       - name: actionlint
-        run: uvx --from actionlint-py==1.7.7.23 actionlint
+        run: uvx --from "actionlint-py==${ACTIONLINT_PY}" actionlint
 
   lint:
     name: Lint & Style Checks
