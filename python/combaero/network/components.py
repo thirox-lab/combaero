@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import math
+import numbers
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, MutableMapping
@@ -125,6 +126,24 @@ class RibbedModel:
     W_H: float = 1.0
     n_ribbed_walls: int = 2
     smooth_wall_Nu_multiplier: float = 1.0
+
+    def __post_init__(self) -> None:
+        # Settled once here, not at solve time: an integral float (2.0, e.g.
+        # from JSON) is the count it names; anything else has no wall rule
+        # (three walls has no unambiguous geometry), so it is refused.
+        n = self.n_ribbed_walls
+        allowed = (1, 2, 4)
+        count: int | None = None
+        if isinstance(n, numbers.Real) and not isinstance(n, bool):
+            as_float = float(n)
+            if math.isfinite(as_float) and as_float.is_integer():
+                count = int(as_float)
+        if count not in allowed:
+            raise ValueError(
+                f"RibbedModel.n_ribbed_walls must be 1, 2 or 4, got {n!r}. 2 means two "
+                "opposite walls, the configuration the correlations were measured on."
+            )
+        self.n_ribbed_walls = count
 
 
 @dataclass

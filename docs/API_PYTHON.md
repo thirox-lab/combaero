@@ -3630,8 +3630,9 @@ surface = ConvectiveSurface(
 )
 ```
 
-`n_ribbed_walls` accepts 1, 2 or 4. Three is rejected -- it has no unambiguous
-geometry. Every rib set was measured on two opposite ribbed walls, so 1 and 4
+`n_ribbed_walls` accepts 1, 2 or 4 (an integral float such as `2.0` is taken as
+that count). Anything else -- three walls has no unambiguous geometry -- raises
+`ValueError` when the model is built. Every rib set was measured on two opposite ribbed walls, so 1 and 4
 set `extrapolated` (reported, not refused).
 
 **Friction and heat transfer are both wall-weighted (#1106):**

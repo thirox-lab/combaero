@@ -51,10 +51,25 @@ def test_four_ribbed_walls_is_exactly_the_ribbed_side() -> None:
     assert r.h == pytest.approx(r.h_ribbed, rel=1e-12)
 
 
-def test_an_unrepresentable_wall_count_is_rejected() -> None:
-    """Three ribbed walls has no unambiguous geometry, so it is not guessed."""
+@pytest.mark.parametrize("n", [3, 0, 5, -2, 2.5, 3.0, float("nan"), True, "2", None])
+def test_an_unrepresentable_wall_count_is_rejected_at_construction(n: object) -> None:
+    """Three ribbed walls has no unambiguous geometry, and a fractional, bool
+    or non-numeric count names no walls: refused when the model is built,
+    not at solve time, naming the allowed values."""
     with pytest.raises(ValueError, match="1, 2 or 4"):
-        _run(_surface(n_ribbed_walls=3))
+        RibbedModel(e_D=0.06, p_e=10.0, n_ribbed_walls=n)
+
+
+@pytest.mark.parametrize(("given", "count"), [(1.0, 1), (2.0, 2), (4.0, 4), (2, 2)])
+def test_an_integral_float_wall_count_is_the_count_it_names(given: float, count: int) -> None:
+    """2.0 (e.g. from JSON) is two walls, stored as an int so the C++ wall
+    rule accepts it, and gives the same channel as the int."""
+    model = RibbedModel(e_D=0.06, p_e=10.0, n_ribbed_walls=given)
+    assert model.n_ribbed_walls == count
+    assert type(model.n_ribbed_walls) is int
+    as_float = ConvectiveSurface(area=0.1, model=model)
+    as_int = _surface(n_ribbed_walls=count)
+    assert _run(as_float).dP == _run(as_int).dP
 
 
 def test_the_documented_gap_and_the_knob_that_closes_it() -> None:
