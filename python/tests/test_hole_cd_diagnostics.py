@@ -226,3 +226,29 @@ def test_a_plenum_fed_plate_emits_only_the_ignored_alias() -> None:
     d = _solve(_chamber(_plate()))["__element_diag__"]["h"]
     assert d["coolant_crossflow_ignored"] == d["Cd_inlet_crossflow_ignored"] == 0.0
     assert not {"U1_over_Vi", "crossflow_cd_beyond_8pct", "crossflow_cd_degraded"} & set(d)
+
+
+def test_the_model_is_the_configuration_even_where_the_term_reads_zero() -> None:
+    # An explicit idelchik_3_2 on a normal (90 deg) hole: configured, but the
+    # term is exactly zero there.
+    d = _solve(_chamber(_plate(angle_deg=90.0, hole_cd=HoleCd(inclination="idelchik_3_2"))))
+    p = d["__element_diag__"]["h"]
+    assert p["Cd_inclination_model"] == "idelchik_3_2"
+    assert p["Cd_inclination_applied"] == 0.0 and p["Cd_inclination_dzeta"] == 0.0
+    auto = _solve(_chamber(_plate(angle_deg=90.0)))["__element_diag__"]["h"]
+    assert auto["Cd_inclination_model"] == "none"
+
+
+def test_wall_heat_transfer_keeps_the_011_ignored_key() -> None:
+    # 0.11's public wall_heat_transfer() returned coolant_crossflow_ignored;
+    # it still does until 0.13.0, and the diagnostics carry it from there.
+    g = _chamber(_plate())
+    g.resolve_all_topology()
+    s = NetworkSolver(g)
+    x0 = s._build_x0()
+    s._propagate_states(x0)
+    el = g.elements["h"]
+    si = s._report_state(g.nodes[el.from_node], x0)
+    so = s._report_state(g.nodes[el.to_node], x0)
+    assert el.wall_heat_transfer(si, so)["coolant_crossflow_ignored"] == 0.0
+    assert el.diagnostics(si, so)["coolant_crossflow_ignored"] == 0.0

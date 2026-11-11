@@ -534,6 +534,8 @@ class _HoleCdChain:
     docstring for the order the terms compose in):
       inclination_deg   the hole-to-wall angle the discharge correlation sees
                         (90: no inclination term).
+      inclination_model the inclination model configured, "auto" resolved
+                        (an explicit "idelchik_3_2" at 90 deg stays itself).
       exit_xf           the exit-crossflow term's resolved spec, None: off.
       supply_duct       True on a hole whose supply crossflow U1/Vi is read
                         from a backside duct (a duct-fed EffusionPlateElement,
@@ -554,6 +556,7 @@ class _HoleCdChain:
     def __init__(self, owner: "OrificeElement") -> None:
         self._el = owner
         self.inclination_deg = 90.0
+        self.inclination_model = "none"
         self.exit_xf: _ExitCrossflowSpec | None = None
         self.supply_duct = False
         self.duct_fed = False
@@ -590,6 +593,7 @@ class _HoleCdChain:
         )
         model = _resolve_cd_inclination(name, spec.inclination, correlation, hole_type, angle_deg)
         self.inclination_deg = _cd_inclination_deg(name, model, correlation, angle_deg)
+        self.inclination_model = model
         exit_model = "none" if spec.exit_crossflow == "auto" else spec.exit_crossflow
         self.exit_xf = _exit_crossflow_spec(
             name,
@@ -1287,7 +1291,7 @@ class _HoleCdChain:
             "Cd_base": float(r.cd_base),
             "Cd_in_range": float(self.in_range(state_in)),
             **self.envelope(state_in),
-            "Cd_inclination_model": "idelchik_3_2" if self.inclination_deg < 90.0 else "none",
+            "Cd_inclination_model": self.inclination_model,
             "Cd_inclination_applied": float(self.inclination_deg < 90.0),
             "Cd_inclination_dzeta": self.inclination_dzeta(),
             "Cd_inlet_crossflow_model": "mcgreehan_schotsch" if self.supply_duct else "none",

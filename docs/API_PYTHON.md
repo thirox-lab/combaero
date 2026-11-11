@@ -2239,7 +2239,7 @@ new one, with the same value and where they were before: deprecated since
 | `U1_over_Vi` (duct-fed panel) | `Cd_inlet_crossflow_U1_over_Vi` | yes | alias until 0.13.0 |
 | `crossflow_cd_beyond_8pct` (panel, liner) | `Cd_inlet_crossflow_beyond_8pct` | yes | alias until 0.13.0 |
 | `crossflow_cd_degraded` (panel, liner) | `Cd_inlet_crossflow_degraded` | yes | alias until 0.13.0 |
-| `coolant_crossflow_ignored` (effusion plate) | `Cd_inlet_crossflow_ignored` | yes | alias until 0.13.0 |
+| `coolant_crossflow_ignored` (effusion plate, also in `wall_heat_transfer()`) | `Cd_inlet_crossflow_ignored` | yes | alias until 0.13.0 |
 | `U1_over_Vi_max` (liner) | `Cd_inlet_crossflow_U1_over_Vi_max` | yes | alias until 0.13.0 |
 | `rows_U1_over_Vi` (liner) | `rows_Cd_inlet_crossflow_U1_over_Vi` | yes | alias until 0.13.0 |
 | `Cd_no_exit_crossflow` | `Cd_base` | no | removed |

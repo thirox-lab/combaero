@@ -480,6 +480,22 @@ export function formatSignificant(v: number, digits = 6): string {
 	return String(Number(v.toPrecision(digits)));
 }
 
+/**
+ * Result keys of 0.11 still emitted beside their new name until 0.13.0
+ * (python/combaero/network/hole_cd.py HOLE_CD_DIAGNOSTIC_ALIASES and
+ * LINER_CD_DIAGNOSTIC_ALIASES): old -> new. Shown under the new key's label,
+ * marked deprecated, so a saved probe on an old name still reads.
+ */
+export const DEPRECATED_RESULT_KEYS: Record<string, string> = {
+	Cd_own: "Cd_base",
+	U1_over_Vi: "Cd_inlet_crossflow_U1_over_Vi",
+	crossflow_cd_beyond_8pct: "Cd_inlet_crossflow_beyond_8pct",
+	crossflow_cd_degraded: "Cd_inlet_crossflow_degraded",
+	coolant_crossflow_ignored: "Cd_inlet_crossflow_ignored",
+	U1_over_Vi_max: "Cd_inlet_crossflow_U1_over_Vi_max",
+	rows_U1_over_Vi: "rows_Cd_inlet_crossflow_U1_over_Vi",
+};
+
 export type QuantityMeta = {
 	label: string;
 	/** Shorter label for node cards, where it differs from `label`. */
@@ -494,6 +510,16 @@ export type QuantityMeta = {
  *  key under its own name in the backend's SI unit. */
 export function quantityMeta(key: string): QuantityMeta {
 	const raw = key.startsWith("state.") ? key.slice(6) : key;
+	const renamed = DEPRECATED_RESULT_KEYS[raw];
+	if (renamed) {
+		const meta = quantityMeta(renamed);
+		return {
+			...meta,
+			label: `${meta.label} (deprecated, use ${renamed})`,
+			cardLabel: undefined,
+			catalogued: true,
+		};
+	}
 	const cat = QUANTITY_CATALOGUE[raw];
 	if (cat) return { ...cat, catalogued: true };
 	const si = siUnit(raw);

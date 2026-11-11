@@ -4580,7 +4580,7 @@ documents:
     PR 1.65: 0.88; row 10 to 1.45: 2.6; row 14 fan: 0.054); Fig. 9 applies the suction set to Gritsch''s 30 deg
     hole, its Ma_m 0.3 curve to PR 2.0: k_perp 3.8. The fade threshold k_fit = max(tier 1, tier 2) is
     combaero''s choice: tier 1 sets pressure 4.7, leading edge 4.3, fan 0.13 / 0.054; tier 2 sets suction 3.8
-    (data 0.58); exit_crossflow_faded reports the tier (0 data, 0.5 authors'' application only, 1 faded). Our
+    (data 0.58); Cd_exit_crossflow_faded reports the tier (0 data, 0.5 authors'' application only, 1 faded). Our
     choices: held below k_floor = max(0.01, k_unique) (0.01: the lowest k_perp of the authors'' own Fig. 9 Ma_m
     1.2 prediction, back-calculated; k_unique keeps the hole flow a unique root where B > 1, margin 0.5 -- Hay
     90 deg moves with it); beyond k_fit the -C offset fades, w = 1/(1 + ln(k/k_fit)^2), C1, so Cd -> Cd,no as

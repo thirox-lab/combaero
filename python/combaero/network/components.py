@@ -7269,6 +7269,9 @@ class EffusionPlateElement(OrificeElement):
         out: dict[str, float] = {
             "h_internal_plate_area": float(h_i),
             "wall_conductivity": float(self.wall_conductivity),
+            # Deprecated since 0.12.0, removed in 0.13.0: the diagnostics'
+            # Cd_inlet_crossflow_ignored, as 0.11 returned it from here.
+            "coolant_crossflow_ignored": float(self._hole_cd.inlet_crossflow_ignored),
             # Duct-fed: the Cd sees the crossflow, but the coolant-side heat
             # transfer is still Andrews' still-plenum correlation (provisional
             # until a crossflow-supply source; #785).
@@ -7455,12 +7458,14 @@ class EffusionPlateElement(OrificeElement):
         m_dot = abs(state_in.m_dot)
         dP_drive = state_in.Pt - state_out.P
         # Deprecated since 0.12.0, removed in 0.13.0: the pre-group names, as
-        # 0.11 emitted them (U1/Vi and its bounds on a duct-fed panel only).
-        legacy = ("coolant_crossflow_ignored",)
-        if self._hole_cd.duct_fed:
-            legacy += ("U1_over_Vi", "crossflow_cd_beyond_8pct", "crossflow_cd_degraded")
-        if "Cd" in base:  # no group without a state (P or Tt <= 0)
-            base.update(self._hole_cd.legacy_diagnostics(base, legacy))
+        # 0.11 emitted them (U1/Vi and its bounds on a duct-fed panel only;
+        # coolant_crossflow_ignored comes with wall_heat_transfer, always).
+        if self._hole_cd.duct_fed and "Cd" in base:  # no group without a state
+            base.update(
+                self._hole_cd.legacy_diagnostics(
+                    base, ("U1_over_Vi", "crossflow_cd_beyond_8pct", "crossflow_cd_degraded")
+                )
+            )
         out = {
             "n_holes": float(self.n_holes),
             "hole_count_exact": float(self.hole_count_exact),
