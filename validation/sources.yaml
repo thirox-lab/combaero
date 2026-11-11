@@ -4099,7 +4099,11 @@ documents:
     10 bar (cross-source). An implementation must interpolate eps (never coefficients: gray gas i is a different
     band in each set; neighbouring sets differ 2-5% at the same state, so d eps/dp kinks at the nodes), clamp Mr
     to the fitted 0.1-4 (the quartics diverge outside), define Mr as x -> 0, stay at T <= 3000 K (eps < 0 near
-    3500-4000 K), and bound eps (sum a_i reaches 1.039 at 2 atm).'
+    3500-4000 K), and bound eps (sum a_i reaches 1.039 at 2 atm). LINE SHAPE AT PRESSURE (2026-11-11, from
+    Dammann et al. 2024, held): this paper''s LBL uses Voigt/Lorentz lines cut only below 1e-9 cm-1, close to
+    Dammann''s line shape A, which over-predicts measured CO2 near-IR (1900-6600 cm-1) apparent emissivity at
+    1273 K, x_CO2 0.2, L 0.30 m by +1/+5/+15/+22% at 10/20/40/54 bar. A likely upward bias of Bordbar''s CO2
+    part above about 10 bar, growing with p; not a correction (CO2 only, no 15 um band, no H2O).'
   read_for: ['#793 liner wall temperature: non-luminous gas emissivity at combustor pressure', '#1071
       composition-based emissivity in place of Lefebvre Eq. 8.11']
   issues: [793, 1071]
@@ -4108,6 +4112,38 @@ documents:
   code: ['include/wsgg_bordbar2021.h: Eqs. 7-11, ln P interpolation, clamps', 'include/wsgg_bordbar2021_data.h:
       Appendix A Tables A.1-A.10', 'python/combaero/network/components.py: GasRadiation(emissivity_model="bordbar2021")']
   notes: Arrived 2026-10-28 as docs/new/Pressure-dependent-weighted-sum-of-gray-gases-model_2021_International-Journ.pdf.
+- file: sources/radiation/Dammann_et_al_2024_JQSRT_329_109121_HITEMP2010_CO2_high_pressure.pdf
+  sha256: 'f773589b976a030133a400464386f728ee4b70240ab71e1dcf9d8d8ad9062eef'
+  citation: 'Dammann, M., Weber, R., Fateev, A., Clausen, S., Alberti, M., Kolb, T., Mancini, M. (2024). Thermal
+    radiation at high-temperature and high-pressure conditions: Validation of HITEMP-2010 for carbon dioxide.
+    J. Quant. Spectrosc. Radiat. Transfer 329, 109121.'
+  id: doi:10.1016/j.jqsrt.2024.109121
+  topic: [radiation]
+  content: 'Measured spectral transmissivity of pure CO2 and 20% CO2 + 80% N2 in the DTU high-temperature
+    high-pressure gas cell (path 30.28 cm; Table 1: 23 conditions at about 296, 773 and 1273 K, 1-60 bar),
+    1900-6600 cm-1 at 1 cm-1 (the 4.3, 2.7 and 2.0 um bands; the 15 um band NOT measured), against HITEMP-2010
+    line-by-line with four line shapes: A Voigt cut at 5000 half-widths or 1e-9 cm-1, B Voigt with the Alberti
+    et al. cut-off criterion, C Price with the first Westlye xi correction, D Price with the second. Apparent
+    total (1900-6600 cm-1 only, Eq. 14) and band emissivities per condition in Figs. 3-25 (bar values printed
+    for A-D and measured); relative deviations for B, C, D in Tables 3-6 (A only in the figures); Table 7 the
+    intensity lost to the cut-off; Table 8 HITRAN-2020. Licence: CC BY-NC-ND 4.0 (printed on p. 1).'
+  status: screened
+  verdict: 'Screened 2026-11-11 (radiation at combustor pressure, #1071). Background evidence, nothing to
+    implement or score: combaero''s WSGG kernels give TOTAL emissivity of H2O-CO2 mixtures, and this measures a
+    CO2-only, near-IR band-limited apparent emissivity, so no combaero number is comparable. What it settles:
+    (1) a plain Voigt/Lorentz LBL, close to Bordbar 2021''s own (cut below 1e-9 cm-1), over-predicts CO2
+    apparent emissivity at pressure -- line shape A at 1273 K, x_CO2 0.2: +0.9% at 10 bar (Fig. 12: 0.0980 vs
+    0.0971), +4.9% at 20 bar (Fig. 13: 0.1267 vs 0.1208), +15.3% at 40 bar (Fig. 14: 0.1722 vs 0.1493), +22% at
+    54 bar (Fig. 15); the 4.3 um band carries most of it (+25% at 40 bar). (2) The Alberti cut-off (B) keeps the
+    apparent total within 11% everywhere and within 4% at 1273 K and 0.2 CO2 at every pressure (Table 3) -- support
+    for the wanted Alberti, Weber & Mancini 2018/2020 emissivity fits, which build on that LBL. Bordbar''s bias
+    sign therefore points UP at liner pressures above about 10 bar; it does not explain the DLR 2008 effusion
+    gap, where Bordbar already sits below Lefebvre Eq. 8.11 and gives the weaker pressure trend.'
+  read_for: ['#1071 gas emissivity at combustor pressure: how good is HITEMP-2010 LBL with a plain line shape']
+  issues: [1071, 793]
+  records: []
+  notes: Arrived 2026-11-11 in sources/new/ as "Thermal-radiation-at-high-temperature-and-high_2024_Journal-of-Quantitative-.pdf".
+    CC BY-NC-ND -- keep in sources/ only; cite numbers, never redistribute figures.
 - file: sources/radiation/Ehlme_et_al_2025_ACSOmega_10_2978_WSGG_5000K.pdf
   sha256: 'fa5184381e25220124827f5c5d21aafa7046d955023e22bb336289c70c6d23f1'
   citation: 'Ehlme, E., Gunnarsson, A., Normann, F., Andersson, K. (2025). Updated weighted-sum-of-gray-gases
@@ -6630,7 +6666,9 @@ wanted:
   question: 'The pressure-capable, composition-based non-luminous gas emissivity (300-3000 K, 0.1-100 atm, pure
     H2O through CO2-rich) that Howell et al. 7th ed. App. F reproduces (held) -- the shippable alternative to
     Reeves (Lefebvre Eq. 8.9) and a cross-check of Bordbar 2021 (Appendix A CC BY, shipped #1071; to 80 atm only). Needed: the fit coefficients and
-    their licence. Covers the H2/NH3 limit (H2O only) that Bordbar does not.'
+    their licence. Covers the H2/NH3 limit (H2O only) that Bordbar does not. Dammann et al. 2024 (held) measures the
+    Alberti cut-off LBL within 4% for CO2 at 1273 K, 1-60 bar, where a plain Voigt LBL (Bordbar-like) is
+    15% high.'
   where: Elsevier journal (paywalled); check whether the authors publish the coefficients openly (the Howell
     appendix mentions a spreadsheet).
 - citation: Kretschmer, D., Odgers, J. (1978). A simple method for the prediction of wall temperatures in gas
