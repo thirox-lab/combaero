@@ -70,6 +70,13 @@ HINTS = (
         "Hint: connect this port through an element (for example a channel), "
         "not straight to a boundary or plenum.",
     ),
+    (
+        # The Inspector shows the hole-angle field for IdelchikThick only.
+        "cd_inclination='idelchik_3_2'",
+        'Hint: the Hole Angle Cd Term "idelchik_3_2" needs the Cd model '
+        '"Deep Hole in Wall (Idelchik 4-18a)"; select it to see the field and set '
+        "the term to Default or None, or keep that Cd model.",
+    ),
 )
 
 
