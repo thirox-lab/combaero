@@ -124,7 +124,11 @@ const NetworkCanvas = () => {
 				// is the reference (its valve open).
 				data = { ...data, fractions: [0.5, null], reference: null } as any;
 			} else if (type === "orifice") {
-				data = { ...data, diameter: 0.08, Cd: 0.6 } as any;
+				data = {
+					...data,
+					diameter: 0.08,
+					hole_cd: { correlation: "ReaderHarrisGallagher" },
+				} as any;
 			} else if (type === "effusion_liner") {
 				// Andrews plate C holes and pitch over a 30 mm backside duct
 				// (#471). U1/Vi follows the duct drop against the hole drive.
@@ -146,6 +150,7 @@ const NetworkCanvas = () => {
 					turbulence_intensity: 0.05,
 					gas_heat_flux: 0.0,
 					radiation: { kind: "none" },
+					hole_cd: { correlation: "McGreehanSchotsch" },
 				} as any;
 			} else if (type === "film_cooling") {
 				// Colban Eq. (19) at Gritsch configuration B, the geometry it is
@@ -162,9 +167,7 @@ const NetworkCanvas = () => {
 					area_ratio: 3.5,
 					breakout_width: 2.94e-3,
 					turbulence_intensity: 0.04,
-					correlation: "IdelchikThick",
-					Cd: 0.6,
-					cd_inclination: "auto",
+					hole_cd: { correlation: "IdelchikThick" },
 				} as any;
 			} else if (type === "slot_film") {
 				// Marek & Tacina's D-7958 rig, on which the slot film is scored
@@ -176,8 +179,7 @@ const NetworkCanvas = () => {
 					lip_thickness: 1.0e-3,
 					turbulence_intensity: 0.14,
 					C_m_multiplier: 1.0,
-					correlation: "IdelchikThick",
-					Cd: 0.6,
+					hole_cd: { correlation: "IdelchikThick" },
 				} as any;
 			} else if (type === "effusion_plate") {
 				// Andrews et al.'s plate C, the geometry the closure is scored
@@ -191,9 +193,7 @@ const NetworkCanvas = () => {
 					panel_length: 0.152,
 					panel_width: 0.152,
 					angle_deg: 90.0,
-					correlation: "IdelchikThick",
-					Cd: 0.6,
-					cd_inclination: "auto",
+					hole_cd: { correlation: "IdelchikThick" },
 					wall_conductivity: 20.0,
 					gas_film: "none",
 					gas_augmentation: 1.0,
@@ -215,9 +215,7 @@ const NetworkCanvas = () => {
 					span: 0.122,
 					plate_thickness: 0.00254,
 					pattern: "inline",
-					correlation: "fixed",
-					Cd: 0.79,
-					cd_crossflow: "rogers_hersh_1976",
+					hole_cd: { correlation: "fixed", Cd: 0.79 },
 					Nu_multiplier: 1.0,
 				} as any;
 			} else if (type === "discrete_loss") {

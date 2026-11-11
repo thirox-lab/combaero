@@ -4,6 +4,8 @@
 // the junction guess migration in gui/backend), so a headless payload needs
 // no migration.
 
+import { liftLooseHoleCd } from "./holeCd";
+
 /** omega_rpm became shaft_speed_rpm: omega is 2 pi f, not a speed in rpm. */
 const RENAMED: Record<string, string> = { omega_rpm: "shaft_speed_rpm" };
 
@@ -29,10 +31,11 @@ const renameKeys = (obj: any): any => {
 export const junctionGuessKey = (junctionModel: unknown): "P_jct" | "Pt_jct" =>
 	junctionModel === "ideal_momentum" ? "P_jct" : "Pt_jct";
 
-/** Node data under its current key names: the vortex's shaft speed, and a
- *  Mynard / constant-K tee's junction guess (P_jct before #773). */
+/** Node data under its current key names: the vortex's shaft speed, a
+ *  Mynard / constant-K tee's junction guess (P_jct before #773), and a hole
+ *  node's loose Cd fields in one `hole_cd` (file version 1.3). */
 export const migrateNodeData = (data: any, type?: string): any => {
-	let out = renameKeys(data);
+	let out = liftLooseHoleCd(renameKeys(data), type);
 	if (
 		type === "mpce_tee" &&
 		out?.initial_guess &&

@@ -83,10 +83,34 @@ Elements are defined by edges in the graph but carry their own physical paramete
 
 #### Orifice Element (`orifice`)
 - `diameter`: Orifice diameter [m]
-- `Cd`: Discharge coefficient (if using "fixed" correlation)
-- `correlation`: "ReaderHarrisGallagher", "IdelchikThick", "IdelchikBeveled", "IdelchikRounded", "McGreehanSchotsch", "Lichtarowicz", or "fixed".
+- `hole_cd`: the discharge coefficient (see Hole Cd below); its
+  `correlation` is "ReaderHarrisGallagher" (the default), "IdelchikThick",
+  "IdelchikBeveled", "IdelchikRounded", "McGreehanSchotsch", "Lichtarowicz",
+  or "fixed" with `Cd`.
   - "Stolz" was removed in 0.9.0 (#876). A saved file with it still opens in the editor, but the backend refuses it: `/solve` returns HTTP 400 naming the orifice and "ReaderHarrisGallagher". It is not migrated silently, since that would change the result.
 - `regime`: "default", "incompressible", or "compressible".
+
+#### Hole Cd (`hole_cd`)
+Every node built as a hole element -- `orifice`, `effusion_plate`,
+`film_cooling`, `slot_film`, `impingement_array`, `effusion_liner` -- carries
+its discharge coefficient as one object, `hole_cd`: the library's `HoleCd`
+field for field (`HoleCdData` in `gui/backend/schemas.py`), which the
+builder passes through unchanged. Fields: `correlation`, `Cd` (with
+`"fixed"` only), `inclination`, `inlet_crossflow`, `exit_crossflow`. `null` or
+`"auto"` is the node type's own default (`HoleCd`'s docstring lists them);
+a choice the element has no such term for is refused when the network is
+built. The Inspector edits it as one "Hole Cd" section offering only each
+node type's choices (`gui/frontend/src/utils/holeCd.ts`). The exit-crossflow
+term's geometry, `exit_crossflow_region` and
+`exit_crossflow_orientation_deg`, stays on the film and effusion-plate node.
+
+File version 1.3. A file saved before it (up to v0.11.1) carries
+`correlation`, `Cd` and, on an impingement array, `cd_crossflow` loose on the
+node: they are lifted into `hole_cd` on load (backend and frontend alike) as
+that build read them -- the correlation (its default where the key is
+absent), the Cd for `"fixed"` only, `cd_crossflow` as `exit_crossflow` -- and
+solve to the same result. A node with both the loose fields and `hole_cd` is
+refused.
 
 #### Compressor and Turbine (`compressor`, `turbine`)
 A `CompressorElement` / `TurbineElement` at a fixed total-to-total pressure

@@ -3761,7 +3761,7 @@ are crossflow.
   and `'McGreehanSchotsch'` (supply-side `U1/Vi = 0`, never Gc/Gj).
   `Cd_in_range` reports whether the plate is inside the chosen source's range.
 - **Crossflow on the holes (#800), `HoleCd(exit_crossflow=...)`** (also on
-  `ImpingementArray`, and in the GUI as `cd_crossflow`; `"auto"` is the
+  `ImpingementArray`, and in the GUI as `hole_cd.exit_crossflow`; `"auto"` is the
   default below; the `cd_crossflow` attribute reads the law in use). The gap's crossflow bends the jets over and lowers their Cd,
   steeply at large Gc/Gj. In q = G_ideal / G_c (ideal hole over crossflow mass
   velocity, G_ideal = sqrt(2 rho dP)):
@@ -4316,7 +4316,8 @@ Not deprecated: `OrificeElement`'s own `correlation`/`Cd` (the metering
 keywords), `DiameterDischargeCoefficientConnectionElement`'s `Cd`, the
 geometry keywords `exit_crossflow_region` / `exit_crossflow_orientation_deg`,
 and the read-only attributes `cd_inclination`, `cd_exit_crossflow`,
-`cd_crossflow`. The GUI's saved-file fields are unchanged. An
+`cd_crossflow`. The GUI saves the same spec as one `hole_cd` object per hole
+node (file version 1.3, `docs/GUI_TECHNICAL.md`). An
 `ImpingementArray`'s deprecated fields keep what was passed (so
 `dataclasses.replace` rebuilds from them, warning again); the spec its rows
 take is resolved at construction.

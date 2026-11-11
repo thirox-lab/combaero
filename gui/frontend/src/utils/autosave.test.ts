@@ -59,7 +59,7 @@ describe("autosave storage (#596)", () => {
 		expect(rec?.nodes[0].id).toBe("a");
 		expect(rec?.nodes[0].data.result).toBeUndefined();
 		expect(rec?.solverSettings).toEqual({ global_regime: "compressible" });
-		expect(rec?.version).toBe("1.2");
+		expect(rec?.version).toBe("1.3");
 		expect(rec?.savedAt).toBe(t.toISOString());
 	});
 

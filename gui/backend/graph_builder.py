@@ -65,6 +65,7 @@ from .schemas import (
     FuelBoundaryData,
     GasRadiationData,
     HeatSourceData,
+    HoleNodeData,
     ImpingementArrayData,
     ImpingementModelData,
     LinearThetaFractionLossData,
@@ -201,16 +202,10 @@ def _parse(model, data: dict | None, owner_id: str, what: str = "Node"):
         raise ValueError(f"{what} '{owner_id}': " + "; ".join(parts)) from e
 
 
-def _fixed_cd(
-    data: OrificeData | EffusionPlateData | FilmCoolingData | SlotFilmData | ImpingementArrayData,
-) -> float | None:
-    """The Cd an orifice-family element is built with (#872): the field's
-    value for the 'fixed' correlation, None for any other, which computes its
-    own. The node keeps a Cd field whatever its correlation (the Inspector
-    shows it for 'fixed' only), and the element refuses a Cd given with a
-    correlation; a file saved with both loads, and its Cd is not used, as it
-    never was."""
-    return data.Cd if data.correlation == "fixed" else None
+def _hole_cd(data: HoleNodeData) -> HoleCd:
+    """The node's hole_cd as the library's spec: the same fields, passed
+    through (the schema already ran HoleCd's validation)."""
+    return HoleCd(**data.hole_cd.model_dump())
 
 
 def _radiation(
@@ -1361,6 +1356,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 film_direction=_ld.film_direction,
                 material=_ld.material or None,
                 radiation=_radiation(_ld.radiation),
+                hole_cd=_hole_cd(_ld),
             )
             liner.add_to(net, _ends[0], _ends[1], _ends[2])
             gui_arrays[elem_id] = liner
@@ -1496,8 +1492,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 from_node=source_id,
                 to_node=target_id,
                 diameter=data.diameter,
-                Cd=_fixed_cd(data),
-                correlation=data.correlation,
+                hole_cd=_hole_cd(data),
                 plate_thickness=data.plate_thickness,
                 edge_radius=data.edge_radius,
                 bevel_depth=data.bevel_depth,
@@ -1532,12 +1527,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 panel_length=data.panel_length,
                 panel_width=data.panel_width,
                 angle_deg=data.angle_deg,
-                hole_cd=HoleCd(
-                    correlation=data.correlation,
-                    Cd=_fixed_cd(data),
-                    inclination=data.cd_inclination,
-                    exit_crossflow=data.cd_exit_crossflow,
-                ),
+                hole_cd=_hole_cd(data),
                 internal_Nu_multiplier=data.internal_Nu_multiplier,
                 wall_conductivity=data.wall_conductivity,
                 gas_film=data.gas_film,
@@ -1572,12 +1562,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 area_ratio=data.area_ratio if shaped else None,
                 breakout_width=data.breakout_width if shaped else None,
                 turbulence_intensity=data.turbulence_intensity,
-                hole_cd=HoleCd(
-                    correlation=data.correlation,
-                    Cd=_fixed_cd(data),
-                    inclination=data.cd_inclination,
-                    exit_crossflow=data.cd_exit_crossflow,
-                ),
+                hole_cd=_hole_cd(data),
                 exit_crossflow_region=data.exit_crossflow_region,
                 exit_crossflow_orientation_deg=data.exit_crossflow_orientation_deg,
             )
@@ -1593,7 +1578,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 lip_thickness=data.lip_thickness,
                 turbulence_intensity=data.turbulence_intensity,
                 C_m_multiplier=data.C_m_multiplier,
-                hole_cd=HoleCd(correlation=data.correlation, Cd=_fixed_cd(data)),
+                hole_cd=_hole_cd(data),
                 film_htc=data.film_htc,
             )
             net.add_element(elem)
@@ -1609,11 +1594,7 @@ def build_network_from_schema(schema: NetworkGraphSchema) -> FlowNetwork:
                 span=data.span,
                 plate_thickness=data.plate_thickness,
                 pattern=data.pattern,
-                hole_cd=HoleCd(
-                    correlation=data.correlation,
-                    Cd=_fixed_cd(data),
-                    exit_crossflow=data.cd_crossflow,
-                ),
+                hole_cd=_hole_cd(data),
                 Nu_multiplier=data.Nu_multiplier * (schema.solver_settings.Nu_multiplier or 1.0),
                 roughness=data.roughness,
                 bypass_length=data.bypass_length,

@@ -123,15 +123,17 @@ def test_the_flat_plate_gas_baseline_is_exposed_and_the_chamber_stays_default() 
 
 def test_the_hole_angle_cd_term_is_on_by_default_and_threads_through() -> None:
     auto = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
-    assert EffusionPlateData().cd_inclination == "auto"
+    assert EffusionPlateData().hole_cd.inclination == "auto"
     assert auto.elements["eff"].cd_inclination == "idelchik_3_2"
     assert auto.elements["eff"]._hole_cd.inclination_deg == 30.0
     off = build_network_from_schema(
-        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "none"}))
+        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "hole_cd": {"inclination": "none"}}))
     )
     assert off.elements["eff"].cd_inclination == "none"
     on = build_network_from_schema(
-        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "idelchik_3_2"}))
+        NetworkGraphSchema(
+            **_liner({"angle_deg": 30.0, "hole_cd": {"inclination": "idelchik_3_2"}})
+        )
     )
     assert on.elements["eff"].cd_inclination == "idelchik_3_2"
     assert on.elements["eff"]._hole_cd.inclination_deg == 30.0
@@ -152,7 +154,9 @@ def test_an_explicit_hole_angle_term_off_idelchik_thick_is_refused() -> None:
     with pytest.raises(ValueError, match="does not compose with correlation='Lichtarowicz'"):
         build_network_from_schema(
             NetworkGraphSchema(
-                **_liner({"correlation": "Lichtarowicz", "cd_inclination": "idelchik_3_2"})
+                **_liner(
+                    {"hole_cd": {"correlation": "Lichtarowicz", "inclination": "idelchik_3_2"}}
+                )
             )
         )
 
@@ -161,7 +165,9 @@ def test_the_exit_crossflow_cd_term_threads_through() -> None:
     off = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
     assert off.elements["eff"].cd_exit_crossflow == "none"
     on = build_network_from_schema(
-        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_exit_crossflow": "rowbury_2001"}))
+        NetworkGraphSchema(
+            **_liner({"angle_deg": 30.0, "hole_cd": {"exit_crossflow": "rowbury_2001"}})
+        )
     )
     assert on.elements["eff"].cd_exit_crossflow == "rowbury_2001"
     assert on.elements["eff"].exit_crossflow_region == "suction_surface"

@@ -591,7 +591,9 @@
       "data": {
         "id": "node_1778699104469",
         "diameter": 0.04,
-        "Cd": 0.6,
+        "hole_cd": {
+          "correlation": "ReaderHarrisGallagher"
+        },
         "result": {
           "m_dot": 0.08673321169339145,
           "success": true,

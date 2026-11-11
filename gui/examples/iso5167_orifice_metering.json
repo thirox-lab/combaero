@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "example": {
     "title": "ISO 5167-2 orifice metering run",
     "source": "ISO 5167-2:2003, Measurement of fluid flow by means of pressure differential devices -- Part 2: Orifice plates. Eq. (4) (Reader-Harris/Gallagher C), the flow equation, and 5.4.1 (pressure loss).",
@@ -44,7 +44,7 @@
         "id": "plate",
         "label": "Orifice plate, beta 0.5",
         "diameter": 0.05,
-        "correlation": "ReaderHarrisGallagher",
+        "hole_cd": { "correlation": "ReaderHarrisGallagher" },
         "tap": "Flange"
       }
     },

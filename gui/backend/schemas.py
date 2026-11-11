@@ -1,5 +1,5 @@
 import math
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, ClassVar, Literal, get_args
 
 from pydantic import (
     AliasChoices,
@@ -12,6 +12,7 @@ from pydantic import (
 )
 
 from combaero.network.components import DEFAULT_REGIME
+from combaero.network.hole_cd import HoleCd
 
 #: Outlets a GUI flow splitter may have (#903); its ports are out0 ... out31.
 SPLITTER_MAX_OUTLETS = 32
@@ -328,23 +329,124 @@ class ChannelData(BaseModel):
     label: str | None = None
 
 
-class OrificeData(BaseModel):
+class HoleCdData(BaseModel):
+    """A hole's discharge coefficient as one spec, the library's HoleCd
+    (python/combaero/network/hole_cd.py): the same fields, values and
+    validation. graph_builder passes it through as ``HoleCd(**hole_cd)``, so
+    a new HoleCd field is a field here and nothing else.
+
+    None or "auto" is the ELEMENT's default, which differs per node type
+    (HoleCd's docstring has the table). Which choices a node type takes is
+    the element's rule: it refuses the others when the network is built.
+    """
+
     model_config = ConfigDict(extra="ignore")
+    correlation: (
+        Literal[
+            "fixed",
+            "ReaderHarrisGallagher",
+            "IdelchikThick",
+            "IdelchikBeveled",
+            "IdelchikRounded",
+            "McGreehanSchotsch",
+            "Lichtarowicz",
+        ]
+        | None
+    ) = None
+    # The 'fixed' correlation's value and nothing else (#872).
+    Cd: float | None = None
+    inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
+    inlet_crossflow: Literal["auto", "none", "mcgreehan_schotsch"] = "auto"
+    exit_crossflow: Literal[
+        "auto", "none", "rowbury_2001", "rogers_hersh_1976", "florschuetz_metzger_su_1982"
+    ] = "auto"
+
+    @model_validator(mode="before")
+    @classmethod
+    def refuse_removed_correlations(cls, data: Any) -> Any:
+        # A file saved before the removal names a correlation that no longer
+        # exists. Say which one and what to pick, rather than a bare Literal
+        # mismatch; silently swapping in another Cd would change the result.
+        corr = data.get("correlation") if isinstance(data, dict) else None
+        if corr == "Miller":
+            raise ValueError(
+                "The 'Miller' orifice correlation was removed: no published "
+                "source matched its formula. Pick 'ReaderHarrisGallagher' for "
+                "this orifice (Stolz, which 'Miller' had computed, was removed "
+                "in 0.9.0, #876)."
+            )
+        if corr == "Stolz":
+            raise ValueError(
+                "The 'Stolz' orifice correlation (ISO 5167:1980) was removed in "
+                "0.9.0 (#876): ISO replaced it with Reader-Harris/Gallagher. Pick "
+                "'ReaderHarrisGallagher' for this orifice."
+            )
+        return data
+
+    @model_validator(mode="after")
+    def validate_as_hole_cd(self) -> "HoleCdData":
+        # HoleCd's own checks (a Cd only with 'fixed', a finite Cd), so the
+        # file is refused at load with the library's message.
+        HoleCd(**self.model_dump())
+        return self
+
+
+#: The hole-Cd fields a v0.11.1 GUI file carries loose on the node, lifted
+#: into ``hole_cd`` on load. cd_inclination and cd_exit_crossflow were added
+#: after v0.11.1 and replaced before a release: no file carries them.
+_LOOSE_HOLE_CD_KEYS = ("correlation", "Cd", "cd_crossflow")
+
+
+class HoleNodeData(BaseModel):
+    """A node built as a hole element (the orifice family, the impingement
+    array, the effusion liner): its Cd choices in ``hole_cd``.
+
+    ``legacy_hole_cd`` is the node type's (correlation, Cd) defaults of the
+    v0.11.1 loose fields, None for a type that never had them. A file saved
+    before ``hole_cd`` carries ``correlation``, ``Cd`` (and, on an
+    impingement array, ``cd_crossflow``) on the node; they are lifted into
+    ``hole_cd`` as the builder read them then: the correlation (its default
+    where the key is absent), the Cd for 'fixed' only (#872), and
+    cd_crossflow as exit_crossflow. That builds the same element.
+    """
+
+    legacy_hole_cd: ClassVar[tuple[str, float] | None] = None
+    hole_cd: HoleCdData = Field(default_factory=HoleCdData)
+
+    @model_validator(mode="before")
+    @classmethod
+    def lift_loose_hole_cd(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or cls.legacy_hole_cd is None:
+            return data
+        loose = [k for k in _LOOSE_HOLE_CD_KEYS if k in data]
+        if not loose:
+            return data
+        if data.get("hole_cd") is not None:
+            raise ValueError(
+                f"hole_cd and the pre-hole_cd field(s) {', '.join(loose)} together: put "
+                "every hole-Cd choice in hole_cd."
+            )
+        data = dict(data)
+        corr_default, cd_default = cls.legacy_hole_cd
+        corr = data.pop("correlation", None) or corr_default
+        cd = data.pop("Cd", None)
+        crossflow = data.pop("cd_crossflow", None)
+        hole: dict[str, Any] = {"correlation": corr}
+        if corr == "fixed":
+            hole["Cd"] = cd if cd is not None else cd_default
+        if crossflow is not None:
+            hole["exit_crossflow"] = crossflow
+        data["hole_cd"] = hole
+        return data
+
+
+class OrificeData(HoleNodeData):
+    model_config = ConfigDict(extra="ignore")
+    legacy_hole_cd = ("ReaderHarrisGallagher", 0.6)
     diameter: float | None = None  # None = the default bore (a bore never inherits)
-    # Read for correlation "fixed" only (graph_builder._fixed_cd, #872).
-    Cd: float = 0.6
-    # Normed metering (ISO 5167, function of beta) and discharge-hole
-    # (Idelchik / McGreehan-Schotsch, function of L/d and r/d) families. They
-    # are not interchangeable; there is deliberately no "Auto" member.
-    correlation: Literal[
-        "ReaderHarrisGallagher",
-        "IdelchikThick",
-        "IdelchikBeveled",
-        "IdelchikRounded",
-        "McGreehanSchotsch",
-        "Lichtarowicz",
-        "fixed",
-    ] = "ReaderHarrisGallagher"
+    # hole_cd: the Cd. Normed metering (ISO 5167, function of beta) and
+    # discharge-hole (Idelchik / McGreehan-Schotsch, function of L/d and r/d)
+    # correlations; None = 'ReaderHarrisGallagher'.
     plate_thickness: float = 0.0  # t [m], the hole length for a wall orifice
     edge_radius: float = 0.0  # r [m]
     bevel_depth: float = 0.0  # bevel depth along the hole axis [m]
@@ -366,27 +468,6 @@ class OrificeData(BaseModel):
     Cv: float = Field(default=1.0, gt=0.0, le=1.0)
     initial_guess: dict[str, float] = Field(default_factory=dict)
     label: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def refuse_removed_correlations(cls, data: dict) -> dict:
-        # A file saved before the removal names a correlation that no longer
-        # exists. Say which one and what to pick, rather than a bare Literal
-        # mismatch; silently swapping in another Cd would change the result.
-        if isinstance(data, dict) and data.get("correlation") == "Miller":
-            raise ValueError(
-                "The 'Miller' orifice correlation was removed: no published "
-                "source matched its formula. Pick 'ReaderHarrisGallagher' for "
-                "this orifice (Stolz, which 'Miller' had computed, was removed "
-                "in 0.9.0, #876)."
-            )
-        if isinstance(data, dict) and data.get("correlation") == "Stolz":
-            raise ValueError(
-                "The 'Stolz' orifice correlation (ISO 5167:1980) was removed in "
-                "0.9.0 (#876): ISO replaced it with Reader-Harris/Gallagher. Pick "
-                "'ReaderHarrisGallagher' for this orifice."
-            )
-        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -442,7 +523,7 @@ class WallRadiationData(GasRadiationData):
     T_casing: float | None = None
 
 
-class EffusionLinerData(BaseModel):
+class EffusionLinerData(HoleNodeData):
     """Effusion liner (#471): a backside coolant duct whose wall bleeds
     through effusion holes into the gas. Expanded into N stations: a Bassett
     bleed plus a duct-fed McGreehan-Schotsch panel each.
@@ -454,6 +535,9 @@ class EffusionLinerData(BaseModel):
     not by the duct size: a pressure-driven duct carries more flow when made
     bigger. With 200 Pa along the duct and ~3.8 kPa across the holes it peaks
     at 0.27, inside the Rohde-scored band.
+
+    ``hole_cd`` is every panel's: None/"auto" is 'McGreehanSchotsch' with
+    the backside duct's crossflow U1/Vi (EffusionLiner's default).
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -484,7 +568,7 @@ class EffusionLinerData(BaseModel):
     label: str | None = None
 
 
-class EffusionPlateData(BaseModel):
+class EffusionPlateData(HoleNodeData):
     """Effusion / film plate, plenum-fed (#471): it owns its wall.
 
     The node it discharges into decides the gas side: a momentum chamber
@@ -495,6 +579,7 @@ class EffusionPlateData(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")
+    legacy_hole_cd = ("IdelchikThick", 0.6)
     hole_diameter: float = Field(default=3.27e-3, gt=0.0)
     wall_thickness: float = Field(default=6.3e-3, gt=0.0)
     pitch_x: float = Field(default=15.24e-3, gt=0.0)
@@ -502,10 +587,6 @@ class EffusionPlateData(BaseModel):
     panel_length: float = Field(default=0.152, gt=0.0)
     panel_width: float = Field(default=0.152, gt=0.0)
     angle_deg: float = Field(default=90.0, gt=0.0, le=90.0)
-    correlation: Literal["IdelchikThick", "Lichtarowicz", "McGreehanSchotsch", "fixed"] = (
-        "IdelchikThick"
-    )
-    Cd: float = 0.6
     internal_Nu_multiplier: float = Field(default=1.0, gt=0.0)
     wall_conductivity: float = Field(default=20.0, gt=0.0)
     gas_film: Literal["none", "baldauf_sellers"] = "none"
@@ -516,14 +597,9 @@ class EffusionPlateData(BaseModel):
     # for the flat plate, so switching back keeps it without refusing.
     gas_baseline: Literal["chamber", "flat_plate"] = "chamber"
     gas_start_length: float | None = Field(default=None, ge=0.0)
-    # Hole-angle Cd term (Idelchik diagram 3-2 on IdelchikThick's inlet
-    # coefficient): "auto" (default) on for an inclined hole, "none" off,
-    # "idelchik_3_2" forced; read only with IdelchikThick, like Cd with 'fixed'.
-    cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
-    # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
-    # flowing discharge chamber (the element refuses it otherwise). No
-    # Inspector control yet: set in the network JSON.
-    cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none"
+    # The exit-crossflow term's geometry (hole_cd.exit_crossflow
+    # 'rowbury_2001', #1074): the Rowbury et al. Table 2 region and the
+    # compound angle alpha. Read only with that term.
     exit_crossflow_region: Literal["suction_surface", "pressure_surface", "leading_edge"] = (
         "suction_surface"
     )
@@ -539,7 +615,7 @@ class EffusionPlateData(BaseModel):
     label: str | None = None
 
 
-class SlotFilmData(BaseModel):
+class SlotFilmData(HoleNodeData):
     """A 2-D film slot (#714): coolant from the upstream node into the gas
     through a continuous slot, and a film PROVIDER. It owns no wall: a
     thermal wall on the gas duct downstream names it (``film``), the span
@@ -553,22 +629,19 @@ class SlotFilmData(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")
+    legacy_hole_cd = ("IdelchikThick", 0.6)
     slot_height: float = Field(default=6.3e-3, gt=0.0)
     span: float = Field(default=0.37, gt=0.0)
     lip_thickness: float = Field(default=1.0e-3, gt=0.0)
     turbulence_intensity: float = Field(default=0.14, ge=0.0, le=1.0)
     C_m_multiplier: float = Field(default=1.0, gt=0.0)
-    correlation: Literal["IdelchikThick", "Lichtarowicz", "McGreehanSchotsch", "fixed"] = (
-        "IdelchikThick"
-    )
-    Cd: float = Field(default=0.6, gt=0.0, le=1.0)
     # Film-side h on the wall the film covers (#962): "none" keeps the duct's
     # own h; "seban1960" (recommended) or the book's wall jet.
     film_htc: Literal["none", "seban1960", "ballal_lefebvre1973"] = "none"
     label: str | None = None
 
 
-class FilmCoolingData(BaseModel):
+class FilmCoolingData(HoleNodeData):
     """Film-cooling holes (#386): coolant from the upstream node into the gas,
     and a film PROVIDER. It owns no wall: a thermal wall on the gas duct
     downstream names it (``film``) and that side's driving temperature
@@ -581,6 +654,7 @@ class FilmCoolingData(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")
+    legacy_hole_cd = ("IdelchikThick", 0.6)
     hole_type: Literal["shaped", "cylindrical"] = "shaped"
     hole_diameter: float = Field(default=1.0e-3, gt=0.0)
     holes_per_row: int = Field(default=20, ge=1)
@@ -592,17 +666,9 @@ class FilmCoolingData(BaseModel):
     area_ratio: float = Field(default=3.5, ge=1.0)
     breakout_width: float = Field(default=2.94e-3, gt=0.0)
     turbulence_intensity: float = Field(default=0.04, gt=0.0)
-    correlation: Literal["IdelchikThick", "Lichtarowicz", "McGreehanSchotsch", "fixed"] = (
-        "IdelchikThick"
-    )
-    Cd: float = 0.6
-    # Hole-angle Cd term, read only with IdelchikThick (see EffusionPlateData);
-    # "auto" leaves a shaped hole without it.
-    cd_inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
-    # Opt-in exit-crossflow Cd term (Rowbury et al. 2001, #1074): needs a
-    # flowing discharge chamber (the element refuses it otherwise). No
-    # Inspector control yet: set in the network JSON.
-    cd_exit_crossflow: Literal["none", "rowbury_2001"] = "none"
+    # The exit-crossflow term's geometry (hole_cd.exit_crossflow
+    # 'rowbury_2001', #1074): the Rowbury et al. Table 2 region and the
+    # compound angle alpha. Read only with that term.
     exit_crossflow_region: Literal["suction_surface", "pressure_surface", "leading_edge"] = (
         "suction_surface"
     )
@@ -610,7 +676,7 @@ class FilmCoolingData(BaseModel):
     label: str | None = None
 
 
-class ImpingementArrayData(BaseModel):
+class ImpingementArrayData(HoleNodeData):
     """Impingement array, channel exit (#465): ONE configuration.
 
     A jet plate fed from the upstream node, impinging on a target, the spent
@@ -621,6 +687,7 @@ class ImpingementArrayData(BaseModel):
     """
 
     model_config = ConfigDict(extra="ignore")
+    legacy_hole_cd = ("fixed", 0.79)  # Florschuetz's own, cb.FLORSCHUETZ_1981_DEFAULT_CD
     n_rows: int = Field(default=10, ge=1)
     d_jet: float = Field(default=0.00254, gt=0.0)
     xn_d: float = Field(default=5.0, gt=0.0)
@@ -629,13 +696,9 @@ class ImpingementArrayData(BaseModel):
     span: float = Field(default=0.122, gt=0.0)
     plate_thickness: float = Field(default=0.00254, gt=0.0)
     pattern: Literal["inline", "staggered"] = "inline"
-    # Discharge-hole family only: a jet plate has no pipe, so no beta.
-    correlation: Literal["fixed", "IdelchikThick", "Lichtarowicz", "McGreehanSchotsch"] = "fixed"
-    Cd: float = 0.79  # Florschuetz's own default, cb.FLORSCHUETZ_1981_DEFAULT_CD
-    # The holes' Cd under the gap's crossflow (#800), ImpingementPlateElement's.
-    cd_crossflow: Literal["rogers_hersh_1976", "florschuetz_metzger_su_1982", "none"] = (
-        "rogers_hersh_1976"
-    )
+    # hole_cd: the discharge-hole family only (a jet plate has no pipe, so no
+    # beta); None = 'fixed' at Florschuetz's 0.79, and exit_crossflow "auto"
+    # = the gap's crossflow law 'rogers_hersh_1976' (#800).
     Nu_multiplier: float = Field(default=1.0, gt=0.0)
     roughness: float = Field(default=0.0, ge=0.0)
     # Initial (bypass) crossflow (#467), used only when the bypass handle is

@@ -18,6 +18,7 @@ import {
 	type HeatSourceMode,
 	heatedNodeId,
 } from "../utils/heatSource";
+import { resolvedCorrelation } from "../utils/holeCd";
 import { warningsFor } from "../utils/incompressible";
 import {
 	inheritedField,
@@ -56,6 +57,7 @@ import AreaInput from "./AreaInput";
 import { CardRowPin, CardRowsReset } from "./CardRowControls";
 import CompositionEditor from "./CompositionEditor";
 import GeometryFields from "./GeometryFields";
+import HoleCdEditor from "./HoleCdEditor";
 import LengthInput from "./LengthInput";
 import NumericInput from "./NumericInput";
 import PlateMaterialSelect from "./PlateMaterialSelect";
@@ -73,18 +75,6 @@ const ORIFICE_FAMILY_TYPES = new Set([
 	"film_cooling",
 	"slot_film",
 ]);
-
-// A cooling hole's correlation change. The hole-angle Cd field shows for
-// IdelchikThick only, and the library refuses an explicit "idelchik_3_2"
-// with any other correlation; leaving IdelchikThick resets that choice to
-// "auto" so no hidden field makes the build fail.
-const withCorrelation = (
-	correlation: string,
-	cdInclination: string | undefined,
-): Record<string, string> =>
-	correlation !== "IdelchikThick" && cdInclination === "idelchik_3_2"
-		? { correlation, cd_inclination: "auto" }
-		: { correlation };
 
 const Inspector = () => {
 	const {
@@ -1426,9 +1416,12 @@ const Inspector = () => {
 								? `${spec.format(v)} ${spec.unit === "—" ? "" : spec.unit}`.trim()
 								: null;
 						};
-						const metering =
-							(selectedNode.data.correlation || "ReaderHarrisGallagher") ===
-							"ReaderHarrisGallagher";
+						// The hole Cd (#1098): one hole_cd; null = Reader-Harris/Gallagher.
+						const correlation = resolvedCorrelation(
+							"orifice",
+							selectedNode.data.hole_cd,
+						);
+						const metering = correlation === "ReaderHarrisGallagher";
 						const lu = unitPreferences.length === "mm" ? 1000 : 1;
 						// #788: in_pipe = false is a lumped Cd*A restriction (no pipe
 						// diameter, beta = 0). In a pipe, a bore equal to it is no
@@ -1563,47 +1556,19 @@ const Inspector = () => {
 									</p>
 								)}
 
-								<div className="flex flex-col gap-2">
-									<label className="text-xs font-bold text-gray-500 uppercase">
-										Discharge Model (Cd)
-									</label>
-									<select
-										className="p-2 border rounded bg-white text-xs border-stone-200"
-										value={
-											selectedNode.data.correlation || "ReaderHarrisGallagher"
-										}
-										onChange={(e) =>
-											updateNodeData(selectedNode.id, {
-												correlation: e.target.value,
-											})
-										}
-									>
-										<option value="ReaderHarrisGallagher">
-											Reader-Harris/Gallagher (Sharp)
-										</option>
-										<option value="IdelchikThick">
-											Deep Hole in Wall (Idelchik 4-18a)
-										</option>
-										<option value="IdelchikBeveled">
-											Beveled Hole in Wall (Idelchik 4-18b)
-										</option>
-										<option value="IdelchikRounded">
-											Rounded Hole in Wall (Idelchik 4-18c)
-										</option>
-										<option value="McGreehanSchotsch">
-											Cooling Hole (M-S 1988, plenum-fed)
-										</option>
-										<option value="Lichtarowicz">
-											Long Orifice, l/d 2-10 (Lichtarowicz 1965)
-										</option>
-										<option value="fixed">Manual / Fixed Value</option>
-									</select>
-								</div>
+								<HoleCdEditor
+									id={`hole_cd_${selectedNode.id}`}
+									type="orifice"
+									value={selectedNode.data.hole_cd}
+									onChange={(hole_cd) =>
+										updateNodeData(selectedNode.id, { hole_cd })
+									}
+								/>
 
 								{/* Conditional Inputs based on correlation */}
-								{(selectedNode.data.correlation === "IdelchikThick" ||
-									selectedNode.data.correlation === "McGreehanSchotsch" ||
-									selectedNode.data.correlation === "Lichtarowicz") && (
+								{(correlation === "IdelchikThick" ||
+									correlation === "McGreehanSchotsch" ||
+									correlation === "Lichtarowicz") && (
 									<LengthInput
 										id={`plate_thickness_${selectedNode.id}`}
 										label="Hole Length (L)"
@@ -1614,8 +1579,8 @@ const Inspector = () => {
 									/>
 								)}
 
-								{(selectedNode.data.correlation === "IdelchikRounded" ||
-									selectedNode.data.correlation === "McGreehanSchotsch") && (
+								{(correlation === "IdelchikRounded" ||
+									correlation === "McGreehanSchotsch") && (
 									<LengthInput
 										id={`edge_radius_${selectedNode.id}`}
 										label="Inlet Edge Radius (r)"
@@ -1626,7 +1591,7 @@ const Inspector = () => {
 									/>
 								)}
 
-								{selectedNode.data.correlation === "IdelchikBeveled" && (
+								{correlation === "IdelchikBeveled" && (
 									<LengthInput
 										id={`bevel_depth_${selectedNode.id}`}
 										label="Bevel Depth (l)"
@@ -1707,7 +1672,7 @@ const Inspector = () => {
 								)}
 
 								{/* Calculated Result (for correlation models) */}
-								{selectedNode.data.correlation !== "fixed" && (
+								{correlation !== "fixed" && (
 									<div className="flex flex-col gap-1 mb-2 bg-blue-50/50 p-2 rounded border border-blue-100/50">
 										<label className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
 											Calculated Cd
@@ -1716,29 +1681,6 @@ const Inspector = () => {
 											{selectedNode.data.result?.Cd?.toFixed(4) ||
 												"— (Pending Solve)"}
 										</div>
-									</div>
-								)}
-
-								{/* Manual Entry (only for Fixed model) */}
-								{selectedNode.data.correlation === "fixed" && (
-									<div className="flex flex-col gap-1 mt-1">
-										<label
-											htmlFor={`Cd_${selectedNode.id}`}
-											className="text-xs font-bold text-gray-500 uppercase"
-										>
-											Fixed Cd Value
-										</label>
-										<NumericInput
-											id={`Cd_${selectedNode.id}`}
-											value={selectedNode.data.Cd ?? 0.6}
-											onChange={(val) =>
-												updateNodeData(selectedNode.id, {
-													Cd: val,
-												})
-											}
-											className="p-1.5 h-8 text-sm border rounded bg-white"
-											placeholder="0.6"
-										/>
 									</div>
 								)}
 
@@ -1787,13 +1729,7 @@ const Inspector = () => {
 										<option value="jobson1955">
 											Sharp-edged jet (Jobson 1955)
 										</option>
-										<option
-											value="iso5167"
-											disabled={
-												(selectedNode.data.correlation ||
-													"ReaderHarrisGallagher") !== "ReaderHarrisGallagher"
-											}
-										>
+										<option value="iso5167" disabled={!metering}>
 											ISO 5167-2 expansibility (RHG only)
 										</option>
 									</select>
@@ -1816,8 +1752,7 @@ const Inspector = () => {
 											</span>
 										)}
 									{selectedNode.data.compressible_model === "iso5167" &&
-										(selectedNode.data.correlation ||
-											"ReaderHarrisGallagher") !== "ReaderHarrisGallagher" && (
+										!metering && (
 											<p className="text-[9px] text-amber-700">
 												ISO 5167-2 expansibility needs the
 												Reader-Harris/Gallagher Cd: the solver refuses this
@@ -1909,6 +1844,13 @@ const Inspector = () => {
 								{len("pitch_x", "Streamwise Pitch", 15.24e-3)}
 								{len("pitch_y", "Spanwise Pitch", 15.24e-3)}
 								{num("angle_deg", "Hole Angle to Wall [deg]", 90)}
+								<HoleCdEditor
+									id={`hole_cd_${selectedNode.id}`}
+									type="effusion_liner"
+									value={d.hole_cd}
+									onChange={(hole_cd) => set({ hole_cd })}
+									geom={{ angle_deg: d.angle_deg }}
+								/>
 								{num("entry_K", "Duct Entry Loss K", 0.5)}
 								{num("wall_conductivity", "Wall Conductivity [W/m/K]", 20)}
 								<PlateMaterialSelect
@@ -2089,52 +2031,46 @@ const Inspector = () => {
 								{len("panel_length", "Panel Length", 0.152)}
 								{len("panel_width", "Panel Width", 0.152)}
 								{num("angle_deg", "Hole Angle to Wall [deg]", 90)}
-								<div className="flex flex-col gap-1">
-									<label className="text-xs font-bold text-gray-500 uppercase">
-										Hole Discharge Model (Cd)
-									</label>
-									<select
-										className="p-2 border rounded bg-white text-xs border-stone-200"
-										value={d.correlation || "IdelchikThick"}
-										onChange={(e) =>
-											set(withCorrelation(e.target.value, d.cd_inclination))
-										}
-									>
-										<option value="IdelchikThick">
-											Deep Hole in Wall (Idelchik 4-18a)
-										</option>
-										<option value="Lichtarowicz">
-											Long Orifice, l/d 2-10 (Lichtarowicz 1965)
-										</option>
-										<option value="McGreehanSchotsch">
-											Cooling Hole (M-S 1988, plenum-fed)
-										</option>
-										<option value="fixed">Manual / Fixed Value</option>
-									</select>
-								</div>
-								{d.correlation === "fixed" && num("Cd", "Fixed Cd Value", 0.6)}
-								{(d.correlation || "IdelchikThick") === "IdelchikThick" && (
-									<div className="flex flex-col gap-1">
-										<label className="text-xs font-bold text-gray-500 uppercase">
-											Hole Angle Cd Term
-										</label>
-										<select
-											className="p-2 border rounded bg-white text-xs border-stone-200"
-											value={d.cd_inclination || "auto"}
-											onChange={(e) => set({ cd_inclination: e.target.value })}
-										>
-											<option value="auto">
-												Default (inclined inlet, Idelchik 3-2)
-											</option>
-											<option value="none">
-												None (angle via hole length only)
-											</option>
-											<option value="idelchik_3_2">
-												Inclined inlet (Idelchik 3-2, forced)
-											</option>
-										</select>
-									</div>
-								)}
+								<HoleCdEditor
+									id={`hole_cd_${selectedNode.id}`}
+									type="effusion_plate"
+									value={d.hole_cd}
+									onChange={(hole_cd) => set({ hole_cd })}
+									geom={{ angle_deg: d.angle_deg }}
+									rowburyFields={
+										<>
+											<div className="flex flex-col gap-1">
+												<label
+													htmlFor={`exit_crossflow_region_${selectedNode.id}`}
+													className="text-xs font-bold text-gray-500 uppercase"
+												>
+													Rowbury Region (Table 2)
+												</label>
+												<select
+													id={`exit_crossflow_region_${selectedNode.id}`}
+													className="p-2 border rounded bg-white text-xs border-stone-200"
+													value={d.exit_crossflow_region || "suction_surface"}
+													onChange={(e) =>
+														set({ exit_crossflow_region: e.target.value })
+													}
+												>
+													<option value="suction_surface">
+														Suction surface (flat wall)
+													</option>
+													<option value="pressure_surface">
+														Pressure surface
+													</option>
+													<option value="leading_edge">Leading edge</option>
+												</select>
+											</div>
+											{num(
+												"exit_crossflow_orientation_deg",
+												"Compound Angle alpha [deg]",
+												0,
+											)}
+										</>
+									}
+								/>
 								{num("wall_conductivity", "Wall Conductivity [W/m/K]", 20)}
 								<PlateMaterialSelect
 									value={d.material}
@@ -2342,52 +2278,46 @@ const Inspector = () => {
 								) : (
 									num("turbulence_intensity", "Turbulence Intensity", 0.04)
 								)}
-								<div className="flex flex-col gap-1">
-									<label className="text-xs font-bold text-gray-500 uppercase">
-										Hole Discharge Model (Cd)
-									</label>
-									<select
-										className="p-2 border rounded bg-white text-xs border-stone-200"
-										value={d.correlation || "IdelchikThick"}
-										onChange={(e) =>
-											set(withCorrelation(e.target.value, d.cd_inclination))
-										}
-									>
-										<option value="IdelchikThick">
-											Deep Hole in Wall (Idelchik 4-18a)
-										</option>
-										<option value="Lichtarowicz">
-											Long Orifice, l/d 2-10 (Lichtarowicz 1965)
-										</option>
-										<option value="McGreehanSchotsch">
-											Cooling Hole (M-S 1988, plenum-fed)
-										</option>
-										<option value="fixed">Manual / Fixed Value</option>
-									</select>
-								</div>
-								{d.correlation === "fixed" && num("Cd", "Fixed Cd Value", 0.6)}
-								{(d.correlation || "IdelchikThick") === "IdelchikThick" && (
-									<div className="flex flex-col gap-1">
-										<label className="text-xs font-bold text-gray-500 uppercase">
-											Hole Angle Cd Term
-										</label>
-										<select
-											className="p-2 border rounded bg-white text-xs border-stone-200"
-											value={d.cd_inclination || "auto"}
-											onChange={(e) => set({ cd_inclination: e.target.value })}
-										>
-											<option value="auto">
-												Default (Idelchik 3-2 if cylindrical)
-											</option>
-											<option value="none">
-												None (angle via hole length only)
-											</option>
-											<option value="idelchik_3_2">
-												Inclined inlet (Idelchik 3-2, forced)
-											</option>
-										</select>
-									</div>
-								)}
+								<HoleCdEditor
+									id={`hole_cd_${selectedNode.id}`}
+									type="film_cooling"
+									value={d.hole_cd}
+									onChange={(hole_cd) => set({ hole_cd })}
+									geom={{ hole_type: d.hole_type, angle_deg: d.angle_deg }}
+									rowburyFields={
+										<>
+											<div className="flex flex-col gap-1">
+												<label
+													htmlFor={`exit_crossflow_region_${selectedNode.id}`}
+													className="text-xs font-bold text-gray-500 uppercase"
+												>
+													Rowbury Region (Table 2)
+												</label>
+												<select
+													id={`exit_crossflow_region_${selectedNode.id}`}
+													className="p-2 border rounded bg-white text-xs border-stone-200"
+													value={d.exit_crossflow_region || "suction_surface"}
+													onChange={(e) =>
+														set({ exit_crossflow_region: e.target.value })
+													}
+												>
+													<option value="suction_surface">
+														Suction surface (flat wall)
+													</option>
+													<option value="pressure_surface">
+														Pressure surface
+													</option>
+													<option value="leading_edge">Leading edge</option>
+												</select>
+											</div>
+											{num(
+												"exit_crossflow_orientation_deg",
+												"Compound Angle alpha [deg]",
+												0,
+											)}
+										</>
+									}
+								/>
 							</>
 						);
 					})()}
@@ -2439,28 +2369,12 @@ const Inspector = () => {
 									0.14,
 								)}
 								{num("C_m_multiplier", "C_m Multiplier (rig tuning)", 1.0)}
-								<div className="flex flex-col gap-1">
-									<label className="text-xs font-bold text-gray-500 uppercase">
-										Slot Discharge Model (Cd)
-									</label>
-									<select
-										className="p-2 border rounded bg-white text-xs border-stone-200"
-										value={d.correlation || "IdelchikThick"}
-										onChange={(e) => set({ correlation: e.target.value })}
-									>
-										<option value="IdelchikThick">
-											Deep Hole in Wall (Idelchik 4-18a, on Dh)
-										</option>
-										<option value="Lichtarowicz">
-											Long Orifice (Lichtarowicz 1965, on Dh)
-										</option>
-										<option value="McGreehanSchotsch">
-											Cooling Hole (M-S 1988, on Dh)
-										</option>
-										<option value="fixed">Manual / Fixed Value</option>
-									</select>
-								</div>
-								{d.correlation === "fixed" && num("Cd", "Fixed Cd Value", 0.6)}
+								<HoleCdEditor
+									id={`hole_cd_${selectedNode.id}`}
+									type="slot_film"
+									value={d.hole_cd}
+									onChange={(hole_cd) => set({ hole_cd })}
+								/>
 								<div className="flex flex-col gap-1">
 									<label className="text-xs font-bold text-gray-500 uppercase">
 										Film-Side h on the Filmed Wall
@@ -2585,51 +2499,12 @@ const Inspector = () => {
 										<option value="staggered">Staggered</option>
 									</select>
 								</div>
-								<div className="flex flex-col gap-1">
-									<label className="text-xs font-bold text-gray-500 uppercase">
-										Hole Discharge Model (Cd)
-									</label>
-									<select
-										className="p-2 border rounded bg-white text-xs border-stone-200"
-										value={d.correlation || "fixed"}
-										onChange={(e) => set({ correlation: e.target.value })}
-									>
-										<option value="fixed">Fixed (Florschuetz 0.79)</option>
-										<option value="IdelchikThick">
-											Deep Hole in Wall (Idelchik 4-18a)
-										</option>
-										<option value="Lichtarowicz">
-											Long Orifice, l/d 2-10 (Lichtarowicz 1965)
-										</option>
-										<option value="McGreehanSchotsch">
-											Cooling Hole (M-S 1988, plenum-fed)
-										</option>
-									</select>
-								</div>
-								{(d.correlation || "fixed") === "fixed" &&
-									ratio("Cd", "Fixed Cd Value", 0.79)}
-								<div className="flex flex-col gap-1">
-									<label className="text-xs font-bold text-gray-500 uppercase">
-										Crossflow on the Holes (Cd)
-									</label>
-									<select
-										className="p-2 border rounded bg-white text-xs border-stone-200"
-										value={d.cd_crossflow || "rogers_hersh_1976"}
-										onChange={(e) => set({ cd_crossflow: e.target.value })}
-									>
-										<option value="rogers_hersh_1976">
-											Grazing flow (Rogers &amp; Hersh 1976)
-										</option>
-										<option value="florschuetz_metzger_su_1982">
-											CR-3630 Table 4.1 (tested plates only)
-										</option>
-										<option value="none">None (constant Cd)</option>
-									</select>
-									<div className="text-[9px] text-gray-400">
-										A strong crossflow bends the jets over and lowers the Cd.
-										Below Gc/Gj ~1.5 the hole's own Cd holds.
-									</div>
-								</div>
+								<HoleCdEditor
+									id={`hole_cd_${selectedNode.id}`}
+									type="impingement_array"
+									value={d.hole_cd}
+									onChange={(hole_cd) => set({ hole_cd })}
+								/>
 								{ratio("Nu_multiplier", "Nu Multiplier (rig matching)", 1.0)}
 								{hasBypass && (
 									<>

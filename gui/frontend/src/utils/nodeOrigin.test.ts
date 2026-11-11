@@ -1,6 +1,7 @@
 import type { Node } from "reactflow";
 import { describe, expect, it } from "vitest";
 import {
+	CENTRE_POSITION_VERSION,
 	cardSize,
 	migrateNodePositions,
 	NETWORK_FILE_VERSION,
@@ -11,8 +12,9 @@ const node = (type: string, x: number, y: number, extra = {}): Node =>
 	({ id: type, type, position: { x, y }, data: {}, ...extra }) as Node;
 
 describe("node position = card centre (#865)", () => {
-	it("writes files as 1.2", () => {
-		expect(NETWORK_FILE_VERSION).toBe("1.2");
+	it("writes files as 1.3 (hole_cd); positions are centres since 1.2", () => {
+		expect(NETWORK_FILE_VERSION).toBe("1.3");
+		expect(CENTRE_POSITION_VERSION).toBe("1.2");
 	});
 
 	it("takes the measured size over the per-kind table", () => {
@@ -52,6 +54,7 @@ describe("node position = card centre (#865)", () => {
 			y: 28,
 		});
 		expect(migrateNodePositions(n, "1.2")).toBe(n);
+		expect(migrateNodePositions(n, "1.3")).toBe(n);
 		expect(migrateNodePositions(n, "1.10")).toBe(n);
 	});
 });

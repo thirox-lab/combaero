@@ -202,9 +202,11 @@ def test_the_seed_does_not_move_the_solved_flow() -> None:
 
 
 def _iso_with_cd(cd: float | None) -> dict:
+    """The ISO example as a pre-hole_cd (v0.11.1) file: the correlation and
+    the Cd loose on the node, lifted into hole_cd on load."""
     data = json.loads(_ISO_GUI.read_text())
     plate = next(n for n in data["nodes"] if n["id"] == "plate")
-    plate["data"].pop("Cd", None)
+    plate["data"]["correlation"] = plate["data"].pop("hole_cd")["correlation"]
     if cd is not None:
         plate["data"]["Cd"] = cd
     return data

@@ -1,0 +1,289 @@
+{
+  "version": "1.2",
+  "nodes": [
+    {
+      "id": "hot",
+      "type": "pressure_boundary",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "id": "hot",
+        "label": "Hot gas",
+        "Pt": 103000.0,
+        "Tt": 1600.0
+      }
+    },
+    {
+      "id": "cool",
+      "type": "pressure_boundary",
+      "position": {
+        "x": 0,
+        "y": 200
+      },
+      "data": {
+        "id": "cool",
+        "label": "Coolant",
+        "Pt": 105000.0,
+        "Tt": 700.0
+      }
+    },
+    {
+      "id": "out",
+      "type": "pressure_boundary",
+      "position": {
+        "x": 800,
+        "y": 0
+      },
+      "data": {
+        "id": "out",
+        "label": "Exit",
+        "Pt": 100000.0,
+        "Tt": 1600.0
+      }
+    },
+    {
+      "id": "inlet",
+      "type": "orifice",
+      "position": {
+        "x": 200,
+        "y": 0
+      },
+      "data": {
+        "id": "inlet",
+        "label": "Inlet orifice",
+        "diameter": 0.03,
+        "correlation": "fixed",
+        "Cd": 0.8
+      }
+    },
+    {
+      "id": "g",
+      "type": "plenum",
+      "position": {
+        "x": 400,
+        "y": 0
+      },
+      "data": {
+        "id": "g",
+        "label": "Gas plenum"
+      }
+    },
+    {
+      "id": "film",
+      "type": "film_cooling",
+      "position": {
+        "x": 200,
+        "y": 200
+      },
+      "data": {
+        "id": "film",
+        "label": "Film row",
+        "correlation": "IdelchikThick",
+        "Cd": 0.6
+      }
+    },
+    {
+      "id": "slot",
+      "type": "slot_film",
+      "position": {
+        "x": 200,
+        "y": 300
+      },
+      "data": {
+        "id": "slot",
+        "label": "Slot",
+        "slot_height": 0.001,
+        "span": 0.05,
+        "correlation": "fixed",
+        "Cd": 0.65
+      }
+    },
+    {
+      "id": "plate",
+      "type": "effusion_plate",
+      "position": {
+        "x": 200,
+        "y": 400
+      },
+      "data": {
+        "id": "plate",
+        "label": "Effusion plate",
+        "correlation": "Lichtarowicz",
+        "Cd": 0.6
+      }
+    },
+    {
+      "id": "duct",
+      "type": "channel",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "data": {
+        "id": "duct",
+        "label": "Duct",
+        "L": 0.2,
+        "D": 0.04
+      }
+    },
+    {
+      "id": "supply",
+      "type": "pressure_boundary",
+      "position": {
+        "x": 0,
+        "y": 600
+      },
+      "data": {
+        "id": "supply",
+        "label": "Supply",
+        "Pt": 103000.0,
+        "Tt": 300.0
+      }
+    },
+    {
+      "id": "sink",
+      "type": "pressure_boundary",
+      "position": {
+        "x": 400,
+        "y": 600
+      },
+      "data": {
+        "id": "sink",
+        "label": "Sink",
+        "Pt": 100000.0,
+        "Tt": 300.0
+      }
+    },
+    {
+      "id": "arr",
+      "type": "impingement_array",
+      "position": {
+        "x": 200,
+        "y": 600
+      },
+      "data": {
+        "id": "arr",
+        "label": "Jet array",
+        "n_rows": 4,
+        "correlation": "fixed",
+        "Cd": 0.79,
+        "cd_crossflow": "florschuetz_metzger_su_1982"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "hot",
+      "target": "inlet",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e2",
+      "source": "inlet",
+      "target": "g",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-left"
+    },
+    {
+      "id": "e3",
+      "source": "cool",
+      "target": "film",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e4",
+      "source": "film",
+      "target": "g",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-left"
+    },
+    {
+      "id": "e5",
+      "source": "cool",
+      "target": "slot",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e6",
+      "source": "slot",
+      "target": "g",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-left"
+    },
+    {
+      "id": "e7",
+      "source": "cool",
+      "target": "plate",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e8",
+      "source": "plate",
+      "target": "g",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-left"
+    },
+    {
+      "id": "e9",
+      "source": "g",
+      "target": "duct",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-right",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e10",
+      "source": "duct",
+      "target": "out",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e11",
+      "source": "supply",
+      "target": "arr",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    },
+    {
+      "id": "e12",
+      "source": "arr",
+      "target": "sink",
+      "type": "default",
+      "data": {},
+      "sourceHandle": "flow-source",
+      "targetHandle": "flow-target"
+    }
+  ],
+  "solverSettings": {
+    "global_regime": "incompressible"
+  }
+}

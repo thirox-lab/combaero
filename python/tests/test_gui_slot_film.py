@@ -88,11 +88,13 @@ def test_the_canvas_drops_the_same_defaults_as_the_schema() -> None:
         "lip_thickness",
         "turbulence_intensity",
         "C_m_multiplier",
-        "Cd",
     ):
         m = re.search(rf"{key}: ([0-9.e-]+),", block)
         assert m, key
         assert float(m.group(1)) == pytest.approx(getattr(d, key)), key
+    # The hole Cd (#1098): the schema's None is the element's IdelchikThick.
+    assert d.hole_cd.correlation is None
+    assert 'hole_cd: { correlation: "IdelchikThick" }' in block
 
 
 def test_the_wall_edge_comes_back_with_the_slot_film() -> None:

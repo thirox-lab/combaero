@@ -49,7 +49,7 @@ const OrificeNode = ({ id, data, selected }: NodeProps) => {
 					{data.label ? data.label : "Orifice"}
 				</div>
 				<div className="text-[9px] font-mono text-gray-500 whitespace-nowrap truncate max-w-full">
-					Cd: {(data.result?.Cd ?? data.Cd ?? 0.6).toFixed(3)}
+					Cd: {(data.result?.Cd ?? data.hole_cd?.Cd)?.toFixed(3) ?? "—"}
 				</div>
 				{isSolved && (
 					<NodeDiagRows kind="orifice" result={data.result} maxRows={1} />

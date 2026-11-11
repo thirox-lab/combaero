@@ -59,3 +59,42 @@ export const edgeTypes = {
 	default: FlowEdge,
 	probe_link: ProbeLinkEdge,
 };
+
+// A hole node's discharge coefficient as ONE object, `data.hole_cd`: the
+// backend's HoleCdData, i.e. the library's HoleCd (#1098). A field left at
+// null or "auto" is the node type's own default; utils/holeCd.ts holds which
+// choices each node type takes and what its defaults resolve to.
+export type HoleCdCorrelation =
+	| "fixed"
+	| "ReaderHarrisGallagher"
+	| "IdelchikThick"
+	| "IdelchikBeveled"
+	| "IdelchikRounded"
+	| "McGreehanSchotsch"
+	| "Lichtarowicz";
+export type HoleCdInclination = "auto" | "none" | "idelchik_3_2";
+export type HoleCdInletCrossflow = "auto" | "none" | "mcgreehan_schotsch";
+export type HoleCdExitCrossflow =
+	| "auto"
+	| "none"
+	| "rowbury_2001"
+	| "rogers_hersh_1976"
+	| "florschuetz_metzger_su_1982";
+
+export interface HoleCdData {
+	correlation?: HoleCdCorrelation | null;
+	// The 'fixed' correlation's value and nothing else (#872).
+	Cd?: number | null;
+	inclination?: HoleCdInclination;
+	inlet_crossflow?: HoleCdInletCrossflow;
+	exit_crossflow?: HoleCdExitCrossflow;
+}
+
+// The node types built as a hole element, each with a `hole_cd`.
+export type HoleCdNodeType =
+	| "orifice"
+	| "effusion_plate"
+	| "film_cooling"
+	| "slot_film"
+	| "impingement_array"
+	| "effusion_liner";
