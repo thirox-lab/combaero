@@ -16,6 +16,7 @@ using combaero::CrossflowCd;
 using combaero::florschuetz_metzger_su_1982_cd;
 using combaero::florschuetz_metzger_su_1982_has_plate;
 using combaero::rogers_hersh_1976_cd;
+using combaero::rogers_hersh_1976_envelope;
 
 namespace {
 
@@ -114,6 +115,42 @@ TEST(RogersHersh1976, AnalyticPartials) {
       expect_partials(law, Gi, kGc, 1e-6);
     }
   }
+}
+
+TEST(RogersHersh1976, EnvelopeNamesEachVariable) {
+  for (bool suction : {false, true}) {
+    // Fig. 11's own conditions (L/D 1, Vi/V_inf 0.1, 50 m/s): in range.
+    EXPECT_TRUE(rogers_hersh_1976_envelope(0.1, 1.0, 50.0, suction).in_range());
+    const auto lo = rogers_hersh_1976_envelope(0.001, 1.0, 50.0, suction);
+    EXPECT_TRUE(lo.velocity_ratio);
+    EXPECT_FALSE(lo.l_over_d);
+    EXPECT_FALSE(lo.grazing_velocity);
+    EXPECT_TRUE(rogers_hersh_1976_envelope(0.7, 1.0, 50.0, suction).velocity_ratio);
+    const auto slow = rogers_hersh_1976_envelope(0.1, 1.0, 10.0, suction);
+    EXPECT_TRUE(slow.grazing_velocity);
+    EXPECT_FALSE(slow.in_range());
+    EXPECT_TRUE(rogers_hersh_1976_envelope(0.1, 6.0, 50.0, suction).l_over_d);
+    // Edges inside.
+    EXPECT_TRUE(rogers_hersh_1976_envelope(0.004, 1.0, 24.0, suction).in_range());
+    EXPECT_TRUE(rogers_hersh_1976_envelope(0.5, 0.6, 85.0, suction).in_range());
+  }
+}
+
+TEST(RogersHersh1976, EnvelopeLOverDIsBranchAware) {
+  // Injection: "a fair approximation for all length-diameter ratios tested"
+  // (0.12-2.0), confirmed to Vi/V_inf 0.35.
+  EXPECT_FALSE(rogers_hersh_1976_envelope(0.1, 0.12, 50.0, false).l_over_d);
+  EXPECT_FALSE(rogers_hersh_1976_envelope(0.1, 2.0, 50.0, false).l_over_d);
+  EXPECT_FALSE(rogers_hersh_1976_envelope(0.35, 2.0, 50.0, false).l_over_d);
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.45, 2.0, 50.0, false).l_over_d);
+  EXPECT_FALSE(rogers_hersh_1976_envelope(0.45, 0.8, 50.0, false).l_over_d);
+  // Suction: the L/D effect "is considerable and extends throughout"; the
+  // fit is L/D 1.0, and Fig. 18's L/D 0.6 stays within ~10% of it.
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.1, 0.4, 50.0, true).l_over_d);
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.1, 2.0, 50.0, true).l_over_d);
+  EXPECT_TRUE(rogers_hersh_1976_envelope(0.1, 1.2, 50.0, true).l_over_d);
+  EXPECT_FALSE(rogers_hersh_1976_envelope(0.1, 0.6, 50.0, true).l_over_d);
+  EXPECT_FALSE(rogers_hersh_1976_envelope(0.1, 1.0, 50.0, true).l_over_d);
 }
 
 TEST(RogersHersh1976, RefusesANonPositiveCd0) {

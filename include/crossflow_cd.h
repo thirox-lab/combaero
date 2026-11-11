@@ -84,6 +84,49 @@ struct CrossflowCd {
 // (a reversed jet). G_ideal <= 0 gives Cd = 0 unless G_c <= 0 (capped).
 CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool suction);
 
+// Rogers & Hersh (1976)'s envelope, by variable and by branch. INFORMATION to
+// report where the law acts (not capped), never a selector and never a
+// warning: the Cd is the fit's. Read from CR-2681 Sect. 5.2.3 (p. 16),
+// Conclusion 5 (p. 17) and Figs. 11, 17-19:
+//   velocity_ratio    Vi / V_inf outside the Fig. 11 fits' 0.004-0.5
+//                     (Conclusion 5, D 12.7 mm, L/D 1.0); below it the power
+//                     law runs to zero
+//   l_over_d          INJECTION: L/D outside 0.12-2.0, the range over which
+//                     0.97 (Vi/V_inf)^0.5 is "a fair approximation for all
+//                     length-diameter ratios tested"; that L/D independence
+//                     is confirmed only "up to Vi/V_inf = 0.35" (Fig. 19 shows
+//                     the L/D curves parting above it), so above 0.35 an L/D
+//                     outside the suction band below is flagged too.
+//                     SUCTION: "the effect of length-diameter ratio is
+//                     considerable and extends throughout", lowest at L/D 0.6,
+//                     and the fit is Fig. 11's L/D 1.0 alone. Fig. 18's own
+//                     per-L/D fits stay within about 10% of it over Vi/V_inf
+//                     0.02-0.5 at L/D 0.6 (0.7 r^0.43) and depart by up to 17%
+//                     at L/D 0.4, 16% at 0.12 and 40% at 2.0, so the band is
+//                     the measured L/D 0.6-1.0; outside it is flagged.
+//   grazing_velocity  V_inf outside 24-85 m/s (M <= 0.25, incompressible)
+constexpr double ROGERS_HERSH_1976_VELOCITY_RATIO_MIN = 0.004;
+constexpr double ROGERS_HERSH_1976_VELOCITY_RATIO_MAX = 0.5;
+constexpr double ROGERS_HERSH_1976_L_OVER_D_MIN = 0.12;
+constexpr double ROGERS_HERSH_1976_L_OVER_D_MAX = 2.0;
+constexpr double ROGERS_HERSH_1976_INJECTION_L_OVER_D_RATIO_MAX = 0.35;
+constexpr double ROGERS_HERSH_1976_SUCTION_L_OVER_D_MIN = 0.6;
+constexpr double ROGERS_HERSH_1976_SUCTION_L_OVER_D_MAX = 1.0;
+constexpr double ROGERS_HERSH_1976_V_INF_MIN = 24.0;  // [m/s]
+constexpr double ROGERS_HERSH_1976_V_INF_MAX = 85.0;  // [m/s]
+
+struct RogersHersh1976Envelope {
+  bool velocity_ratio = false;
+  bool l_over_d = false;
+  bool grazing_velocity = false;
+  bool in_range() const { return !(velocity_ratio || l_over_d || grazing_velocity); }
+};
+
+// Vi_over_V_inf: the actual jet velocity over the grazing one; V_inf [m/s];
+// suction: the hole draws from the grazing stream (rogers_hersh_1976_cd's).
+RogersHersh1976Envelope rogers_hersh_1976_envelope(double Vi_over_V_inf, double L_over_D,
+                                                   double V_inf, bool suction);
+
 // True when Table 4.1 covers the plate (xn/d, yn/d, z/d), to 1e-9.
 bool florschuetz_metzger_su_1982_has_plate(double xn_d, double yn_d, double z_d);
 

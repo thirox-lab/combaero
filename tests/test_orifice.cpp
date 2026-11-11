@@ -1456,8 +1456,17 @@ TEST(DischargeCdInRange, FlagsEachSourcesOwnEnvelope) {
                                       wall_flow(1.0e4)));
     EXPECT_FALSE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 1.8e-3, 0.0, 0.0),
                                        wall_flow(1.0e4)));
+    // Above Eq. (12)'s fitted 2e4 the source takes Cd constant at Eq. (7)
+    // (design recommendation (2)): in range up to the end of its collected
+    // data, about 1e5; beyond that the held Eq. (7) is an extrapolation.
+    EXPECT_TRUE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
+                                      wall_flow(3.0e4)));
+    EXPECT_TRUE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
+                                      wall_flow(1.0e5)));
     EXPECT_FALSE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
-                                       wall_flow(3.0e4)));
+                                       wall_flow(1.0e6)));
+    EXPECT_FALSE(discharge_cd_in_range(C::Lichtarowicz1965, wall_hole(1e-3, 3e-3, 0.0, 0.0),
+                                       wall_flow(5.0)));
     // Idelchik 4-18a: Re 25 to 1e6, l/d up to 4.
     EXPECT_TRUE(discharge_cd_in_range(C::Idelchik1966Thick, wall_hole(1e-3, 1e-3, 0.0, 0.0),
                                       wall_flow(1.0e4)));
@@ -1472,8 +1481,60 @@ TEST(DischargeCdInRange, FlagsEachSourcesOwnEnvelope) {
                                       wall_flow(2.0e4)));
     EXPECT_FALSE(discharge_cd_in_range(C::McGreehanSchotsch1988,
                                        wall_hole(1e-3, 1e-3, 0.0, 0.0), wall_flow(5.0e3)));
+    // ... and beyond L/d 10, the end of the Lichtarowicz data its Eq. (14)
+    // was fitted to (Fig. 3), where g keeps falling.
+    EXPECT_FALSE(discharge_cd_in_range(C::McGreehanSchotsch1988,
+                                       wall_hole(1e-3, 12e-3, 0.0, 0.0), wall_flow(2.0e4)));
     EXPECT_TRUE(discharge_cd_in_range(C::Constant, wall_hole(1e-3, 9e-3, 0.0, 0.0),
                                       wall_flow(1.0)));
+}
+
+TEST(DischargeCdEnvelope, NamesTheVariableOutsideTheSourcesRange) {
+    using C = DischargeCdCorrelation;
+    auto env = [](C id, double L, double Re) {
+        return discharge_cd_envelope(id, wall_hole(1e-3, L, 0.0, 0.0), wall_flow(Re));
+    };
+    // Idelchik 4-18a beyond its l/d 4 table end: l/d only, not Re.
+    auto e = env(C::Idelchik1966Thick, 6e-3, 5e4);
+    EXPECT_TRUE(e.l_over_d);
+    EXPECT_FALSE(e.re);
+    EXPECT_FALSE(e.edge);
+    EXPECT_FALSE(e.in_range());
+    // Below its Re table: Re only.
+    e = env(C::Idelchik1966Thick, 2e-3, 10.0);
+    EXPECT_TRUE(e.re);
+    EXPECT_FALSE(e.l_over_d);
+    // McGreehan-Schotsch: Re below its floor (value held), l/d beyond 10.
+    e = env(C::McGreehanSchotsch1988, 1e-3, 5e3);
+    EXPECT_TRUE(e.re);
+    EXPECT_FALSE(e.l_over_d);
+    e = env(C::McGreehanSchotsch1988, 40e-3, 5e4);
+    EXPECT_FALSE(e.re);
+    EXPECT_TRUE(e.l_over_d);
+    // Lichtarowicz: l/d beyond 10 (held at 10); Re below 10 or above 1e5;
+    // 2e4-1e5 is Eq. (7), in range.
+    e = env(C::Lichtarowicz1965, 12e-3, 5e4);
+    EXPECT_TRUE(e.l_over_d);
+    EXPECT_FALSE(e.re);
+    EXPECT_TRUE(env(C::Lichtarowicz1965, 3e-3, 5.0).re);
+    e = env(C::Lichtarowicz1965, 3e-3, 2e5);
+    EXPECT_TRUE(e.re);
+    EXPECT_FALSE(e.l_over_d);
+    // Rounded beyond its r/d table: the edge axis.
+    e = discharge_cd_envelope(C::Idelchik1966Rounded, wall_hole(1e-3, 0.0, 0.5e-3, 0.0),
+                              wall_flow(1e5));
+    EXPECT_TRUE(e.edge);
+    EXPECT_FALSE(e.re);
+    // in_range is the envelope's and nothing else.
+    for (C id : {C::Idelchik1966Thick, C::McGreehanSchotsch1988, C::Lichtarowicz1965}) {
+        for (double L : {1e-3, 3e-3, 6e-3, 12e-3, 40e-3}) {
+            for (double Re : {5.0, 50.0, 5e3, 5e4, 2e6}) {
+                const DischargeHoleGeometry h = wall_hole(1e-3, L, 0.0, 0.0);
+                EXPECT_EQ(discharge_cd_in_range(id, h, wall_flow(Re)),
+                          discharge_cd_envelope(id, h, wall_flow(Re)).in_range());
+            }
+        }
+    }
 }
 
 // -------------------------------------------------------------

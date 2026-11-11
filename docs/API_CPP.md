@@ -1290,6 +1290,14 @@ constexpr double FLORSCHUETZ_METZGER_SU_1982_ZETA_C = 1.06, FLORSCHUETZ_METZGER_
                  FLORSCHUETZ_METZGER_SU_1982_ZETA_N = 0.602;
 struct CrossflowCd { double Cd, dCd_dG_ideal, dCd_dG_c; bool capped; };
 CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool suction);
+// CR-2681's envelope by variable and branch (INFO, never a selector):
+// Vi/V_inf 0.004-0.5 (Fig. 11); L/D 0.12-2.0 injecting (0.6-1.0 above
+// Vi/V_inf 0.35, where the L/D independence is unconfirmed), 0.6-1.0 for
+// suction (Sect. 5.2.3: the L/D effect is considerable; Fig. 11 is L/D 1);
+// V_inf 24-85 m/s. Constants ROGERS_HERSH_1976_*.
+struct RogersHersh1976Envelope { bool velocity_ratio, l_over_d, grazing_velocity; bool in_range() const; };
+RogersHersh1976Envelope rogers_hersh_1976_envelope(double Vi_over_V_inf, double L_over_D,
+                                                   double V_inf, bool suction);
 bool florschuetz_metzger_su_1982_has_plate(double xn_d, double yn_d, double z_d);
 CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
                                            double G_ideal, double G_c);
@@ -1768,7 +1776,7 @@ enum class DischargeCdCorrelation {
     Idelchik1966Thick,       // diagram 4-18a, deep hole
     Idelchik1966Beveled,     // diagram 4-18b
     Idelchik1966Rounded,     // diagram 4-18c
-    Lichtarowicz1965,        // long orifice, l/d 2-10, Re 10 to 2e4
+    Lichtarowicz1965,        // long orifice, l/d 2-10, Re >= 10 (Eq. 12 fitted to 2e4)
     Constant
 };
 
@@ -1806,8 +1814,20 @@ public:
 std::unique_ptr<DischargeCorrelationBase> make_discharge_correlation(DischargeCdCorrelation id);
 std::unique_ptr<DischargeCorrelationBase> make_constant_discharge_correlation(double Cd);
 
-// Inside the source's own Re and l/d (or bevel, r/d) range? A flag to
-// report, never a selector: Cd is still returned outside it.
+// Which input lies outside the source's own range, by variable: INFO to
+// report beside the result, never a selector and never a warning (Cd is
+// still returned, held or continued). re / l_over_d / edge (bevel or r/d
+// table; an inclined hole on a correlation that refuses it). Thick beyond l/d
+// 4, McGreehan-Schotsch beyond l/d 10 (mcgreehan_schotsch::l_over_d_max) or
+// below Re 1e4, Lichtarowicz below Re 10, above 1e5 (the end of its data;
+// 2e4-1e5 is Eq. 7, in range) or outside l/d 2-10.
+struct DischargeCdEnvelope {
+    bool re = false, l_over_d = false, edge = false;
+    bool in_range() const;
+};
+DischargeCdEnvelope discharge_cd_envelope(DischargeCdCorrelation id,
+                                          const DischargeHoleGeometry&, const DischargeHoleState&);
+// discharge_cd_envelope(...).in_range()
 bool discharge_cd_in_range(DischargeCdCorrelation id,
                            const DischargeHoleGeometry&, const DischargeHoleState&);
 

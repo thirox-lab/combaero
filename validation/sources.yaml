@@ -3123,7 +3123,9 @@ documents:
     put into Eq. 4-20 (PDF p. 126, printed 120), whose inlet coefficient zeta'' is "determined as zeta from
     diagrams 3-1 to 3-3, and 3-6" and is 0.5 for the thick orifice (Eq. 4-27). The substitution is the
     source''s; keeping tau (4-11) at its normal-hole value and applying it to inclined cooling holes is ours.
-    Eq. 3-2 (screen + inlet edge) does not bear on it. Default-on since 2026-11-10 for CYLINDRICAL holes on
+    Eq. 3-2 (screen + inlet edge) does not bear on it. Beyond 4-18a''s l/Dh 4 the table''s zeta'' is held and
+    only lam l/Dh grows (a gentle fall); reported as Cd_extrapolated_l_d since 2026-11-10 (hole-Cd audit
+    stage 4), not as a blanket out-of-range. Default-on since 2026-11-10 for CYLINDRICAL holes on
     IdelchikThick (cd_inclination="auto"; hole-Cd audit stage 1, user-approved); off for shaped holes, which it
     moves away from Gritsch 1998 with no shape term to offset it.'
   read_for: [area change closures (#731/#733/#736), wall orifice Cd (#409), orifice in-pipe loss (#645/#654),
@@ -4343,6 +4345,11 @@ documents:
   status: implemented
   verdict: Shipped as DischargeCdCorrelation::Lichtarowicz1965, the low-Re long-orifice Cd (Re 10 to 2e4,
     l/d 2-10), below McGreehan-Schotsch's Re floor. Default L = 0 is infeasible (needs l/d >= ~1.5).
+    Envelope re-read 2026-11-10 (hole-Cd audit stage 4); Eq. (7) is the "ultimate" Cd "as measured at Re = 2 x
+    10^4" (p. 215), and design recommendation (2) (p. 218) takes Cd constant at Eq. (7) above Re 2e4; Eq. (12)
+    approaches it from below (|Cd12 - Cd7| 1.2e-3 at l/d 2 to 2.8e-3 at l/d 10 at Re 2e4, about 2e-4 by 1e5).
+    The collected data stop at "about 10^5" (summary p. 210), so discharge_cd_envelope keeps Re 2e4-1e5 in range
+    and flags Re below 10, Re above 1e5 (re_data_max) and l/d outside 2-10.
   read_for: ['#411 low-Re long-orifice Cd', orifice permanent loss (#645), impingement plate Cd (#465)]
   issues: [409, 411, 466, 470, 645, 649, 650, 654]
   records: [validation/cooling/extractions/lichtarowicz_1965_long_orifice.md, python/tests/test_orifice_lichtarowicz.py]
@@ -4359,7 +4366,10 @@ documents:
   status: implemented
   verdict: Shipped as orifice::mcgreehan_schotsch (Cd chain, Y factor, analytic (f,J)) for plenum-fed
     bleed/film/effusion holes. Fig. 6 Rohde series is scored; baseline runs 3-12% above Rohde's measured
-    basic values. Floored at Re 1e4.
+    basic values. Floored at Re 1e4. Envelope 2026-11-10 (hole-Cd audit stage 4); Fig. 3 plots the
+    Lichtarowicz data Eq. (14) was fitted to on an L/d axis to 10 (read from a page render), so L/d > 10
+    (orifice::mcgreehan_schotsch::l_over_d_max) and Re < 1e4 are reported by variable
+    (Cd_extrapolated_l_d / _Re), as information; the per-call C++ warning below Re 1e4 is gone.
   read_for: ['#375 jet-plate Cd', '#382 expansion factor Y', '#383 analytic (f,J) and U1/Vi singularity',
     '#645 permanent loss']
   issues: [339, 375, 381, 382, 383, 384, 406, 409, 465, 645, 649]
@@ -4695,7 +4705,14 @@ documents:
     (shipped) covers injection only at modest crossflow; TN 3663 (registered) references the grazing TOTAL
     pressure, so the two must be converted before mixing. Limits: acoustic-liner hole sizes, one boundary
     layer, static-pressure Cd. To use: digitise Fig. 11, then Figs. 18 and 17; the in-text fits are a
-    starting closure, accuracy (cross-source) for any impingement or liner use.'
+    starting closure, accuracy (cross-source) for any impingement or liner use. Envelope flag added
+    2026-11-10 (hole-Cd audit stage 4; rogers_hersh_1976_envelope), per variable where the law acts;
+    Vi/V_inf 0.004-0.5 (Conclusion 5, Fig. 11, L/D 1.0) and V_inf 24-85 m/s. L/D is branch-aware (Sect.
+    5.2.3, p. 16); injection 0.12-2.0 ("a fair approximation ... for all length-diameter ratios tested",
+    confirmed to Vi/V_inf 0.35, so above 0.35 the 0.6-1.0 band applies); suction 0.6-1.0, because "the effect
+    of length-diameter ratio is considerable and extends throughout", lowest at L/D 0.6, and the fit is L/D
+    1.0 alone; Fig. 18''s per-L/D fits stay within about 10% of it at L/D 0.6 over Vi/V_inf 0.02-0.5 and
+    depart by up to 17% (0.4), 16% (0.12) and 40% (2.0).'
   read_for: ['#799 stagnant-row jets: Cd under strong crossflow, suction vs injection', '#800 Cd falling
       with Gc/Gj', '#807 thin-wall (L/D) effect on crossflow Cd']
   issues: [799, 800, 807]

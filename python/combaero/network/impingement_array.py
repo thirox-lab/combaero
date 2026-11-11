@@ -281,6 +281,19 @@ class ImpingementArray:
             "htc_mean": float(sum(p["htc"] for p in plates) / n),
             "Cd": float(plates[0]["Cd"]),
             "Cd_in_range": float(all(p["Cd_in_range"] for p in plates)),
+            # Which Cd input is outside its source's range on any row, by
+            # variable: information, never a warning (the plates' own keys).
+            **{
+                k: float(any(p[k] for p in plates))
+                for k in (
+                    "Cd_extrapolated_Re",
+                    "Cd_extrapolated_l_d",
+                    "Cd_extrapolated_edge",
+                    "Cd_crossflow_extrapolated_velocity_ratio",
+                    "Cd_crossflow_extrapolated_l_d",
+                    "Cd_crossflow_extrapolated_grazing_velocity",
+                )
+            },
             "surface_extrapolated": float(any(p["surface_extrapolated"] for p in plates)),
             "jet_flow_nonuniformity": _max_over_min([p["m_dot"] for p in plates]),
         }

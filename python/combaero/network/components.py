@@ -6180,6 +6180,32 @@ class OrificeElement(NetworkElement):
             )
         )
 
+    def _cd_envelope(self, state_in: "NetworkMixtureState") -> dict[str, float]:
+        """Which input of a discharge-hole Cd lies outside its source's range,
+        by variable (C++ discharge_cd_envelope): 1.0 per variable that is.
+
+        INFORMATION stated in the results, never a warning: outside, the Cd is
+        held or continued as the correlation documents, and the user can do
+        nothing better than know which variable it is. ``Cd_extrapolated_l_d``
+        on a thick hole beyond l/d 4 is a gentle friction-only continuation;
+        on McGreehan-Schotsch beyond l/d 10 its length function keeps falling
+        steeply. 0.0 for a metering or 'fixed' Cd (``Cd_in_range`` covers the
+        metering family's ISO range).
+        """
+        out = {"Cd_extrapolated_Re": 0.0, "Cd_extrapolated_l_d": 0.0, "Cd_extrapolated_edge": 0.0}
+        selector = _DISCHARGE_SELECTORS.get(self.correlation)
+        if selector is None or self._orifice_geom is None:
+            return out
+        env = cb.discharge_cd_envelope(
+            selector,
+            self._discharge_hole(),
+            cb.DischargeHoleState(Re=self._hole_reynolds(state_in)),
+        )
+        out["Cd_extrapolated_Re"] = float(env.re)
+        out["Cd_extrapolated_l_d"] = float(env.l_over_d)
+        out["Cd_extrapolated_edge"] = float(env.edge)
+        return out
+
     def residuals(
         self,
         state_in: "NetworkMixtureState",
@@ -6809,6 +6835,7 @@ class OrificeElement(NetworkElement):
             "Cd": cd,
             "is_correlation": float(self.use_correlation),
             "Cd_in_range": float(self._cd_in_range(state_in)),
+            **self._cd_envelope(state_in),
             "diameter": float(self.diameter or 0.0),
             "beta": float(self.beta),
             "area_source": self._area_source,
@@ -9378,6 +9405,48 @@ class ImpingementPlateElement(OrificeElement):
         base = super()._effective_Cd(state_in, state_out, flows)
         return self._crossflow_cd(state_in, state_out, flows, base)[0]
 
+    def _crossflow_cd_envelope(
+        self,
+        state_in: NetworkMixtureState,
+        state_out: NetworkMixtureState,
+        flows: dict[str, float] | None,
+        base_cd: float,
+    ) -> dict[str, float]:
+        """Where Rogers & Hersh's law ACTS (not capped), which of its inputs
+        lie outside CR-2681's envelope, by variable (C++
+        rogers_hersh_1976_envelope): the velocity ratio Vi/V_inf = Cd q (the
+        law's equal-density reading), the hole's L/D against the branch's own
+        band (a reversed jet is the suction branch, whose L/D effect CR-2681
+        calls considerable), and the grazing velocity G_c / rho of the
+        channel. INFORMATION stated in the results, never a
+        warning. 0.0 everywhere for another law, or where the hole's own Cd
+        holds."""
+        out = {
+            "Cd_crossflow_extrapolated_velocity_ratio": 0.0,
+            "Cd_crossflow_extrapolated_l_d": 0.0,
+            "Cd_crossflow_extrapolated_grazing_velocity": 0.0,
+        }
+        if self.cd_crossflow != "rogers_hersh_1976" or self._cd_crossflow_suspended:
+            return out
+        forward = state_in.Pt >= state_out.P
+        up, down = (state_in, state_out) if forward else (state_out, state_in)
+        dP = float(up.Pt) - float(down.P)
+        rho = float(cb.density(float(up.Tt), float(up.P), list(up.X)))
+        G_i = math.sqrt(2.0 * rho * dP) if dP > 0.0 else 0.0
+        m_c = float(sum((flows or {}).get(eid, 0.0) for eid in self._crossflow_sources))
+        G_c = abs(m_c) / self.channel_area
+        r = cb.rogers_hersh_1976_cd(base_cd, G_i, G_c, not forward)
+        if r.capped or not (G_i > 0.0 and G_c > 0.0):
+            return out
+        rho_c = float(cb.density(float(state_out.T), float(state_out.P), list(state_out.X)))
+        env = cb.rogers_hersh_1976_envelope(
+            float(r.Cd) * G_i / G_c, self.plate_thickness / self.d_jet, G_c / rho_c, not forward
+        )
+        out["Cd_crossflow_extrapolated_velocity_ratio"] = float(env.velocity_ratio)
+        out["Cd_crossflow_extrapolated_l_d"] = float(env.l_over_d)
+        out["Cd_crossflow_extrapolated_grazing_velocity"] = float(env.grazing_velocity)
+        return out
+
     def _dCd_dnames(
         self,
         state_in: NetworkMixtureState,
@@ -9469,6 +9538,7 @@ class ImpingementPlateElement(OrificeElement):
         out = {
             "n_holes": float(self.n_holes),
             "Cd_own": float(own_cd),
+            **self._crossflow_cd_envelope(state_in, state_out, flows, own_cd),
             "Re_j": float(r.Re),
             "Nu": float(r.Nu),
             "St": _stanton(r),
