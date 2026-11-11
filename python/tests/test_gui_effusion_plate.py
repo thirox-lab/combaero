@@ -125,7 +125,7 @@ def test_the_hole_angle_cd_term_is_on_by_default_and_threads_through() -> None:
     auto = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
     assert EffusionPlateData().cd_inclination == "auto"
     assert auto.elements["eff"].cd_inclination == "idelchik_3_2"
-    assert auto.elements["eff"]._cd_inclination_deg == 30.0
+    assert auto.elements["eff"]._hole_cd.inclination_deg == 30.0
     off = build_network_from_schema(
         NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "none"}))
     )
@@ -134,7 +134,7 @@ def test_the_hole_angle_cd_term_is_on_by_default_and_threads_through() -> None:
         NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "idelchik_3_2"}))
     )
     assert on.elements["eff"].cd_inclination == "idelchik_3_2"
-    assert on.elements["eff"]._cd_inclination_deg == 30.0
+    assert on.elements["eff"]._hole_cd.inclination_deg == 30.0
 
 
 def test_auto_applies_the_hole_angle_term_on_idelchik_thick_only() -> None:

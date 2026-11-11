@@ -175,7 +175,7 @@ def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:
 def test_the_exit_crossflow_cd_term_threads_through() -> None:
     assert FilmCoolingData().cd_exit_crossflow == "none"
     off = build_network_from_schema(NetworkGraphSchema(**_schema())).elements["film"]
-    assert off.cd_exit_crossflow == "none" and off._exit_xf is None
+    assert off.cd_exit_crossflow == "none" and off._hole_cd.exit_xf is None
     on = build_network_from_schema(
         NetworkGraphSchema(
             **_schema(

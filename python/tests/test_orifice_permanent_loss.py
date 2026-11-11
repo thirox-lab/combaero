@@ -384,7 +384,7 @@ def test_a_hole_recovers_and_reports_its_in_pipe_cd_factor(correlation: str) -> 
         "McGreehanSchotsch": _HOLES.McGreehanSchotsch1988,
         "Lichtarowicz": _HOLES.Lichtarowicz1965,
     }[correlation]
-    R = cb.discharge_pipe_cd_ratio(sel, o._discharge_hole(), 0.5)
+    R = cb.discharge_pipe_cd_ratio(sel, o._hole_cd.discharge_hole(), 0.5)
     assert R != 1.0
     assert o._pipe_cd_ratio_fwd == R
     assert o._pipe_cd_ratio_rev == R
@@ -414,7 +414,7 @@ def test_a_reversed_hole_takes_the_factor_of_the_pipe_it_flows_from() -> None:
     g.add_element(ChannelElement("p2", "b", "ho", length=0.05, diameter=0.07, regime=reg))
     _, r = _solve(g)
     assert r["o.m_dot"] < 0.0
-    hole = g.elements["o"]._discharge_hole()
+    hole = g.elements["o"]._hole_cd.discharge_hole()
     R_rev = cb.discharge_pipe_cd_ratio(_HOLES.Idelchik1966Rounded, hole, 0.05 / 0.07)
     assert r["o.Cd_pipe_ratio"] == pytest.approx(R_rev, rel=1e-14)
     assert R_rev != pytest.approx(
