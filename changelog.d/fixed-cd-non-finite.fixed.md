@@ -1,0 +1,1 @@
+- `OrificeElement` and its hole-element subclasses refuse a non-finite `Cd` with `correlation="fixed"` at construction. A NaN used to be clamped silently to a meaningless value.

@@ -126,6 +126,12 @@ def test_fixed_without_a_cd_is_refused(name: str) -> None:
         _FAMILY[name]("fixed")
 
 
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_a_non_finite_fixed_cd_is_refused(bad: float) -> None:
+    with pytest.raises(ValueError, match="must be a finite number"):
+        OrificeElement("o", "a", "b", Cd=bad, diameter=0.01, correlation="fixed")
+
+
 def test_the_impingement_plate_keeps_florschuetz_as_its_fixed_default() -> None:
     """Its documented default: 'fixed' at Florschuetz's measured 0.79."""
     p = _FAMILY["ImpingementPlateElement"]("fixed")

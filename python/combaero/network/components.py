@@ -5101,6 +5101,8 @@ class OrificeElement(NetworkElement):
                     f"{name} {id!r}: correlation='fixed' needs a Cd. Pass Cd=..., or "
                     "pick a correlation that computes it."
                 )
+            if not math.isfinite(Cd):
+                raise ValueError(f"{name} {id!r}: Cd={Cd!r} must be a finite number.")
         elif Cd is not None:
             raise ValueError(
                 f"{name} {id!r}: Cd={Cd!r} with correlation={correlation!r}. The "
