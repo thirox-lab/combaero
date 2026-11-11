@@ -142,7 +142,7 @@ uv run python scripts/stress/run.py --strict ...                                
 uv run python scripts/stress/summarize.py tmp/stress/after.jsonl --compare tmp/stress/before.jsonl
 ```
 
-- **Families:** `networks.FAMILIES` holds 14:
+- **Families:** `networks.FAMILIES`, listed in the `networks.py` docstring:
   - layered random networks of the basic elements;
   - wall-coupled hot/cold channels;
   - junctions (MPCE, constant-K, ideal, legacy tee);
@@ -151,14 +151,18 @@ uv run python scripts/stress/summarize.py tmp/stress/after.jsonl --compare tmp/s
   - effusion plates and liners;
   - pin-fin channels;
   - bleed stations;
-  - series of vortex/connection elements.
-  - crossflow chains fed by inclined jets.
+  - series of vortex/connection elements;
+  - crossflow chains fed by inclined jets;
+  - flow splitters;
+  - fuel controllers (`fuel_controller`, #1049): a `FuelBoundary` on a combustor, one case per seed in turn (lean, rich, near the peak, below the unfuelled Tt, above the peak, rich asked with only a lean root, a fuel leak past the combustor, a wall-cooled or fixed-PR-turbine downstream), on a direct, injector or premix route, complete or equilibrium combustion.
 - **Per solve, the runner records:**
   - the outcome;
   - the caught-exception log;
   - anything that escaped `solve()`;
   - the second-law verdicts and ledger;
-  - the `check_row_kinds` verdict at the solution.
+  - the `check_row_kinds` verdict at the solution;
+  - for a draw that declares its outcome, whether it was met (`unexpected`).
+- **Declared outcomes:** a generator may tag a draw `expect:converged:<lean|rich>` (success, and every fuel controller's phi on that side), `expect:refused:<part of the reason>` (no success, the message naming it) or `expect:refused_at_build:<part>` (refused by `resolve_topology`, before any solve). `run.py` `check_expected` sets `unexpected` to why a draw missed, and `summarize.py` counts met / unexpected per family and lists every miss with what the solver said, so a sweep reports wrong answers, not just a converged count. `fuel_controller` declares every draw; its seeds 0:100 met all 100 at #1049.
 - **Reproducible seeds:** a (family, seed) pair rebuilds the same network, so a finding is a repro. Keep each generator's draw order when editing it.
 - **Fixed vs fresh seeds:** 0:40 is the regression set, for A/B comparison. `random:N` explores: on its first runs it found a generator refusal and an f=0 n-port draw that 0:40 never made (#642). Its records carry their seeds, so a fresh finding is as reproducible as a fixed one. Don't compare a fresh run against a fixed baseline.
 - **A failure is a finding to triage, not automatically a bug.** Some draws have no root by construction.

@@ -8,7 +8,9 @@
 Per solve: converged/success/outcome, the caught-exception log
 (``__caught_exceptions__``, #615), an exception that escaped ``solve()``,
 inconsistent elements, the second-law verdicts and ledger, and the
-RESIDUAL-ROW-SCALING check (``check_row_kinds``) at the solution. Lenient by
+RESIDUAL-ROW-SCALING check (``check_row_kinds``) at the solution, and, for a
+draw that declares its outcome (an ``expect:`` tag), whether it was met
+(``unexpected``: None, or why not). Lenient by
 default, so a run collects every finding; ``--strict`` raises at the first
 (the suite's mode, COMBAERO_SOLVER_STRICT).
 
@@ -34,11 +36,55 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from networks import FAMILIES  # noqa: E402
+from networks import (  # noqa: E402
+    EXPECT_CONVERGED,
+    EXPECT_REFUSED,
+    EXPECT_REFUSED_AT_BUILD,
+    FAMILIES,
+)
 
 
 def _clean(v: Any) -> Any:
     return repr(v) if isinstance(v, float) and not math.isfinite(v) else v
+
+
+def check_expected(rec: dict[str, Any], r: dict[str, Any] | None) -> str | None:
+    """Why a solve's outcome is not the one its draw declared (an
+    ``expect:...`` tag, e.g. fuel_controller), or None: met, or nothing
+    declared. ``r`` is the result, None when solve() raised.
+
+    converged:<branch>  success, and every fuel controller's phi on that side
+    refused:<part>      no success (or an exception), the message or
+                        exception naming <part>
+    refused_at_build:<part>  an exception out of solve() naming <part>
+                        (resolve_topology: the network is refused unsolved)
+    """
+    exp = [t for t in rec.get("tags", []) if t.startswith("expect:")]
+    if not exp:
+        return None
+    tag = exp[0]
+    if not tag.startswith((EXPECT_CONVERGED, EXPECT_REFUSED, EXPECT_REFUSED_AT_BUILD)):
+        return f"unknown expectation tag {tag!r}"
+    if tag.startswith(EXPECT_CONVERGED):
+        branch = tag[len(EXPECT_CONVERGED) :]
+        if r is None:
+            return f"raised, expected converged {branch}"
+        if not r.get("__success__"):
+            return f"refused, expected converged {branch}"
+        for k, phi in rec.get("fuel_phi", {}).items():
+            if not isinstance(phi, float) or (phi < 1.0) != (branch == "lean"):
+                return f"{k} phi {phi}: the wrong branch, expected {branch}"
+        return None
+    at_build = tag.startswith(EXPECT_REFUSED_AT_BUILD)
+    part = tag.removeprefix(EXPECT_REFUSED_AT_BUILD if at_build else EXPECT_REFUSED)
+    why = rec.get("exc", "") if r is None else rec.get("message", "")
+    if r is not None and r.get("__success__"):
+        return f"solved, expected refused ({part})"
+    if at_build and r is not None:
+        return f"solved (no success), expected refused before the solve ({part})"
+    if part not in why:
+        return f"refused for another reason, expected '{part}'"
+    return None
 
 
 def run_one(task: tuple[str, int, float, bool]) -> dict[str, Any]:
@@ -65,6 +111,12 @@ def run_one(task: tuple[str, int, float, bool]) -> dict[str, Any]:
         rec["success"] = bool(r.get("__success__"))
         rec["outcome"] = str(r.get("__outcome__"))
         rec["final_norm"] = _clean(r.get("__final_norm__"))
+        rec["message"] = str(r.get("__message__") or "")[:600]
+        rec["fuel_phi"] = {
+            k[: -len(".rich_branch")]: _clean(r.get(k[: -len(".rich_branch")] + ".phi"))
+            for k in r
+            if isinstance(k, str) and k.endswith(".rich_branch")
+        }
         rec["caught"] = r.get("__caught_exceptions__", [])
         rec["caught_count"] = r.get("__caught_exception_count__", 0)
         rec["inconsistent"] = list(r.get("__inconsistent_elements__") or [])
@@ -82,9 +134,11 @@ def run_one(task: tuple[str, int, float, bool]) -> dict[str, Any]:
                 rec["rowkind_bad"] = [x for x in rep if x["verdict"] == "DISAGREE"]
             except Exception as exc:  # noqa: BLE001 -- recorded, never fatal
                 rec["rowkind_exc"] = f"{type(exc).__name__}: {exc}"[:300]
+        rec["unexpected"] = check_expected(rec, r)
     except Exception as exc:  # noqa: BLE001 -- an exception out of solve() is a finding
         rec["exc"] = f"{type(exc).__name__}: {exc}"[:300]
         rec["tb_tail"] = traceback.format_exc()[-1500:]
+        rec["unexpected"] = check_expected(rec, None)
     rec["dt"] = round(time.time() - t0, 2)
     return rec
 
