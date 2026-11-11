@@ -574,7 +574,7 @@ def test_the_palette_effusion_liner_panels_have_their_exact_jacobian() -> None:
         r = s.solve()
     assert r["__success__"]
     d = r["__element_diag__"]
-    panels = [k for k in d if "Re_hole" in d[k] and "U1_over_Vi" in d[k]]
+    panels = [k for k in d if "Re_hole" in d[k] and "Cd_inlet_crossflow_U1_over_Vi" in d[k]]
     assert len(panels) == 4 and all(d[k]["Re_hole"] < 1e4 for k in panels)
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)

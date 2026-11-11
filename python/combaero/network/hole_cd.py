@@ -119,6 +119,68 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 HOLE_CD_KWARGS_DEPRECATED_IN = "0.12.0"
 HOLE_CD_KWARGS_REMOVED_IN = "0.13.0"
 
+#: The hole-Cd diagnostic group (_HoleCdChain.diagnostics): the same keys on
+#: every hole element (OrificeElement and its subclasses), present whether or
+#: not a term is on. The four ``*_model`` / ``Cd_correlation`` keys are text.
+HOLE_CD_DIAGNOSTIC_KEYS = (
+    "Cd",
+    "Cd_correlation",
+    "Cd_base",
+    "Cd_in_range",
+    "Cd_extrapolated_Re",
+    "Cd_extrapolated_l_d",
+    "Cd_extrapolated_edge",
+    "Cd_inclination_model",
+    "Cd_inclination_applied",
+    "Cd_inclination_dzeta",
+    "Cd_inlet_crossflow_model",
+    "Cd_inlet_crossflow_applied",
+    "Cd_inlet_crossflow_U1_over_Vi",
+    "Cd_inlet_crossflow_beyond_8pct",
+    "Cd_inlet_crossflow_degraded",
+    "Cd_inlet_crossflow_ignored",
+    "Cd_exit_crossflow_model",
+    "Cd_exit_crossflow_applied",
+    "Cd_exit_crossflow_ratio",
+    "Cd_exit_crossflow_rho_u2",
+    "Cd_exit_crossflow_k_perp",
+    "Cd_exit_crossflow_k_used",
+    "Cd_exit_crossflow_k_floor",
+    "Cd_exit_crossflow_delta",
+    "Cd_exit_crossflow_held",
+    "Cd_exit_crossflow_faded",
+    "Cd_exit_crossflow_floor_above_fit",
+    "Cd_exit_crossflow_in_range",
+    "Cd_exit_crossflow_extrapolated_velocity_ratio",
+    "Cd_exit_crossflow_extrapolated_l_d",
+    "Cd_exit_crossflow_extrapolated_grazing_velocity",
+)
+#: The group's text keys (the rest are numbers).
+HOLE_CD_DIAGNOSTIC_TEXT_KEYS = (
+    "Cd_correlation",
+    "Cd_inclination_model",
+    "Cd_inlet_crossflow_model",
+    "Cd_exit_crossflow_model",
+)
+#: The pre-0.12 names that shipped in 0.11.1, each its group key. Emitted
+#: beside the group, where the element emitted them before, for one release.
+HOLE_CD_DIAGNOSTIC_ALIASES = {
+    "Cd_own": "Cd_base",
+    "U1_over_Vi": "Cd_inlet_crossflow_U1_over_Vi",
+    "crossflow_cd_beyond_8pct": "Cd_inlet_crossflow_beyond_8pct",
+    "crossflow_cd_degraded": "Cd_inlet_crossflow_degraded",
+    "coolant_crossflow_ignored": "Cd_inlet_crossflow_ignored",
+}
+#: The EffusionLiner summary's pre-0.12 names, each its new name.
+LINER_CD_DIAGNOSTIC_ALIASES = {
+    "U1_over_Vi_max": "Cd_inlet_crossflow_U1_over_Vi_max",
+    "rows_U1_over_Vi": "rows_Cd_inlet_crossflow_U1_over_Vi",
+    "crossflow_cd_beyond_8pct": "Cd_inlet_crossflow_beyond_8pct",
+    "crossflow_cd_degraded": "Cd_inlet_crossflow_degraded",
+}
+HOLE_CD_DIAGNOSTIC_ALIASES_DEPRECATED_IN = "0.12.0"
+HOLE_CD_DIAGNOSTIC_ALIASES_REMOVED_IN = "0.13.0"
+
 
 @dataclass(frozen=True)
 class HoleCd:
@@ -482,6 +544,8 @@ class _HoleCdChain:
       jet_crossflow     the impingement crossflow law, "none" for every other
                         hole. ``jet_crossflow_suspended`` switches it off for
                         the solver's constant-Cd stage.
+      inlet_crossflow_ignored  set by the element's topology: a supply
+                        crossflow the Cd does not read (Cd_inlet_crossflow_ignored).
 
     Topology (set by the element's resolve_topology): the exit term's
     discharge node and approaching mainstream.
@@ -495,6 +559,7 @@ class _HoleCdChain:
         self.duct_fed = False
         self.jet_crossflow = "none"
         self.jet_crossflow_suspended = False
+        self.inlet_crossflow_ignored = False
         self.exit_node: Any = None
         self.exit_mainstream: tuple[str, ...] = ()
         self.exit_main_src: str | None = None
@@ -574,16 +639,6 @@ class _HoleCdChain:
             state_in, state_out, flows, jet=True, continue_re_floor=continue_re_floor
         )
         return self._dcd_by_name(r, ctx, state_in)
-
-    def hole_cd(
-        self,
-        state_in: "NetworkMixtureState",
-        state_out: "NetworkMixtureState",
-        flows: dict[str, float] | None = None,
-    ) -> float:
-        """The hole's own Cd: from correlation or user-supplied fixed value,
-        with the opt-in exit-crossflow loss on top; no jet-crossflow law."""
-        return float(self._evaluate(state_in, state_out, flows, jet=False)[0].cd_hole)
 
     # --- one evaluation of the chain (C++ hole_cd_compose) --------------------
 
@@ -1171,65 +1226,106 @@ class _HoleCdChain:
         out["Cd_extrapolated_edge"] = float(env.edge)
         return out
 
-    def inclination_diagnostics(self) -> dict[str, float]:
+    def inclination_dzeta(self) -> float:
         """The inclined-inlet increment on zeta' (0.0 when off or at 90 deg)."""
-        return {"Cd_inclination_dzeta": float(cb.discharge_inclination_dzeta(self.inclination_deg))}
+        return float(cb.discharge_inclination_dzeta(self.inclination_deg))
 
-    def supply_crossflow_diagnostics(
+    def diagnostics(
         self,
         state_in: "NetworkMixtureState",
         state_out: "NetworkMixtureState",
         flows: dict[str, float] | None,
-    ) -> dict[str, float]:
-        """A duct-fed hole's U1/Vi and the Rohde-scored bounds of
-        McGreehan-Schotsch's crossflow term (orifice_discharge_coefficient.md):
-        about +8% while U1/Vi < 0.2, degrading badly beyond 0.35, worst for
-        sharp edges. Empty for a plenum-fed hole. A duct-fed hole with the
-        term switched off (``inlet_crossflow="none"``) still reports the
-        duct's U1/Vi, as information: the Cd does not read it, so the two
-        bounds read 0 (the element flags ``coolant_crossflow_ignored``)."""
-        if not self.duct_fed:
-            return {}
-        u1_vi, _ = self.supply_crossflow(state_in, state_out, flows, measure=True)
-        on = self.supply_duct
-        return {
-            "U1_over_Vi": float(u1_vi),
-            "crossflow_cd_beyond_8pct": float(on and u1_vi > 0.2),
-            "crossflow_cd_degraded": float(on and u1_vi > 0.35),
-        }
+    ) -> dict[str, float | str]:
+        """The hole-Cd diagnostic group: every key in HOLE_CD_DIAGNOSTIC_KEYS,
+        on every hole element, whether or not a term is on (a term that is
+        off reads its model "none", applied 0 and neutral values). One
+        evaluation of the chain; the group's ``Cd`` is the element's.
 
-    def exit_crossflow_diagnostics(
-        self, state_in: "NetworkMixtureState", state_out: "NetworkMixtureState", flows: Any
-    ) -> dict[str, float]:
-        """The opt-in exit-crossflow term's state; empty when off, so a
-        default element reports exactly what it did before."""
+        The terms, in the order they compose (see the module docstring):
+          base        Cd_correlation, Cd_base (term 1, before any exit or
+                      jet crossflow term), the range flags;
+          inclination Cd_inclination_model / _applied / _dzeta;
+          inlet       Cd_inlet_crossflow_model / _applied / _U1_over_Vi (a
+                      duct-fed hole's U1/Vi, reported where the term is off;
+                      0 plenum-fed) / _beyond_8pct / _degraded (the
+                      Rohde-scored bounds, 0 where the term is off) /
+                      _ignored (a supply crossflow the Cd does not read);
+          exit        Cd_exit_crossflow_model / _applied / _ratio (Cd /
+                      Cd_base, 1 when off), the Rowbury et al. (2001) state
+                      (NaN k values where it is not evaluated) and the Rogers
+                      & Hersh envelope flags (0 where the law does not act).
+        """
         el = self._el
-        if self.exit_xf is None or el._orifice_geom is None:
-            return {}
-        r, ctx = self._evaluate(state_in, state_out, flows, jet=False)
-        on = bool(r.exit_active)
-        return {
-            "Cd_no_exit_crossflow": float(r.cd_base),
-            "Cd_exit_crossflow_ratio": float(r.exit_ratio),
-            "exit_crossflow_rho_u2": float(ctx.q),
+        r, ctx = self._evaluate(state_in, state_out, flows, jet=True)
+        nan = math.nan
+        # 2. inlet (supply) crossflow, McGreehan-Schotsch.
+        u1_vi, beyond, degraded = 0.0, 0.0, 0.0
+        if self.duct_fed:
+            u1_vi, _ = self.supply_crossflow(state_in, state_out, flows, measure=True)
+            on = self.supply_duct
+            beyond = float(on and u1_vi > 0.2)
+            degraded = float(on and u1_vi > 0.35)
+        # 3. exit crossflow: Rowbury et al. (2001), or an impingement row's
+        # jet law (HoleCd.exit_crossflow names both).
+        rowbury = self.exit_xf is not None and el._orifice_geom is not None
+        exit_on = bool(r.exit_active)
+        if self.exit_xf is not None:
+            exit_model = "rowbury_2001"
+            exit_applied = exit_on
+        else:
+            exit_model = self.jet_crossflow
+            exit_applied = bool(r.jet_acts)
+        if rowbury:
+            ratio = float(r.exit_ratio)
+        elif exit_model != "none":
+            ratio = float(r.Cd) / float(r.cd_base) if r.cd_base > 0.0 else nan
+        else:
+            ratio = 1.0
+        out: dict[str, float | str] = {
+            "Cd": float(r.Cd),
+            "Cd_correlation": str(el.correlation),
+            "Cd_base": float(r.cd_base),
+            "Cd_in_range": float(self.in_range(state_in)),
+            **self.envelope(state_in),
+            "Cd_inclination_model": "idelchik_3_2" if self.inclination_deg < 90.0 else "none",
+            "Cd_inclination_applied": float(self.inclination_deg < 90.0),
+            "Cd_inclination_dzeta": self.inclination_dzeta(),
+            "Cd_inlet_crossflow_model": "mcgreehan_schotsch" if self.supply_duct else "none",
+            "Cd_inlet_crossflow_applied": float(self.supply_duct),
+            "Cd_inlet_crossflow_U1_over_Vi": float(u1_vi),
+            "Cd_inlet_crossflow_beyond_8pct": beyond,
+            "Cd_inlet_crossflow_degraded": degraded,
+            "Cd_inlet_crossflow_ignored": float(self.inlet_crossflow_ignored),
+            "Cd_exit_crossflow_model": exit_model,
+            "Cd_exit_crossflow_applied": float(exit_applied),
+            "Cd_exit_crossflow_ratio": ratio,
+            "Cd_exit_crossflow_rho_u2": float(ctx.q) if rowbury else 0.0,
             # The actual k_perp, and the one the term was evaluated at (the
             # floor where held).
-            "exit_crossflow_k_perp": float(r.k_perp.k) if on else math.nan,
-            "exit_crossflow_k_used": float(r.exit.k_used) if on else math.nan,
-            "exit_crossflow_k_floor": float(r.exit_k_floor),
-            "exit_crossflow_delta": float(r.exit.delta) if on else 0.0,
-            "exit_crossflow_held": float(r.exit.held) if on else 0.0,
+            "Cd_exit_crossflow_k_perp": float(r.k_perp.k) if exit_on else nan,
+            "Cd_exit_crossflow_k_used": float(r.exit.k_used) if exit_on else nan,
+            "Cd_exit_crossflow_k_floor": float(r.exit_k_floor) if rowbury else nan,
+            "Cd_exit_crossflow_delta": float(r.exit.delta) if exit_on else 0.0,
+            "Cd_exit_crossflow_held": float(r.exit.held) if exit_on else 0.0,
             # Where k_used sits against the set's k tiers (info): 0 inside
             # what its Table 1 rows provably reach (tier 1, data), 0.5 beyond
             # that but inside the authors' own application of the set (tier
             # 2, Fig. 9 for the suction set; Eq. 8 unfaded), 1 beyond both:
             # the offset fades.
-            "exit_crossflow_faded": float(r.exit_k_tier),
+            "Cd_exit_crossflow_faded": float(r.exit_k_tier),
             # Off Table 1's angles the floor can lie above the fitted k
             # range: the whole fitted range is then held (info).
-            "exit_crossflow_floor_above_fit": float(r.exit_floor_above_fit),
-            "exit_crossflow_in_range": float(r.exit_in_range),
+            "Cd_exit_crossflow_floor_above_fit": float(r.exit_floor_above_fit),
+            "Cd_exit_crossflow_in_range": float(r.exit_in_range) if rowbury else 1.0,
+            **self.jet_crossflow_envelope(state_in, state_out, flows, float(r.cd_hole)),
         }
+        return out
+
+    def legacy_diagnostics(self, group: dict[str, float | str], keys: tuple[str, ...]) -> dict:
+        """The deprecated pre-0.12 names among ``keys`` (each a key of
+        HOLE_CD_DIAGNOSTIC_ALIASES), valued from ``group``: emitted beside
+        the group for one release, where the element emitted them before."""
+        return {k: group[HOLE_CD_DIAGNOSTIC_ALIASES[k]] for k in keys}
 
     def jet_crossflow_envelope(
         self,
@@ -1248,9 +1344,9 @@ class _HoleCdChain:
         warning. 0.0 everywhere for another law, or where the hole's own Cd
         holds."""
         out = {
-            "Cd_crossflow_extrapolated_velocity_ratio": 0.0,
-            "Cd_crossflow_extrapolated_l_d": 0.0,
-            "Cd_crossflow_extrapolated_grazing_velocity": 0.0,
+            "Cd_exit_crossflow_extrapolated_velocity_ratio": 0.0,
+            "Cd_exit_crossflow_extrapolated_l_d": 0.0,
+            "Cd_exit_crossflow_extrapolated_grazing_velocity": 0.0,
         }
         if self.jet_crossflow != "rogers_hersh_1976" or self.jet_crossflow_suspended:
             return out
@@ -1269,7 +1365,7 @@ class _HoleCdChain:
         env = cb.rogers_hersh_1976_envelope(
             float(r.Cd) * G_i / G_c, el.plate_thickness / el.d_jet, G_c / rho_c, not forward
         )
-        out["Cd_crossflow_extrapolated_velocity_ratio"] = float(env.velocity_ratio)
-        out["Cd_crossflow_extrapolated_l_d"] = float(env.l_over_d)
-        out["Cd_crossflow_extrapolated_grazing_velocity"] = float(env.grazing_velocity)
+        out["Cd_exit_crossflow_extrapolated_velocity_ratio"] = float(env.velocity_ratio)
+        out["Cd_exit_crossflow_extrapolated_l_d"] = float(env.l_over_d)
+        out["Cd_exit_crossflow_extrapolated_grazing_velocity"] = float(env.grazing_velocity)
         return out

@@ -10,6 +10,7 @@ evidence is validation/cooling/exit_crossflow_cd_runner.py, pinned below.
 
 from __future__ import annotations
 
+import math
 import sys
 import warnings
 from pathlib import Path
@@ -129,12 +130,15 @@ def _solve(g: FlowNetwork) -> tuple[NetworkSolver, dict]:
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
-def test_off_by_default_reports_nothing_new(make) -> None:
+def test_off_by_default_reports_the_term_as_off(make) -> None:
+    # The hole-Cd group keeps its shape: the term's keys are there, neutral.
     e = make()
     assert e.cd_exit_crossflow == "none" and e._hole_cd.exit_xf is None
     _, r = _solve(_net(e))
     d = r["__element_diag__"]["eff"]
-    assert not [k for k in d if "exit_crossflow" in k]
+    assert d["Cd_exit_crossflow_model"] == "none" and d["Cd_exit_crossflow_applied"] == 0.0
+    assert d["Cd_exit_crossflow_ratio"] == 1.0 and d["Cd_base"] == d["Cd"]
+    assert d["Cd_exit_crossflow_rho_u2"] == 0.0 and math.isnan(d["Cd_exit_crossflow_k_perp"])
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
@@ -216,7 +220,7 @@ def _fd_rel_error(s: NetworkSolver, r: dict) -> float:
 def test_the_jacobian_matches_central_differences(make, spec: dict, kw: dict) -> None:
     hole_cd = HoleCd(exit_crossflow="rowbury_2001", **spec)
     s, r = _solve(_net(make(hole_cd=hole_cd, **kw)))
-    assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
+    assert r["__element_diag__"]["eff"]["Cd_exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
 
 
@@ -252,8 +256,8 @@ def test_the_mainstream_is_the_approaching_flow_not_the_holes() -> None:
     s, a = _solve(net(0.03))
     assert s.network.elements["eff"]._hole_cd.exit_mainstream == ("feed",)
     _, b = _solve(net(0.08))
-    qa = a["__element_diag__"]["eff"]["exit_crossflow_rho_u2"]
-    qb = b["__element_diag__"]["eff"]["exit_crossflow_rho_u2"]
+    qa = a["__element_diag__"]["eff"]["Cd_exit_crossflow_rho_u2"]
+    qb = b["__element_diag__"]["eff"]["Cd_exit_crossflow_rho_u2"]
     assert b["eff.m_dot"] > 1.3 * a["eff.m_dot"]
     # The main stream's face density barely moves (the side streams'
     # impulse shifts the face pressure slightly): 0.06% for 1.3x the flow.
@@ -267,7 +271,7 @@ def test_the_jacobian_reads_a_mixed_coolant_supply() -> None:
     # depend on the feed orifices' flows (unknowns).
     g = _net(_film(hole_cd=ROWBURY), mixed_supply=True)
     s, r = _solve(g)
-    assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
+    assert r["__element_diag__"]["eff"]["Cd_exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
 
 
@@ -275,7 +279,7 @@ def test_the_jacobian_reads_a_mixed_main_stream() -> None:
     # rho_m, the main stream's face density, reads its Tt and composition:
     # the main gas mixes two streams first, so both move with their flows.
     s, r = _solve(_net(_plate(hole_cd=ROWBURY), mixed_main=True))
-    assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
+    assert r["__element_diag__"]["eff"]["Cd_exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
 
 
@@ -288,7 +292,7 @@ def test_the_jacobian_holds_where_the_term_is_held() -> None:
     # blowing too.)
     s, r = _solve(_net(_plate(angle_deg=90.0, hole_cd=ROWBURY), dp=-0.029))
     d = r["__element_diag__"]["eff"]
-    assert r["eff.m_dot"] < 0.0 and d["exit_crossflow_held"] == 1.0
+    assert r["eff.m_dot"] < 0.0 and d["Cd_exit_crossflow_held"] == 1.0
     assert _fd_rel_error(s, r) < 1e-6
 
 
@@ -296,9 +300,9 @@ def test_the_jacobian_holds_where_the_term_is_held() -> None:
 def test_the_elements_cd_is_eqs_7_8_on_its_own_cd0(make) -> None:
     _, r = _solve(_net(make(hole_cd=ROWBURY)))
     d = r["__element_diag__"]["eff"]
-    k = d["exit_crossflow_k_perp"]
-    assert d["exit_crossflow_k_used"] == k and d["exit_crossflow_held"] == 0.0
-    expect = cb.rowbury_2001_exit_crossflow_cd(d["Cd_no_exit_crossflow"], k, SUCTION, 30.0, 0.0)
+    k = d["Cd_exit_crossflow_k_perp"]
+    assert d["Cd_exit_crossflow_k_used"] == k and d["Cd_exit_crossflow_held"] == 0.0
+    expect = cb.rowbury_2001_exit_crossflow_cd(d["Cd_base"], k, SUCTION, 30.0, 0.0)
     assert d["Cd"] == pytest.approx(expect.Cd, rel=1e-12)
     # k from the solved state, by hand: the hole's actual flux, the coolant's
     # isentropic exit density, the approaching gas's G^2 / rho_chamber.
@@ -309,7 +313,7 @@ def test_the_elements_cd_is_eqs_7_8_on_its_own_cd0(make) -> None:
     rho_h = cb.rowbury_2001_exit_density(5e5 * 1.03, 600.0, r["ch.P"], X).rho
     T_c = cb.rowbury_2001_exit_density(5e5 * 1.03, 600.0, r["ch.P"], X).T
     assert cb.s_mass(T_c, X, r["ch.P"]) == pytest.approx(cb.s_mass(600.0, X, 5e5 * 1.03))
-    k_hand = G_h**2 * 0.5 / (rho_h * d["exit_crossflow_rho_u2"])
+    k_hand = G_h**2 * 0.5 / (rho_h * d["Cd_exit_crossflow_rho_u2"])
     assert k == pytest.approx(k_hand, rel=1e-9)
 
 
@@ -325,9 +329,9 @@ def test_crossflow_lowers_cd_at_low_k_and_raises_it_at_high_k() -> None:
     )
     hi = _solve(_net(le, m_gas=1.5, dp=0.10))[1]
     dlo, dhi = lo["__element_diag__"]["eff"], hi["__element_diag__"]["eff"]
-    assert dlo["exit_crossflow_delta"] > 0.0 and dlo["Cd_exit_crossflow_ratio"] < 1.0
-    assert dhi["exit_crossflow_faded"] == 0.0
-    assert dhi["exit_crossflow_delta"] < 0.0 and dhi["Cd_exit_crossflow_ratio"] > 1.0
+    assert dlo["Cd_exit_crossflow_delta"] > 0.0 and dlo["Cd_exit_crossflow_ratio"] < 1.0
+    assert dhi["Cd_exit_crossflow_faded"] == 0.0
+    assert dhi["Cd_exit_crossflow_delta"] < 0.0 and dhi["Cd_exit_crossflow_ratio"] > 1.0
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
@@ -338,7 +342,7 @@ def test_a_vanishing_mainstream_returns_cd0_continuously(make) -> None:
     for m_gas in (0.3, 0.03, 0.003):
         s, r = _solve(_net(make(hole_cd=ROWBURY), m_gas=m_gas))
         d = r["__element_diag__"]["eff"]
-        assert d["exit_crossflow_faded"] == 1.0
+        assert d["Cd_exit_crossflow_faded"] == 1.0
         ratios.append(abs(d["Cd_exit_crossflow_ratio"] - 1.0))
         assert _fd_rel_error(s, r) < 1e-6
     assert ratios[0] > ratios[1] > ratios[2]
@@ -356,7 +360,7 @@ def test_leading_edge_compound_angle_row_is_exact() -> None:
     )
     s, r = _solve(_net(e))
     d = r["__element_diag__"]["eff"]
-    assert d["exit_crossflow_in_range"] == 1.0
+    assert d["Cd_exit_crossflow_in_range"] == 1.0
     assert _fd_rel_error(s, r) < 1e-6
 
 
@@ -366,8 +370,8 @@ def test_shaped_holes_take_the_exit_plane_flux() -> None:
     d = r["__element_diag__"]["eff"]
     G_m = abs(r["eff.m_dot"]) / (10 * np.pi * 1e-3**2 / 4.0)
     rho_h = cb.rowbury_2001_exit_density(5e5 * 1.03, 600.0, r["ch.P"], list(cb.species.dry_air()))
-    k_exit = (G_m / 3.0) ** 2 * 0.5 / (rho_h.rho * d["exit_crossflow_rho_u2"])
-    assert d["exit_crossflow_k_perp"] == pytest.approx(k_exit, rel=1e-9)
+    k_exit = (G_m / 3.0) ** 2 * 0.5 / (rho_h.rho * d["Cd_exit_crossflow_rho_u2"])
+    assert d["Cd_exit_crossflow_k_perp"] == pytest.approx(k_exit, rel=1e-9)
 
 
 # --- the runner's numbers (cross-checked in the PR body) --------------------
@@ -455,6 +459,6 @@ def test_the_faded_flag_reports_the_k_tier() -> None:
     for m_gas, dp in ((4.0, 0.01), (1.5, 0.10), (0.03, 0.03)):
         _, r = _solve(_net(_film(hole_cd=ROWBURY), m_gas=m_gas, dp=dp))
         d = r["__element_diag__"]["eff"]
-        tiers[d["exit_crossflow_faded"]] = d["exit_crossflow_k_used"]
+        tiers[d["Cd_exit_crossflow_faded"]] = d["Cd_exit_crossflow_k_used"]
     assert set(tiers) == {0.0, 0.5, 1.0}
     assert tiers[0.0] <= 0.58 < tiers[0.5] <= 3.8 < tiers[1.0]

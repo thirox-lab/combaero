@@ -297,9 +297,9 @@ class ImpingementArray:
                     "Cd_extrapolated_Re",
                     "Cd_extrapolated_l_d",
                     "Cd_extrapolated_edge",
-                    "Cd_crossflow_extrapolated_velocity_ratio",
-                    "Cd_crossflow_extrapolated_l_d",
-                    "Cd_crossflow_extrapolated_grazing_velocity",
+                    "Cd_exit_crossflow_extrapolated_velocity_ratio",
+                    "Cd_exit_crossflow_extrapolated_l_d",
+                    "Cd_exit_crossflow_extrapolated_grazing_velocity",
                 )
             },
             "surface_extrapolated": float(any(p["surface_extrapolated"] for p in plates)),

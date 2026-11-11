@@ -55,7 +55,7 @@ from .components import (
     PlenumNode,
     _max_over_min,
 )
-from .hole_cd import _with_correlation
+from .hole_cd import LINER_CD_DIAGNOSTIC_ALIASES, _with_correlation
 
 if TYPE_CHECKING:
     from .graph import FlowNetwork
@@ -255,12 +255,14 @@ class EffusionLiner:
             "bleed_fraction": float(sum(bleed) / m_in) if m_in else 0.0,
             "n_segments": float(n),
             "n_holes": float(sum(p["n_holes"] for p in panels)),
-            "U1_over_Vi_max": float(max(p.get("U1_over_Vi", 0.0) for p in panels)),
-            "crossflow_cd_beyond_8pct": float(
-                any(p.get("crossflow_cd_beyond_8pct", 0.0) for p in panels)
+            "Cd_inlet_crossflow_U1_over_Vi_max": float(
+                max(p["Cd_inlet_crossflow_U1_over_Vi"] for p in panels)
             ),
-            "crossflow_cd_degraded": float(
-                any(p.get("crossflow_cd_degraded", 0.0) for p in panels)
+            "Cd_inlet_crossflow_beyond_8pct": float(
+                any(p["Cd_inlet_crossflow_beyond_8pct"] for p in panels)
+            ),
+            "Cd_inlet_crossflow_degraded": float(
+                any(p["Cd_inlet_crossflow_degraded"] for p in panels)
             ),
             # McGreehan-Schotsch outside its source's range on any panel, by
             # variable (Re below 1e4: Cd held; l/d beyond 10): information,
@@ -289,9 +291,14 @@ class EffusionLiner:
             out["T_wall_hot_max"] = float(max(p["T_wall_hot"] for p in panels))
             out["rows_T_wall_hot"] = [float(p["T_wall_hot"]) for p in panels]
         out["rows_m_dot_bleed"] = bleed
-        out["rows_U1_over_Vi"] = [float(p.get("U1_over_Vi", 0.0)) for p in panels]
+        out["rows_Cd_inlet_crossflow_U1_over_Vi"] = [
+            float(p["Cd_inlet_crossflow_U1_over_Vi"]) for p in panels
+        ]
         out["rows_Cd"] = [float(p["Cd"]) for p in panels]
         out["rows_P_backside"] = [float(p["P_in"]) for p in panels]
+        # Deprecated since 0.12.0, removed in 0.13.0: the pre-group names.
+        for old_key, new_key in LINER_CD_DIAGNOSTIC_ALIASES.items():
+            out[old_key] = out[new_key]
         return out
 
 

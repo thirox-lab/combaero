@@ -152,17 +152,17 @@ export const QUANTITY_CATALOGUE: Record<
 		unit: "—",
 		format: (v) => (v > 0 ? "yes" : "no"),
 	},
-	Cd_crossflow_extrapolated_velocity_ratio: {
+	Cd_exit_crossflow_extrapolated_velocity_ratio: {
 		label: "Crossflow Cd extrapolated in Vi/V_inf",
 		unit: "—",
 		format: (v) => (v > 0 ? "yes" : "no"),
 	},
-	Cd_crossflow_extrapolated_l_d: {
+	Cd_exit_crossflow_extrapolated_l_d: {
 		label: "Crossflow Cd extrapolated in L/D",
 		unit: "—",
 		format: (v) => (v > 0 ? "yes" : "no"),
 	},
-	Cd_crossflow_extrapolated_grazing_velocity: {
+	Cd_exit_crossflow_extrapolated_grazing_velocity: {
 		label: "Crossflow Cd extrapolated in V_inf",
 		unit: "—",
 		format: (v) => (v > 0 ? "yes" : "no"),
@@ -310,7 +310,7 @@ export const QUANTITY_CATALOGUE: Record<
 		unit: "%",
 		format: (v) => (100 * v).toFixed(1),
 	},
-	U1_over_Vi_max: {
+	Cd_inlet_crossflow_U1_over_Vi_max: {
 		label: "U1/Vi max",
 		unit: "—",
 		format: (v) => v.toFixed(3),

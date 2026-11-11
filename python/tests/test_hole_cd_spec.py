@@ -428,7 +428,7 @@ def test_the_pre_release_keywords_are_gone(build, kw: str) -> None:
 
 def test_inlet_crossflow_none_on_a_duct_fed_panel_is_reported() -> None:
     # The term off is the caller's choice, not hidden: the duct's U1/Vi is
-    # still reported, the Cd does not read it, and coolant_crossflow_ignored
+    # still reported, the Cd does not read it, and Cd_inlet_crossflow_ignored
     # says the panel is taken as plenum-fed. Panel 2 of a 3-station liner.
     def panel(spec: HoleCd | None) -> dict:
         g, liner = _liner(**({} if spec is None else {"hole_cd": spec}))
@@ -440,12 +440,16 @@ def test_inlet_crossflow_none_on_a_duct_fed_panel_is_reported() -> None:
     # Measured on this liner (solved values, 3-digit pins): the duct's
     # crossflow is strong (U1/Vi ~2) and McGreehan-Schotsch's term halves
     # the Cd; switched off, the Cd is the plenum-fed hole's.
-    assert on["coolant_crossflow_ignored"] == 0.0 and on["crossflow_cd_degraded"] == 1.0
-    assert on["U1_over_Vi"] == pytest.approx(2.067, abs=0.001)
+    assert on["Cd_inlet_crossflow_ignored"] == 0.0 and on["Cd_inlet_crossflow_degraded"] == 1.0
+    assert on["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(2.067, abs=0.001)
     assert on["Cd"] == pytest.approx(0.559, abs=0.001)
-    assert off["coolant_crossflow_ignored"] == 1.0
-    assert off["U1_over_Vi"] == pytest.approx(2.349, abs=0.001)  # reported, read by nothing
-    assert off["crossflow_cd_beyond_8pct"] == 0.0 and off["crossflow_cd_degraded"] == 0.0
+    assert off["Cd_inlet_crossflow_ignored"] == 1.0
+    assert off["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(
+        2.349, abs=0.001
+    )  # reported, read by nothing
+    assert (
+        off["Cd_inlet_crossflow_beyond_8pct"] == 0.0 and off["Cd_inlet_crossflow_degraded"] == 0.0
+    )
     assert off["Cd"] == pytest.approx(0.807, abs=0.001)
 
 

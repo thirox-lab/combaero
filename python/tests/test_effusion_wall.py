@@ -180,8 +180,8 @@ def test_a_channel_fed_supply_is_flagged() -> None:
     g.add_element(_plate())
     r = NetworkSolver(g).solve()
     assert r["__success__"], r.get("__message__")
-    assert r["__element_diag__"]["eff"]["coolant_crossflow_ignored"] == 1.0
-    assert _plenum()["coolant_crossflow_ignored"] == 0.0
+    assert r["__element_diag__"]["eff"]["Cd_inlet_crossflow_ignored"] == 1.0
+    assert _plenum()["Cd_inlet_crossflow_ignored"] == 0.0
 
 
 def test_film_selection_needs_the_panel_length() -> None:

@@ -80,8 +80,8 @@ def test_the_default_is_a_working_example_inside_the_rohde_band() -> None:
     r = result._element_results["ln"].model_dump()
     assert r["success"]
     assert 0.0 < r["bleed_fraction"] < 1.0
-    assert r["U1_over_Vi_max"] < 0.35
-    assert r["crossflow_cd_degraded"] == 0.0
+    assert r["Cd_inlet_crossflow_U1_over_Vi_max"] < 0.35
+    assert r["Cd_inlet_crossflow_degraded"] == 0.0
     assert r["is_ingesting"] == 0.0
     assert len(r["rows_T_wall_hot"]) == EffusionLinerData().n_segments
     assert r["m_dot"] == pytest.approx(r["m_dot_out"] + r["m_dot_bleed"], rel=1e-8)

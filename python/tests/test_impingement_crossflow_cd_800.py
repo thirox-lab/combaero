@@ -153,7 +153,7 @@ def test_a_weak_crossflow_keeps_the_holes_own_cd() -> None:
     for i in range(1, N_ROWS + 1):
         d = diag[arr.plate_id(i)]
         if d["Gc_Gj"] < 1.0:
-            assert d["Cd"] == d["Cd_own"] == 0.85
+            assert d["Cd"] == d["Cd_base"] == 0.85
             held += 1
     assert held >= 5
 
@@ -205,15 +205,15 @@ def test_the_envelope_is_reported_where_the_law_acts() -> None:
     _, res, arr = _solved(0.99, "rogers_hersh_1976")
     diag = res["__element_diag__"]
     rows = [diag[arr.plate_id(i)] for i in range(1, N_ROWS + 1)]
-    assert rows[0]["Cd_crossflow_extrapolated_velocity_ratio"] == 1.0
+    assert rows[0]["Cd_exit_crossflow_extrapolated_velocity_ratio"] == 1.0
     for p in rows:
-        assert p["Cd_crossflow_extrapolated_l_d"] == 0.0  # L/D 1, Fig. 11's own
-        if p["Cd"] == p["Cd_own"]:  # capped: the law does not act
-            assert p["Cd_crossflow_extrapolated_velocity_ratio"] == 0.0
-            assert p["Cd_crossflow_extrapolated_grazing_velocity"] == 0.0
+        assert p["Cd_exit_crossflow_extrapolated_l_d"] == 0.0  # L/D 1, Fig. 11's own
+        if p["Cd"] == p["Cd_base"]:  # capped: the law does not act
+            assert p["Cd_exit_crossflow_extrapolated_velocity_ratio"] == 0.0
+            assert p["Cd_exit_crossflow_extrapolated_grazing_velocity"] == 0.0
     summary = arr.summarize(diag)
-    assert summary["Cd_crossflow_extrapolated_velocity_ratio"] == 1.0
+    assert summary["Cd_exit_crossflow_extrapolated_velocity_ratio"] == 1.0
     _, res, arr = _solved(0.99, "none")
     for i in range(1, N_ROWS + 1):
         p = res["__element_diag__"][arr.plate_id(i)]
-        assert p["Cd_crossflow_extrapolated_velocity_ratio"] == 0.0
+        assert p["Cd_exit_crossflow_extrapolated_velocity_ratio"] == 0.0

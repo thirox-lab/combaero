@@ -133,7 +133,9 @@ def test_each_panel_cd_sees_its_stations_crossflow() -> None:
         T_static = _static_T(T, P, abs(0.5 * (m_a + m_b)) / A, list(X_AIR))
         assert T_static < T
         ratio = cb.crossflow_velocity_ratio(m_a, m_b, P, T_static, X_AIR, 1.0e5, A)
-        assert d[f"ln__p{i}"]["U1_over_Vi"] == pytest.approx(ratio.U1_over_Vi, rel=1e-9)
+        assert d[f"ln__p{i}"]["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(
+            ratio.U1_over_Vi, rel=1e-9
+        )
         panel = s.network.elements[f"ln__p{i}"]
         st = NetworkMixtureState(P=P, Pt=P, Tt=T, m_dot=d[f"ln__p{i}"]["m_dot"], Y=Y_AIR)
         hole = cb.DischargeHoleGeometry(d=3.27e-3, L=panel.hole_length, r=0.0)
@@ -160,7 +162,7 @@ def test_crossflow_lowers_the_cd() -> None:
     """Upstream panels sit in faster crossflow and so have the lower Cd."""
     _, r = _solve(_net(_liner()))
     d = r["__element_diag__"]
-    u = [d[f"ln__p{i}"]["U1_over_Vi"] for i in (1, 2, 3, 4)]
+    u = [d[f"ln__p{i}"]["Cd_inlet_crossflow_U1_over_Vi"] for i in (1, 2, 3, 4)]
     cd = [d[f"ln__p{i}"]["Cd"] for i in (1, 2, 3, 4)]
     assert all(b < a for a, b in zip(u, u[1:], strict=False))
     assert all(b > a for a, b in zip(cd, cd[1:], strict=False))

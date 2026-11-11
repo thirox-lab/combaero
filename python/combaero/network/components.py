@@ -6247,16 +6247,17 @@ class OrificeElement(NetworkElement):
         except Exception:
             mach_out = 0.0
 
-        cd = float(self._effective_Cd(state_in, state_out, flows))
+        # The hole-Cd group (hole_cd.HOLE_CD_DIAGNOSTIC_KEYS): every term's
+        # state, the same keys on every hole element.
+        group = self._hole_cd.diagnostics(state_in, state_out, flows)
+        cd = float(group["Cd"])
         return {
             "m_dot": float(state_in.m_dot),
             **_element_pressure_block(state_in, state_out, mach_in=mach_in, mach_out=mach_out),
             **ref,
             "mach_throat": float(mach_throat),
-            "Cd": cd,
+            **group,
             "is_correlation": float(self.use_correlation),
-            "Cd_in_range": float(self._hole_cd.in_range(state_in)),
-            **self._hole_cd.envelope(state_in),
             "diameter": float(self.diameter or 0.0),
             "beta": float(self.beta),
             "area_source": self._area_source,
@@ -6607,7 +6608,7 @@ class EffusionPlateElement(OrificeElement):
     PLENUM-FED. This 2-port plate leaves McGreehan-Schotsch's U1/Vi at 0 and
     uses Andrews' still-plenum coolant side (as does a duct-fed panel with
     HoleCd(inlet_crossflow="none"), which still reports the duct's U1/Vi);
-    `coolant_crossflow_ignored`
+    `Cd_inlet_crossflow_ignored`
     flags a supply node a channel runs through.
 
     GAS RADIATION (#1071), opt-in. `radiation=GasRadiation(beam_length=...)`
@@ -6899,7 +6900,7 @@ class EffusionPlateElement(OrificeElement):
         )
         # And a duct-fed panel whose supply-crossflow term is switched off
         # (HoleCd(inlet_crossflow="none")): the caller's choice, flagged.
-        self._coolant_crossflow_ignored = (
+        self._hole_cd.inlet_crossflow_ignored = (
             len(through) >= 2 and self.crossflow_segments is None
         ) or (self.crossflow_segments is not None and not self._hole_cd.supply_duct)
         self._xf_elems = []
@@ -7268,7 +7269,6 @@ class EffusionPlateElement(OrificeElement):
         out: dict[str, float] = {
             "h_internal_plate_area": float(h_i),
             "wall_conductivity": float(self.wall_conductivity),
-            "coolant_crossflow_ignored": float(getattr(self, "_coolant_crossflow_ignored", False)),
             # Duct-fed: the Cd sees the crossflow, but the coolant-side heat
             # transfer is still Andrews' still-plenum correlation (provisional
             # until a crossflow-supply source; #785).
@@ -7454,7 +7454,13 @@ class EffusionPlateElement(OrificeElement):
         base = super().diagnostics(state_in, state_out, flows)
         m_dot = abs(state_in.m_dot)
         dP_drive = state_in.Pt - state_out.P
-        base.update(self._hole_cd.supply_crossflow_diagnostics(state_in, state_out, flows))
+        # Deprecated since 0.12.0, removed in 0.13.0: the pre-group names, as
+        # 0.11 emitted them (U1/Vi and its bounds on a duct-fed panel only).
+        legacy = ("coolant_crossflow_ignored",)
+        if self._hole_cd.duct_fed:
+            legacy += ("U1_over_Vi", "crossflow_cd_beyond_8pct", "crossflow_cd_degraded")
+        if "Cd" in base:  # no group without a state (P or Tt <= 0)
+            base.update(self._hole_cd.legacy_diagnostics(base, legacy))
         out = {
             "n_holes": float(self.n_holes),
             "hole_count_exact": float(self.hole_count_exact),
@@ -7470,8 +7476,6 @@ class EffusionPlateElement(OrificeElement):
             # A homogenised panel would otherwise average an ingesting hole
             # into a healthy net outflow. Say it instead.
             "is_ingesting": float(dP_drive <= 0.0),
-            **self._hole_cd.inclination_diagnostics(),
-            **self._hole_cd.exit_crossflow_diagnostics(state_in, state_out, flows),
         }
         # Coolant-side heat transfer, when there is flow to carry it, and the
         # plate's own wall with the gas side its discharge node decides.
@@ -7751,8 +7755,6 @@ class FilmCoolingElement(OrificeElement):
                 "G_jet": float(abs(state_in.m_dot) / self.total_hole_area),
                 "dP_drive": float(dP_drive),
                 "is_ingesting": float(dP_drive <= 0.0),
-                **self._hole_cd.inclination_diagnostics(),
-                **self._hole_cd.exit_crossflow_diagnostics(state_in, state_out, flows),
             }
         )
         return base
@@ -8848,11 +8850,10 @@ class ImpingementPlateElement(OrificeElement):
         if not base:
             return base
         r = self.htc_and_T(state_in, flows=flows, temperatures=temperatures)
-        own_cd = self._hole_cd.hole_cd(state_in, state_out, flows)
         out = {
             "n_holes": float(self.n_holes),
-            "Cd_own": float(own_cd),
-            **self._hole_cd.jet_crossflow_envelope(state_in, state_out, flows, own_cd),
+            # Deprecated since 0.12.0, removed in 0.13.0: Cd_base.
+            **self._hole_cd.legacy_diagnostics(base, ("Cd_own",)),
             "Re_j": float(r.Re),
             "Nu": float(r.Nu),
             "St": _stanton(r),
@@ -8868,7 +8869,7 @@ class ImpingementPlateElement(OrificeElement):
             # Florschuetz's uniform-supply Eq. 8 at this row, for comparison:
             # their constant-Cd model, at the hole's own Cd.
             out["Gc_Gj_closed_form"] = float(
-                cb.crossflow_to_jet_ratio_at_row(self.yn_d, self.z_d, own_cd, self.row)
+                cb.crossflow_to_jet_ratio_at_row(self.yn_d, self.z_d, base["Cd_base"], self.row)
             )
         return {**base, **out}
 

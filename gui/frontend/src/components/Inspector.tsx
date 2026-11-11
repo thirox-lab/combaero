@@ -1988,7 +1988,9 @@ const Inspector = () => {
 															{(1000 * m).toFixed(2)}
 														</td>
 														<td className="text-right">
-															{r.rows_U1_over_Vi[i].toFixed(3)}
+															{r.rows_Cd_inlet_crossflow_U1_over_Vi[i].toFixed(
+																3,
+															)}
 														</td>
 														<td className="text-right">
 															{r.rows_Cd[i].toFixed(3)}
@@ -2005,13 +2007,13 @@ const Inspector = () => {
 												))}
 											</tbody>
 										</table>
-										{r.crossflow_cd_degraded > 0 ? (
+										{r.Cd_inlet_crossflow_degraded > 0 ? (
 											<div className="text-[10px] text-amber-600">
 												U1/Vi above 0.35: the crossflow Cd degrades badly there
 												(Rohde-scored). It follows the duct's pressure drop
 												against the hole drive, not the duct size.
 											</div>
-										) : r.crossflow_cd_beyond_8pct > 0 ? (
+										) : r.Cd_inlet_crossflow_beyond_8pct > 0 ? (
 											<div className="text-[10px] text-amber-600">
 												U1/Vi above 0.2: crossflow Cd beyond its ~8% band.
 											</div>
@@ -2243,7 +2245,7 @@ const Inspector = () => {
 												Film outside Baldauf's range
 											</span>
 										)}
-										{r.coolant_crossflow_ignored > 0 && (
+										{r.Cd_inlet_crossflow_ignored > 0 && (
 											<span className="text-amber-600">
 												Supply has crossflow: not modelled (plenum-fed plate)
 											</span>

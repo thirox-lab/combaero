@@ -3,7 +3,7 @@
 Extrapolation is inevitable and the user can do nothing better about it, so
 the results state which input of a hole's Cd lies outside its source's range
 (``Cd_extrapolated_Re`` / ``_l_d`` / ``_edge``, and Rogers & Hersh's
-``Cd_crossflow_extrapolated_*``), never a warning. The flags change no Cd:
+``Cd_exit_crossflow_extrapolated_*``), never a warning. The flags change no Cd:
 the values are bit-identical to before (checked over the stress set by F, J
 hashes, and here on the C++ calls directly).
 """
