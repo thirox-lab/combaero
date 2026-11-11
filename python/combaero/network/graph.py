@@ -581,12 +581,39 @@ class FlowNetwork:
             _restore_init_kwargs(wall, args)
             walls_data[wid] = {"type": type(wall).__name__, "kwargs": args}
 
+        # A user's warm start, set after construction (#1101); the seeds an
+        # element wrote itself are left out, and it writes them again on the
+        # reloaded network's resolve_topology.
+        auto = self._auto_seeds()
+        for data_by_id, components in ((nodes_data, self.nodes), (elements_data, self.elements)):
+            for cid, comp in components.items():
+                guess = {
+                    k: float(v)
+                    for k, v in (getattr(comp, "initial_guess", None) or {}).items()
+                    if auto.get((cid, k)) != v
+                }
+                if guess:
+                    data_by_id[cid]["initial_guess"] = guess
+
         return {
             "nodes": nodes_data,
             "elements": elements_data,
             "walls": walls_data,
             "thermal_coupling_enabled": self.thermal_coupling_enabled,
         }
+
+    def _auto_seeds(self) -> dict[tuple[str, str], float]:
+        """The warm-start values elements wrote into ``initial_guess`` dicts
+        themselves, keyed by (holder id, unknown).
+
+        An element that seeds the cold start (the ejector's closed forms)
+        records each value it wrote in ``_auto_seeds``; a key whose value
+        still equals that record is the element's, any other the user's.
+        """
+        auto: dict[tuple[str, str], float] = {}
+        for element in self.elements.values():
+            auto.update(getattr(element, "_auto_seeds", None) or {})
+        return auto
 
     @classmethod
     def from_dict(cls, data: dict) -> Self:
@@ -605,11 +632,16 @@ class FlowNetwork:
             node = NodeClass(**n_data["kwargs"])
             for eb_kwargs in n_data.get("energy_boundaries", ()):
                 node.add_energy_boundary(EnergyBoundary(**eb_kwargs))
+            if n_data.get("initial_guess"):
+                node.initial_guess = dict(n_data["initial_guess"])
             network.add_node(node)
 
         for _eid, e_data in data.get("elements", {}).items():
             ElemClass = _component_class(e_data["type"])
-            network.add_element(ElemClass(**e_data["kwargs"]))
+            element = ElemClass(**e_data["kwargs"])
+            if e_data.get("initial_guess"):
+                element.initial_guess = dict(e_data["initial_guess"])
+            network.add_element(element)
 
         for _wid, w_data in data.get("walls", {}).items():
             WallClass = _component_class(w_data["type"])

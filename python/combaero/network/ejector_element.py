@@ -354,6 +354,7 @@ class EjectorElement(MultiPortChamberBase):
         self.k_diffuser = float(k_diffuser)
         #: Warm-start values this element wrote (see seed_warm_start), keyed
         #: by (holder id, unknown); a guess the user gave is never in here.
+        #: FlowNetwork.to_dict leaves these out of the saved guesses (#1101).
         self._auto_seeds: dict[tuple[str, str], float] = {}
 
     def area_facing(self, node_id: str) -> float | None:
