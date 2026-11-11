@@ -517,6 +517,13 @@ try:
         DischargeCdEnvelope,
         discharge_cd_envelope,
         discharge_cd_re_floor,
+        HOLE_CD_FIXED_MIN,
+        HoleCdBase,
+        HoleCdJetCrossflow,
+        HoleCdModel,
+        HoleCdInputs,
+        HoleCdResult,
+        hole_cd_compose,
         discharge_inclination_dzeta,
         discharge_pipe_cd_ratio,
         discharge_pipe_zeta,
@@ -1055,6 +1062,13 @@ except (ModuleNotFoundError, ImportError) as e:
     DischargeCdEnvelope = _core.DischargeCdEnvelope
     discharge_cd_envelope = _core.discharge_cd_envelope
     discharge_cd_re_floor = _core.discharge_cd_re_floor
+    HOLE_CD_FIXED_MIN = _core.HOLE_CD_FIXED_MIN
+    HoleCdBase = _core.HoleCdBase
+    HoleCdJetCrossflow = _core.HoleCdJetCrossflow
+    HoleCdModel = _core.HoleCdModel
+    HoleCdInputs = _core.HoleCdInputs
+    HoleCdResult = _core.HoleCdResult
+    hole_cd_compose = _core.hole_cd_compose
     discharge_inclination_dzeta = _core.discharge_inclination_dzeta
     discharge_pipe_cd_ratio = _core.discharge_pipe_cd_ratio
     discharge_pipe_zeta = _core.discharge_pipe_zeta
@@ -1814,6 +1828,13 @@ __all__ = [
     "DischargeCdEnvelope",
     "discharge_cd_envelope",
     "discharge_cd_re_floor",
+    "HOLE_CD_FIXED_MIN",
+    "HoleCdBase",
+    "HoleCdJetCrossflow",
+    "HoleCdModel",
+    "HoleCdInputs",
+    "HoleCdResult",
+    "hole_cd_compose",
     "discharge_inclination_dzeta",
     "discharge_pipe_cd_ratio",
     "discharge_pipe_zeta",

@@ -410,6 +410,23 @@ kp = cb.rowbury_2001_k_perp(G_h=150.0, rho_h=rho_h, rho_m_u_m2=2.0e4, theta_deg=
 r = cb.rowbury_2001_exit_crossflow_cd(0.776, kp.k, S, 30.0, 0.0)
 r.Cd, r.dCd_dCd0, r.dCd_dk, r.delta, r.k_used, r.held, r.faded
 
+# The hole-Cd chain in one call (internal: the composition point of the
+# network's hole elements, _HoleCdChain). Base Cd0 (HoleCdBase Fixed /
+# Metering / Discharge, inclination inside the hole geometry), the exit
+# crossflow on top (exit_crossflow, off at rho_m_u_m2 <= 0), and the
+# impingement law that replaces it where it acts (HoleCdJetCrossflow).
+# Analytic partials by input: dCd_dRe, dCd_dU1_over_Vi, dCd_dRe_D, dCd_dG_h,
+# dCd_drho_h, dCd_drho_m_u_m2, dCd_dG_ideal, dCd_dG_c; each term's value too.
+model = cb.HoleCdModel()
+model.base = cb.HoleCdBase.Discharge
+model.discharge = cb.DischargeCdCorrelation.McGreehanSchotsch1988
+model.exit_crossflow, model.exit_set, model.exit_theta_deg = True, S, 30.0
+inp = cb.HoleCdInputs()
+inp.Re, inp.U1_over_Vi = 2e4, 0.1
+inp.G_h, inp.rho_h, inp.rho_m_u_m2 = 150.0, rho_h, 2.0e4
+res = cb.hole_cd_compose(model, hole, cb.OrificeGeometry(), inp)
+res.Cd, res.cd_base, res.dCd_dRe, res.dCd_dG_h, res.exit.k_used, res.exit_k_tier
+
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
 # applies between pipes (C_pipe = Cd_wall * R, R -> 1 as beta -> 0)
