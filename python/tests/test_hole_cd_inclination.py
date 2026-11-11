@@ -1,7 +1,9 @@
-"""The opt-in hole-inclination Cd term (Idelchik diagram 3-2 in Eq. 4-20).
+"""The hole-inclination Cd term (Idelchik diagram 3-2 in Eq. 4-20).
 
-Default off and bit-identical; on, it composes with IdelchikThick only and
-reports Cd_inclination_dzeta. The accuracy evidence (Hay 1983, Gritsch 1998,
+Default "auto": on for a cylindrical hole on IdelchikThick, off for a shaped
+hole and for every other correlation; a normal hole is unchanged bit for
+bit. Forced on, it composes with IdelchikThick only; it reports
+Cd_inclination_dzeta. The accuracy evidence (Hay 1983, Gritsch 1998,
 cross-source) is validation/cooling/hole_cd_inclination_runner.py; the
 ratio test below pins the property the term exists for.
 """
@@ -112,16 +114,53 @@ def test_other_correlations_refuse_an_inclined_hole(corr: str) -> None:
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
-def test_off_by_default_and_reported_as_zero(make) -> None:
-    e = make()
+def test_switched_off_it_is_reported_as_zero(make) -> None:
+    e = make(cd_inclination="none")
     assert e.cd_inclination == "none"
     d = _solve(e)["__element_diag__"][e.id]
     assert d["Cd_inclination_dzeta"] == 0.0
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
-def test_opting_in_lowers_the_cd_by_the_diagram_3_2_increment(make) -> None:
-    off = _solve(make())["__element_diag__"]
+def test_the_default_is_the_term_on_a_cylindrical_idelchik_thick_hole(make) -> None:
+    # "auto" (the default since the 2026-11-10 hole-Cd audit) resolves to the
+    # term for a cylindrical hole on IdelchikThick, and is the explicit
+    # opt-in exactly, not a near copy of it.
+    e = make()
+    assert e.cd_inclination == "idelchik_3_2"
+    auto = _solve(e)
+    forced = _solve(make(cd_inclination="idelchik_3_2"))
+    assert auto[f"{e.id}.m_dot"] == forced[f"{e.id}.m_dot"]
+    assert auto["__element_diag__"][e.id] == forced["__element_diag__"][e.id]
+
+
+def test_the_default_leaves_a_shaped_hole_without_the_term() -> None:
+    # No shape term offsets it, and alone it moves Gritsch 1998's fan and
+    # laidback holes away from the data (audit 2026-11-10), so a shaped
+    # hole keeps the length-only Cd by default.
+    shaped = {"hole_type": "shaped", "area_ratio": 3.0, "breakout_width": 2.5e-3}
+    e = _film(**shaped)
+    assert e.cd_inclination == "none"
+    auto = _solve(e)
+    off = _solve(_film(cd_inclination="none", **shaped))
+    assert auto["film.m_dot"] == off["film.m_dot"]
+    assert auto["__element_diag__"]["film"]["Cd_inclination_dzeta"] == 0.0
+    # Forcing it on a shaped hole stays the user's choice.
+    assert _film(cd_inclination="idelchik_3_2", **shaped).cd_inclination == "idelchik_3_2"
+
+
+@pytest.mark.parametrize("make", [_plate, _film])
+@pytest.mark.parametrize("corr", ["McGreehanSchotsch", "Lichtarowicz", "fixed"])
+def test_the_default_on_a_non_composing_correlation_is_off_not_refused(make, corr) -> None:
+    kw = {"Cd": 0.7} if corr == "fixed" else {}
+    e = make(correlation=corr, **kw)
+    assert e.cd_inclination == "none"
+    assert e._cd_inclination_deg == 90.0
+
+
+@pytest.mark.parametrize("make", [_plate, _film])
+def test_the_term_lowers_the_cd_by_the_diagram_3_2_increment(make) -> None:
+    off = _solve(make(cd_inclination="none"))["__element_diag__"]
     on = _solve(make(cd_inclination="idelchik_3_2"))["__element_diag__"]
     eid = next(iter(off))
     dz = cb.discharge_inclination_dzeta(30.0)
@@ -130,11 +169,21 @@ def test_opting_in_lowers_the_cd_by_the_diagram_3_2_increment(make) -> None:
     assert on[eid]["m_dot"] < off[eid]["m_dot"]
 
 
-def test_a_normal_hole_opted_in_is_unchanged() -> None:
-    off = _solve(_plate(angle_deg=90.0))
-    on = _solve(_plate(angle_deg=90.0, cd_inclination="idelchik_3_2"))
-    assert on["eff.m_dot"] == off["eff.m_dot"]
-    assert on["__element_diag__"]["eff"]["Cd_inclination_dzeta"] == 0.0
+@pytest.mark.parametrize("make", [_plate, _film])
+@pytest.mark.parametrize("inc", ["auto", "idelchik_3_2"])
+def test_a_normal_hole_is_unchanged_by_the_term(make, inc: str) -> None:
+    # Bit for bit: every solved unknown and every diagnostic.
+    off = _solve(make(angle_deg=90.0, cd_inclination="none"))
+    on = _solve(make(angle_deg=90.0, cd_inclination=inc))
+    # "auto" on a normal hole names what it applies: no inclined inlet.
+    assert make(angle_deg=90.0, cd_inclination=inc).cd_inclination == (
+        "none" if inc == "auto" else "idelchik_3_2"
+    )
+    assert {k: v for k, v in on.items() if not k.startswith("__")} == {
+        k: v for k, v in off.items() if not k.startswith("__")
+    }
+    assert on["__element_diag__"] == off["__element_diag__"]
+    assert on["__element_diag__"][next(iter(on["__element_diag__"]))]["Cd_inclination_dzeta"] == 0.0
 
 
 @pytest.mark.parametrize("make", [_plate, _film])

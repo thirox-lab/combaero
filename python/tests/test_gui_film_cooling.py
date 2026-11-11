@@ -103,7 +103,15 @@ def test_cylindrical_holes_drop_the_shaped_geometry() -> None:
 
 
 def test_the_hole_angle_cd_term_threads_through_with_idelchik_thick_only() -> None:
-    assert FilmCoolingData().cd_inclination == "none"
+    assert FilmCoolingData().cd_inclination == "auto"
+    # The node's default hole is shaped, which "auto" leaves without the term;
+    # a cylindrical hole gets it.
+    shaped = build_network_from_schema(NetworkGraphSchema(**_schema(FILM))).elements["film"]
+    assert shaped.hole_type == "shaped" and shaped.cd_inclination == "none"
+    cyl = build_network_from_schema(
+        NetworkGraphSchema(**_schema(FILM, {"hole_type": "cylindrical", "lateral_pitch": 3e-3}))
+    ).elements["film"]
+    assert cyl.cd_inclination == "idelchik_3_2"
     on = build_network_from_schema(
         NetworkGraphSchema(**_schema(FILM, {"cd_inclination": "idelchik_3_2"}))
     ).elements["film"]

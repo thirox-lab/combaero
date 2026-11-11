@@ -19,16 +19,19 @@ from validation.cooling import effusion_network_runner as nr  # noqa: E402
 from validation.cooling.schema import load_dataset  # noqa: E402
 
 # Plateau (x/d 18-50) predictions at gas_augmentation 1.0: (chamber, flat plate).
+# With the default hole-angle Cd term (Idelchik 3-2 on these cylindrical 20 and
+# 30 deg holes, default since the 2026-11-10 hole-Cd audit): Cd 0.82-0.84 ->
+# 0.74-0.77, coolant flow -9%, plateau eta -0.4 to -0.9 points.
 PINNED = {
-    "fig9_eta_tot_E20_dp2": (0.926, 0.860),
-    "fig9_eta_tot_E20_dp3": (0.934, 0.874),
-    "fig9_eta_tot_E20_dp4": (0.939, 0.883),
-    "fig6_eta_tot_E30_Tc470": (0.924, 0.856),
-    "fig6_eta_tot_E30_Tc540": (0.925, 0.857),
-    "fig6_eta_tot_E30_Tc580": (0.924, 0.856),
-    "fig10_eta_tot_E30_5bar_dp2": (0.915, 0.840),
-    "fig10_eta_tot_E30_10bar_dp3": (0.914, 0.839),
-    "fig10_eta_tot_E30_10bar_dp2": (0.906, 0.824),
+    "fig9_eta_tot_E20_dp2": (0.922, 0.852),
+    "fig9_eta_tot_E20_dp3": (0.930, 0.867),
+    "fig9_eta_tot_E20_dp4": (0.936, 0.876),
+    "fig6_eta_tot_E30_Tc470": (0.920, 0.848),
+    "fig6_eta_tot_E30_Tc540": (0.921, 0.850),
+    "fig6_eta_tot_E30_Tc580": (0.920, 0.849),
+    "fig10_eta_tot_E30_5bar_dp2": (0.911, 0.832),
+    "fig10_eta_tot_E30_10bar_dp3": (0.909, 0.830),
+    "fig10_eta_tot_E30_10bar_dp2": (0.901, 0.816),
 }
 
 
@@ -76,7 +79,7 @@ def test_both_baselines_over_predict_and_the_flat_plate_less(series) -> None:
         ch = nr.predict(s, "chamber")["eta_overall"] / m - 1.0
         fp = nr.predict(s, "flat_plate")["eta_overall"] / m - 1.0
         assert 0.16 < ch < 0.35, stem
-        assert 0.08 < fp < 0.25, stem
+        assert 0.07 < fp < 0.25, stem
         assert fp < ch - 0.07, stem
 
 
@@ -112,16 +115,16 @@ def test_the_trends(dataset) -> None:
         assert abs(tc[b]) < 2e-3
         assert dp[b] > 0.0
         assert p3[b] < 0.0 and p2[b] < 0.0
-    # The flat plate overshoots the dp trend (1.5x) where the chamber
-    # undershoots it (0.86x), and closes half the pressure trend's gap.
-    assert dp["chamber"] / dp["measured"] == pytest.approx(0.86, abs=0.03)
-    assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.54, abs=0.05)
-    assert p3["flat_plate"] / p3["measured"] == pytest.approx(0.68, abs=0.05)
+    # The flat plate overshoots the dp trend (1.6x) where the chamber
+    # undershoots it (0.90x), and closes most of the pressure trend's gap.
+    assert dp["chamber"] / dp["measured"] == pytest.approx(0.90, abs=0.03)
+    assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.60, abs=0.05)
+    assert p3["flat_plate"] / p3["measured"] == pytest.approx(0.71, abs=0.05)
     # Gas radiation (#1071) grows with pressure (eps_g 0.14 -> 0.26), so it
     # closes most of the flat plate's pressure trend; it also steepens the
-    # dp trend, whose overshoot grows to 1.8x.
-    assert p3["flat_plate+rad"] / p3["measured"] == pytest.approx(0.84, abs=0.05)
-    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.82, abs=0.06)
+    # dp trend, whose overshoot grows to 1.9x.
+    assert p3["flat_plate+rad"] / p3["measured"] == pytest.approx(0.89, abs=0.05)
+    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.89, abs=0.06)
 
 
 def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> None:
@@ -150,15 +153,15 @@ def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> 
 # Plateau predictions with gas radiation (rig beam length, eps_w 0.9):
 # (chamber, flat plate), and the plate's hot-face radiative flux [kW/m^2].
 PINNED_RAD = {
-    "fig9_eta_tot_E20_dp2": (0.896, 0.832, 38.2),
-    "fig9_eta_tot_E20_dp3": (0.907, 0.849, 38.5),
-    "fig9_eta_tot_E20_dp4": (0.914, 0.860, 38.8),
-    "fig6_eta_tot_E30_Tc470": (0.894, 0.829, 39.3),
-    "fig6_eta_tot_E30_Tc540": (0.894, 0.829, 38.1),
-    "fig6_eta_tot_E30_Tc580": (0.892, 0.827, 37.3),
-    "fig10_eta_tot_E30_5bar_dp2": (0.882, 0.811, 38.9),
-    "fig10_eta_tot_E30_10bar_dp3": (0.879, 0.808, 67.4),
-    "fig10_eta_tot_E30_10bar_dp2": (0.868, 0.791, 66.8),
+    "fig9_eta_tot_E20_dp2": (0.890, 0.824, 38.0),
+    "fig9_eta_tot_E20_dp3": (0.902, 0.841, 38.4),
+    "fig9_eta_tot_E20_dp4": (0.909, 0.852, 38.6),
+    "fig6_eta_tot_E30_Tc470": (0.888, 0.820, 39.1),
+    "fig6_eta_tot_E30_Tc540": (0.888, 0.821, 37.9),
+    "fig6_eta_tot_E30_Tc580": (0.887, 0.819, 37.1),
+    "fig10_eta_tot_E30_5bar_dp2": (0.876, 0.802, 38.7),
+    "fig10_eta_tot_E30_10bar_dp3": (0.872, 0.798, 67.0),
+    "fig10_eta_tot_E30_10bar_dp2": (0.860, 0.781, 66.3),
 }
 
 
@@ -179,17 +182,19 @@ def test_the_radiation_rows_are_pinned_and_score_apart(series) -> None:
 
 # Plateau predictions with the Bordbar 2021 WSGG emissivity (#1071) in place
 # of Eq. 8.11, same beam length and wall: (chamber, flat plate, q_rad hot
-# face [kW/m^2], eps_g). ACCURACY, cross-source, on their own rows.
+# face [kW/m^2], eps_g). ACCURACY, cross-source, on their own rows. With the
+# hole Cd's default inclination term (2026-11-10 audit): every eta 0.5-0.9
+# point lower than before it.
 PINNED_RAD_BORDBAR = {
-    "fig9_eta_tot_E20_dp2": (0.897, 0.833, 37.0, 0.132),
-    "fig9_eta_tot_E20_dp3": (0.908, 0.850, 37.4, 0.132),
-    "fig9_eta_tot_E20_dp4": (0.915, 0.861, 37.6, 0.132),
-    "fig6_eta_tot_E30_Tc470": (0.895, 0.830, 38.1, 0.132),
-    "fig6_eta_tot_E30_Tc540": (0.895, 0.830, 36.9, 0.132),
-    "fig6_eta_tot_E30_Tc580": (0.893, 0.828, 36.2, 0.132),
-    "fig10_eta_tot_E30_5bar_dp2": (0.883, 0.812, 37.7, 0.132),
-    "fig10_eta_tot_E30_10bar_dp3": (0.888, 0.815, 51.2, 0.198),
-    "fig10_eta_tot_E30_10bar_dp2": (0.877, 0.799, 50.7, 0.198),
+    "fig9_eta_tot_E20_dp2": (0.891, 0.825, 36.8, 0.132),
+    "fig9_eta_tot_E20_dp3": (0.903, 0.842, 37.2, 0.132),
+    "fig9_eta_tot_E20_dp4": (0.910, 0.853, 37.4, 0.132),
+    "fig6_eta_tot_E30_Tc470": (0.889, 0.821, 37.9, 0.132),
+    "fig6_eta_tot_E30_Tc540": (0.889, 0.822, 36.8, 0.132),
+    "fig6_eta_tot_E30_Tc580": (0.888, 0.820, 36.0, 0.132),
+    "fig10_eta_tot_E30_5bar_dp2": (0.877, 0.803, 37.5, 0.132),
+    "fig10_eta_tot_E30_10bar_dp3": (0.881, 0.806, 50.9, 0.198),
+    "fig10_eta_tot_E30_10bar_dp2": (0.870, 0.789, 50.4, 0.198),
 }
 
 
@@ -197,8 +202,8 @@ def test_the_bordbar_radiation_rows_are_pinned(series, dataset) -> None:
     """At 5 bar the WSGG eps_g (0.132) sits 4 % under Eq. 8.11's (0.137) and
     eta barely moves (+0.1 point); at 10 bar it is 0.198 against 0.262, the
     radiative flux falls 24 % and eta rises 0.7-0.9 point. Every curve stays
-    over-predicted, and the 5 -> 10 bar trend, which Eq. 8.11 closed to 0.84
-    of measured, falls back to 0.58 on the flat plate."""
+    over-predicted, and the 5 -> 10 bar trend, which Eq. 8.11 closed to 0.89
+    of measured, falls back to 0.61 on the flat plate."""
     for stem, (chamber, flat, q_rad, eps_g) in PINNED_RAD_BORDBAR.items():
         s = series[stem]
         dc = nr.predict(s, "chamber", radiation="bordbar2021")
@@ -212,4 +217,4 @@ def test_the_bordbar_radiation_rows_are_pinned(series, dataset) -> None:
         lef = nr.predict(s, "flat_plate", radiation=True)["eta_overall"]
         assert lef < df["eta_overall"] < nr.predict(s, "flat_plate")["eta_overall"], stem
     p3 = nr.trends(dataset)[3]
-    assert p3["flat_plate+rad_bordbar"] / p3["measured"] == pytest.approx(0.58, abs=0.05)
+    assert p3["flat_plate+rad_bordbar"] / p3["measured"] == pytest.approx(0.61, abs=0.05)

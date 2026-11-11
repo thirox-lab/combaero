@@ -213,9 +213,10 @@ def _fixed_cd(
 
 
 def _cd_inclination(data: EffusionPlateData | FilmCoolingData) -> str:
-    """The opt-in hole-angle Cd term an inclined cooling-hole element is built
-    with: the field's value with 'IdelchikThick', the only correlation it
-    composes with, and "none" otherwise. Like _fixed_cd, the node keeps the
+    """The hole-angle Cd term an inclined cooling-hole element is built with:
+    the field's value with 'IdelchikThick', the only correlation it composes
+    with, and "none" otherwise ("auto", the default, resolves in the element
+    from the correlation and the hole type). Like _fixed_cd, the node keeps the
     field whatever its correlation (the Inspector shows it for IdelchikThick
     only), so switching the correlation does not leave an opt-in the element
     would refuse."""

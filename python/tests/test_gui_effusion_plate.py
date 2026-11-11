@@ -121,8 +121,14 @@ def test_the_flat_plate_gas_baseline_is_exposed_and_the_chamber_stays_default() 
     assert r["h_gas_unblown_x_end"] == pytest.approx(0.02 + 0.152)
 
 
-def test_the_hole_angle_cd_term_is_off_by_default_and_threads_through() -> None:
-    off = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
+def test_the_hole_angle_cd_term_is_on_by_default_and_threads_through() -> None:
+    auto = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
+    assert EffusionPlateData().cd_inclination == "auto"
+    assert auto.elements["eff"].cd_inclination == "idelchik_3_2"
+    assert auto.elements["eff"]._cd_inclination_deg == 30.0
+    off = build_network_from_schema(
+        NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "none"}))
+    )
     assert off.elements["eff"].cd_inclination == "none"
     on = build_network_from_schema(
         NetworkGraphSchema(**_liner({"angle_deg": 30.0, "cd_inclination": "idelchik_3_2"}))
