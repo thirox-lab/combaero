@@ -14,6 +14,7 @@ each old spelling fails, and its replacement works without a warning.
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 
 import pytest
@@ -581,11 +582,9 @@ _HOLE_ELEMENTS = {
 _KW = {
     "correlation": ({"correlation": "McGreehanSchotsch"}, "correlation='McGreehanSchotsch'"),
     "Cd": ({"correlation": "fixed", "Cd": 0.7}, "Cd=0.7"),
-    "cd_inclination": ({"cd_inclination": "none"}, "inclination='none'"),
-    "cd_exit_crossflow": ({"cd_exit_crossflow": "none"}, "exit_crossflow='none'"),
     "cd_crossflow": ({"cd_crossflow": "none"}, "exit_crossflow='none'"),
 }
-_COOLING = ("correlation", "Cd", "cd_inclination", "cd_exit_crossflow")
+_COOLING = ("correlation", "Cd")
 _JET = ("correlation", "Cd", "cd_crossflow")
 _HOLE_CD_KEYWORDS = [
     (name, *_KW[k])
@@ -616,16 +615,14 @@ def test_a_deprecated_hole_cd_keyword_warns_once_and_names_its_replacement(
     # Attributed to the caller's line, not to the package.
     assert dep[0].filename == __file__
     # The same element as its HoleCd builds, without a warning.
-    fields = {
-        {"cd_inclination": "inclination", "cd_exit_crossflow": "exit_crossflow"}.get(
-            k, "exit_crossflow" if k == "cd_crossflow" else k
-        ): v
-        for k, v in kw.items()
-    }
+    fields = {("exit_crossflow" if k == "cd_crossflow" else k): v for k, v in kw.items()}
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         new = _HOLE_ELEMENTS[name](hole_cd=net.HoleCd(**fields))
-    assert el.hole_cd == new.hole_cd
+    if isinstance(el, net.ImpingementArray):  # its fields keep what was passed
+        assert el._rows_hole_cd == new._rows_hole_cd
+    else:
+        assert el.hole_cd == new.hole_cd
 
 
 def test_an_array_built_from_old_fields_warns_once_not_per_row() -> None:
@@ -638,7 +635,12 @@ def test_an_array_built_from_old_fields_warns_once_not_per_row() -> None:
         arr.add_to(g, "sup", "ex")
     dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert len(dep) == 1 and "correlation, Cd, cd_crossflow" in str(dep[0].message)
-    assert arr.hole_cd == net.HoleCd(correlation="fixed", Cd=0.8, exit_crossflow="none")
+    # The fields keep what was passed; dataclasses.replace rebuilds from them.
+    assert (arr.correlation, arr.Cd, arr.cd_crossflow, arr.hole_cd) == ("fixed", 0.8, "none", None)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        again = dataclasses.replace(arr, Cd=0.7)
+    assert again._rows_hole_cd == net.HoleCd(correlation="fixed", Cd=0.7, exit_crossflow="none")
     assert all(g.elements[f"h__p{i}"].cd_crossflow == "none" for i in (1, 2, 3))
 
 

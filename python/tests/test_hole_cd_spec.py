@@ -5,10 +5,11 @@ elements) and both builders (EffusionLiner, ImpingementArray) take
 ``hole_cd=HoleCd(...)``: the correlation, a fixed Cd and each term's model.
 A field left at None/"auto" is the element's own default, which differs per
 element and is exactly what the element did before the spec. The
-per-element keywords it replaces (``correlation``, ``Cd``,
-``cd_inclination``, ``cd_exit_crossflow``, ``cd_crossflow``) still work,
-deprecated: their warning is checked in test_deprecations.py, and here
-that they build the same element, residuals and Jacobian, bit for bit.
+per-element keywords it replaces that shipped (``correlation``, ``Cd``,
+``cd_crossflow``) still work, deprecated: their warning is checked in
+test_deprecations.py, and here that they build the same element, residuals
+and Jacobian, bit for bit. The pre-release ``cd_inclination`` and
+``cd_exit_crossflow`` never shipped and are gone (TypeError).
 """
 
 from __future__ import annotations
@@ -296,24 +297,14 @@ def test_the_array_passes_its_spec_to_every_row() -> None:
 _CHAMBER_CASES = {
     "plate|default": (_plate, {}, HoleCd()),
     "plate|fixed": (_plate, {"correlation": "fixed", "Cd": 0.7}, HoleCd(correlation="fixed", Cd=0.7)),
-    "plate|incl-none": (_plate, {"cd_inclination": "none"}, HoleCd(inclination="none")),
     "plate|mgs": (_plate, {"correlation": "McGreehanSchotsch"},
                   HoleCd(correlation="McGreehanSchotsch")),
-    "plate|rowbury": (_plate, {"cd_exit_crossflow": "rowbury_2001"},
-                      HoleCd(exit_crossflow="rowbury_2001")),
-    "plate|rowbury-forced": (
-        _plate, {"cd_inclination": "idelchik_3_2", "cd_exit_crossflow": "rowbury_2001"},
-        HoleCd(inclination="idelchik_3_2", exit_crossflow="rowbury_2001")),
-    "plate|exit-none": (_plate, {"cd_exit_crossflow": "none"}, HoleCd(exit_crossflow="none")),
     "film|default": (_film, {}, HoleCd()),
     "film|lich": (_film, {"correlation": "Lichtarowicz"}, HoleCd(correlation="Lichtarowicz")),
-    "film|rowbury-fixed": (
-        _film, {"correlation": "fixed", "Cd": 0.65, "cd_exit_crossflow": "rowbury_2001"},
-        HoleCd(correlation="fixed", Cd=0.65, exit_crossflow="rowbury_2001")),
-    "shaped|forced": (_shaped, {"cd_inclination": "idelchik_3_2"},
-                      HoleCd(inclination="idelchik_3_2")),
-    "shaped|rowbury": (_shaped, {"cd_exit_crossflow": "rowbury_2001"},
-                       HoleCd(exit_crossflow="rowbury_2001")),
+    "film|fixed": (_film, {"correlation": "fixed", "Cd": 0.65},
+                   HoleCd(correlation="fixed", Cd=0.65)),
+    "shaped|mgs": (_shaped, {"correlation": "McGreehanSchotsch"},
+                   HoleCd(correlation="McGreehanSchotsch")),
     "slot|default": (_slot, {}, HoleCd()),
     "slot|fixed": (_slot, {"correlation": "fixed", "Cd": 0.6}, HoleCd(correlation="fixed", Cd=0.6)),
     "slot|mgs": (_slot, {"correlation": "McGreehanSchotsch"},
@@ -359,8 +350,7 @@ def test_the_old_array_fields_and_the_spec_are_one_network(old: dict, spec: Hole
     ("build", "old"),
     [
         (_plate, {"correlation": "IdelchikThick"}),
-        (_plate, {"cd_inclination": "none"}),
-        (_film, {"cd_exit_crossflow": "none"}),
+        (_plate, {"Cd": 0.7}),
         (_film, {"Cd": 0.7}),
         (_slot, {"correlation": "fixed"}),
         (_row, {"cd_crossflow": "none"}),
@@ -425,4 +415,64 @@ def test_a_network_round_trips_through_its_spec_without_a_warning() -> None:
         again = FlowNetwork.from_dict(g.to_dict())
     for eid in ("h", "o"):
         assert again.elements[eid].hole_cd == g.elements[eid].hole_cd
-    assert "cd_inclination" not in g.to_dict()["elements"]["h"]["kwargs"]
+    assert "correlation" not in g.to_dict()["elements"]["h"]["kwargs"]
+
+
+@pytest.mark.parametrize("build", [_plate, _film])
+@pytest.mark.parametrize("kw", ["cd_inclination", "cd_exit_crossflow"])
+def test_the_pre_release_keywords_are_gone(build, kw: str) -> None:
+    # Never in a release, so no deprecation: an ordinary unknown keyword.
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        build(**{kw: "none"})
+
+
+def test_inlet_crossflow_none_on_a_duct_fed_panel_is_reported() -> None:
+    # The term off is the caller's choice, not hidden: the duct's U1/Vi is
+    # still reported, the Cd does not read it, and coolant_crossflow_ignored
+    # says the panel is taken as plenum-fed. Panel 2 of a 3-station liner.
+    def panel(spec: HoleCd | None) -> dict:
+        g, liner = _liner(**({} if spec is None else {"hole_cd": spec}))
+        r = NetworkSolver(g).solve()
+        assert r["__success__"], r.get("__message__")
+        return r["__element_diag__"][liner.panel_id(2)]
+
+    on, off = panel(None), panel(HoleCd(inlet_crossflow="none"))
+    # Measured on this liner (solved values, 3-digit pins): the duct's
+    # crossflow is strong (U1/Vi ~2) and McGreehan-Schotsch's term halves
+    # the Cd; switched off, the Cd is the plenum-fed hole's.
+    assert on["coolant_crossflow_ignored"] == 0.0 and on["crossflow_cd_degraded"] == 1.0
+    assert on["U1_over_Vi"] == pytest.approx(2.067, abs=0.001)
+    assert on["Cd"] == pytest.approx(0.559, abs=0.001)
+    assert off["coolant_crossflow_ignored"] == 1.0
+    assert off["U1_over_Vi"] == pytest.approx(2.349, abs=0.001)  # reported, read by nothing
+    assert off["crossflow_cd_beyond_8pct"] == 0.0 and off["crossflow_cd_degraded"] == 0.0
+    assert off["Cd"] == pytest.approx(0.807, abs=0.001)
+
+
+@pytest.mark.parametrize(
+    ("build", "match"),
+    [
+        # The element's default correlation, not the user's, refuses the Cd.
+        (lambda: _plate(hole_cd=HoleCd(Cd=0.7)),
+         r"EffusionPlateElement 'h': HoleCd: Cd=0.7 with correlation='IdelchikThick'.*"
+         r"this element's default"),
+        (lambda: _film(hole_cd=HoleCd(Cd=0.7)), r"FilmCoolingElement 'h': .*element's default"),
+        (lambda: _slot(hole_cd=HoleCd(Cd=0.7)), r"SlotFilmElement 'h': .*element's default"),
+        (lambda: _liner(hole_cd=HoleCd(Cd=0.7)), r"EffusionLiner 'ln': .*element's default"),
+        (lambda: OrificeElement("o", "a", "b", diameter=0.01, correlation="Foo"),
+         r"OrificeElement 'o': HoleCd: correlation 'Foo' is not one of"),
+        (lambda: ImpingementPlateElement(
+            "p", "s", "c", d_jet=D_JET, xn_d=5.0, yn_d=8.0, z_d=2.0, span=0.1,
+            plate_thickness=D_JET, hole_cd=HoleCd(exit_crossflow="florschuetz_metzger_su_1982")),
+         r"ImpingementPlateElement 'p': HoleCd\(exit_crossflow='florschuetz_metzger_su_1982'\)"),
+    ],
+)  # fmt: skip
+def test_every_refusal_names_the_element(build, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        build()
+
+
+def test_an_array_with_a_spec_survives_dataclasses_replace() -> None:
+    arr = _array(hole_cd=HoleCd(exit_crossflow="none"))
+    again = dataclasses.replace(arr, n_rows=2)
+    assert again.hole_cd == arr.hole_cd and again._rows_hole_cd == HoleCd(exit_crossflow="none")

@@ -115,6 +115,7 @@ class ImpingementArray:
     bypass_entry_K: float = 0.0
     cd_crossflow: Literal["rogers_hersh_1976", "florschuetz_metzger_su_1982", "none"] | None = None
     hole_cd: HoleCd | None = None
+    _rows_hole_cd: HoleCd = field(default_factory=HoleCd, init=False, repr=False)
     _bypass: str | None = field(default=None, init=False, repr=False)
     _rows: list[tuple[str, str, str]] = field(default_factory=list, init=False, repr=False)
 
@@ -127,14 +128,15 @@ class ImpingementArray:
             raise ValueError(f"ImpingementArray {self.id!r}: bypass_entry_K must be non-negative")
         # The rows' HoleCd: given, or built from the deprecated fields (one
         # DeprecationWarning, here, not per row). A Cd with a correlation
-        # (#872) is refused here, at construction, by HoleCd.
-        self.hole_cd = _hole_cd_spec(
+        # (#872) is refused here, at construction, by HoleCd. Every field
+        # keeps what was passed (so dataclasses.replace rebuilds the same
+        # array); the resolved spec the rows take is _rows_hole_cd.
+        self._rows_hole_cd = _hole_cd_spec(
             f"ImpingementArray {self.id!r}",
             self.hole_cd,
             {"correlation": self.correlation, "Cd": self.Cd, "cd_crossflow": self.cd_crossflow},
             stacklevel=4,
         )
-        self.correlation = self.Cd = self.cd_crossflow = None
 
     def plate_id(self, row: int) -> str:
         return f"{self.id}__p{row}"
@@ -190,7 +192,7 @@ class ImpingementArray:
                     pattern=self.pattern,
                     row=i,
                     Nu_multiplier=self.Nu_multiplier,
-                    hole_cd=self.hole_cd,
+                    hole_cd=self._rows_hole_cd,
                 )
             )
             net.add_element(

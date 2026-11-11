@@ -155,9 +155,11 @@ class HoleCd:
         The supply-side crossflow, one of HOLE_CD_INLET_CROSSFLOW_MODELS.
         "auto": McGreehan-Schotsch's U1/Vi from the backside duct of a
         duct-fed EffusionPlateElement, 0 (plenum-fed) everywhere else.
-        "mcgreehan_schotsch" requires that duct and that correlation; "none"
-        holds U1/Vi at 0 (a duct-fed panel is then taken as plenum-fed, by
-        the caller's choice).
+        "mcgreehan_schotsch" requires that duct and that correlation. "none"
+        is no supply-crossflow term: U1/Vi is held at 0, so a duct-fed panel
+        is taken as plenum-fed by the caller's choice, and the duct-fed
+        panel's refusal of a correlation without the crossflow term (it
+        would drop the duct silently) is lifted.
     exit_crossflow : str
         The crossflow past the hole exit, one of
         HOLE_CD_EXIT_CROSSFLOW_MODELS. "auto": 'rogers_hersh_1976' on an
@@ -203,8 +205,6 @@ class HoleCd:
 _LEGACY_HOLE_CD_FIELDS = {
     "correlation": "correlation",
     "Cd": "Cd",
-    "cd_inclination": "inclination",
-    "cd_exit_crossflow": "exit_crossflow",
     "cd_crossflow": "exit_crossflow",
 }
 
@@ -241,12 +241,19 @@ def _hole_cd_spec(
         raise ValueError(f"{name}: {exc}") from exc
 
 
-def _with_correlation(spec: HoleCd, default: str) -> HoleCd:
+def _with_correlation(spec: HoleCd, default: str, name: str) -> HoleCd:
     """``spec`` with its correlation resolved to the element's ``default``
-    where it leaves it at None."""
+    where it leaves it at None; a refusal that default causes (a Cd with a
+    correlation other than 'fixed') names the element and says so."""
     if spec.correlation is not None:
         return spec
-    return dataclasses.replace(spec, correlation=default)
+    try:
+        return dataclasses.replace(spec, correlation=default)
+    except ValueError as exc:
+        raise ValueError(
+            f"{name}: {exc} (correlation {default!r} is this element's default, taken "
+            "because the HoleCd leaves correlation at None)"
+        ) from exc
 
 
 def _refuse_choice(name: str, field_name: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -399,23 +406,22 @@ def _resolve_jet_row(name: str, spec: HoleCd, xn_d: float, yn_d: float, z_d: flo
     _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto",) + _CD_CROSSFLOW_LAWS)
     _resolve_inlet_crossflow(name, spec, False)
     law = "rogers_hersh_1976" if spec.exit_crossflow == "auto" else spec.exit_crossflow
-    _check_jet_crossflow_law(law, xn_d, yn_d, z_d)
+    _check_jet_crossflow_law(name, law, xn_d, yn_d, z_d)
     return law
 
 
-def _check_jet_crossflow_law(law: str, xn_d: float, yn_d: float, z_d: float) -> None:
+def _check_jet_crossflow_law(name: str, law: str, xn_d: float, yn_d: float, z_d: float) -> None:
     """Refuse an unknown impingement crossflow law, and CR-3630 Table 4.1's
     on a plate the authors did not test."""
     if law not in _CD_CROSSFLOW_LAWS:
         raise ValueError(
-            f"ImpingementPlateElement: cd_crossflow {law!r} is not one of "
-            f"{sorted(_CD_CROSSFLOW_LAWS)}"
+            f"{name}: HoleCd(exit_crossflow={law!r}) is not one of {sorted(_CD_CROSSFLOW_LAWS)}"
         )
     if law == "florschuetz_metzger_su_1982" and not (
         cb.florschuetz_metzger_su_1982_has_plate(xn_d, yn_d, z_d)
     ):
         raise ValueError(
-            "ImpingementPlateElement: cd_crossflow 'florschuetz_metzger_su_1982' is "
+            f"{name}: HoleCd(exit_crossflow='florschuetz_metzger_su_1982') is "
             f"CR-3630 Table 4.1, which covers the plates the authors tested only: "
             f"B(5,4,1-3), B(5,8,1), B(10,4,1), B(10,8,1); not B({xn_d:g},{yn_d:g},"
             f"{z_d:g}). Use 'rogers_hersh_1976' (generic) or 'none'."
@@ -469,7 +475,10 @@ class _HoleCdChain:
       exit_xf           the exit-crossflow term's resolved spec, None: off.
       supply_duct       True on a hole whose supply crossflow U1/Vi is read
                         from a backside duct (a duct-fed EffusionPlateElement,
-                        its ``crossflow_segments`` set); 0 otherwise.
+                        its ``crossflow_segments`` set) with the term on.
+      duct_fed          True on a duct-fed hole whatever the term
+                        (``inlet_crossflow="none"`` reads no U1/Vi, but the
+                        diagnostics still report the duct's).
       jet_crossflow     the impingement crossflow law, "none" for every other
                         hole. ``jet_crossflow_suspended`` switches it off for
                         the solver's constant-Cd stage.
@@ -483,6 +492,7 @@ class _HoleCdChain:
         self.inclination_deg = 90.0
         self.exit_xf: _ExitCrossflowSpec | None = None
         self.supply_duct = False
+        self.duct_fed = False
         self.jet_crossflow = "none"
         self.jet_crossflow_suspended = False
         self.exit_node: Any = None
@@ -525,6 +535,7 @@ class _HoleCdChain:
             hole_type == "shaped",
             exit_area_ratio,
         )
+        self.duct_fed = bool(duct_fed)
         self.supply_duct = _resolve_inlet_crossflow(name, spec, duct_fed)
         return model, exit_model
 
@@ -856,15 +867,18 @@ class _HoleCdChain:
         state_in: "NetworkMixtureState",
         state_out: "NetworkMixtureState",
         flows: dict[str, float] | None,
+        measure: bool = False,
     ) -> tuple[float, dict[str, float]]:
         """McGreehan-Schotsch's supply-side U1/Vi and d(U1/Vi)/d(name).
 
         0 for a plenum-fed hole. A duct-fed one (``supply_duct``: an
         EffusionPlateElement with crossflow segments) reads the backside
         duct's mean velocity at its supply station over the static-referenced
-        ideal jet velocity.
+        ideal jet velocity. ``measure=True`` computes the duct's ratio on a
+        duct-fed hole whose term is off (``inlet_crossflow="none"``), for the
+        diagnostics only.
         """
-        if not self.supply_duct:
+        if not (self.supply_duct or (measure and self.duct_fed)):
             return 0.0, {}
         from .components import _moving_static_T
 
@@ -1170,14 +1184,18 @@ class _HoleCdChain:
         """A duct-fed hole's U1/Vi and the Rohde-scored bounds of
         McGreehan-Schotsch's crossflow term (orifice_discharge_coefficient.md):
         about +8% while U1/Vi < 0.2, degrading badly beyond 0.35, worst for
-        sharp edges. Empty for a plenum-fed hole."""
-        if not self.supply_duct:
+        sharp edges. Empty for a plenum-fed hole. A duct-fed hole with the
+        term switched off (``inlet_crossflow="none"``) still reports the
+        duct's U1/Vi, as information: the Cd does not read it, so the two
+        bounds read 0 (the element flags ``coolant_crossflow_ignored``)."""
+        if not self.duct_fed:
             return {}
-        u1_vi, _ = self.supply_crossflow(state_in, state_out, flows)
+        u1_vi, _ = self.supply_crossflow(state_in, state_out, flows, measure=True)
+        on = self.supply_duct
         return {
             "U1_over_Vi": float(u1_vi),
-            "crossflow_cd_beyond_8pct": float(u1_vi > 0.2),
-            "crossflow_cd_degraded": float(u1_vi > 0.35),
+            "crossflow_cd_beyond_8pct": float(on and u1_vi > 0.2),
+            "crossflow_cd_degraded": float(on and u1_vi > 0.35),
         }
 
     def exit_crossflow_diagnostics(

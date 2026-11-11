@@ -173,7 +173,9 @@ class EffusionLiner:
         dx = self.length / n
         bleed = cb.STATION_KAPPA_BLEED_BASSETT
         A, Dh = self.duct_area, self.duct_Dh
-        hole_cd = _with_correlation(self.hole_cd or HoleCd(), "McGreehanSchotsch")
+        hole_cd = _with_correlation(
+            self.hole_cd or HoleCd(), "McGreehanSchotsch", f"EffusionLiner {self.id!r}"
+        )
         for i in range(1, n + 1):
             net.add_node(PlenumNode(self.node_id(i)))
         # s0: reservoir entry into station 1.

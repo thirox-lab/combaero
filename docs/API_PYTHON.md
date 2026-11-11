@@ -841,8 +841,12 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   Baldauf's envelope. Scored on Andrews 88-GT-290 the data refuse it offered
   alone; the missing physics is the gas-side augmentation.
 - **Plenum-fed.** McGreehan-Schotsch's U1/Vi stays 0 and the coolant side is
-  Andrews' still plenum; `coolant_crossflow_ignored` flags a supply node a
-  channel runs through. A channel-fed liner segment is a separate element.
+  Andrews' still plenum; `coolant_crossflow_ignored` is 1 where the supply
+  crossflow is not in the Cd: a supply node a channel runs through on a
+  plenum-fed panel, or a duct-fed panel (`crossflow_segments`) with
+  `HoleCd(inlet_crossflow="none")`. The latter still reports the duct's
+  `U1_over_Vi` (information; its `crossflow_cd_*` bounds read 0). A
+  channel-fed liner segment is a separate element.
 - With `wall_conductivity` large the wall reduces exactly to
   `overall_effectiveness` below.
 - **Gas-side baseline, opt-in flat plate.** `gas_baseline="flat_plate"` with
@@ -2161,9 +2165,12 @@ unified:
   laws on a film or effusion hole; `"mcgreehan_schotsch"` on a plenum-fed
   hole or with another correlation; `"florschuetz_metzger_su_1982"` on a
   plate CR-3630 Table 4.1 does not cover. Every refusal names the element.
-- **`inlet_crossflow="none"` on a duct-fed panel** holds U1/Vi at 0: the
-  caller takes the panel as plenum-fed, and the duct-fed refusal of a
-  correlation without the crossflow term no longer applies.
+- **`inlet_crossflow="none"` means no supply-crossflow term.** U1/Vi is held
+  at 0 whatever feeds the hole, so a duct-fed panel is taken as plenum-fed
+  by the caller's choice, and the duct-fed panel's refusal of a correlation
+  without the crossflow term (which exists because the duct would be dropped
+  silently) no longer applies. Not hidden: the panel still reports the
+  duct's `U1_over_Vi` and flags `coolant_crossflow_ignored` = 1.
 - **The plain orifice keeps `correlation` and `Cd`** as its own keywords
   (the ISO 5167 metering use), not deprecated; a `HoleCd` field left at None
   takes them, and one that disagrees with them raises.
@@ -2171,10 +2178,11 @@ unified:
   used, the terms as given); `cd_inclination`, `cd_exit_crossflow` (film,
   effusion) and `cd_crossflow` (impingement) read the models in use, "auto"
   resolved. Diagnostics keys are unchanged.
-- **Deprecated keywords.** `correlation`, `Cd`, `cd_inclination`,
-  `cd_exit_crossflow` (effusion, film, slot: the first two) and
-  `cd_crossflow` (impingement row and array) still work until 0.13.0; see
-  "Hole-Cd keywords" below.
+- **Deprecated keywords.** `correlation` and `Cd` (effusion, film, slot,
+  impingement row and array) and `cd_crossflow` (impingement row and array)
+  still work until 0.13.0; see "Hole-Cd keywords" below. The pre-release
+  `cd_inclination` and `cd_exit_crossflow` keywords never shipped and are
+  gone (an unknown keyword, `TypeError`).
 
 ```python
 from combaero.network import (
@@ -4227,15 +4235,16 @@ writes `hole_cd`, not these keywords.
 |---|---|---|
 | `correlation=` | `EffusionPlateElement`, `FilmCoolingElement`, `SlotFilmElement`, `ImpingementPlateElement`, `ImpingementArray` | `correlation` |
 | `Cd=` | the same | `Cd` |
-| `cd_inclination=` (pre-release, never in a release) | `EffusionPlateElement`, `FilmCoolingElement` | `inclination` |
-| `cd_exit_crossflow=` (pre-release, never in a release) | `EffusionPlateElement`, `FilmCoolingElement` | `exit_crossflow` |
 | `cd_crossflow=` | `ImpingementPlateElement`, `ImpingementArray` | `exit_crossflow` |
 
 Not deprecated: `OrificeElement`'s own `correlation`/`Cd` (the metering
 keywords), `DiameterDischargeCoefficientConnectionElement`'s `Cd`, the
 geometry keywords `exit_crossflow_region` / `exit_crossflow_orientation_deg`,
 and the read-only attributes `cd_inclination`, `cd_exit_crossflow`,
-`cd_crossflow`. The GUI's saved-file fields are unchanged.
+`cd_crossflow`. The GUI's saved-file fields are unchanged. An
+`ImpingementArray`'s deprecated fields keep what was passed (so
+`dataclasses.replace` rebuilds from them, warning again); the spec its rows
+take is resolved at construction.
 
 ### Al 6061 conductivity (#761)
 

@@ -5154,9 +5154,12 @@ class OrificeElement(NetworkElement):
         self.Cd: float | None = Cd
         # The resolved spec: correlation and Cd as used, the terms as given
         # (a subclass replaces it with its own). Read by FlowNetwork.to_dict.
-        self.hole_cd = dataclasses.replace(
-            hole_cd if hole_cd is not None else HoleCd(), correlation=correlation, Cd=Cd
-        )
+        try:
+            self.hole_cd = dataclasses.replace(
+                hole_cd if hole_cd is not None else HoleCd(), correlation=correlation, Cd=Cd
+            )
+        except ValueError as exc:
+            raise ValueError(f"{name} {id!r}: {exc}") from exc
         self._hole_cd.configure_plain(f"{type(self).__name__} {id!r}", self.hole_cd)
         self.regime = regime
         self.correlation = correlation
@@ -6533,9 +6536,10 @@ class EffusionPlateElement(OrificeElement):
     correlation (default IdelchikThick), a fixed Cd, the inclination term,
     the supply crossflow ("auto": McGreehan-Schotsch's U1/Vi on a duct-fed
     panel) and the exit crossflow ("auto": none; 'rowbury_2001' opts in).
-    The keywords ``correlation``, ``Cd``, ``cd_inclination`` and
-    ``cd_exit_crossflow`` are deprecated since 0.12.0 (removed in 0.13.0);
-    ``exit_crossflow_region`` and ``exit_crossflow_orientation_deg`` are
+    The keywords ``correlation`` and ``Cd`` are deprecated since 0.12.0
+    (removed in 0.13.0); ``inlet_crossflow='none'`` holds U1/Vi at 0 on a
+    duct-fed panel (no term) and lifts the refusal of a correlation without
+    the crossflow term. ``exit_crossflow_region`` and ``exit_crossflow_orientation_deg`` are
     the hole's geometry and stay here.
 
     THERMAL, INTERNAL SIDE. `internal_heat_transfer()` gives the coolant-side
@@ -6577,7 +6581,9 @@ class EffusionPlateElement(OrificeElement):
     (`gas_augmentation`, the caller's).
 
     PLENUM-FED. This 2-port plate leaves McGreehan-Schotsch's U1/Vi at 0 and
-    uses Andrews' still-plenum coolant side; `coolant_crossflow_ignored`
+    uses Andrews' still-plenum coolant side (as does a duct-fed panel with
+    HoleCd(inlet_crossflow="none"), which still reports the duct's U1/Vi);
+    `coolant_crossflow_ignored`
     flags a supply node a channel runs through.
 
     GAS RADIATION (#1071), opt-in. `radiation=GasRadiation(beam_length=...)`
@@ -6602,7 +6608,7 @@ class EffusionPlateElement(OrificeElement):
 
     _selects_compressible_model = False  # keeps the nozzle (#861)
     # The deprecated hole-Cd keywords (HoleCd replaces them): not serialized.
-    _deprecated_init_kwargs = ("correlation", "Cd", "cd_inclination", "cd_exit_crossflow")
+    _deprecated_init_kwargs = ("correlation", "Cd")
 
     def __init__(
         self,
@@ -6632,9 +6638,7 @@ class EffusionPlateElement(OrificeElement):
         material: str | None = None,
         gas_baseline: Literal["chamber", "flat_plate"] = "chamber",
         gas_start_length: float | None = None,
-        cd_inclination: Literal["auto", "none", "idelchik_3_2"] | None = None,
         radiation: GasRadiation | None = None,
-        cd_exit_crossflow: Literal["none", "rowbury_2001"] | None = None,
         exit_crossflow_region: Literal[
             "suction_surface", "pressure_surface", "leading_edge"
         ] = "suction_surface",
@@ -6648,15 +6652,11 @@ class EffusionPlateElement(OrificeElement):
             _hole_cd_spec(
                 f"EffusionPlateElement {id!r}",
                 hole_cd,
-                {
-                    "correlation": correlation,
-                    "Cd": Cd,
-                    "cd_inclination": cd_inclination,
-                    "cd_exit_crossflow": cd_exit_crossflow,
-                },
+                {"correlation": correlation, "Cd": Cd},
                 stacklevel=3,
             ),
             "IdelchikThick",
+            f"EffusionPlateElement {id!r}",
         )
         if hole_diameter <= 0.0:
             raise ValueError("EffusionPlateElement: hole_diameter must be positive")
@@ -6873,7 +6873,11 @@ class EffusionPlateElement(OrificeElement):
             if self.from_node in graph.nodes
             else []
         )
-        self._coolant_crossflow_ignored = len(through) >= 2 and self.crossflow_segments is None
+        # And a duct-fed panel whose supply-crossflow term is switched off
+        # (HoleCd(inlet_crossflow="none")): the caller's choice, flagged.
+        self._coolant_crossflow_ignored = (
+            len(through) >= 2 and self.crossflow_segments is None
+        ) or (self.crossflow_segments is not None and not self._hole_cd.supply_duct)
         self._xf_elems = []
         if self.crossflow_segments is not None:
             for eid in self.crossflow_segments:
@@ -7518,7 +7522,7 @@ class FilmCoolingElement(OrificeElement):
 
     _selects_compressible_model = False  # keeps the nozzle (#861)
     # The deprecated hole-Cd keywords (HoleCd replaces them): not serialized.
-    _deprecated_init_kwargs = ("correlation", "Cd", "cd_inclination", "cd_exit_crossflow")
+    _deprecated_init_kwargs = ("correlation", "Cd")
 
     def __init__(
         self,
@@ -7539,8 +7543,6 @@ class FilmCoolingElement(OrificeElement):
         correlation: str | None = None,
         Cd: float | None = None,
         edge_radius: float = 0.0,
-        cd_inclination: Literal["auto", "none", "idelchik_3_2"] | None = None,
-        cd_exit_crossflow: Literal["none", "rowbury_2001"] | None = None,
         exit_crossflow_region: Literal[
             "suction_surface", "pressure_surface", "leading_edge"
         ] = "suction_surface",
@@ -7554,15 +7556,11 @@ class FilmCoolingElement(OrificeElement):
             _hole_cd_spec(
                 name,
                 hole_cd,
-                {
-                    "correlation": correlation,
-                    "Cd": Cd,
-                    "cd_inclination": cd_inclination,
-                    "cd_exit_crossflow": cd_exit_crossflow,
-                },
+                {"correlation": correlation, "Cd": Cd},
                 stacklevel=3,
             ),
             "IdelchikThick",
+            name,
         )
         if hole_diameter <= 0.0 or lateral_pitch <= 0.0 or wall_thickness <= 0.0:
             raise ValueError(
@@ -7824,6 +7822,7 @@ class SlotFilmElement(OrificeElement):
         spec = _with_correlation(
             _hole_cd_spec(name, hole_cd, {"correlation": correlation, "Cd": Cd}, stacklevel=3),
             "IdelchikThick",
+            name,
         )
         if film_htc not in SLOT_FILM_HTC_MODELS:
             raise ValueError(
@@ -8490,6 +8489,7 @@ class ImpingementPlateElement(OrificeElement):
                 stacklevel=3,
             ),
             "fixed",
+            f"ImpingementPlateElement {id!r}",
         )
         # Refused first, as before: the law and the plate it needs.
         jet_law = _resolve_jet_row(f"ImpingementPlateElement {id!r}", spec, xn_d, yn_d, z_d)
