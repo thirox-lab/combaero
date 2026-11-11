@@ -37,7 +37,7 @@ REPORTS, it does not score into the scorecard.
    and none is introduced.
 
 THE POINT SOLVE MIRRORS THE ELEMENT. FilmCoolingElement with
-cd_exit_crossflow='rowbury_2001' solves m = Cd A_eff-nozzle flow with
+HoleCd(exit_crossflow='rowbury_2001') solves m = Cd A_eff-nozzle flow with
 Cd = rowbury(Cd0(Re(m)), k(m)), k = G_h^2 f / (rho_h rho_m u_m^2), f =
 sin(theta) at alpha 0, rho_h the isentropic exit-plane density
 (rowbury_2001_exit_density; OrificeElement._exit_crossflow). The element reads

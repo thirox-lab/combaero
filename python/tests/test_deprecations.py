@@ -14,6 +14,7 @@ each old spelling fails, and its replacement works without a warning.
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 
 import pytest
@@ -545,3 +546,106 @@ def test_a_gui_solve_of_a_saved_stolz_orifice_is_a_400_naming_the_replacement() 
         asyncio.run(solve(NetworkGraphSchema(**graph)))
     assert info.value.status_code == 400
     assert "Stolz" in info.value.detail and "ReaderHarrisGallagher" in info.value.detail
+
+
+# --- Deprecated in 0.12.0, removed in 0.13.0: the per-element hole-Cd keywords.
+# HoleCd (combaero.network) carries the correlation, the fixed Cd and each
+# term's model; the keywords it replaces still build the same element (bit for
+# bit, test_hole_cd_spec.py), with ONE DeprecationWarning per construction
+# naming every keyword given, its HoleCd field and the removal release.
+
+_D_JET = 0.00254
+
+_HOLE_ELEMENTS = {
+    "EffusionPlateElement": lambda **kw: net.EffusionPlateElement(
+        "h", "a", "b", hole_diameter=1e-3, wall_thickness=2e-3, pitch=6e-3, panel_area=0.01,
+        angle_deg=30.0, **kw,
+    ),
+    "FilmCoolingElement": lambda **kw: net.FilmCoolingElement(
+        "h", "a", "b", hole_diameter=1e-3, holes_per_row=10, lateral_pitch=3e-3,
+        wall_thickness=3e-3, **kw,
+    ),
+    "SlotFilmElement": lambda **kw: net.SlotFilmElement(
+        "h", "a", "b", slot_height=1e-3, span=0.05, lip_thickness=4e-3, **kw
+    ),
+    "ImpingementPlateElement": lambda **kw: net.ImpingementPlateElement(
+        "h", "a", "b", d_jet=_D_JET, xn_d=5.0, yn_d=4.0, z_d=1.0, span=48 * _D_JET,
+        plate_thickness=_D_JET, **kw,
+    ),
+    "ImpingementArray": lambda **kw: net.ImpingementArray(
+        "h", n_rows=3, d_jet=_D_JET, xn_d=5.0, yn_d=4.0, z_d=1.0, span=48 * _D_JET,
+        plate_thickness=_D_JET, **kw,
+    ),
+}  # fmt: skip
+
+# Each keyword, as given, and the HoleCd field the warning names for it.
+_KW = {
+    "correlation": ({"correlation": "McGreehanSchotsch"}, "correlation='McGreehanSchotsch'"),
+    "Cd": ({"correlation": "fixed", "Cd": 0.7}, "Cd=0.7"),
+    "cd_crossflow": ({"cd_crossflow": "none"}, "exit_crossflow='none'"),
+}
+_COOLING = ("correlation", "Cd")
+_JET = ("correlation", "Cd", "cd_crossflow")
+_HOLE_CD_KEYWORDS = [
+    (name, *_KW[k])
+    for name, kws in (
+        ("EffusionPlateElement", _COOLING),
+        ("FilmCoolingElement", _COOLING),
+        ("SlotFilmElement", ("correlation", "Cd")),
+        ("ImpingementPlateElement", _JET),
+        ("ImpingementArray", _JET),
+    )
+    for k in kws
+]
+
+
+@pytest.mark.parametrize(("name", "kw", "field"), _HOLE_CD_KEYWORDS)
+def test_a_deprecated_hole_cd_keyword_warns_once_and_names_its_replacement(
+    name: str, kw: dict, field: str
+) -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        el = _HOLE_ELEMENTS[name](**kw)
+    dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(dep) == 1, [str(w.message) for w in dep]
+    msg = str(dep[0].message)
+    assert all(k in msg for k in kw), msg
+    assert "hole_cd=HoleCd(" in msg and field in msg, msg
+    assert "deprecated since 0.12.0" in msg and "removed in 0.13.0" in msg, msg
+    # Attributed to the caller's line, not to the package.
+    assert dep[0].filename == __file__
+    # The same element as its HoleCd builds, without a warning.
+    fields = {("exit_crossflow" if k == "cd_crossflow" else k): v for k, v in kw.items()}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        new = _HOLE_ELEMENTS[name](hole_cd=net.HoleCd(**fields))
+    if isinstance(el, net.ImpingementArray):  # its fields keep what was passed
+        assert el._rows_hole_cd == new._rows_hole_cd
+    else:
+        assert el.hole_cd == new.hole_cd
+
+
+def test_an_array_built_from_old_fields_warns_once_not_per_row() -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        arr = _HOLE_ELEMENTS["ImpingementArray"](correlation="fixed", Cd=0.8, cd_crossflow="none")
+        g = FlowNetwork()
+        g.add_node(PressureBoundary("sup", Pt=1.03e5, Tt=300.0))
+        g.add_node(PressureBoundary("ex", Pt=1.0e5, Tt=300.0))
+        arr.add_to(g, "sup", "ex")
+    dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(dep) == 1 and "correlation, Cd, cd_crossflow" in str(dep[0].message)
+    # The fields keep what was passed; dataclasses.replace rebuilds from them.
+    assert (arr.correlation, arr.Cd, arr.cd_crossflow, arr.hole_cd) == ("fixed", 0.8, "none", None)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        again = dataclasses.replace(arr, Cd=0.7)
+    assert again._rows_hole_cd == net.HoleCd(correlation="fixed", Cd=0.7, exit_crossflow="none")
+    assert all(g.elements[f"h__p{i}"].cd_crossflow == "none" for i in (1, 2, 3))
+
+
+def test_the_plain_orifice_keeps_its_correlation_and_cd_keywords() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        OrificeElement("o", "a", "b", Cd=0.7, diameter=0.01, correlation="fixed")
+        OrificeElement("o", "a", "b", diameter=0.01, correlation="IdelchikThick")

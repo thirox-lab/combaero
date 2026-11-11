@@ -21,6 +21,7 @@ from combaero.network import (
     ChannelElement,
     ConvectiveSurface,
     FlowNetwork,
+    HoleCd,
     MassFlowBoundary,
     NetworkSolver,
     OrificeElement,
@@ -81,7 +82,9 @@ def test_the_element_refuses_what_is_not_a_slot() -> None:
         with pytest.raises(ValueError):
             SlotFilmElement("s", "a", "b", **args)
     with pytest.raises(ValueError, match="NORMED metering"):
-        SlotFilmElement("s", "a", "b", S, W, 1e-3, correlation="ReaderHarrisGallagher").validate()
+        SlotFilmElement(
+            "s", "a", "b", S, W, 1e-3, hole_cd=HoleCd(correlation="ReaderHarrisGallagher")
+        ).validate()
 
 
 def test_the_hole_reynolds_number_is_the_slots() -> None:

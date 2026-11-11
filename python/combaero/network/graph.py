@@ -559,10 +559,13 @@ class FlowNetwork:
         elements_data = {}
         for eid, element in self.elements.items():
             sig = inspect.signature(element.__init__)
+            # Deprecated keywords another argument now carries (the hole
+            # elements' per-element Cd keywords, in ``hole_cd``) are skipped.
+            skip = {"self", "args", "kwargs", *getattr(element, "_deprecated_init_kwargs", ())}
             args = {
                 k: getattr(element, k, getattr(element, f"_{k}", None))
                 for k in sig.parameters
-                if k != "self" and k != "args" and k != "kwargs"
+                if k not in skip
             }
             _restore_init_kwargs(element, args)
             elements_data[eid] = {"type": type(element).__name__, "kwargs": args}

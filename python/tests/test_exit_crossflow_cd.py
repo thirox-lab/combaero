@@ -22,6 +22,7 @@ from combaero.network import (
     EffusionPlateElement,
     FilmCoolingElement,
     FlowNetwork,
+    HoleCd,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -37,6 +38,10 @@ from validation.cooling import exit_crossflow_cd_runner as xr  # noqa: E402
 
 Y_AIR = list(cb.mole_to_mass(cb.species.dry_air()))
 SUCTION = cb.Rowbury2001Set.CylindricalSuctionSurface
+
+
+# The exit-crossflow term opted in, every other choice the element's default.
+ROWBURY = HoleCd(exit_crossflow="rowbury_2001")
 
 
 def _plate(**kw) -> EffusionPlateElement:
@@ -137,7 +142,7 @@ def test_opting_in_without_a_flowing_gas_side_is_refused(make) -> None:
     g = FlowNetwork()
     g.add_node(PressureBoundary("cool", Pt=1.3e5, Tt=300.0, Y=Y_AIR))
     g.add_node(PressureBoundary("ch", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
-    g.add_element(make(cd_exit_crossflow="rowbury_2001"))
+    g.add_element(make(hole_cd=ROWBURY))
     with pytest.raises(ValueError, match="MomentumChamberNode"):
         NetworkSolver(g).solve()
 
@@ -145,18 +150,16 @@ def test_opting_in_without_a_flowing_gas_side_is_refused(make) -> None:
 def test_a_hole_shallower_than_the_sets_zero_crossing_is_refused() -> None:
     # Suction cylindrical A = 0.682 sin(theta) - 0.24 < 0 below 20.6 deg.
     with pytest.raises(ValueError, match="A > 0 and B > 0"):
-        _plate(angle_deg=20.0, cd_exit_crossflow="rowbury_2001")
+        _plate(angle_deg=20.0, hole_cd=ROWBURY)
     # The pressure-surface set reaches it (Table 1 rows 1-2 are 20-21 deg).
-    _plate(
-        angle_deg=20.0, cd_exit_crossflow="rowbury_2001", exit_crossflow_region="pressure_surface"
-    )
+    _plate(angle_deg=20.0, hole_cd=ROWBURY, exit_crossflow_region="pressure_surface")
 
 
 def test_fan_shaped_has_no_leading_edge_set() -> None:
     shaped = {"hole_type": "shaped", "area_ratio": 3.0, "breakout_width": 2.5e-3}
     with pytest.raises(ValueError, match="no fan-shaped leading-edge"):
-        _film(cd_exit_crossflow="rowbury_2001", exit_crossflow_region="leading_edge", **shaped)
-    e = _film(cd_exit_crossflow="rowbury_2001", **shaped)
+        _film(hole_cd=ROWBURY, exit_crossflow_region="leading_edge", **shaped)
+    e = _film(hole_cd=ROWBURY, **shaped)
     assert e._hole_cd.exit_xf.coefficient_set == cb.Rowbury2001Set.FanShapedSuctionSurface
     assert e._hole_cd.exit_xf.exit_area_ratio == 3.0
 
@@ -164,15 +167,19 @@ def test_fan_shaped_has_no_leading_edge_set() -> None:
 @pytest.mark.parametrize(
     "kw",
     [
-        {"cd_exit_crossflow": "bogus"},
-        {"cd_exit_crossflow": "rowbury_2001", "exit_crossflow_region": "hub"},
-        {"cd_exit_crossflow": "rowbury_2001", "exit_crossflow_orientation_deg": 95.0},
-        {"cd_exit_crossflow": "rowbury_2001", "exit_crossflow_orientation_deg": 90.0},
+        {"exit_crossflow_region": "hub"},
+        {"exit_crossflow_orientation_deg": 95.0},
+        {"exit_crossflow_orientation_deg": 90.0},
     ],
 )
 def test_bad_options_are_refused(kw: dict) -> None:
     with pytest.raises(ValueError):
-        _plate(**kw)
+        _plate(hole_cd=ROWBURY, **kw)
+
+
+def test_an_unknown_exit_crossflow_model_is_refused() -> None:
+    with pytest.raises(ValueError, match="exit_crossflow 'bogus' is not one of"):
+        HoleCd(exit_crossflow="bogus")
 
 
 # --- the element ------------------------------------------------------------
@@ -198,16 +205,17 @@ def _fd_rel_error(s: NetworkSolver, r: dict) -> float:
 
 @pytest.mark.parametrize("make", [_plate, _film])
 @pytest.mark.parametrize(
-    "kw",
+    ("spec", "kw"),
     [
-        {},
-        {"cd_inclination": "idelchik_3_2"},
-        {"correlation": "fixed", "Cd": 0.7},
-        {"angle_deg": 90.0},
+        ({}, {}),
+        ({"inclination": "idelchik_3_2"}, {}),
+        ({"correlation": "fixed", "Cd": 0.7}, {}),
+        ({}, {"angle_deg": 90.0}),
     ],
 )
-def test_the_jacobian_matches_central_differences(make, kw: dict) -> None:
-    s, r = _solve(_net(make(cd_exit_crossflow="rowbury_2001", **kw)))
+def test_the_jacobian_matches_central_differences(make, spec: dict, kw: dict) -> None:
+    hole_cd = HoleCd(exit_crossflow="rowbury_2001", **spec)
+    s, r = _solve(_net(make(hole_cd=hole_cd, **kw)))
     assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
 
@@ -218,7 +226,7 @@ def test_a_chamber_fed_only_by_holes_is_refused() -> None:
     g.add_node(PressureBoundary("cool", Pt=1.3e5, Tt=300.0, Y=Y_AIR))
     g.add_node(MomentumChamberNode("ch", area=0.01))
     g.add_node(PressureBoundary("out", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
-    g.add_element(_film(cd_exit_crossflow="rowbury_2001"))
+    g.add_element(_film(hole_cd=ROWBURY))
     g.add_element(LosslessConnectionElement("tail", "ch", "out"))
     with pytest.raises(ValueError, match="approaching mainstream"):
         NetworkSolver(g).solve()
@@ -238,7 +246,7 @@ def test_the_mainstream_is_the_approaching_flow_not_the_holes() -> None:
         g.add_node(MomentumChamberNode("ch", area=0.01, main_inlet="feed"))
         g.add_element(LosslessConnectionElement("feed", "gas_in", "ch"))
         g.add_element(LosslessConnectionElement("tail", "ch", "exit"))
-        g.add_element(_plate(cd_exit_crossflow="rowbury_2001"))
+        g.add_element(_plate(hole_cd=ROWBURY))
         return g
 
     s, a = _solve(net(0.03))
@@ -257,7 +265,7 @@ def test_the_jacobian_reads_a_mixed_coolant_supply() -> None:
     # rho_h, the isentropic exit density, reads the supply's Pt, Tt and composition:
     # two coolant streams of different T and Y mix in a plenum, so both
     # depend on the feed orifices' flows (unknowns).
-    g = _net(_film(cd_exit_crossflow="rowbury_2001"), mixed_supply=True)
+    g = _net(_film(hole_cd=ROWBURY), mixed_supply=True)
     s, r = _solve(g)
     assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
@@ -266,7 +274,7 @@ def test_the_jacobian_reads_a_mixed_coolant_supply() -> None:
 def test_the_jacobian_reads_a_mixed_main_stream() -> None:
     # rho_m, the main stream's face density, reads its Tt and composition:
     # the main gas mixes two streams first, so both move with their flows.
-    s, r = _solve(_net(_plate(cd_exit_crossflow="rowbury_2001"), mixed_main=True))
+    s, r = _solve(_net(_plate(hole_cd=ROWBURY), mixed_main=True))
     assert r["__element_diag__"]["eff"]["exit_crossflow_k_perp"] > 0.0
     assert _fd_rel_error(s, r) < 1e-6
 
@@ -278,7 +286,7 @@ def test_the_jacobian_holds_where_the_term_is_held() -> None:
     # Pt_c > Pt_m (#1087), so k >~ Cd^2 here; a set or angle whose floor is
     # higher -- the pressure set at theta 90, alpha 60: 2.9 -- is held while
     # blowing too.)
-    s, r = _solve(_net(_plate(angle_deg=90.0, cd_exit_crossflow="rowbury_2001"), dp=-0.029))
+    s, r = _solve(_net(_plate(angle_deg=90.0, hole_cd=ROWBURY), dp=-0.029))
     d = r["__element_diag__"]["eff"]
     assert r["eff.m_dot"] < 0.0 and d["exit_crossflow_held"] == 1.0
     assert _fd_rel_error(s, r) < 1e-6
@@ -286,7 +294,7 @@ def test_the_jacobian_holds_where_the_term_is_held() -> None:
 
 @pytest.mark.parametrize("make", [_plate, _film])
 def test_the_elements_cd_is_eqs_7_8_on_its_own_cd0(make) -> None:
-    _, r = _solve(_net(make(cd_exit_crossflow="rowbury_2001")))
+    _, r = _solve(_net(make(hole_cd=ROWBURY)))
     d = r["__element_diag__"]["eff"]
     k = d["exit_crossflow_k_perp"]
     assert d["exit_crossflow_k_used"] == k and d["exit_crossflow_held"] == 0.0
@@ -308,10 +316,10 @@ def test_the_elements_cd_is_eqs_7_8_on_its_own_cd0(make) -> None:
 def test_crossflow_lowers_cd_at_low_k_and_raises_it_at_high_k() -> None:
     # Eq. 8's crossover: delta > 0 while A k^-B > C, < 0 beyond, inside the
     # set's fitted k (the leading-edge rows reach k_perp 4.3).
-    lo = _solve(_net(_film(cd_exit_crossflow="rowbury_2001"), m_gas=4.0, dp=0.01))[1]
+    lo = _solve(_net(_film(hole_cd=ROWBURY), m_gas=4.0, dp=0.01))[1]
     le = _film(
         angle_deg=88.0,
-        cd_exit_crossflow="rowbury_2001",
+        hole_cd=ROWBURY,
         exit_crossflow_region="leading_edge",
         exit_crossflow_orientation_deg=60.0,
     )
@@ -328,7 +336,7 @@ def test_a_vanishing_mainstream_returns_cd0_continuously(make) -> None:
     # and the faded region's row is exact.
     ratios = []
     for m_gas in (0.3, 0.03, 0.003):
-        s, r = _solve(_net(make(cd_exit_crossflow="rowbury_2001"), m_gas=m_gas))
+        s, r = _solve(_net(make(hole_cd=ROWBURY), m_gas=m_gas))
         d = r["__element_diag__"]["eff"]
         assert d["exit_crossflow_faded"] == 1.0
         ratios.append(abs(d["Cd_exit_crossflow_ratio"] - 1.0))
@@ -342,7 +350,7 @@ def test_leading_edge_compound_angle_row_is_exact() -> None:
     # u_perp = u / sqrt(cot^2 theta + 1 + tan^2 alpha); row checked by FD.
     e = _film(
         angle_deg=88.0,
-        cd_exit_crossflow="rowbury_2001",
+        hole_cd=ROWBURY,
         exit_crossflow_region="leading_edge",
         exit_crossflow_orientation_deg=60.0,
     )
@@ -354,7 +362,7 @@ def test_leading_edge_compound_angle_row_is_exact() -> None:
 
 def test_shaped_holes_take_the_exit_plane_flux() -> None:
     shaped = {"hole_type": "shaped", "area_ratio": 3.0, "breakout_width": 2.5e-3}
-    _, r = _solve(_net(_film(cd_exit_crossflow="rowbury_2001", **shaped)))
+    _, r = _solve(_net(_film(hole_cd=ROWBURY, **shaped)))
     d = r["__element_diag__"]["eff"]
     G_m = abs(r["eff.m_dot"]) / (10 * np.pi * 1e-3**2 / 4.0)
     rho_h = cb.rowbury_2001_exit_density(5e5 * 1.03, 600.0, r["ch.P"], list(cb.species.dry_air()))
@@ -418,7 +426,7 @@ def test_accuracy_before_and_after() -> None:
 def test_no_mainstream_momentum_returns_the_no_crossflow_cd() -> None:
     # The authors' no-crossflow prediction is Cd,no by definition (Fig. 9,
     # "Predict Mm = 0"), and the faded Eq. 8 tends to it.
-    s, r = _solve(_net(_film(cd_exit_crossflow="rowbury_2001")))
+    s, r = _solve(_net(_film(hole_cd=ROWBURY)))
     e = s.network.elements["eff"]
     e._hole_cd.exit_node._inflows = [
         (eid, _Probe(0.0, 1500.0, Y_AIR), {}) for eid, _, _ in e._hole_cd.exit_node._inflows
@@ -445,7 +453,7 @@ def test_the_faded_flag_reports_the_k_tier() -> None:
     # authors' Fig. 9 application (<= 3.8, Eq. 8 unfaded), 1 beyond (faded).
     tiers = {}
     for m_gas, dp in ((4.0, 0.01), (1.5, 0.10), (0.03, 0.03)):
-        _, r = _solve(_net(_film(cd_exit_crossflow="rowbury_2001"), m_gas=m_gas, dp=dp))
+        _, r = _solve(_net(_film(hole_cd=ROWBURY), m_gas=m_gas, dp=dp))
         d = r["__element_diag__"]["eff"]
         tiers[d["exit_crossflow_faded"]] = d["exit_crossflow_k_used"]
     assert set(tiers) == {0.0, 0.5, 1.0}

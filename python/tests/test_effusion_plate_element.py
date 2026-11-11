@@ -15,6 +15,7 @@ from combaero.network import (
     ChannelElement,
     EffusionPlateElement,
     FlowNetwork,
+    HoleCd,
     NetworkSolver,
     OrificeElement,
     PlenumNode,
@@ -131,7 +132,9 @@ class TestCorrelationSelection:
         """A panel has no pipe and no beta, so an ISO 5167 correlation is not
         merely inaccurate here -- it is undefined."""
         for bad in ("ReaderHarrisGallagher",):
-            e = EffusionPlateElement("p", "c", "g", panel_area=1.0, correlation=bad, **ANDREWS_B)
+            e = EffusionPlateElement(
+                "p", "c", "g", panel_area=1.0, hole_cd=HoleCd(correlation=bad), **ANDREWS_B
+            )
             with pytest.raises(ValueError, match="NORMED metering correlation"):
                 e.validate()
 

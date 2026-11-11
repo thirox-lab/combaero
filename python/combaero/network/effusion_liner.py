@@ -51,9 +51,11 @@ from .components import (
     EffusionPlateElement,
     FilmSource,
     GasRadiation,
+    HoleCd,
     PlenumNode,
     _max_over_min,
 )
+from .hole_cd import _with_correlation
 
 if TYPE_CHECKING:
     from .graph import FlowNetwork
@@ -94,6 +96,11 @@ class EffusionLiner:
     radiation : GasRadiation | None
         Gas radiation on every panel's hot face, as
         ``EffusionPlateElement(radiation=...)`` (#1071); None (default): none.
+    hole_cd : HoleCd | None
+        Every panel's hole Cd, as ``EffusionPlateElement(hole_cd=...)``. Its
+        correlation left at None is 'McGreehanSchotsch', the liner's default
+        (the duct-fed panels read its supply crossflow U1/Vi); None
+        (default): ``HoleCd()``, i.e. that and every term at "auto".
     """
 
     id: str
@@ -118,8 +125,13 @@ class EffusionLiner:
     film_direction: Literal["with_coolant", "against_coolant"] = "with_coolant"
     material: str | None = None
     radiation: GasRadiation | None = None
+    hole_cd: HoleCd | None = None
 
     def __post_init__(self) -> None:
+        if self.hole_cd is not None and not isinstance(self.hole_cd, HoleCd):
+            raise ValueError(
+                f"EffusionLiner {self.id!r}: hole_cd is a HoleCd, not {type(self.hole_cd).__name__}"
+            )
         if int(self.n_segments) != self.n_segments or self.n_segments < 1:
             raise ValueError(f"EffusionLiner {self.id!r}: n_segments must be a positive integer")
         for name in ("length", "width", "duct_height"):
@@ -161,6 +173,9 @@ class EffusionLiner:
         dx = self.length / n
         bleed = cb.STATION_KAPPA_BLEED_BASSETT
         A, Dh = self.duct_area, self.duct_Dh
+        hole_cd = _with_correlation(
+            self.hole_cd or HoleCd(), "McGreehanSchotsch", f"EffusionLiner {self.id!r}"
+        )
         for i in range(1, n + 1):
             net.add_node(PlenumNode(self.node_id(i)))
         # s0: reservoir entry into station 1.
@@ -207,7 +222,7 @@ class EffusionLiner:
                     panel_length=dx,
                     panel_width=self.width,
                     angle_deg=self.angle_deg,
-                    correlation="McGreehanSchotsch",
+                    hole_cd=hole_cd,
                     edge_radius=self.edge_radius,
                     internal_Nu_multiplier=self.internal_Nu_multiplier,
                     wall_conductivity=self.wall_conductivity,

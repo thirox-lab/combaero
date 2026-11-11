@@ -53,6 +53,7 @@ from combaero.network import (
     EnergyBoundary,
     FlowNetwork,
     FlowSplitter,
+    HoleCd,
     IdealMomentumTeeElement,
     ImpingementArray,
     LosslessConnectionElement,
@@ -775,7 +776,7 @@ def impingement(seed: int) -> tuple[FlowNetwork, list[str]]:
         span=span,
         plate_thickness=D,
         pattern=r.choice(["inline", "staggered"]),
-        correlation=r.choice(["fixed", "IdelchikThick", "McGreehanSchotsch"]),
+        hole_cd=HoleCd(correlation=r.choice(["fixed", "IdelchikThick", "McGreehanSchotsch"])),
     ).add_to(g, "sup", "ex")
     tags = ["impingement", f"rows:{n}"]
     if r.random() < 0.5:
@@ -844,7 +845,7 @@ def impingement_bypass(seed: int) -> tuple[FlowNetwork, list[str]]:
         z_d=zd,
         span=12 * yn * D,
         plate_thickness=D,
-        correlation=r.choice(["fixed", "IdelchikThick"]),
+        hole_cd=HoleCd(correlation=r.choice(["fixed", "IdelchikThick"])),
         bypass_entry_K=r.choice([0.0, 0.5]),
     ).add_to(g, "sup", "ex", bypass="byp")
     return g, ["impingement_bypass", f"rows:{n}", f"feed:{feed}"]

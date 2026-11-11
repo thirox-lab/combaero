@@ -17,6 +17,7 @@ from combaero.network import (
     EffusionPlateElement,
     FilmCoolingElement,
     FlowNetwork,
+    HoleCd,
     NetworkSolver,
     PressureBoundary,
 )
@@ -115,7 +116,7 @@ def test_other_correlations_refuse_an_inclined_hole(corr: str) -> None:
 
 @pytest.mark.parametrize("make", [_plate, _film])
 def test_switched_off_it_is_reported_as_zero(make) -> None:
-    e = make(cd_inclination="none")
+    e = make(hole_cd=HoleCd(inclination="none"))
     assert e.cd_inclination == "none"
     d = _solve(e)["__element_diag__"][e.id]
     assert d["Cd_inclination_dzeta"] == 0.0
@@ -129,7 +130,7 @@ def test_the_default_is_the_term_on_a_cylindrical_idelchik_thick_hole(make) -> N
     e = make()
     assert e.cd_inclination == "idelchik_3_2"
     auto = _solve(e)
-    forced = _solve(make(cd_inclination="idelchik_3_2"))
+    forced = _solve(make(hole_cd=HoleCd(inclination="idelchik_3_2")))
     assert auto[f"{e.id}.m_dot"] == forced[f"{e.id}.m_dot"]
     assert auto["__element_diag__"][e.id] == forced["__element_diag__"][e.id]
 
@@ -142,26 +143,28 @@ def test_the_default_leaves_a_shaped_hole_without_the_term() -> None:
     e = _film(**shaped)
     assert e.cd_inclination == "none"
     auto = _solve(e)
-    off = _solve(_film(cd_inclination="none", **shaped))
+    off = _solve(_film(hole_cd=HoleCd(inclination="none"), **shaped))
     assert auto["film.m_dot"] == off["film.m_dot"]
     assert auto["__element_diag__"]["film"]["Cd_inclination_dzeta"] == 0.0
     # Forcing it on a shaped hole stays the user's choice.
-    assert _film(cd_inclination="idelchik_3_2", **shaped).cd_inclination == "idelchik_3_2"
+    assert (
+        _film(hole_cd=HoleCd(inclination="idelchik_3_2"), **shaped).cd_inclination == "idelchik_3_2"
+    )
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
 @pytest.mark.parametrize("corr", ["McGreehanSchotsch", "Lichtarowicz", "fixed"])
 def test_the_default_on_a_non_composing_correlation_is_off_not_refused(make, corr) -> None:
     kw = {"Cd": 0.7} if corr == "fixed" else {}
-    e = make(correlation=corr, **kw)
+    e = make(hole_cd=HoleCd(correlation=corr, **kw))
     assert e.cd_inclination == "none"
     assert e._hole_cd.inclination_deg == 90.0
 
 
 @pytest.mark.parametrize("make", [_plate, _film])
 def test_the_term_lowers_the_cd_by_the_diagram_3_2_increment(make) -> None:
-    off = _solve(make(cd_inclination="none"))["__element_diag__"]
-    on = _solve(make(cd_inclination="idelchik_3_2"))["__element_diag__"]
+    off = _solve(make(hole_cd=HoleCd(inclination="none")))["__element_diag__"]
+    on = _solve(make(hole_cd=HoleCd(inclination="idelchik_3_2")))["__element_diag__"]
     eid = next(iter(off))
     dz = cb.discharge_inclination_dzeta(30.0)
     assert on[eid]["Cd_inclination_dzeta"] == pytest.approx(dz)
@@ -173,10 +176,10 @@ def test_the_term_lowers_the_cd_by_the_diagram_3_2_increment(make) -> None:
 @pytest.mark.parametrize("inc", ["auto", "idelchik_3_2"])
 def test_a_normal_hole_is_unchanged_by_the_term(make, inc: str) -> None:
     # Bit for bit: every solved unknown and every diagnostic.
-    off = _solve(make(angle_deg=90.0, cd_inclination="none"))
-    on = _solve(make(angle_deg=90.0, cd_inclination=inc))
+    off = _solve(make(angle_deg=90.0, hole_cd=HoleCd(inclination="none")))
+    on = _solve(make(angle_deg=90.0, hole_cd=HoleCd(inclination=inc)))
     # "auto" on a normal hole names what it applies: no inclined inlet.
-    assert make(angle_deg=90.0, cd_inclination=inc).cd_inclination == (
+    assert make(angle_deg=90.0, hole_cd=HoleCd(inclination=inc)).cd_inclination == (
         "none" if inc == "auto" else "idelchik_3_2"
     )
     assert {k: v for k, v in on.items() if not k.startswith("__")} == {
@@ -191,17 +194,17 @@ def test_a_normal_hole_is_unchanged_by_the_term(make, inc: str) -> None:
 def test_an_opt_in_on_a_non_composing_correlation_is_refused(make, corr: str) -> None:
     kw = {"Cd": 0.7} if corr == "fixed" else {}
     with pytest.raises(ValueError, match="does not compose"):
-        make(correlation=corr, cd_inclination="idelchik_3_2", **kw)
+        make(hole_cd=HoleCd(correlation=corr, inclination="idelchik_3_2", **kw))
 
 
 def test_an_unknown_inclination_model_is_refused() -> None:
-    with pytest.raises(ValueError, match="cd_inclination"):
-        _plate(cd_inclination="weisbach")
+    with pytest.raises(ValueError, match="inclination 'weisbach' is not one of"):
+        HoleCd(inclination="weisbach")
 
 
 def test_the_range_flag_reports_a_hole_too_short_to_reattach() -> None:
     # t/d 0.5 at 30 deg: L/d 1.0 < the l/d 2 floor -> flagged, still solved.
-    short = _solve(_plate(wall_thickness=0.4e-3, cd_inclination="idelchik_3_2"))
+    short = _solve(_plate(wall_thickness=0.4e-3, hole_cd=HoleCd(inclination="idelchik_3_2")))
     assert short["__element_diag__"]["eff"]["Cd_in_range"] == 0.0
 
 

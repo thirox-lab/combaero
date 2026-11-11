@@ -20,6 +20,7 @@ from combaero.network import (
     EffusionPlateElement,
     FilmCoolingElement,
     FlowNetwork,
+    HoleCd,
     NetworkSolver,
     PressureBoundary,
 )
@@ -46,7 +47,7 @@ def _film(l_over_d: float, correlation: str, d: float = 2e-3) -> FilmCoolingElem
     return FilmCoolingElement(
         "film", "cool", "gas", hole_diameter=d, holes_per_row=4, lateral_pitch=4 * d,
         wall_thickness=l_over_d * d, angle_deg=90.0, hole_type="cylindrical",
-        correlation=correlation,
+        hole_cd=HoleCd(correlation=correlation),
     )  # fmt: skip
 
 
@@ -87,7 +88,7 @@ def test_mcgreehan_schotsch_below_its_re_floor_is_info_not_stderr(capfd) -> None
     capfd.readouterr()
     plate = EffusionPlateElement(
         "eff", "cool", "gas", hole_diameter=0.6e-3, wall_thickness=1e-3, pitch=3e-3,
-        panel_length=0.02, panel_width=0.02, correlation="McGreehanSchotsch",
+        panel_length=0.02, panel_width=0.02, hole_cd=HoleCd(correlation="McGreehanSchotsch"),
     )  # fmt: skip
     d = _solve(plate, p_in=1.02e5)
     assert d["Cd_extrapolated_Re"] == 1.0
@@ -113,7 +114,7 @@ def test_a_fixed_cd_carries_no_envelope_flags() -> None:
     e = FilmCoolingElement(
         "film", "cool", "gas", hole_diameter=1e-3, holes_per_row=4, lateral_pitch=4e-3,
         wall_thickness=20e-3, angle_deg=90.0, hole_type="cylindrical",
-        correlation="fixed", Cd=0.7,
+        hole_cd=HoleCd(correlation="fixed", Cd=0.7),
     )  # fmt: skip
     d = _solve(e)
     assert all(d[k] == 0.0 for k in KEYS) and d["Cd_in_range"] == 1.0
