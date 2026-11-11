@@ -13,9 +13,16 @@ REPORTS, it does not score into the scorecard.
    alpha 0, Cd,no = Lichtarowicz Eq. 1 at l/d 6 = 0.776, which is their flat
    "Predict Mm = 0" line). The predicted points were READ BY EYE off a
    600 dpi render of the printed figure (FIG9_PREDICTED, +-0.005 in Cd,
-   +-0.005 in PR); they are not a reviewed digitisation and are not
-   committed as data. Fidelity therefore means: the implementation
-   reproduces the authors' generalised curves to the reading accuracy.
+   +-0.005 in PR). They live in this runner's source only, NOT in
+   validation/cooling/data/ (no reviewed digitisation, no metadata), so
+   they are a reproduction check, not a dataset. Fidelity therefore means:
+   the implementation reproduces the authors' generalised curves to the
+   reading accuracy. It is judged on Eq. 8 AS PRINTED (`as_printed`); the
+   shipped term also fades Eq. 8's offset beyond k_fit
+   (rowbury_2001_k_fit_max, include/crossflow_cd.h; for the suction set
+   3.8, the authors' own Fig. 9 application, its data reaching 0.58), our
+   extrapolation. Every Fig. 9 marker lies inside it, so the two agree;
+   both are reported.
 
 2. ACCURACY -- CROSS-SOURCE. Gritsch et al. 1998 (Karlsruhe, digitised,
    validation/cooling/data/gritsch1998, Fig. 3: Ma_c 0, Ma_m 0.3/0.6/1.2) and
@@ -31,14 +38,19 @@ REPORTS, it does not score into the scorecard.
 
 THE POINT SOLVE MIRRORS THE ELEMENT. FilmCoolingElement with
 cd_exit_crossflow='rowbury_2001' solves m = Cd A_eff-nozzle flow with
-Cd = rowbury(Cd0(Re(m)), k(m)), k = G_h^2 sin(theta) / (rho_h rho_m u_m^2),
-rho_h = rho(Tt_c, p_m) (OrificeElement._exit_crossflow). The element reads
+Cd = rowbury(Cd0(Re(m)), k(m)), k = G_h^2 f / (rho_h rho_m u_m^2), f =
+sin(theta) at alpha 0, rho_h the isentropic exit-plane density
+(rowbury_2001_exit_density; OrificeElement._exit_crossflow). The element reads
 rho_m u_m^2 from a MomentumChamberNode, which is subsonic, and Gritsch's
 Ma_m 1.2 is not; so each point here is solved on the papers' own ideal flow
 (isentropic, coolant total to mainstream static, compressible to choking)
 with rho_m u_m^2 = gamma p_m Ma_m^2, and the same C++ calls the element
 makes. tests (test_exit_crossflow_cd.py) pin that the element in a network
-gives this point solve's Cd at its solved state.
+gives this point solve's Cd at its solved state. A second reason to solve
+points: a hole into a moving chamber blows only while its supply Pt exceeds
+the chamber's Pt (#1087), so the series' low-PR points inside p_m < p0c <
+Pt_m (Ma_m 0.3 below PR 1.064, 0.6 below 1.276, 1.2 all of them) are not
+reachable through the element in a network at all.
 
 RIG BOUNDARY CONDITIONS (assumed, as in hole_cd_inclination_runner): exit
 static 1 atm, air at 290 K (Gritsch) / 293 K (Hay), Tt_c = Tt_m.
@@ -129,24 +141,26 @@ def solve_point(
     exit_term: bool,
     inclination: bool,
     cd_no: float | None = None,
-    rho_h_isentropic: bool = False,
+    rho_h_supply_tt: bool = False,
+    as_printed: bool = False,
 ) -> tuple[float, float, bool]:
     """(Cd, k_perp, held) at one operating point.
 
     cd_no fixes the no-crossflow Cd (the authors' Lichtarowicz constant)
-    instead of combaero's IdelchikThick at the iterate's Re. rho_h_isentropic
-    takes the coolant's isentropic exit density instead of rho(Tt_c, p_m)
-    (a sensitivity on a definition the paper leaves open, never the
-    element's)."""
+    instead of combaero's IdelchikThick at the iterate's Re.
+    rho_h_supply_tt takes rho(Tt_c, p_m) instead of the isentropic exit
+    density (the first version's choice, a sensitivity). as_printed
+    evaluates Eq. 8 as the paper prints it (the k floor kept, no fade
+    beyond the fitted k)."""
     m_ideal = ideal_flow(pr, rig.Tt, rig.d, rig.n)
     area = rig.n * math.pi * rig.d**2 / 4.0
     g_ideal = m_ideal / area
     pt = pr * P_INF
     mu = cb.transport_state(rig.Tt, pt, _X_AIR).mu
-    rho_h = float(cb.density(rig.Tt, P_INF, _X_AIR))
-    if rho_h_isentropic:
-        g = _gamma(rig.Tt, pt)
-        rho_h *= pr ** (1.0 - 1.0 / g)  # rho_t (p/pt)^(1/g) over rho(Tt, p)
+    if rho_h_supply_tt:
+        rho_h = float(cb.density(rig.Tt, P_INF, _X_AIR))
+    else:
+        rho_h = float(cb.rowbury_2001_exit_density(pt, rig.Tt, P_INF, _X_AIR).rho)
     q_m = _gamma(rig.Tt, P_INF) * P_INF * mach_m**2
 
     def residual(cd: float) -> tuple[float, float, bool]:
@@ -154,7 +168,12 @@ def solve_point(
         c0 = cd_no if cd_no is not None else _cd0(rig, re, inclination)
         if not exit_term or q_m <= 0.0:
             return cd - c0, math.nan, False
-        k = cb.rowbury_2001_k_perp(cd * g_ideal, rho_h, q_m, rig.theta).k
+        k = cb.rowbury_2001_k_perp(cd * g_ideal, rho_h, q_m, rig.theta, 0.0).k
+        if as_printed:
+            c = cb.rowbury_2001_coefficients(SUCTION, rig.theta, 0.0)
+            kf = cb.rowbury_2001_k_floor(SUCTION, rig.theta, 0.0)
+            kk = max(k, kf)
+            return cd - (1.0 / c0**2 + c.A * kk**-c.B - c.C) ** -0.5, k, k < kf
         r = cb.rowbury_2001_exit_crossflow_cd(c0, k, SUCTION, rig.theta, 0.0)
         return cd - r.Cd, k, bool(r.held)
 
@@ -179,7 +198,9 @@ def solve_point(
 GRITSCH_RIG = Rig(GRITSCH["d"], GRITSCH["n"], GRITSCH["l_over_d"], GRITSCH["Tt"], 30.0)
 
 
-def fidelity_rows(rho_h_isentropic: bool = False) -> list[tuple[float, float, float, float]]:
+def fidelity_rows(
+    rho_h_supply_tt: bool = False, as_printed: bool = True
+) -> list[tuple[float, float, float, float]]:
     """(Ma_m, PR, read Cd, combaero Cd) on the authors' Fig. 9 predictions."""
     out = []
     for mach, pr, cd_read in FIG9_PREDICTED:
@@ -190,7 +211,8 @@ def fidelity_rows(rho_h_isentropic: bool = False) -> list[tuple[float, float, fl
             True,
             False,
             cd_no=LICHTAROWICZ_CDU_L_OVER_D_6,
-            rho_h_isentropic=rho_h_isentropic,
+            rho_h_supply_tt=rho_h_supply_tt,
+            as_printed=as_printed,
         )
         out.append((mach, pr, cd_read, cd))
     return out
@@ -292,9 +314,14 @@ def behrendt_effect(ds: list[SeriesMetadata] | None = None) -> list[dict[str, fl
 
 def _main() -> None:
     print("1. FIDELITY: the authors' Fig. 9 predictions (eye-read, +-0.005), Cd,no 0.776")
-    for iso in (False, True):
-        rows = fidelity_rows(iso)
-        tag = "rho_h isentropic exit (sensitivity)" if iso else "rho_h = rho(Tt_c, p_m) (element)"
+    variants = (
+        (False, True, "Eq. 8 as printed, rho_h isentropic exit (the element's)"),
+        (False, False, "as shipped: offset faded beyond k_fit (suction 3.8, tier 2)"),
+        (True, True, "Eq. 8 as printed, rho_h = rho(Tt_c, p_m) (sensitivity)"),
+    )
+    for supply, printed, tag in variants:
+        rows = fidelity_rows(supply, printed)
+        iso = supply or not printed
         print(f"  {tag}")
         for mach in (0.3, 0.6, 1.2):
             sel = [r for r in rows if r[0] == mach]

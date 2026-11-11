@@ -5,8 +5,12 @@
 #include <initializer_list>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
+#include "composition.h"
 #include "crossflow_cd.h"
+#include "math_constants.h"
+#include "thermo.h"
 
 using combaero::CrossflowCd;
 using combaero::florschuetz_metzger_su_1982_cd;
@@ -201,7 +205,7 @@ using combaero::rowbury_2001_k_perp;
 
 namespace {
 
-double sind(double deg) { return std::sin(deg * 3.14159265358979323846 / 180.0); }
+double sind(double deg) { return std::sin(deg * M_PI / 180.0); }
 
 }  // namespace
 
@@ -252,7 +256,8 @@ TEST(Rowbury2001, RefusesAnglesWhereEq8HasNoMeaning) {
 
 TEST(Rowbury2001, Eq7AndEq8) {
   const auto c = rowbury_2001_coefficients(Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0);
-  for (const double k : {0.05, 0.3, 1.0, 5.0}) {
+  for (const double k : {0.05, 0.3, combaero::rowbury_2001_k_fit_max(
+                                        Rowbury2001Set::CylindricalSuctionSurface)}) {
     const auto r =
         rowbury_2001_exit_crossflow_cd(0.776, k, Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0);
     const double delta = c.A * std::pow(k, -c.B) - c.C;
@@ -262,15 +267,81 @@ TEST(Rowbury2001, Eq7AndEq8) {
   }
 }
 
-TEST(Rowbury2001, CrossoverAndTheInfiniteKAsymptote) {
-  // delta -> -C: Cd above Cd0 (crossover), finite at k = inf.
+TEST(Rowbury2001, CrossoverInsideTheFitAndCd0AtInfiniteK) {
+  // Inside the fitted k the -C offset raises Cd above Cd0 (crossover; the
+  // leading-edge rows reach it, k_fit 4.3); beyond it the offset fades, and
+  // k = inf (no mainstream) is Cd0 exactly.
+  const auto le = Rowbury2001Set::CylindricalLeadingEdge;
   const double cd0 = 0.8;
-  const auto r = rowbury_2001_exit_crossflow_cd(cd0, std::numeric_limits<double>::infinity(),
-                                                Rowbury2001Set::CylindricalSuctionSurface, 30.0,
-                                                0.0);
-  EXPECT_NEAR(r.Cd, 1.0 / std::sqrt(1.0 / (cd0 * cd0) - 0.10), 1e-14);
-  EXPECT_GT(r.Cd, cd0);
-  EXPECT_EQ(r.dCd_dk, 0.0);
+  EXPECT_GT(rowbury_2001_exit_crossflow_cd(cd0, combaero::rowbury_2001_k_fit_max(le), le, 88.0, 60.0).Cd,
+            cd0);
+  const auto set = Rowbury2001Set::CylindricalSuctionSurface;
+  const auto inf =
+      rowbury_2001_exit_crossflow_cd(cd0, std::numeric_limits<double>::infinity(), set, 30.0, 0.0);
+  EXPECT_EQ(inf.Cd, cd0);
+  EXPECT_TRUE(inf.faded);
+  // Continuous towards it: |Cd - Cd0| falls with k far out.
+  double prev = 1.0;
+  for (const double k : {1e2, 1e4, 1e8, 1e16}) {
+    const double d = std::abs(rowbury_2001_exit_crossflow_cd(cd0, k, set, 30.0, 0.0).Cd - cd0);
+    EXPECT_LT(d, prev);
+    prev = d;
+  }
+  EXPECT_LT(prev, 2e-4);
+}
+
+TEST(Rowbury2001, TheFadeJoinsEq8C1AtTheFittedKMax) {
+  const auto set = Rowbury2001Set::CylindricalLeadingEdge;
+  const double kmax = combaero::rowbury_2001_k_fit_max(set);
+  const auto c = rowbury_2001_coefficients(set, 88.0, 60.0);
+  const double e = 1e-9 * kmax;
+  const auto lo = rowbury_2001_exit_crossflow_cd(0.7, kmax - e, set, 88.0, 60.0);
+  const auto hi = rowbury_2001_exit_crossflow_cd(0.7, kmax + e, set, 88.0, 60.0);
+  EXPECT_FALSE(lo.faded);
+  EXPECT_TRUE(hi.faded);
+  EXPECT_NEAR(lo.delta, c.A * std::pow(kmax, -c.B) - c.C, 1e-8);
+  EXPECT_NEAR(hi.delta, lo.delta, 1e-8);
+  EXPECT_NEAR(hi.dCd_dk, lo.dCd_dk, 1e-6 * std::abs(lo.dCd_dk));
+  // Low slope beyond: |d delta / d ln k| <= B A k^-B + 0.65 C / width.
+  for (const double k : {4.0, 10.0, 100.0, 1e4}) {
+    const auto r = rowbury_2001_exit_crossflow_cd(0.7, k, set, 88.0, 60.0);
+    const double ddelta_dlnk = -2.0 * r.dCd_dk / std::pow(r.Cd, 3) * k;
+    EXPECT_LE(std::abs(ddelta_dlnk), c.B * c.A * std::pow(k, -c.B) +
+                                         0.65 * c.C / combaero::ROWBURY_2001_FADE_WIDTH + 1e-12);
+  }
+}
+
+TEST(Rowbury2001, ExitDensityIsTheIsentropeAndItsPartialsMatchFD) {
+  const std::vector<double> X = {0.7809, 0.2095, 0.0093, 0.0003};
+  std::vector<double> Xf(combaero::num_species(), 0.0);
+  // dry air in the species order N2, O2, AR, CO2 is not assumed: map by name
+  const char* names[] = {"N2", "O2", "AR", "CO2"};
+  for (int i = 0; i < 4; ++i) {
+    Xf[combaero::species_index_from_name(names[i])] = X[i];
+  }
+  const double Pt = 2.0e5, Tt = 400.0, P = 1.2e5;
+  const auto r = combaero::rowbury_2001_exit_density(Pt, Tt, P, Xf);
+  EXPECT_NEAR(combaero::s_mass(r.T, Xf, P), combaero::s_mass(Tt, Xf, Pt), 1e-8);
+  auto rho = [&](double pt, double tt, double p) {
+    return combaero::rowbury_2001_exit_density(pt, tt, p, Xf).rho;
+  };
+  EXPECT_NEAR(r.drho_dPt, (rho(Pt + 1, Tt, P) - rho(Pt - 1, Tt, P)) / 2.0, 1e-7 * std::abs(r.drho_dPt));
+  EXPECT_NEAR(r.drho_dP, (rho(Pt, Tt, P + 1) - rho(Pt, Tt, P - 1)) / 2.0, 1e-7 * std::abs(r.drho_dP));
+  EXPECT_NEAR(r.drho_dTt, (rho(Pt, Tt + 1e-3, P) - rho(Pt, Tt - 1e-3, P)) / 2e-3,
+              1e-6 * std::abs(r.drho_dTt));
+  // Mass-fraction partials against differences in Y (renormalised to X).
+  const std::vector<double> Y = combaero::mole_to_mass(Xf);
+  for (std::size_t k = 0; k < Y.size(); ++k) {
+    if (Y[k] <= 0.0) continue;
+    const double h = 1e-7;
+    std::vector<double> Yp = Y, Ym = Y;
+    Yp[k] += h;
+    Ym[k] -= h;
+    const double fd = (combaero::rowbury_2001_exit_density(Pt, Tt, P, combaero::mass_to_mole(Yp)).rho -
+                       combaero::rowbury_2001_exit_density(Pt, Tt, P, combaero::mass_to_mole(Ym)).rho) /
+                      (2.0 * h);
+    EXPECT_NEAR(r.drho_dY[k], fd, 1e-5 * std::abs(fd) + 1e-9) << k;
+  }
 }
 
 TEST(Rowbury2001, PartialsMatchCentralDifferences) {
@@ -341,6 +412,37 @@ TEST(Rowbury2001, FlowRootIsUniqueAboveTheFloor) {
   }
 }
 
+TEST(Rowbury2001, FitRangeIsTheLargestKTheRowsReach) {
+  // k_perp = Cd^2 Ma_j^2 / Ma_m^2 f / AR^2 at the row's design PR (Cd 0.70)
+  // or printed sweep, gamma 1.4 (see crossflow_cd.h, "THE TWO ENDS").
+  auto k = [](double th, double al, double mm, double pr, double cd, double ar) {
+    const double mj2 = 2.0 / 0.4 * (std::pow(pr, 0.4 / 1.4) - 1.0);
+    const double ct = th < 90.0 ? 1.0 / std::tan(th * M_PI / 180.0) : 0.0;
+    const double ta = std::tan(al * M_PI / 180.0);
+    return cd * cd * mj2 / (mm * mm) / std::sqrt(ct * ct + 1.0 + ta * ta) / (ar * ar);
+  };
+  using combaero::rowbury_2001_k_fit_max;
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalPressureSurface),
+              k(58, 0, 0.05, 1.02, 0.70, 1.0), 0.05);  // row 6
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalLeadingEdge),
+              k(90, 60, 0.04, 1.02, 0.70, 1.0), 0.05);  // row 7
+  EXPECT_NEAR(combaero::rowbury_2001_k_data_max(Rowbury2001Set::CylindricalSuctionSurface),
+              k(78, 0, 0.32, 1.09, 0.70, 1.0), 0.005);  // row 11
+  // Tier 2: the authors' own application, Fig. 9 Ma_m 0.3 to PR 2.0 (the
+  // runner's evaluation of their curve; python test_exit_crossflow_cd).
+  EXPECT_EQ(rowbury_2001_k_fit_max(Rowbury2001Set::CylindricalSuctionSurface), 3.8);
+  for (const auto set : {Rowbury2001Set::CylindricalPressureSurface,
+                         Rowbury2001Set::CylindricalLeadingEdge,
+                         Rowbury2001Set::FanShapedPressureSurface,
+                         Rowbury2001Set::FanShapedSuctionSurface}) {
+    EXPECT_EQ(rowbury_2001_k_fit_max(set), combaero::rowbury_2001_k_data_max(set));
+  }
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::FanShapedPressureSurface),
+              k(30, 7, 0.08, 1.02, 0.70, 2.9), 0.005);  // row 4
+  EXPECT_NEAR(rowbury_2001_k_fit_max(Rowbury2001Set::FanShapedSuctionSurface),
+              k(30, 6, 0.96, 2.5, 0.75, 2.9), 0.0005);  // row 14, Fig. 8
+}
+
 TEST(Rowbury2001, InRangeIsTable1) {
   EXPECT_TRUE(rowbury_2001_in_range(Rowbury2001Set::CylindricalSuctionSurface, 30.0, 0.0));
   EXPECT_TRUE(rowbury_2001_in_range(Rowbury2001Set::CylindricalSuctionSurface, 78.0, 6.0));
@@ -352,14 +454,28 @@ TEST(Rowbury2001, InRangeIsTable1) {
 
 TEST(Rowbury2001, KPerpAndItsPartials) {
   const double G = 120.0, rho = 2.0, q = 3.0e4, th = 35.0;
-  const auto r = rowbury_2001_k_perp(G, rho, q, th);
+  const auto r = rowbury_2001_k_perp(G, rho, q, th, 0.0);
   EXPECT_NEAR(r.k, G * G * sind(th) / (rho * q), 1e-14);
   const double h = 1e-6;
   EXPECT_NEAR(r.dk_dG,
-              (rowbury_2001_k_perp(G + h, rho, q, th).k - rowbury_2001_k_perp(G - h, rho, q, th).k) /
+              (rowbury_2001_k_perp(G + h, rho, q, th, 0.0).k -
+               rowbury_2001_k_perp(G - h, rho, q, th, 0.0).k) /
                   (2 * h),
               1e-7 * std::abs(r.dk_dG));
   EXPECT_NEAR(r.dk_drho_h, -r.k / rho, 1e-14);
   EXPECT_NEAR(r.dk_dq_m, -r.k / q, 1e-18);
-  EXPECT_THROW(rowbury_2001_k_perp(G, rho, 0.0, th), std::invalid_argument);
+  EXPECT_THROW(rowbury_2001_k_perp(G, rho, 0.0, th, 0.0), std::invalid_argument);
+  EXPECT_THROW(rowbury_2001_k_perp(G, rho, q, th, 90.0), std::invalid_argument);
+}
+
+TEST(Rowbury2001, KPerpTakesTheSurfaceNormalComponent) {
+  // Fig. 3: axis along (cot theta, 1, tan alpha), alpha from the normal.
+  // A normal-ish showerhead hole (theta 90, alpha 60) has u_perp = u / 2.
+  const double G = 100.0, rho = 1.0, q = 1.0e4;
+  EXPECT_NEAR(rowbury_2001_k_perp(G, rho, q, 90.0, 60.0).k,
+              0.5 * rowbury_2001_k_perp(G, rho, q, 90.0, 0.0).k, 1e-12);
+  const double th = 40.0, al = 6.0;
+  const double ct = 1.0 / std::tan(th * M_PI / 180.0), ta = std::tan(al * M_PI / 180.0);
+  EXPECT_NEAR(rowbury_2001_k_perp(G, rho, q, th, al).k,
+              G * G / std::sqrt(ct * ct + 1.0 + ta * ta) / (rho * q), 1e-12);
 }

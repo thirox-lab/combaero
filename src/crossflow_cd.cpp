@@ -1,5 +1,8 @@
 #include "crossflow_cd.h"
 
+#include "composition.h"
+#include "thermo.h"
+
 #include "inner_solve.h"
 #include "input_validation.h"
 #include "math_constants.h"
@@ -247,9 +250,9 @@ Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double the
     throw std::invalid_argument(
         "rowbury_2001: theta (hole axis to the surface) must be in (0, 90] deg");
   }
-  if (!(alpha_deg >= 0.0 && alpha_deg <= 90.0)) {
+  if (!(alpha_deg >= 0.0 && alpha_deg < 90.0)) {
     throw std::invalid_argument(
-        "rowbury_2001: alpha (orientation / compound angle) must be in [0, 90] deg");
+        "rowbury_2001: alpha (radial orientation from the surface normal) must be in [0, 90) deg");
   }
   const rowbury2001::Row& r = rowbury_row(set);
   // sin(90 deg) is exactly 1 in floating point; sin(0) exactly 0.
@@ -281,6 +284,13 @@ double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_d
   return k;
 }
 
+double rowbury_2001_k_fit_max(Rowbury2001Set set) {
+  const rowbury2001::Envelope& e = rowbury_envelope(set);
+  return std::max(e.k_data, e.k_applied);
+}
+
+double rowbury_2001_k_data_max(Rowbury2001Set set) { return rowbury_envelope(set).k_data; }
+
 bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg) {
   const rowbury2001::Envelope& e = rowbury_envelope(set);
   constexpr double tol = 1e-9;
@@ -290,10 +300,8 @@ bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_de
 
 Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2001Set set,
                                              double theta_deg, double alpha_deg) {
-  if (!(Cd0 > 0.0 && Cd0 <= 1.0)) {
-    throw std::invalid_argument("rowbury_2001_exit_crossflow_cd: Cd0 must be in (0, 1]");
-  }
-  if (!(k_perp >= 0.0) || std::isnan(k_perp)) {
+  validation::require_finite_positive(Cd0, "rowbury_2001_exit_crossflow_cd: Cd0 must be > 0");
+  if (!(k_perp >= 0.0)) {
     throw std::invalid_argument("rowbury_2001_exit_crossflow_cd: k_perp must be >= 0");
   }
   const Rowbury2001Coefficients c = rowbury_2001_coefficients(set, theta_deg, alpha_deg);
@@ -301,10 +309,29 @@ Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2
   Rowbury2001Cd out;
   out.held = k_perp < k_floor;
   out.k_used = out.held ? k_floor : k_perp;
-  // k = +inf (a vanishing mainstream on a flowing hole) gives A k^-B = 0:
-  // the -C asymptote, finite.
-  const double ak = std::isinf(out.k_used) ? 0.0 : c.A * std::pow(out.k_used, -c.B);
-  out.delta = ak - c.C;
+  const double k = out.k_used;
+  double d_delta_dk = 0.0;
+  if (std::isinf(k)) {
+    // A k^-B -> 0 and the faded offset -> 0: Cd0 exactly.
+    out.faded = true;
+    out.delta = 0.0;
+  } else {
+    const double ak = c.A * std::pow(k, -c.B);
+    double w = 1.0;
+    double dw_dk = 0.0;
+    const double k_fit = rowbury_2001_k_fit_max(set);
+    if (k > k_fit) {
+      // Beyond the fitted range the offset C fades: w = 1 / (1 + (x/s)^2),
+      // x = ln(k / k_fit); w(0) = 1, w'(0) = 0 (C1 at k_fit).
+      out.faded = true;
+      const double xs = std::log(k / k_fit) / ROWBURY_2001_FADE_WIDTH;
+      const double den = 1.0 + xs * xs;
+      w = 1.0 / den;
+      dw_dk = -2.0 * xs / (den * den) / (ROWBURY_2001_FADE_WIDTH * k);
+    }
+    out.delta = ak - c.C * w;
+    d_delta_dk = -c.B * ak / k - c.C * dw_dk;
+  }
   const double x = 1.0 / (Cd0 * Cd0) + out.delta;
   if (!(x > 0.0)) {
     throw std::invalid_argument(
@@ -314,15 +341,15 @@ Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2
   const double cd3 = out.Cd * out.Cd * out.Cd;
   // x = Cd0^-2 + delta: dCd/dCd0 = (-x^-3/2 / 2)(-2 Cd0^-3) = Cd^3 / Cd0^3.
   out.dCd_dCd0 = cd3 / (Cd0 * Cd0 * Cd0);
-  // d delta/dk = -B A k^-B / k; dCd/dk = -Cd^3 / 2 d delta/dk. Zero where held.
-  if (!out.held && !std::isinf(out.k_used)) {
-    out.dCd_dk = 0.5 * cd3 * c.B * ak / out.k_used;
+  // dCd/dk = -Cd^3 / 2 d delta/dk. Zero where held.
+  if (!out.held) {
+    out.dCd_dk = -0.5 * cd3 * d_delta_dk;
   }
   return out;
 }
 
 Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2,
-                                     double theta_deg) {
+                                     double theta_deg, double alpha_deg) {
   if (!(G_h >= 0.0) || !std::isfinite(G_h)) {
     throw std::invalid_argument("rowbury_2001_k_perp: G_h must be finite and >= 0");
   }
@@ -332,12 +359,60 @@ Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2
   if (!(theta_deg > 0.0 && theta_deg <= 90.0)) {
     throw std::invalid_argument("rowbury_2001_k_perp: theta must be in (0, 90] deg");
   }
-  const double s = sin_deg(theta_deg);
+  if (!(alpha_deg >= 0.0 && alpha_deg < 90.0)) {
+    throw std::invalid_argument("rowbury_2001_k_perp: alpha must be in [0, 90) deg");
+  }
+  // u_perp / u_h along (cot theta, 1, tan alpha); exactly sin(theta) at
+  // alpha = 0, exactly 1 for a normal hole.
+  double f = 1.0;
+  if (theta_deg < 90.0 || alpha_deg > 0.0) {
+    const double ct = theta_deg < 90.0 ? std::cos(theta_deg * M_PI / 180.0) /
+                                             std::sin(theta_deg * M_PI / 180.0)
+                                       : 0.0;
+    const double ta = std::tan(alpha_deg * M_PI / 180.0);
+    f = alpha_deg > 0.0 ? 1.0 / std::sqrt(ct * ct + 1.0 + ta * ta) : sin_deg(theta_deg);
+  }
   Rowbury2001KPerp out;
-  out.k = G_h * G_h * s / (rho_h * rho_m_u_m2);
-  out.dk_dG = 2.0 * G_h * s / (rho_h * rho_m_u_m2);
+  out.k = G_h * G_h * f / (rho_h * rho_m_u_m2);
+  out.dk_dG = 2.0 * G_h * f / (rho_h * rho_m_u_m2);
   out.dk_drho_h = -out.k / rho_h;
   out.dk_dq_m = -out.k / rho_m_u_m2;
+  return out;
+}
+
+Rowbury2001ExitDensity rowbury_2001_exit_density(double Pt, double Tt, double P,
+                                                 const std::vector<double>& X) {
+  validation::require_finite_positive(Pt, "rowbury_2001_exit_density: Pt must be > 0");
+  validation::require_finite_positive(Tt, "rowbury_2001_exit_density: Tt must be > 0");
+  validation::require_finite_positive(P, "rowbury_2001_exit_density: P must be > 0");
+  const std::size_t n = X.size();
+  // s(T, P, X) = s(Tt, Pt, X); the mixing entropy cancels at fixed X.
+  const double s0 = s_mass(Tt, X, Pt);
+  const double T = P == Pt ? Tt : calc_T_from_s_mass(s0, P, X, Tt, 1e-10, 100);
+  const double MW = mwmix(X) / 1000.0;  // kg/mol
+  const double R = specific_gas_constant(X);
+  const double Ru = R * MW;
+  Rowbury2001ExitDensity out;
+  out.T = T;
+  out.rho = P / (R * T);
+  // Molar form F = sum X_j (s_j(T) - s_j(Tt)) - Ru ln(P / Pt) = 0, so
+  // dT = -(dF/dx) / (dF/dT) with dF/dT = cp(T) / T (molar).
+  const double cpT = cp_mass(T, X) * MW;
+  const double cpTt = cp_mass(Tt, X) * MW;
+  const double dT_dP = Ru * T / (P * cpT);
+  const double dT_dPt = -Ru * T / (Pt * cpT);
+  const double dT_dTt = cpTt * T / (cpT * Tt);
+  const double r_T = -out.rho / T;
+  out.drho_dP = out.rho / P + r_T * dT_dP;
+  out.drho_dPt = r_T * dT_dPt;
+  out.drho_dTt = r_T * dT_dTt;
+  std::vector<double> drho_dX(n, 0.0);
+  for (std::size_t j = 0; j < n; ++j) {
+    const double W = species_molar_mass(j) / 1000.0;
+    const double dT_dX = -(s_species(j, T) - s_species(j, Tt)) * T / cpT;
+    drho_dX[j] = out.rho * (W / MW) + r_T * dT_dX;
+  }
+  out.drho_dY = mole_gradient_to_mass(X, drho_dX);
   return out;
 }
 

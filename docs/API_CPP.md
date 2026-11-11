@@ -1297,26 +1297,42 @@ CrossflowCd florschuetz_metzger_su_1982_cd(double xn_d, double yn_d, double z_d,
 // EXIT (external) crossflow on a film-cooling hole (#1074, crossflow_cd.h):
 // Rowbury, Oldfield & Lock (2001) Eqs. 7-8, an additive outlet loss on the
 // no-crossflow Cd0, 1/Cd^2 = 1/Cd0^2 + A k_perp^-B - C, k_perp = rho_h u_h
-// u_h,perp / (rho_m u_m^2) on the hole's ACTUAL flow. A, B, C: Table 2 per
-// set at (theta, alpha). Held below rowbury_2001_k_floor (Cd -> 0 and, for
-// B > 1, no root of the hole's flow below it). A vanishing mainstream gives
-// the -C asymptote, not Cd0: the caller applies the term only to a
-// mainstream with momentum. Table 1's angle spans are a flag, not a refusal.
+// u_h,perp / (rho_m u_m^2) on the hole's ACTUAL flow, u_h,perp/u_h =
+// 1/sqrt(cot^2 theta + 1 + tan^2 alpha) (Fig. 3, alpha from the surface
+// normal; Table 1 settles it), rho_h the isentropic exit-plane density.
+// A, B, C: Table 2 per set at (theta, alpha). Held below
+// rowbury_2001_k_floor (Cd -> 0 and, for B > 1, no root of the hole's flow
+// below it). Beyond rowbury_2001_k_fit_max(set) = max(tier 1: the k_perp the
+// set's Table 1 rows provably reach, rowbury_2001_k_data_max; tier 2: the
+// largest the authors applied it at) -- 4.7 / 4.3 / 3.8 (suction, tier 2,
+// Fig. 9; data 0.58) / 0.13 / 0.054, combaero's choice -- the
+// offset C fades (w = 1/(1 + (ln(k/k_fit)/FADE_WIDTH)^2), C1), so Cd -> Cd0 as
+// k -> inf. Table 1's angle span is a flag, not a refusal. Cd > 1 can occur
+// with the leading-edge set at Cd0 near 1 (not capped).
 enum class Rowbury2001Set { CylindricalPressureSurface, CylindricalLeadingEdge,
                             CylindricalSuctionSurface, FanShapedPressureSurface,
                             FanShapedSuctionSurface };
-constexpr double ROWBURY_2001_K_PERP_MIN = 0.01, ROWBURY_2001_UNIQUE_MARGIN = 0.5;
+constexpr double ROWBURY_2001_K_PERP_MIN = 0.01, ROWBURY_2001_FADE_WIDTH = 1.0,
+                 ROWBURY_2001_UNIQUE_MARGIN = 0.5;
+double rowbury_2001_k_fit_max(Rowbury2001Set set);   // max(k_data, k_applied)
+double rowbury_2001_k_data_max(Rowbury2001Set set);  // tier 1 alone
 struct Rowbury2001Coefficients { double A, B, C; };
 Rowbury2001Coefficients rowbury_2001_coefficients(Rowbury2001Set set, double theta_deg,
                                                   double alpha_deg);  // throws A, B <= 0
 double rowbury_2001_k_floor(Rowbury2001Set set, double theta_deg, double alpha_deg);
 bool rowbury_2001_in_range(Rowbury2001Set set, double theta_deg, double alpha_deg);
-struct Rowbury2001Cd { double Cd, dCd_dCd0, dCd_dk, delta, k_used; bool held; };
+struct Rowbury2001Cd { double Cd, dCd_dCd0, dCd_dk, delta, k_used; bool held, faded; };
 Rowbury2001Cd rowbury_2001_exit_crossflow_cd(double Cd0, double k_perp, Rowbury2001Set set,
                                              double theta_deg, double alpha_deg);
 struct Rowbury2001KPerp { double k, dk_dG, dk_drho_h, dk_dq_m; };
 Rowbury2001KPerp rowbury_2001_k_perp(double G_h, double rho_h, double rho_m_u_m2,
-                                     double theta_deg);
+                                     double theta_deg, double alpha_deg);
+// Isentropic expansion (Pt, Tt) -> P, variable cp; analytic partials,
+// drho_dY over mass fractions.
+struct Rowbury2001ExitDensity { double rho, T, drho_dPt, drho_dTt, drho_dP;
+                                std::vector<double> drho_dY; };
+Rowbury2001ExitDensity rowbury_2001_exit_density(double Pt, double Tt, double P,
+                                                 const std::vector<double>& X);
 
 // Merge chamber (#471): the main-inlet face from the impulse balance
 //   P_f + m_main^2 R T_f / (P_f A^2) = P + m_out^2/(rho A^2) - J/A

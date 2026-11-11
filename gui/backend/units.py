@@ -116,6 +116,10 @@ UNIT_MAP: dict[str, str] = {
     "Cd_exit_crossflow_ratio": "-",
     "exit_crossflow_rho_u2": "Pa",  # mainstream momentum flux rho_m u_m^2
     "exit_crossflow_k_perp": "-",
+    "exit_crossflow_k_used": "-",
+    "exit_crossflow_k_floor": "-",
+    "exit_crossflow_faded": "-",
+    "exit_crossflow_floor_above_fit": "-",
     "exit_crossflow_delta": "-",
     "exit_crossflow_held": "-",
     "exit_crossflow_in_range": "-",

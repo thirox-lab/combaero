@@ -4507,20 +4507,39 @@ documents:
     not done). IMPLEMENTED 2026-11-10 (#1074, user: "useful beyond DLR") as the opt-in
     cd_exit_crossflow="rowbury_2001" on FilmCoolingElement and EffusionPlateElement. Table 2 re-read off the
     600 dpi page: all five sets as screened, no difference. Table 1 / p. 259 give 14 cylindrical rows plus fan rows
-    1-4 and 12-14 (21 sets) where the text says 20: unresolved, immaterial to the coefficients. Our choices (not
-    the paper''s): rho_h = rho(Tt_c, p_m); the term held below k_floor = max(0.01, k_unique) (0.01: the lowest
-    k_perp of the authors'' own Fig. 9 Ma_m 1.2 prediction, back-calculated; k_unique keeps the hole flow a
-    unique root where B > 1); off at zero mainstream momentum (their "Predict Mm = 0" is Cd,no; Eq. 8''s own
-    k -> inf limit is -C). FIDELITY (exit_crossflow_cd_runner, on the authors'' Fig. 9 predicted markers read by
-    eye, +-0.005, Cd,no = Lichtarowicz 0.776): Ma_m 0.6 mean +0.003 (max 0.005), Ma_m 1.2 +0.008 (max 0.011),
-    Ma_m 0.3 within 0.008 above PR 1.05 (the two markers below sit on a near-vertical branch); with the
-    isentropic exit density instead of rho(Tt_c, p_m), Ma_m 1.2 is -0.0015 -- the authors evidently took the
-    exit-plane static density, which the element does not (yet). ACCURACY, CROSS-SOURCE (mean error, Cd,no
-    IdelchikThick with the inclination term, off -> on): Gritsch 30 deg Ma_m 0.3 +0.8% -> -2.7%, 0.6 +15.9% ->
-    +3.6%, 1.2 +46.8% -> +9.9%; Hay Minf 0.31 90 deg +11.2% -> -4.1% (outside the suction rows'' 30-78 deg),
-    30 deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%. Behrendt 2008 E30 plates (k_perp 8-12):
-    Cd and coolant flow +2.8-3.1%, eta_overall +0.0014 -- the wrong direction for DLR''s coolant-flow excess, as
-    screened; E20 (20 deg) is refused (suction-set A < 0 below 20.6 deg).'
+    1-4 and 12-14 (21 sets) where the text says 20: unresolved, immaterial to the coefficients. Read as printed:
+    rho_h the coolant at the hole exit plane (isentropic exit density, p. 264); u_h,perp the surface-normal
+    velocity component, alpha (Fig. 3) measured from the surface normal in the cross-stream plane -- settled by
+    Table 1, whose streamwise-inclined rows 1-6 and 11-14 carry alpha 0-7 (from the wall they would read ~90) --
+    so u_perp/u = 1/sqrt(cot^2 theta + 1 + tan^2 alpha), with Table 2''s (1 + sin alpha) on A, B in addition;
+    rho_m u_m^2 the approaching mainstream (the chamber''s main inlet, at the main face''s density). FITTED k
+    RANGE: the one printed k axis (Fig. 4) is k_out of row 1 (theta 21), 0.2-3.3, i.e. k_perp 0.07-1.2; it is
+    not the generalised fit''s range. Per Table 1 row, k_perp = Cd^2 Ma_j^2/Ma_m^2 f/AR^2 at its design PR (Cd
+    0.70) or printed sweep (rows 1, 10, 14) gives the largest k_perp each set provably reaches: cylindrical
+    pressure 4.7 (row 6), leading edge 4.3 (row 7), suction 0.58 (row 11; row 14 to PR 2.5 only 0.46), fan
+    pressure 0.13 (row 4, AR 2.9), fan suction 0.054 (row 14). The other rows were swept above design PR, unprinted,
+    so these are lower bounds on the true top (TIER 1, data). TIER 2, the authors'' own application (user,
+    2026-11-10: it holds weight, less than data): Figs. 6-8''s generalised curves stay inside tier 1 (row 1 to
+    PR 1.65: 0.88; row 10 to 1.45: 2.6; row 14 fan: 0.054); Fig. 9 applies the suction set to Gritsch''s 30 deg
+    hole, its Ma_m 0.3 curve to PR 2.0: k_perp 3.8. The fade threshold k_fit = max(tier 1, tier 2) is
+    combaero''s choice: tier 1 sets pressure 4.7, leading edge 4.3, fan 0.13 / 0.054; tier 2 sets suction 3.8
+    (data 0.58); exit_crossflow_faded reports the tier (0 data, 0.5 authors'' application only, 1 faded). Our
+    choices: held below k_floor = max(0.01, k_unique) (0.01: the lowest k_perp of the authors'' own Fig. 9 Ma_m
+    1.2 prediction, back-calculated; k_unique keeps the hole flow a unique root where B > 1, margin 0.5 -- Hay
+    90 deg moves with it); beyond k_fit the -C offset fades, w = 1/(1 + ln(k/k_fit)^2), C1, so Cd -> Cd,no as
+    the mainstream vanishes (Eq. 8''s own limit is -C, which jumped to Cd,no at u_m = 0). FIDELITY
+    (exit_crossflow_cd_runner, the authors'' Fig. 9 predicted markers read by eye, +-0.005, Cd,no = Lichtarowicz
+    0.776; as printed and as shipped agree at every marker): Ma_m 0.6 mean -0.0005 (max 0.0027), 1.2 -0.0015
+    (max 0.0027); Ma_m 0.3 within 0.008 above PR 1.05, the two markers below (PR 1.016 -0.036, 1.028 -0.014)
+    sit on a near-vertical branch. The first version''s rho(Tt_c, p_m) missed Ma_m 1.2 by +0.008: fixed.
+    ACCURACY, CROSS-SOURCE (mean error, Cd,no IdelchikThick with the inclination term, off -> on, points
+    solved directly): Gritsch 30 deg Ma_m 0.3 +0.8% -> -2.8%, 0.6 +15.9% -> +3.2%, 1.2 +46.8% -> +8.6%; Hay
+    Minf 0.31 90 deg +11.2% -> -4.6% (outside the suction rows'' 30-78 deg; margin 0.25/0.5/0.75/1.0 gives
+    -0.2/-4.6/-7.4/-9.3%), 30 deg parallel +11.4% -> +6.8%, perpendicular +12.3% -> +8.8%. Points inside p_m
+    < p0c < Pt_m (#1087) are not reachable through the element in a network. Behrendt 2008 E30 plates (k_perp
+    7.8-11.6, beyond 3.8, faded): Cd and coolant flow +1.1-1.6% (+2.8-3.1% with Eq. 8''s -C unfaded), the
+    wrong direction for DLR''s coolant-flow excess; E20 (20 deg) is refused (suction-set A < 0 below 20.6
+    deg).'
   read_for: ['#1074 exit-crossflow Cd of film and effusion holes', 'Hay 1983 Minf 0.31 residual', 'DLR 2008
       coolant-flow excess (no: wrong sign at high k)']
   issues: [386, 1074]

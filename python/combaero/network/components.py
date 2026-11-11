@@ -4868,9 +4868,10 @@ def _exit_crossflow_spec(
             f"{name}: exit_crossflow_region {region!r} is not one of "
             f"{list(CD_EXIT_CROSSFLOW_REGIONS)}."
         )
-    if not (math.isfinite(alpha_deg) and 0.0 <= alpha_deg <= 90.0):
+    if not (math.isfinite(alpha_deg) and 0.0 <= alpha_deg < 90.0):
         raise ValueError(
-            f"{name}: exit_crossflow_orientation_deg = {alpha_deg!r} must be in [0, 90]."
+            f"{name}: exit_crossflow_orientation_deg = {alpha_deg!r} (alpha, the radial "
+            "orientation from the surface normal, Rowbury et al. Fig. 3) must be in [0, 90)."
         )
     if model == "none":
         return None
@@ -5192,6 +5193,8 @@ class OrificeElement(NetworkElement):
         # resolve_topology the discharge node it reads the mainstream from.
         self._exit_xf: _ExitCrossflowSpec | None = None
         self._exit_xf_node: Any = None
+        self._exit_xf_mainstream: tuple[str, ...] = ()
+        self._exit_xf_main_src: str | None = None
 
         # A bore of zero is a CLOSED restriction (#1024); a negative or
         # non-finite one is no geometry.
@@ -5675,77 +5678,120 @@ class OrificeElement(NetworkElement):
         """(Cd, C++'s Rowbury2001Cd or None, dk_perp/d(name)) of the opt-in
         exit-crossflow term (#1074, rowbury_2001_* in crossflow_cd.h).
 
-        k_perp = G_h^2 sin(theta) / (rho_h rho_m u_m^2):
+        k_perp = G_h^2 f / (rho_h rho_m u_m^2), f = u_perp / u_h (Fig. 3):
           G_h      the hole's ACTUAL mass flux, |m| / (A_holes AR), AR the
                    exit/inlet area ratio of a fan-shaped hole (the authors
                    take the exit-plane flux, p. 262), 1 otherwise;
-          rho_h    the coolant at the discharge static pressure and its
-                   supply stagnation temperature, rho(Tt_in, P_out). The
-                   paper does not define it further; the isentropic exit
-                   static density would be higher by (Pt/P)^(1 - 1/gamma)
-                   (22% at PR 2), lowering k there, where the term is near
-                   its -C asymptote and k barely moves it;
-          rho_m u_m^2  the discharge chamber's momentum flux, G_m^2 /
-                   rho_m on its through-flow and static density
-                   (MomentumChamberNode.static_density), the gas velocity
-                   the blowing ratio reads.
-        No mainstream momentum (a chamber with no flow): the term is off and
-        Cd0 returned. Eq. 8's own limit there is the -C asymptote, not Cd0
-        (include/crossflow_cd.h); the paper's no-crossflow prediction is
-        Cd,no by definition, and so is this one. Reverse (ingesting) flow
-        takes the same Cd at |m|: the source covers injection only.
+          rho_h    the coolant's exit-plane static density, the isentropic
+                   expansion from the supply (Pt, Tt) to the discharge
+                   static P (rowbury_2001_exit_density): with it the
+                   authors' own Fig. 9 predictions are reproduced (the
+                   supply-Tt density left Ma_m 1.2 0.008 high);
+          rho_m u_m^2  the APPROACHING mainstream's momentum flux, G_m^2 /
+                   rho_m: G_m the chamber's main-inlet flow over its area,
+                   rho_m the main stream's density at the chamber's main
+                   face (_mainstream_momentum_flux).
+        No mainstream momentum: Cd0. Eq. 8's own limit there is -C; the
+        offset fades beyond the fitted k range, so Cd -> Cd0 continuously as
+        u_m -> 0 (include/crossflow_cd.h). Reverse (ingesting) flow takes
+        the same Cd at |m|: the source covers injection only.
         """
         spec = self._exit_xf
         q, dq = self._mainstream_momentum_flux(state_out)
         if spec is None or not q > 0.0:
             return cd0, None, {}
-        X = state_in.X
-        rho_h = float(cb.density(state_in.Tt, state_out.P, X))
+        ex = cb.rowbury_2001_exit_density(state_in.Pt, state_in.Tt, state_out.P, state_in.X)
+        rho_h = float(ex.rho)
         m = float(state_in.m_dot)
         a_exit = self.area * spec.exit_area_ratio
-        kp = cb.rowbury_2001_k_perp(abs(m) / a_exit, rho_h, q, spec.theta_deg)
+        kp = cb.rowbury_2001_k_perp(abs(m) / a_exit, rho_h, q, spec.theta_deg, spec.alpha_deg)
         r = cb.rowbury_2001_exit_crossflow_cd(
-            min(max(cd0, 1e-12), 1.0), kp.k, spec.coefficient_set, spec.theta_deg, spec.alpha_deg
+            cd0, kp.k, spec.coefficient_set, spec.theta_deg, spec.alpha_deg
         )
         dk: dict[str, float] = {}
         if m != 0.0:
             dk[f"{self.id}.m_dot"] = kp.dk_dG * (1.0 if m > 0.0 else -1.0) / a_exit
-        # rho_h = P W / (R Tt): ideal gas at the coolant's composition.
         dk_drho = float(kp.dk_drho_h)
-        dk[f"{self.to_node}.P"] = dk.get(f"{self.to_node}.P", 0.0) + dk_drho * rho_h / state_out.P
-        dk[f"{self.from_node}.Tt"] = -dk_drho * rho_h / state_in.Tt
-        W = float(cb.mwmix(X))
-        for k, y in enumerate(state_in.Y):
-            if y > 0.0:
+        for key, d in (
+            (f"{self.from_node}.Pt", ex.drho_dPt),
+            (f"{self.from_node}.Tt", ex.drho_dTt),
+            (f"{self.to_node}.P", ex.drho_dP),
+        ):
+            dk[key] = dk.get(key, 0.0) + dk_drho * float(d)
+        for k, d in enumerate(ex.drho_dY):
+            if d != 0.0:
                 key = f"{self.from_node}.Y[{k}]"
-                dk[key] = dk.get(key, 0.0) - dk_drho * rho_h * W / float(cb.species_molar_mass(k))
+                dk[key] = dk.get(key, 0.0) + dk_drho * float(d)
         for name, d in dq.items():
             dk[name] = dk.get(name, 0.0) + float(kp.dk_dq_m) * d
         return float(r.Cd), r, dk
 
+    def _resolve_exit_mainstream(self, graph: "FlowNetwork") -> None:
+        """The discharge node and the elements whose flow into it is the
+        APPROACHING mainstream: its main inlet, or without one every inflow
+        that is not a cooling hole (the holes' own discharge is not the
+        crossflow they blow into)."""
+        node = graph.nodes.get(self.to_node)
+        self._exit_xf_node = node
+        self._exit_xf_main_src = None
+        main = getattr(node, "main_inlet", None)
+        if main is not None:
+            # A chamber with several inflows must declare its main inlet, so
+            # for a hole discharging into a flowing chamber this is the case.
+            self._exit_xf_mainstream = (main,)
+            elem = graph.elements.get(main)
+            self._exit_xf_main_src = getattr(elem, "from_node", None)
+            return
+        # Without one the chamber's only inflow is this hole: no mainstream
+        # (refused at validate).
+        self._exit_xf_mainstream = ()
+
     def _mainstream_momentum_flux(
         self, state_out: "NetworkMixtureState"
     ) -> tuple[float, dict[str, float]]:
-        """rho_m u_m^2 of the discharge chamber and its derivatives by name,
-        or (0, {}) where the discharge node has no flowing gas.
+        """rho_m u_m^2 of the approaching mainstream and its derivatives by
+        name, or (0, {}) where the discharge node has none.
 
-        G_m = m_chamber / A on the chamber's through-flow; d/d(own m_dot)
-        through it is keyed _DCD_DM_VIA_CHAMBER (see there)."""
+        G_m = (the main inlet's flow into the chamber) / A, rho_m the main
+        stream's density at the chamber's MAIN FACE: the face's static state
+        (MomentumChamberNode.main_face_state, C++ chamber_merge_face_state)
+        on the main stream's isentrope from (Pt_face, Tt_main, Y_main) to
+        P_face. Not the chamber's own static density, whose Tt and Y are the
+        mixed outlet's, holes included. d/d(own m_dot) through the face
+        (the outlet flow and the side streams' impulse include this hole's)
+        is keyed _DCD_DM_VIA_CHAMBER (see there)."""
         node = self._exit_xf_node
         if not isinstance(node, MomentumChamberNode) or not node.area > 0.0:
             return 0.0, {}
-        m_t = float(getattr(node, "_total_m_dot", 0.0))
-        if m_t == 0.0:
+        main = getattr(node, "main_inlet", None)
+        main_st, dm = None, {}
+        for eid, st, names in getattr(node, "_inflows", []):
+            if eid == main:
+                main_st, dm = st, names
+        if main_st is None or float(main_st.m_dot) == 0.0:
             return 0.0, {}
-        rho, drho = node.static_density(state_out)
-        if not rho > 0.0:
-            return 0.0, {}
+        m_m = float(main_st.m_dot)
+        P_f, Pt_f, dPf, dPtf = node.main_face_state(state_out)
+        ex = cb.rowbury_2001_exit_density(Pt_f, float(main_st.Tt), P_f, main_st.X)
+        rho = float(ex.rho)
+        drho: dict[str, float] = {}
+        for src, coef in ((dPf, float(ex.drho_dP)), (dPtf, float(ex.drho_dPt))):
+            for var, d in src.items():
+                drho[var] = drho.get(var, 0.0) + coef * d
+        src_node = getattr(self, "_exit_xf_main_src", None)
+        if src_node is not None:
+            key = f"{src_node}.Tt"
+            drho[key] = drho.get(key, 0.0) + float(ex.drho_dTt)
+            for k, d in enumerate(ex.drho_dY):
+                if d != 0.0:
+                    key = f"{src_node}.Y[{k}]"
+                    drho[key] = drho.get(key, 0.0) + float(d)
         A = node.area
-        q = (m_t / A) ** 2 / rho
+        q = (m_m / A) ** 2 / rho
         own = f"{self.id}.m_dot"
         dq: dict[str, float] = {}
-        dq_dm = 2.0 * m_t / (A * A * rho)
-        for var, coeff in getattr(node, "_upstream_m_dot_jac", {}).items():
+        dq_dm = 2.0 * m_m / (A * A * rho)
+        for var, coeff in dm.items():
             if coeff != 0.0:
                 key = _DCD_DM_VIA_CHAMBER if var == own else var
                 dq[key] = dq.get(key, 0.0) + dq_dm * coeff
@@ -5879,6 +5925,12 @@ class OrificeElement(NetworkElement):
                 f"flux from the discharge node, which must be a MomentumChamberNode with an "
                 f"area; {self.to_node!r} has no gas velocity."
             )
+        if not self._exit_xf_mainstream:
+            raise ValueError(
+                f"{type(self).__name__} {self.id!r}: cd_exit_crossflow needs an approaching "
+                f"mainstream, and {self.to_node!r} is fed only by cooling holes (declare "
+                "its main_inlet, or feed it a gas stream)."
+            )
 
     def _exit_crossflow_diagnostics(
         self, state_in: "NetworkMixtureState", state_out: "NetworkMixtureState", flows: Any
@@ -5891,15 +5943,42 @@ class OrificeElement(NetworkElement):
         cd0 = self._cd_without_exit_crossflow(state_in, state_out, flows)
         cd, r, _ = self._exit_crossflow(cd0, state_in, state_out)
         q, _ = self._mainstream_momentum_flux(state_out)
-        in_range = cb.rowbury_2001_in_range(spec.coefficient_set, spec.theta_deg, spec.alpha_deg)
+        cset, th, al = spec.coefficient_set, spec.theta_deg, spec.alpha_deg
+        k_floor = float(cb.rowbury_2001_k_floor(cset, th, al))
+        k = math.nan
+        if r is not None:
+            ex = cb.rowbury_2001_exit_density(state_in.Pt, state_in.Tt, state_out.P, state_in.X)
+            g_h = abs(float(state_in.m_dot)) / (self.area * spec.exit_area_ratio)
+            k = float(cb.rowbury_2001_k_perp(g_h, float(ex.rho), q, th, al).k)
         return {
             "Cd_no_exit_crossflow": float(cd0),
             "Cd_exit_crossflow_ratio": float(cd / cd0) if cd0 > 0.0 else math.nan,
             "exit_crossflow_rho_u2": float(q),
-            "exit_crossflow_k_perp": float(r.k_used) if r is not None else math.nan,
+            # The actual k_perp, and the one the term was evaluated at (the
+            # floor where held).
+            "exit_crossflow_k_perp": k,
+            "exit_crossflow_k_used": float(r.k_used) if r is not None else math.nan,
+            "exit_crossflow_k_floor": k_floor,
             "exit_crossflow_delta": float(r.delta) if r is not None else 0.0,
             "exit_crossflow_held": float(r.held) if r is not None else 0.0,
-            "exit_crossflow_in_range": float(in_range),
+            # Where k_used sits against the set's k tiers (info): 0 inside
+            # what its Table 1 rows provably reach (tier 1, data), 0.5 beyond
+            # that but inside the authors' own application of the set (tier
+            # 2, Fig. 9 for the suction set; Eq. 8 unfaded), 1 beyond both:
+            # the offset fades.
+            "exit_crossflow_faded": (
+                0.0
+                if r is None
+                else 1.0
+                if r.faded
+                else 0.5
+                if r.k_used > cb.rowbury_2001_k_data_max(cset)
+                else 0.0
+            ),
+            # Off Table 1's angles the floor can lie above the fitted k
+            # range: the whole fitted range is then held (info).
+            "exit_crossflow_floor_above_fit": float(k_floor > cb.rowbury_2001_k_fit_max(cset)),
+            "exit_crossflow_in_range": float(cb.rowbury_2001_in_range(cset, th, al)),
         }
 
     def validate(self) -> None:
@@ -7303,7 +7382,7 @@ class EffusionPlateElement(OrificeElement):
         self._orifice_geom.r = self.edge_radius
         self.beta = 0.0
         self._discharge_node = graph.nodes.get(self.to_node)
-        self._exit_xf_node = self._discharge_node
+        self._resolve_exit_mainstream(graph)
         # A supply node a channel runs THROUGH feeds the holes with a
         # crossflow. This 2-port plate is plenum-fed: McGreehan-Schotsch's
         # U1/Vi stays 0 and Andrews' coolant side assumes a still plenum, so
@@ -8113,7 +8192,7 @@ class FilmCoolingElement(OrificeElement):
         self._orifice_geom.t = self.hole_length
         self._orifice_geom.r = self.edge_radius
         self.beta = 0.0
-        self._exit_xf_node = graph.nodes.get(self.to_node)
+        self._resolve_exit_mainstream(graph)
         self._resolve_plate_against_chambers(graph)
 
     def validate(self) -> None:

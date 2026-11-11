@@ -526,7 +526,7 @@ class EffusionPlateData(BaseModel):
     exit_crossflow_region: Literal["suction_surface", "pressure_surface", "leading_edge"] = (
         "suction_surface"
     )
-    exit_crossflow_orientation_deg: float = Field(default=0.0, ge=0.0, le=90.0)
+    exit_crossflow_orientation_deg: float = Field(default=0.0, ge=0.0, lt=90.0)
     turbulence_intensity: float = Field(default=0.05, gt=0.0)
     gas_heat_flux: float = 0.0
     # The plate's alloy, for its wall temperature limit only (#998): the hot
@@ -605,7 +605,7 @@ class FilmCoolingData(BaseModel):
     exit_crossflow_region: Literal["suction_surface", "pressure_surface", "leading_edge"] = (
         "suction_surface"
     )
-    exit_crossflow_orientation_deg: float = Field(default=0.0, ge=0.0, le=90.0)
+    exit_crossflow_orientation_deg: float = Field(default=0.0, ge=0.0, lt=90.0)
     label: str | None = None
 
 
