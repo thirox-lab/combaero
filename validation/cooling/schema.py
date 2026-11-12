@@ -77,6 +77,13 @@ class SeriesMetadata:
     # the list must be EVERY eligible set, which a test derives by rule, so
     # an unflattering set cannot be left off (see conventions.eligible_sets).
     also_scores: tuple[str, ...] = ()
+    # The rig as the source PRINTS it, where that is less than `geometry`
+    # needs: wall count, which walls are ribbed, and null for every parameter
+    # the source does not state. Kept apart from `geometry` so the rib runner,
+    # which fills a missing e/D or P/e with a default, never sees it; read by
+    # runners that score only what the printed rig supports
+    # (rib_wall_count_runner).
+    rig: dict | None = None
 
     @property
     def label(self) -> str:
@@ -147,6 +154,7 @@ def load_dataset(root: Path | None = None) -> list[SeriesMetadata]:
                     rib_shape=entry.get("rib_shape"),
                     verification=entry.get("verification"),
                     also_scores=tuple(entry.get("also_scores") or ()),
+                    rig=entry.get("rig"),
                 )
             )
     return out

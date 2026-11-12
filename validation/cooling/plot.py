@@ -77,6 +77,10 @@ AXIS_NAMES = {
     "R_normalised": "R / (P/e/10)^0.35",
     "f_ratio": "f / f_0",
     "Nu_ratio": "Nu_r / Nu_0",
+    # Han 2013 Figs. 4.88/4.90 (Chandra et al.): the book defines neither
+    # baseline, so these are not "Nu_ratio" and carry no convention.
+    "Nu_ratio_smooth_wall": "Nu_s / Nu_0, smooth walls (baseline not printed)",
+    "Nu_ratio_ribbed_wall": "Nu_r / Nu_0, ribbed walls (baseline not printed)",
     # Kays and Perkins, NOT Dittus-Boelter: 0.873 of it at Pr 0.72.
     "Nu_ratio_KP": "Nu / Nu_inf, Nu_inf = 0.0176 Re^0.8 (Kays & Perkins)",
     "Nu_ratio_DB": "Nu / Nu0, Nu0 = 0.023 Re^0.8 Pr^0.4 (Dittus-Boelter)",
