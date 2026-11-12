@@ -15,7 +15,7 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -65,12 +65,7 @@ def _network(make: Callable[[str, str], NetworkElement], mass_inlet: bool) -> Fl
 
 def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        x,
-        method="3-point",
-        abs_step=np.maximum(np.abs(x) * 1e-7, 1e-12),
-    )
+    fd = fd_jacobian(s, x, rel=1e-7, floor=1e-12)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     a, b = J.toarray() * cols, fd * cols
     scale = np.maximum(np.abs(b).max(axis=1, keepdims=True), 1e-300)

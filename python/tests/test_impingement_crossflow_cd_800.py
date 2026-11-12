@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -136,9 +136,7 @@ def test_the_jacobian_matches_finite_differences(law: str) -> None:
     x0 = np.array(res["__x_solution__"], dtype=float)
     for x in (x0, x0 * (1.0 + 0.002 * np.sin(np.arange(len(x0))))):
         J = solver._residuals_and_jacobian(x)[1].toarray()
-        fd = approx_derivative(
-            solver._residuals, x, method="3-point", abs_step=np.abs(x) * 1e-7 + 1e-12
-        )
+        fd = fd_jacobian(solver, x, rel=1e-7, floor=1e-12)
         cols = np.maximum(np.abs(x), 1e-12)[None, :]
         scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
         assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-5

@@ -18,7 +18,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -78,8 +78,7 @@ def test_every_row_matches_central_differences(
     x = x * (1.0 + 1e-3 * np.random.default_rng(3).standard_normal(x.size))
     _, J = solver._residuals_and_jacobian(x)
     J = J.toarray()
-    step = np.maximum(np.abs(x) * 1e-7, 1e-10)
-    J_fd = approx_derivative(solver._residuals, x, method="3-point", abs_step=step)
+    J_fd = fd_jacobian(solver, x, rel=1e-7, floor=1e-10)
     scaled_err = np.abs(J - J_fd) * np.abs(x)
     row_ref = np.max(np.abs(J_fd) * np.abs(x), axis=1) + 1e-30
     assert float(np.max(scaled_err.max(axis=1) / row_ref)) < 1e-6

@@ -13,7 +13,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -350,8 +350,7 @@ def test_global_jacobian_carries_the_neighbour_flow_sensitivity() -> None:
     # 1.4e-3 at 1e-6, 7e-5 at 1e-5. A pressure step of 1e-5 (1 Pa) is in
     # turn large against a segment's friction drop: 22% truncation on c1.Pt.
     rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in solver.unknown_names])
-    step = np.maximum(np.abs(x) * rel, 1e-10)
-    fd = approx_derivative(lambda v: solver._residuals(v), x, method="3-point", abs_step=step)
+    fd = fd_jacobian(solver, x, rel=rel, floor=1e-10)
     with_relay = solver._residuals_and_jacobian(x)[1].toarray()
     solver._relay_flow_inputs = lambda *a, **k: None
     without = solver._residuals_and_jacobian(x)[1].toarray()

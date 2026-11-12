@@ -18,7 +18,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -172,8 +172,8 @@ def test_station_rows_match_finite_differences_over_segment_length(length: float
     s._build_x0()
     x = np.array([ISSUE_X[n] for n in s.unknown_names], dtype=float)
     J = s._residuals_and_jacobian(x)[1].toarray()
-    d1 = approx_derivative(s._residuals, x, method="3-point", abs_step=np.abs(x) * 1e-7)
-    d2 = approx_derivative(s._residuals, x, method="3-point", abs_step=np.abs(x) * 2e-7)
+    d1 = fd_jacobian(s, x, rel=1e-7, floor=0.0)
+    d2 = fd_jacobian(s, x, rel=2e-7, floor=0.0)
     fd = (4.0 * d1 - d2) / 3.0
     cols = np.abs(x)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)

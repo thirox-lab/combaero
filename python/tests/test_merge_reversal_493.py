@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import test_effusion_wall as tew
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 
 @pytest.fixture(scope="module")
@@ -61,12 +61,7 @@ def test_the_jacobian_holds_with_the_main_reversed(liner: tuple, frac: float) ->
     # channel's residual repeats only to ~1e-12 (its Fanno iteration is
     # warm-started), which a 1e-6 flow step differences into 3e-6 of noise.
     rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        xp,
-        method="3-point",
-        abs_step=np.maximum(np.abs(xp) * rel, 1e-9),
-    )
+    fd = fd_jacobian(s, xp, rel=rel)
     # RESIDUAL-ROW-SCALING: compare J_ij |x_j| (see _build_residual_scales).
     cols = np.maximum(np.abs(xp), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols

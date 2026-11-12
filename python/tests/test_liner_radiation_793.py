@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian, scaled_error
 
 import combaero as cb
 from combaero.heat_transfer import ConvectiveSurface, SmoothModel
@@ -351,6 +352,20 @@ def test_network_relay_is_exact(layers: list | None, wall: dict, model: str) -> 
             fd = (T(x + e, nid) - T(x - e, nid)) / (2 * h)
             an = relay[nid].get(j, {}).get("T", 0.0)
             assert abs(an - fd) * abs(x[j]) < 1e-5, (nid, s.unknown_names[j], an, fd)
+
+
+@pytest.mark.parametrize("model", ["lefebvre", "bordbar2021"])
+@pytest.mark.parametrize("rad", [True, False], ids=["radiation", "no_radiation"])
+def test_network_jacobian_matches_drop_scaled_fd(rad: bool, model: str) -> None:
+    """The full Jacobian against _fd_jacobian's differences, in J_ij |x_j|
+    per row (#1107). The 'hot' duct drops only 42.7 Pa at 31 bar: a 1e-6 |P|
+    step (3.1 Pa) read 6e-4 here, which was the step's truncation, not the
+    Jacobian. Measured 0.4-2.6e-6."""
+    s, r = _solve(_mixing_net(rad, model=model))
+    x = np.array(r["__x_solution__"])
+    _, J = s._residuals_and_jacobian(x)
+    err = scaled_error(J, fd_jacobian(s, x), x)
+    assert err.max() < 1e-5, (int(err.argmax()), float(err.max()))
 
 
 def test_network_reports_radiation_and_closes_energy() -> None:

@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -55,9 +55,7 @@ def _duct(P_down: float, coupling: str | None = None) -> FlowNetwork:
 
 def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     # RESIDUAL-ROW-SCALING (NetworkSolver._build_residual_scales). In the
     # solver's own scaled variables (J_ij |x_j|): a row mixes kg/s and
     # Pa columns, and raw row scaling would hide a wrong Pa entry entirely

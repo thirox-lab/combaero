@@ -16,6 +16,7 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -81,15 +82,7 @@ def _fd_error(s: NetworkSolver, x: np.ndarray) -> float:
     F, J = s._residuals_and_jacobian(x)
     J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
     F = np.asarray(F)
-    Jfd = np.zeros_like(J)
-    for j in range(x.size):
-        h = 1e-6 * max(abs(x[j]), 1e-3)
-        xp, xm = x.copy(), x.copy()
-        xp[j] += h
-        xm[j] -= h
-        Jfd[:, j] = (
-            np.asarray(s._residuals_and_jacobian(xp)[0]) - s._residuals_and_jacobian(xm)[0]
-        ) / (2.0 * h)
+    Jfd = fd_jacobian(s, x)
     return float(np.max(np.abs(J - Jfd)) / np.max(np.abs(J)))
 
 

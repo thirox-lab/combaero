@@ -25,6 +25,7 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero import _solver_tools
@@ -267,15 +268,7 @@ def test_the_network_jacobian_at_a_choked_bounded_root_matches_central_differenc
         J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
         assert x[i_P] == s._get_node_state(s.network.nodes[JCT], x).P
         assert s.network.nodes[JCT]._closure(s._get_node_state(s.network.nodes[JCT], x)).bounded
-        Jfd = np.zeros_like(J)
-        for j in range(x.size):
-            h = 1e-6 * max(abs(x[j]), 1e-3)
-            xp, xm = x.copy(), x.copy()
-            xp[j] += h
-            xm[j] -= h
-            Jfd[:, j] = (s._residuals_and_jacobian(xp)[0] - s._residuals_and_jacobian(xm)[0]) / (
-                2.0 * h
-            )
+        Jfd = fd_jacobian(s, x)
         for i in range(J.shape[0]):
             scale = max(np.max(np.abs(J[i])), 1e-12)
             assert np.max(np.abs(J[i] - Jfd[i])) / scale < 1e-5, s.unknown_names[i]

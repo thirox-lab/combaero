@@ -18,6 +18,7 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -134,11 +135,8 @@ def test_the_rows_jacobian_matches_central_differences(model: str) -> None:
     row = next(i for i, (owner, _) in enumerate(kinds) if "lat_o" in owner)
     _, J = s._residuals_and_jacobian(x)
     J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
+    fd_row = fd_jacobian(s, x)[row]
     for j, name in enumerate(s.unknown_names):
-        h = 1e-2 if name.endswith((".P", ".Pt")) else 1e-8
-        xp, xm = x.copy(), x.copy()
-        xp[j] += h
-        xm[j] -= h
-        fd = (s._residuals(xp)[row] - s._residuals(xm)[row]) / (2.0 * h)
+        fd = fd_row[j]
         scale = max(abs(fd), 1e-12) if fd != 0.0 else 1.0
         assert abs(J[row, j] - fd) <= 1e-5 * scale + 1e-14, (name, J[row, j], fd)

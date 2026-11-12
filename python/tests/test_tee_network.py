@@ -16,6 +16,7 @@ import math
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -399,15 +400,7 @@ def _check_jacobian_vs_fd(net: FlowNetwork, tol: float = 5e-3) -> None:
     _, jac_analytical = solver._residuals_and_jacobian(x0, compute_jacobian=True)
     jac_dense = jac_analytical.toarray()
 
-    eps = 1e-5
-    n = len(x0)
-    m = len(solver._residuals(x0))
-    jac_fd = np.zeros((m, n))
-    for j in range(n):
-        xp, xm = x0.copy(), x0.copy()
-        xp[j] += eps
-        xm[j] -= eps
-        jac_fd[:, j] = (solver._residuals(xp) - solver._residuals(xm)) / (2 * eps)
+    jac_fd = fd_jacobian(solver, x0)
 
     # Check all columns with a combined absolute+relative criterion so that
     # near-zero analytical entries (that FD correctly resolves as near-zero) are

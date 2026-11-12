@@ -15,7 +15,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _chamber_static import chamber_static_density, chamber_static_T
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -134,9 +134,7 @@ def test_global_jacobian_matches_finite_differences(correlation: str) -> None:
     # channel's residual repeats only to ~1e-12 (its Fanno iteration is
     # warm-started), which a 1e-7 flow step differences into 5e-4 of noise.
     rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * rel, 1e-10)
-    )
+    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
     mask = np.abs(fd) > 1e-3
     assert (np.abs(jac - fd)[mask] / np.abs(fd[mask])).max() < 1e-4
 
@@ -238,8 +236,6 @@ def test_a_compressible_liner_balances_the_exact_impulse() -> None:
     assert lhs - rhs == pytest.approx(0.0, abs=1e-6 * (m_out**2 / (rho * A) + abs(S)))
     x = np.array(r["__x_solution__"], dtype=float)
     _, jac = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-7, 1e-10)
-    )
+    fd = fd_jacobian(s, x, rel=1e-7, floor=1e-10)
     mask = np.abs(fd) > 1e-3
     assert (np.abs(jac.toarray() - fd)[mask] / np.abs(fd[mask])).max() < 1e-3

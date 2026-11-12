@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 from _asgi_client import request
+from _fd_jacobian import fd_jacobian
 
 import gui.backend.main as backend
 from gui.backend.main import app
@@ -561,7 +562,6 @@ def test_the_palette_effusion_liner_panels_have_their_exact_jacobian() -> None:
     chamber's rows carry FD truncation at that step (2.9e-3, falling 100x per
     decade of step), which is not what this checks."""
     import numpy as np
-    from scipy.optimize._numdiff import approx_derivative
 
     from combaero.network import NetworkSolver
     from gui.backend.graph_builder import build_network_from_schema
@@ -578,12 +578,7 @@ def test_the_palette_effusion_liner_panels_have_their_exact_jacobian() -> None:
     assert len(panels) == 4 and all(d[k]["Re_hole"] < 1e4 for k in panels)
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        x,
-        method="3-point",
-        abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9),
-    )
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     rows = [i for i, (o, _) in enumerate(s._row_kinds(x)) if o.startswith("EffusionPlateElement")]
     assert len(rows) == 4

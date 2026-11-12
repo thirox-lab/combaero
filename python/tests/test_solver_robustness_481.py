@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero import _solver_tools
@@ -50,9 +50,7 @@ def _orifice(eid: str, a: str, b: str, d: float = 0.01, in_pipe: bool = True) ->
 
 def _jac_vs_fd(s: NetworkSolver, x: np.ndarray) -> float:
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-5, 1e-7)
-    )
+    fd = fd_jacobian(s, x, rel=1e-5, floor=1e-7)
     # RESIDUAL-ROW-SCALING (NetworkSolver._build_residual_scales). In scaled
     # variables (J_ij |x_j|): rows mix kg/s and Pa columns, and raw
     # row scaling hides a wrong entry in the small-unit columns.

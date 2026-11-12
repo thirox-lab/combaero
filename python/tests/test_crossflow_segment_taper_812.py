@@ -16,7 +16,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -114,7 +114,7 @@ def test_the_taper_jacobian_matches_finite_differences(regime: str, reverse: boo
     x0 = np.array(r["__x_solution__"], dtype=float)
     for x in (x0, x0 * (1.0 + 0.002 * np.sin(np.arange(len(x0))))):
         J = s._residuals_and_jacobian(x)[1].toarray()
-        fd = approx_derivative(s._residuals, x, method="3-point", abs_step=np.abs(x) * 1e-7 + 1e-12)
+        fd = fd_jacobian(s, x, rel=1e-7, floor=1e-12)
         cols = np.maximum(np.abs(x), 1e-12)[None, :]
         scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
         assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-5

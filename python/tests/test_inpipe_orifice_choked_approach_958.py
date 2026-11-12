@@ -20,6 +20,7 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero import _solver_tools
@@ -118,15 +119,7 @@ def test_the_network_jacobian_past_the_approach_pipes_sonic_limit() -> None:
     for x in (x_root, x_root * (1.0 + 0.003 * rng.standard_normal(x_root.size))):
         F, J = s._residuals_and_jacobian(x)
         J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
-        Jfd = np.zeros_like(J)
-        for j in range(x.size):
-            h = 1e-6 * max(abs(x[j]), 1e-3)
-            xp, xm = x.copy(), x.copy()
-            xp[j] += h
-            xm[j] -= h
-            Jfd[:, j] = (s._residuals_and_jacobian(xp)[0] - s._residuals_and_jacobian(xm)[0]) / (
-                2.0 * h
-            )
+        Jfd = fd_jacobian(s, x)
         rows = s._row_kinds(x)
         for i in range(J.shape[0]):
             scale = max(np.max(np.abs(J[i])), 1e-12)

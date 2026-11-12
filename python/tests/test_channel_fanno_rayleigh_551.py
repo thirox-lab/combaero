@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -143,9 +143,7 @@ def test_the_global_jacobian_matches_finite_differences() -> None:
     s, r = _solve(_pair())
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     # RESIDUAL-ROW-SCALING: compare J_ij |x_j| per row.
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols
@@ -178,9 +176,7 @@ def test_into_a_mixing_node_the_global_jacobian_matches_finite_differences() -> 
     s, r = _solve(_pair(mix_into_cold=True))
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)
@@ -362,9 +358,7 @@ def test_into_a_boundary_the_duct_carries_its_heat_and_its_jacobian_holds() -> N
     assert r["__second_law_failures__"] == []
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)
@@ -388,9 +382,7 @@ def test_across_a_flow_sign_and_pt_mismatch_the_rise_is_carried_and_differentiat
     state = cold._rayleigh_exit_state("cold_p", st_out, "cold_in", st_in)
     assert state is not None and len(state[1]) == 3
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)

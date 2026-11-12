@@ -13,8 +13,8 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 from scipy.integrate import trapezoid
-from scipy.optimize._numdiff import approx_derivative
 
 import combaero as cb
 from combaero.network import (
@@ -221,12 +221,7 @@ def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
     """RESIDUAL-ROW-SCALING: compare J_ij |x_j|, relative to each row's largest."""
     _, J = s._residuals_and_jacobian(x)
     J = J.toarray()
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        x,
-        method="3-point",
-        abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9),
-    )
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     a, b = J * cols, fd * cols
     scale = np.maximum(np.abs(b).max(axis=1, keepdims=True), 1e-300)

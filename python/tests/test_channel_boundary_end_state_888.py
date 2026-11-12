@@ -19,7 +19,7 @@ import warnings
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero import _solver_tools
@@ -215,9 +215,7 @@ def test_the_heated_rows_are_exact() -> None:
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
     J = J.toarray()
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J * cols, fd * cols
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)
