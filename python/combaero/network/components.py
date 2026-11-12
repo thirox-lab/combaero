@@ -5509,6 +5509,37 @@ class OrificeElement(NetworkElement):
         self._pipe_cd_ratio_rev = 1.0
 
     def resolve_topology(self, graph: "FlowNetwork") -> None:
+        self._resolve_orifice_geometry(graph)
+        self._resolve_exit_drive(graph)
+
+    def _resolve_exit_drive(self, graph: "FlowNetwork") -> None:
+        """The drive pair (#1087) of a plain orifice or connection: from the
+        upstream Pt to the static of a MomentumChamberNode it discharges
+        into, as the hole elements; a reversed flow draws from that static
+        and discharges against the from-node's Pt. Only where
+        _discharges_to_exit_static holds; elsewhere Pt to Pt as before."""
+        self._hole_cd.resolve_drive(graph, exit_static=self._discharges_to_exit_static())
+
+    def _discharges_to_exit_static(self) -> bool:
+        """THE gate of the orifice family's static exit drive (#1087): a
+        restriction that is not closed, not a pass-through, sets no
+        velocity of approach in either direction (beta = beta_reverse = 0,
+        a hole in a wall or a lumped Cd*A) and recovers no pressure in a
+        pipe beyond (#645). An in-pipe metering orifice keeps the Pt-Pt
+        direction its ISO read-back and permanent-loss rows are built on:
+        its approach and recovery pipes set the static state it reads."""
+        return not (
+            self.closed
+            or self._pass_through
+            or self._recovery_fwd
+            or self._recovery_rev
+            or self.beta > 0.0
+            or getattr(self, "beta_reverse", 0.0) > 0.0
+        )
+
+    def _resolve_orifice_geometry(self, graph: "FlowNetwork") -> None:
+        """Pipe discovery, beta, recovery and the Cd geometry (#554, #645,
+        #788, #1016)."""
         self._to_node_obj = graph.nodes.get(self.to_node)
         self._to_side_closed = self._side_is_closed(graph, self.to_node)
         if self.closed:
@@ -6034,8 +6065,9 @@ class OrificeElement(NetworkElement):
         flow there.
 
         A hole whose drive pair is not the two nodes' Pt (#1087,
-        _HoleCdChain.drive_pair: a duct-fed hole's supply drive, a cooling
-        hole into a flowing chamber) runs between that pair instead
+        _HoleCdChain.drive_pair: a duct-fed hole's supply drive, a hole,
+        plain orifice or connection into a flowing chamber, gated by
+        _discharges_to_exit_static) runs between that pair instead
         (_flow_on_drive_pair); every other orifice evaluates as before.
         """
         pair = self._hole_cd.drive_pair(state_in, state_out, flows)
@@ -9185,9 +9217,13 @@ class EffectiveAreaConnectionElement(OrificeElement):
         Unlike OrificeElement, we do not discover upstream/downstream diameters because
         the effective area is user-specified and already accounts for all geometric effects.
         No Beta ratio correction is needed or applied.
+        The drive pair is resolved as OrificeElement's (#1087): into a
+        MomentumChamberNode the flow runs from the upstream Pt to the
+        chamber's static.
         """
-        # Intentionally empty - effective area is pre-computed by user
-        pass
+        # No geometry to discover: the drive pair (#1087) only, the static
+        # of a MomentumChamberNode it discharges into (_discharges_to_exit_static).
+        self._resolve_exit_drive(graph)
 
     def n_equations(self) -> int:
         """Return the number of equations (1: mass flow balance)."""
@@ -9282,9 +9318,13 @@ class DiameterDischargeCoefficientConnectionElement(OrificeElement):
 
         The physical area and discharge coefficient are user-specified and already account
         for all geometric effects. No Beta ratio correction is needed or applied.
+        The drive pair is resolved as OrificeElement's (#1087): into a
+        MomentumChamberNode the flow runs from the upstream Pt to the
+        chamber's static.
         """
-        # Intentionally empty - area and Cd are pre-computed by user
-        pass
+        # No geometry to discover: the drive pair (#1087) only, the static
+        # of a MomentumChamberNode it discharges into (_discharges_to_exit_static).
+        self._resolve_exit_drive(graph)
 
     def n_equations(self) -> int:
         """Return the number of equations (1: mass flow balance)."""

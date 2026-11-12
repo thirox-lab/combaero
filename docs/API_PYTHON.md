@@ -2185,18 +2185,28 @@ upstream `Pt` to the downstream static, and the hole element owns the energy
 closure: the jet's head is its own, not the receiver's. Since 0.12.0
 ([#1087](https://github.com/thirox-lab/combaero/issues/1087),
 [#1122](https://github.com/thirox-lab/combaero/pull/1122)):
-- **Exit side.** A film, effusion or slot hole into a `MomentumChamberNode`
+- **Exit side.** A film, effusion or slot hole, a plain `OrificeElement`,
+  an `EffectiveAreaConnectionElement` or a
+  `DiameterDischargeCoefficientConnectionElement` into a `MomentumChamberNode`
   takes its direction from its drive against the chamber's STATIC pressure,
-  and a reversed jet draws from that static. The orifice family's forward
-  drive already ran to the downstream static.
+  and a reversed jet draws from that static and discharges against the
+  supply's `Pt`. Inside the band `P_to < Pt_from < Pt_to` it blows; the flow
+  passes zero once, where `Pt_from = P_to`. The forward drive already ran to
+  the downstream static.
+- **In-pipe metering orifices are excluded** and keep the `Pt - Pt`
+  direction: an `OrificeElement` with a velocity of approach in either
+  direction (`beta > 0`, a single pipe on the approach side), one that
+  recovers pressure in a pipe beyond (ISO permanent loss, #645), a
+  pass-through bore (#788, #1016) and a closed restriction (#1024). Their ISO
+  read-back and permanent-loss rows are built on the pipes' static states.
+  The one gate is `OrificeElement._discharges_to_exit_static`.
 - **Supply side.** A duct-fed `EffusionPlateElement` (each `EffusionLiner`
   panel) drives from the duct's TOTAL pressure at its station, rebuilt from
   the station static and the mean segment flow, not from the station
   static. McGreehan-Schotsch's static-referenced Eq. 17 Cd is converted onto
   that drive exactly. See `HoleCd.supply_drive` below.
-- **Not yet.** The plain `OrificeElement` and the connection elements still
-  take their direction from `Pt - Pt` into a `MomentumChamberNode`; they
-  follow later.
+- **Not yet.** `ImpingementPlateElement` still takes its direction from
+  `Pt - Pt` into a `MomentumChamberNode`; it follows later.
 
 **Known gaps:**
 - How much of the supply head a hole recovers depends on its lean relative to
