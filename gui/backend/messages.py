@@ -73,9 +73,16 @@ HINTS = (
     (
         # The Inspector shows the hole-angle field for IdelchikThick only.
         "inclination='idelchik_3_2') is Idelchik",
-        'Hint: the Hole Angle Cd Term "idelchik_3_2" needs the Cd model '
-        '"Deep Hole in Wall (Idelchik 4-18a)"; select it to see the field and set '
-        "the term to Default or None, or keep that Cd model.",
+        'Hint: the Hole Cd section\'s Hole Angle Term "idelchik_3_2" needs the '
+        'Discharge Model "Deep Hole in Wall (Idelchik 4-18a)"; select it to see the '
+        "field and set the term to Auto or None, or keep that Discharge Model.",
+    ),
+    (
+        # A term this node type has no select for (a hand-edited file): the
+        # Inspector cannot show it, so name the file field.
+        "does not apply to this element",
+        "Hint: this node has no such term, so its Hole Cd section does not show it; "
+        'set that field of the node\'s hole_cd to "auto" in the file (or remove it).',
     ),
 )
 

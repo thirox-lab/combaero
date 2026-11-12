@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "example": {
     "title": "Florschuetz 1981 jet array",
     "source": "Florschuetz, L. W., Truman, C. R., Metzger, D. E. (1981). Streamwise flow and heat transfer distributions for jet array impingement with crossflow. ASME J. Heat Transfer 103, 337-342.",
@@ -37,9 +37,11 @@
         "span": 0.12192,
         "plate_thickness": 0.00254,
         "pattern": "inline",
-        "correlation": "fixed",
-        "Cd": 0.79,
-        "cd_crossflow": "rogers_hersh_1976",
+        "hole_cd": {
+          "correlation": "fixed",
+          "Cd": 0.79,
+          "exit_crossflow": "rogers_hersh_1976"
+        },
         "Nu_multiplier": 1,
         "roughness": 0
       }

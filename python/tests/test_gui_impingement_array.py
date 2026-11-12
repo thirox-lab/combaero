@@ -108,7 +108,9 @@ def test_one_thermal_edge_heats_every_row_and_reports_as_one() -> None:
 
 
 def test_orifice_offers_lichtarowicz() -> None:
-    assert OrificeData(correlation="Lichtarowicz").correlation == "Lichtarowicz"
+    assert (
+        OrificeData(hole_cd={"correlation": "Lichtarowicz"}).hole_cd.correlation == "Lichtarowicz"
+    )
 
 
 def _bypass_schema(feed: str) -> dict:

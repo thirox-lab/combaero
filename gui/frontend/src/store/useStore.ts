@@ -16,6 +16,7 @@ import { discoverFields, REFUSED_ROOT_KEY } from "../utils/diagnostics";
 import { repairEdgeHandles } from "../utils/edgeHandles";
 import { type ExampleInfo, parseExampleInfo } from "../utils/exampleInfo";
 import { HEAT_SOURCE_HANDLE, heatSourceEdgeProps } from "../utils/heatSource";
+import { preReleaseHoleCdKeys } from "../utils/holeCd";
 import type { PreviewItems } from "../utils/inheritance";
 import { migrateNodeData, migrateSolverSettings } from "../utils/legacyKeys";
 import {
@@ -664,7 +665,11 @@ const useStore = create<RFState>((set, get) => ({
 			if (repaired.length > 0 || unresolved.length > 0) {
 				console.warn("loadNetwork: edge handles", { repaired, unresolved });
 			}
+			const preRelease = preReleaseHoleCdKeys(data.nodes);
 			const notices = [
+				preRelease.length > 0
+					? `This file has hole-Cd fields of a pre-release development build, which are no longer read: the solver refuses them. Move each into the node's hole_cd in the file and remove it (${preRelease.join("; ")}).`
+					: null,
 				dropped.length > 0
 					? `Removed ${dropped.length} thermal wall(s) on an orifice, area change, plenum or hole element (${dropped.join(", ")}): it has no surface to exchange heat. Wall a channel, loss element or chamber instead.`
 					: null,

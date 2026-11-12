@@ -502,9 +502,12 @@ def test_a_saved_gui_orifice_with_stolz_is_refused_naming_the_replacement() -> N
 
     from gui.backend.schemas import OrificeData
 
-    with pytest.raises(ValidationError, match=r"(?s)Stolz.*0\.9\.0.*ReaderHarrisGallagher"):
-        OrificeData(correlation="Stolz")
-    assert OrificeData(correlation="ReaderHarrisGallagher").correlation == "ReaderHarrisGallagher"
+    # A pre-hole_cd file (the loose field) and a current one alike.
+    for saved in ({"correlation": "Stolz"}, {"hole_cd": {"correlation": "Stolz"}}):
+        with pytest.raises(ValidationError, match=r"(?s)Stolz.*0\.9\.0.*ReaderHarrisGallagher"):
+            OrificeData(**saved)
+    kept = OrificeData(correlation="ReaderHarrisGallagher")
+    assert kept.hole_cd.correlation == "ReaderHarrisGallagher"
 
 
 def test_the_gui_solve_response_has_no_deprecations_field() -> None:

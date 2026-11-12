@@ -15,8 +15,13 @@ export const NODE_ORIGIN: [number, number] = [0.5, 0.5];
 export const SNAP_GRID: [number, number] = [10, 10];
 
 /** Saved-file version. 1.2: `position` is the card centre; up to 1.1 it was
- *  the top-left corner. */
-export const NETWORK_FILE_VERSION = "1.2";
+ *  the top-left corner. 1.3: a hole node's Cd choices are one `hole_cd`
+ *  object; an older file's loose fields are lifted on load, by key, not by
+ *  version (legacyKeys.ts). */
+export const NETWORK_FILE_VERSION = "1.3";
+
+/** The first version whose `position` is the card centre (#865). */
+export const CENTRE_POSITION_VERSION = "1.2";
 
 // Card sizes [px] as rendered (measured headlessly, #865), for files that
 // carry no measured size. The lossless connection and the probe size to their
@@ -82,7 +87,7 @@ function versionBefore(version: unknown, than: string): boolean {
 /** Positions of a file saved before 1.2 (top-left corners) as card centres,
  *  so the network lands where it was drawn. Newer files pass through. */
 export function migrateNodePositions(nodes: Node[], version: unknown): Node[] {
-	if (!versionBefore(version, NETWORK_FILE_VERSION)) return nodes;
+	if (!versionBefore(version, CENTRE_POSITION_VERSION)) return nodes;
 	return nodes.map((n) => {
 		const [w, h] = cardSize(n);
 		const at = (p: XYPosition | undefined) =>

@@ -107,7 +107,7 @@ def test_cylindrical_holes_drop_the_shaped_geometry() -> None:
 
 
 def test_the_hole_angle_cd_term_threads_through() -> None:
-    assert FilmCoolingData().cd_inclination == "auto"
+    assert FilmCoolingData().hole_cd.inclination == "auto"
     # The node's default hole is shaped, which "auto" leaves without the term;
     # a cylindrical hole gets it.
     shaped = build_network_from_schema(NetworkGraphSchema(**_schema(FILM))).elements["film"]
@@ -117,7 +117,7 @@ def test_the_hole_angle_cd_term_threads_through() -> None:
     ).elements["film"]
     assert cyl.cd_inclination == "idelchik_3_2"
     on = build_network_from_schema(
-        NetworkGraphSchema(**_schema(FILM, {"cd_inclination": "idelchik_3_2"}))
+        NetworkGraphSchema(**_schema(FILM, {"hole_cd": {"inclination": "idelchik_3_2"}}))
     ).elements["film"]
     assert on.cd_inclination == "idelchik_3_2"
 
@@ -148,15 +148,18 @@ def test_an_explicit_hole_angle_term_the_correlation_cannot_take_is_refused(
     # The builder used to turn this into "none" silently; the element refuses it.
     holes = {
         **(CYL if hole_type == "cylindrical" else {}),
-        "correlation": correlation,
-        "cd_inclination": "idelchik_3_2",
+        "hole_cd": {
+            "correlation": correlation,
+            **({"Cd": 0.6} if correlation == "fixed" else {}),
+            "inclination": "idelchik_3_2",
+        },
     }
     with pytest.raises(ValueError, match="does not compose with correlation"):
         build_network_from_schema(NetworkGraphSchema(**_schema(FILM, holes)))
 
 
 def test_the_refused_hole_angle_term_reaches_the_user_as_a_readable_400() -> None:
-    holes = {"correlation": "fixed", "cd_inclination": "idelchik_3_2"}
+    holes = {"hole_cd": {"correlation": "fixed", "Cd": 0.6, "inclination": "idelchik_3_2"}}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         r = request(app, "POST", "/solve", json_body=_schema(FILM, holes))
@@ -164,7 +167,7 @@ def test_the_refused_hole_angle_term_reaches_the_user_as_a_readable_400() -> Non
     detail = r.json()["detail"]
     assert "'film' [" in detail, detail
     assert "does not compose with correlation='fixed'" in detail, detail
-    assert "Hint: the Hole Angle Cd Term" in detail, detail
+    assert "Hint: the Hole Cd section's Hole Angle Term" in detail, detail
 
 
 def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:
@@ -173,14 +176,14 @@ def test_a_film_naming_something_that_is_not_a_provider_is_refused() -> None:
 
 
 def test_the_exit_crossflow_cd_term_threads_through() -> None:
-    assert FilmCoolingData().cd_exit_crossflow == "none"
+    assert FilmCoolingData().hole_cd.exit_crossflow == "auto"
     off = build_network_from_schema(NetworkGraphSchema(**_schema())).elements["film"]
     assert off.cd_exit_crossflow == "none" and off._hole_cd.exit_xf is None
     on = build_network_from_schema(
         NetworkGraphSchema(
             **_schema(
                 holes={
-                    "cd_exit_crossflow": "rowbury_2001",
+                    "hole_cd": {"exit_crossflow": "rowbury_2001"},
                     "exit_crossflow_region": "pressure_surface",
                     "exit_crossflow_orientation_deg": 5.0,
                 }

@@ -14,6 +14,7 @@ elements) and the thermal wall, with smooth convective surfaces.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -43,7 +44,10 @@ from combaero.network.pressure_loss import (
     LinearThetaHeadLoss,
 )
 
-FILE_VERSION = "1.2"
+# The saved-file version, the frontend's NETWORK_FILE_VERSION (nodeOrigin.ts):
+# 1.2 position = card centre (#865); 1.3 a hole node's Cd choices in one
+# hole_cd object (an older file's loose fields are lifted on load).
+FILE_VERSION = "1.3"
 
 #: The handle a flow edge uses at each end, per GUI node type: (outlet, inlet).
 #: Kept equal to gui/frontend/src/utils/nodeHandles.generated.json by
@@ -232,7 +236,9 @@ def _element(eid: str, el: Any, problems: list[str]) -> tuple[str, dict[str, Any
         return "channel", d
     if isinstance(el, OrificeElement):
         d = {
-            "correlation": el.correlation,
+            # The element's resolved spec (correlation and Cd as used), so the
+            # GUI builds the same Cd chain.
+            "hole_cd": dataclasses.asdict(el.hole_cd),
             "plate_thickness": float(el.plate_thickness),
             "edge_radius": float(el.edge_radius),
             "bevel_depth": float(el.bevel_depth),
@@ -246,8 +252,6 @@ def _element(eid: str, el: Any, problems: list[str]) -> tuple[str, dict[str, Any
         }
         if el.diameter is not None:
             d["diameter"] = float(el.diameter)
-        if el.correlation == "fixed":
-            d["Cd"] = float(el.Cd)
         if el.injection_angle_deg != 90.0:
             problems.append(f"{eid}: orifice injection_angle_deg != 90 (no GUI field)")
         return "orifice", d

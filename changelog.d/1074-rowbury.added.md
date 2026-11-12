@@ -8,7 +8,7 @@
     - **Diagnostic.** `Cd_exit_crossflow_faded` reports which range a hole is in: 0 inside the data, 0.5 inside only the authors' use, and 1 beyond both, where the offset fades. With the leading-edge set at a no-crossflow Cd near 1, the Cd can exceed 1.
   - **Where it does not apply.** Without a chamber with an approaching mainstream, the opt-in is refused. Below a `k` floor the term is held. The defaults are unchanged bit for bit.
   - **Diagnostics, in the hole-Cd group (`Cd_exit_crossflow_*`).** The actual and the evaluated `k`, the floor, the loss, and hold, fade and range flags; neutral values when the term is off.
-  - **GUI.** The GUI backend reads the three fields from network JSON. There is no Inspector control yet.
+  - **GUI.** The film cooling, effusion plate and effusion liner nodes offer it in the Inspector's Hole Cd section (Exit Crossflow); the film and plate nodes then show the region and the compound angle.
 - **New C++ `rowbury_2001_exit_crossflow_cd`, `rowbury_2001_coefficients`, `rowbury_2001_k_perp`, `rowbury_2001_exit_density`, `rowbury_2001_k_floor` and `rowbury_2001_in_range` (`crossflow_cd.h`).** All derivatives are analytic.
 - **`validation/cooling/exit_crossflow_cd_runner.py` reports fidelity and cross-source accuracy for the term.**
   - **Fidelity.** Against the authors' own Fig. 9 predictions, read by eye, the term is within 0.003 at Ma_m 0.6 and 1.2. At Ma_m 0.3 it is within 0.008 above PR 1.05.
