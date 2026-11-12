@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network.components import (
@@ -11,22 +12,6 @@ from combaero.network.components import (
 )
 from combaero.network.graph import FlowNetwork
 from combaero.network.solver import NetworkSolver
-
-
-def get_fd_jacobian(solver, x, eps=1e-6):
-    """Compute finite difference Jacobian of the solver's residuals."""
-    res0 = solver._residuals(x)
-    n = len(x)
-    m = len(res0)
-    jac = np.zeros((m, n))
-
-    for i in range(n):
-        x_plus = x.copy()
-        x_plus[i] += eps
-        res_plus = solver._residuals(x_plus)
-        jac[:, i] = (res_plus - res0) / eps
-
-    return jac
 
 
 def test_chain_rule_orifice_through_combustor():
@@ -73,7 +58,7 @@ def test_chain_rule_orifice_through_combustor():
     # Compute analytical and FD Jacobians
     res, jac_analytical_sparse = solver._residuals_and_jacobian(x_sol)
     jac_analytical = jac_analytical_sparse.toarray()
-    jac_fd = get_fd_jacobian(solver, x_sol)
+    jac_fd = fd_jacobian(solver, x_sol)
 
     # Compare
     max_err = np.max(np.abs(jac_analytical - jac_fd))
@@ -110,7 +95,7 @@ def test_chain_rule_single_stream_passthrough():
     x_sol = np.array([sol[name] for name in solver.unknown_names])
     res, jac_analytical_sparse = solver._residuals_and_jacobian(x_sol)
     jac_analytical = jac_analytical_sparse.toarray()
-    jac_fd = get_fd_jacobian(solver, x_sol)
+    jac_fd = fd_jacobian(solver, x_sol)
 
     max_err = np.max(np.abs(jac_analytical - jac_fd))
     assert max_err < 1e-4

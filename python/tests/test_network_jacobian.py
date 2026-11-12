@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 from combaero.network import (
     ChannelElement,
@@ -17,11 +17,7 @@ def _assert_jacobian_matches_fd(solver: NetworkSolver, max_rel_tol: float) -> No
     _, jac_analytical = solver._residuals_and_jacobian(x0)
     jac_analytical = jac_analytical.toarray()
 
-    rel_step = 1e-7
-    abs_step = np.maximum(np.abs(x0) * rel_step, 1e-10)
-    jac_numerical = approx_derivative(
-        lambda x: solver._residuals(x), x0, method="2-point", abs_step=abs_step
-    )
+    jac_numerical = fd_jacobian(solver, x0, rel=1e-7, floor=1e-10)
 
     diff = np.abs(jac_analytical - jac_numerical)
     mask = np.abs(jac_numerical) > 1e-5

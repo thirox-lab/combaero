@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -179,7 +180,6 @@ def test_the_compressible_station_is_the_incompressible_one_at_low_mach() -> Non
 def test_the_compressible_station_jacobian_matches_finite_differences() -> None:
     """Own flow, the neighbour segment's flow (through the station), and the
     station node's pressure, all through the shifted Fanno target."""
-    from scipy.optimize._numdiff import approx_derivative
 
     s = NetworkSolver(_bleed_net("compressible", length=0.05))
     r = s.solve()
@@ -189,9 +189,7 @@ def test_the_compressible_station_jacobian_matches_finite_differences() -> None:
     # Flows step 1e-5, pressures 1e-7: the Fanno iteration is warm-started,
     # so a residual repeats only to ~1e-12.
     rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = approx_derivative(
-        s._residuals, x, method="3-point", abs_step=np.maximum(np.abs(x) * rel, 1e-10)
-    )
+    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
     assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-5
@@ -252,7 +250,6 @@ def test_reversed_out_of_an_exit_the_regimes_agree() -> None:
 
 def test_the_reversed_exit_inflow_jacobian_matches_finite_differences() -> None:
     """The incompressible reversed-exit head, through the solver's assembly."""
-    from scipy.optimize._numdiff import approx_derivative
 
     s = NetworkSolver(_entry_net(0.5, 1.0e5, 1.01e5, "incompressible"))
     r = s.solve()
@@ -260,7 +257,7 @@ def test_the_reversed_exit_inflow_jacobian_matches_finite_differences() -> None:
     x = np.array(r["__x_solution__"], dtype=float)
     assert x[s.unknown_names.index("s.m_dot")] < 0.0
     J = s._residuals_and_jacobian(x)[1].toarray()
-    fd = approx_derivative(s._residuals, x, method="3-point", abs_step=np.abs(x) * 1e-6 + 1e-10)
+    fd = fd_jacobian(s, x, floor=1e-10)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
     assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-6

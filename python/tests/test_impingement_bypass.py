@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -314,9 +314,7 @@ def _jacobian_error(
     # Flows 1e-5, pressures and temperatures 1e-7: the compressible channel's
     # Fanno iteration repeats to ~1e-12 (see test_impingement_plate_element).
     rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * rel, 1e-10)
-    )
+    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
     jac = s._residuals_and_jacobian(x)[1].toarray()
     sig = np.abs(fd) > 1e-3 * np.abs(fd).max(axis=1, keepdims=True)
     err = np.abs(jac - fd)[sig] / np.abs(fd[sig])

@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -149,7 +149,7 @@ def test_the_jet_jacobian_matches_finite_differences(regime: str, theta: float) 
     x0 = np.array(r["__x_solution__"], dtype=float)
     for x in (x0, x0 * (1.0 + 0.002 * np.sin(np.arange(len(x0))))):
         J = s._residuals_and_jacobian(x)[1].toarray()
-        fd = approx_derivative(s._residuals, x, method="3-point", abs_step=np.abs(x) * 1e-6 + 1e-10)
+        fd = fd_jacobian(s, x, floor=1e-10)
         cols = np.maximum(np.abs(x), 1e-12)[None, :]
         scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
         assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-4
@@ -207,7 +207,7 @@ def test_a_choked_jets_jacobian_is_exact() -> None:
     )
     assert jet.choked
     J = s._residuals_and_jacobian(x)[1].toarray()
-    fd = approx_derivative(s._residuals, x, method="3-point", abs_step=np.abs(x) * 1e-6 + 1e-12)
+    fd = fd_jacobian(s, x, floor=1e-12)
     col = s.unknown_names.index("sup.Pt")
     big = np.abs(fd[:, col]) > 1e-9
     assert big.sum() >= 3  # the plenum's own row and both segments' station rows

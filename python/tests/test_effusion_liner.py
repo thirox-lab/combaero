@@ -14,7 +14,7 @@ import warnings
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -206,9 +206,7 @@ def test_global_jacobian_matches_finite_differences() -> None:
         st.m_dot = r[f"ln__p{i}.m_dot"]
         assert panel._hole_reynolds(st) > 1.05e4
     _, jac = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals(v), x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9)
-    )
+    fd = fd_jacobian(s, x)
     mask = np.abs(fd) > 1e-3
     assert (np.abs(jac.toarray() - fd)[mask] / np.abs(fd[mask])).max() < 1e-3
 

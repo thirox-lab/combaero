@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -91,10 +91,9 @@ def test_a_reversed_loss_is_its_mirror_image(correlation) -> None:
 def _jacobian_error(g: FlowNetwork, x: np.ndarray) -> float:
     s = NetworkSolver(g)
     s._residuals(x)  # build the solver's maps
+    s._build_x0()  # name the unknowns: the FD step reads which are pressures
     _, jac = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        s._residuals, x, method="3-point", abs_step=np.maximum(np.abs(x) * 1e-7, 1e-11)
-    )
+    fd = fd_jacobian(s, x, rel=1e-7, floor=1e-11)
     scale = np.abs(fd * x).max(axis=1, keepdims=True)
     scale[scale == 0.0] = 1.0
     return float((np.abs(jac.toarray() - fd) * np.abs(x) / scale).max())

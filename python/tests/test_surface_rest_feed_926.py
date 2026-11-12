@@ -17,6 +17,7 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -121,15 +122,7 @@ def test_every_row_of_a_reservoir_fed_surface_network_matches_fd(
     for x in (x_sol, x_sol * (1.0 + 0.02 * rng.standard_normal(x_sol.shape))):
         F, J = s._residuals_and_jacobian(x)
         J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
-        FD = np.zeros_like(J)
-        for j in range(len(x)):
-            h = 1e-6 * max(abs(x[j]), 1e-3)
-            xp, xm = x.copy(), x.copy()
-            xp[j] += h
-            xm[j] -= h
-            Fp, _ = s._residuals_and_jacobian(xp, compute_jacobian=False)
-            Fm, _ = s._residuals_and_jacobian(xm, compute_jacobian=False)
-            FD[:, j] = (np.asarray(Fp) - np.asarray(Fm)) / (2.0 * h)
+        FD = fd_jacobian(s, x)
         sc = np.maximum(np.abs(x), 1e-3)
         for i in range(len(F)):
             a, b = J[i] * sc, FD[i] * sc

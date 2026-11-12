@@ -15,7 +15,7 @@ import math
 import numpy as np
 import pytest
 from _chamber_static import chamber_isentropic_rise
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -203,10 +203,7 @@ def test_jacobian_matches_fd(make_net):
     _, jac_analytical = solver._residuals_and_jacobian(x0)
     jac_analytical = jac_analytical.toarray()
 
-    abs_step = np.maximum(np.abs(x0) * 1e-7, 1e-10)
-    jac_fd = approx_derivative(
-        lambda x: solver._residuals(x), x0, method="2-point", abs_step=abs_step
-    )
+    jac_fd = fd_jacobian(solver, x0, rel=1e-7, floor=1e-10)
     scale = np.maximum(np.abs(jac_fd), np.abs(jac_analytical)) + 1.0
     max_rel = float(np.max(np.abs(jac_analytical - jac_fd) / scale))
     assert max_rel < 5e-4, f"jacobian mismatch: {max_rel:.3e}"

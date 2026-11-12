@@ -11,6 +11,7 @@ from collections import defaultdict
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from validation.area_change import DATA_ROOT
@@ -560,7 +561,6 @@ def test_step_into_a_chamber_loses_exactly_its_loss(F0: float, F1: float, model_
 def test_step_into_a_chamber_jacobian_matches_fd() -> None:
     """Global analytic Jacobian vs FD, row-scaled (J_ij |x_j| against the row's
     largest term), 1e-6 relative step."""
-    from scipy.optimize._numdiff import approx_derivative
 
     solver = _step_into_chamber(_F_BIG, _F_SMALL)
     sol = solver.solve()
@@ -568,8 +568,7 @@ def test_step_into_a_chamber_jacobian_matches_fd() -> None:
     x = np.array([sol[n] for n in solver.unknown_names], dtype=float)
     _, jac = solver._residuals_and_jacobian(x)
     jac = jac.toarray()
-    step = np.maximum(np.abs(x) * 1e-6, 1e-10)
-    fd = approx_derivative(lambda v: solver._residuals(v), x, method="3-point", abs_step=step)
+    fd = fd_jacobian(solver, x, floor=1e-10)
     row_scale = np.abs(fd * x).max(axis=1, keepdims=True) + 1e-300
     err = np.abs(jac - fd) * np.abs(x) / row_scale
     assert err.max() < 1e-6, err.max()

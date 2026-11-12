@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -75,12 +75,7 @@ def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
     """RESIDUAL-ROW-SCALING: compare J_ij |x_j| (see _build_residual_scales)."""
     _, J = s._residuals_and_jacobian(x)
     rel = np.array([1e-5 if n.endswith("m_dot") else 1e-7 for n in s.unknown_names])
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        x,
-        method="3-point",
-        abs_step=np.maximum(np.abs(x) * rel, 1e-10),
-    )
+    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)

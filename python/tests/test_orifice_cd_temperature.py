@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 from combaero.network import (
     EnergyBoundary,
@@ -45,12 +45,7 @@ def test_a_reynolds_dependent_cd_has_its_temperature_column(corr: str, regime: s
     assert r["__success__"], r["__message__"]
     x = np.array(r["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        x,
-        method="3-point",
-        abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9),
-    )
+    fd = fd_jacobian(s, x)
     # RESIDUAL-ROW-SCALING: compare J_ij |x_j|. Before: 6e-4 to 3.5e-3.
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols

@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import test_solver_robustness_481 as tsr
-from scipy.optimize._numdiff import approx_derivative
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import NetworkSolver
@@ -45,12 +45,7 @@ def test_the_wall_coupled_network_jacobian_is_exact(Dh: float | None) -> None:
     s = NetworkSolver(g)
     x = np.array(s.solve()["__x_solution__"])
     _, J = s._residuals_and_jacobian(x)
-    fd = approx_derivative(
-        lambda v: s._residuals_and_jacobian(v, compute_jacobian=False)[0],
-        x,
-        method="3-point",
-        abs_step=np.maximum(np.abs(x) * 1e-6, 1e-9),
-    )
+    fd = fd_jacobian(s, x)
     # RESIDUAL-ROW-SCALING: compare J_ij |x_j| (see _build_residual_scales).
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian
 
 import combaero as cb
 from combaero.network import (
@@ -191,13 +192,7 @@ def _fd_rel_error(s: NetworkSolver, r: dict) -> float:
     x0 = np.array([r.get(n, 0.0) for n in s.unknown_names])
     _, J = s._residuals_and_jacobian(x0, compute_jacobian=True)
     J = J.toarray()
-    Jfd = np.zeros_like(J)
-    for j in range(len(x0)):
-        h = 1e-6 * max(abs(x0[j]), 1e-3)
-        xp, xm = x0.copy(), x0.copy()
-        xp[j] += h
-        xm[j] -= h
-        Jfd[:, j] = (s._residuals(xp) - s._residuals(xm)) / (2.0 * h)
+    Jfd = fd_jacobian(s, x0)
     w = np.maximum(np.abs(x0), 1e-3)
     row = np.max(np.abs(Jfd) * w, axis=1) + 1e-30
     return float(np.max(np.abs(J - Jfd) * w / row[:, None]))
