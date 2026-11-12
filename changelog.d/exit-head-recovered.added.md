@@ -1,0 +1,5 @@
+- **`exit_head_recovered` [Pa], an information-only diagnostic.** It makes visible the dump loss that a node at rest does not charge.
+  - **Before:** a channel, pressure loss, area change, lossless link, splitter reference or vortex discharging into a `PlenumNode` or `CombustorNode` matched that node's `Pt` (= `P`), so its exit dynamic head was silently recovered as static pressure, and nothing reported how much.
+  - **Now:** each of these elements reports that head, `G^2 / (2 rho)` at its exit area and exit static state. It is 0 into a `MomentumChamberNode`, where the head is lost at a `PressureBoundary` with `exit_head_lost`, at a choked exit, and on a crossflow segment.
+  - Pressure losses and area changes into an outflow boundary report their head too, since they do not read `exit_head_lost`.
+  - No residual, Jacobian or solve changes, and no warning.
