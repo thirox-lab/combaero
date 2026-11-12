@@ -770,7 +770,9 @@ cross-source: Taslim and Spring's one-side series agree model-free
 +50% to +275% at e/D >= 0.125 (blockage beyond every Han set); Chandra and
 Cook's printed two- and four-wall drop ratios (Han 2013 p. 414) agree within
 3%. Pinned by `python/tests/test_rib_element_friction.py` and
-`test_ribbed_channel_element.py`.
+`test_ribbed_channel_element.py`. The one-wall high-blockage case (e/D > 0.11,
++62.9% bias over 34 points through the element) stays flagged; a sourced term
+for it, scored as cross-source accuracy, is #1129.
 
 ### D5. Extend `RibCorrelationSet` rather than give Eq. 4.17/4.18 a separate type
 
