@@ -1,5 +1,6 @@
 #include "hole_cd.h"
 
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -168,10 +169,24 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
 }
 
 HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
-                                               double P2, const std::vector<double>& Y) {
+                                               double P2, const std::vector<double>& Y,
+                                               bool incompressible) {
   HoleDriveCdRatio out;
   out.d_dY.assign(Y.size(), 0.0);
   if (!(P1 > P2) || !(Pt1 > P2)) {
+    return out;
+  }
+  if (incompressible) {
+    // r = sqrt(a / b), a = P1 - P2, b = Pt1 - P2: one density on both
+    // sides, so the ratio of the two ideal flows is the ratio of their
+    // pressure drops' square roots.
+    const double a = P1 - P2;
+    const double b = Pt1 - P2;
+    const double r = std::sqrt(a / b);
+    out.ratio = r;
+    out.d_dP1 = 0.5 * r / a;
+    out.d_dPt1 = -0.5 * r / b;
+    out.d_dP2 = 0.5 * r * (1.0 / b - 1.0 / a);
     return out;
   }
   // Each side's ideal flow from rest at its own (pressure, temperature):

@@ -429,11 +429,12 @@ class SecondLawReport:
                 at = src if eid in jets else station
                 Pt = self._state(at).Pt
                 pair = self._drive_pair(element) if at == element.from_node else None
-                if pair is not None and pair.supply:
+                if pair is not None and (pair.supply or pair.conv is not None):
                     # A duct-fed hole at its drive pair (#1087): it draws at
                     # the duct's total, and a reversed jet discharges at
                     # p_rev (the total, or the station static where a
-                    # converted static-referenced Cd recovers no head).
+                    # converted static-referenced Cd recovers no head, a
+                    # MomentumChamberNode station's included).
                     Pt = pair.p_up if m >= 0.0 else pair.p_rev
                 stream = self._stream_at(
                     src if into_chain else station,

@@ -37,6 +37,7 @@ from _fd_jacobian import fd_jacobian, scaled_error
 
 import combaero as cb
 from combaero.network import (
+    ChannelElement,
     CrossflowSegmentElement,
     EffusionLiner,
     EffusionPlateElement,
@@ -176,8 +177,9 @@ def test_the_total_drive_flows_the_cd_from_the_ducts_total(ms: bool) -> None:
     # (static + the closure's head at the mean of the two segment flows) is
     # the element's Cd; from the static it is not (that is the old wiring,
     # where the same ratio from the STATIC was the Cd).
-    # Bases without the supply-crossflow term: "total" refuses Eq. 17 (its
-    # Cd is static-referenced, see the refusal test).
+    # Bases without the supply-crossflow term: with it, "total" converts
+    # Eq. 17's static-referenced Cd exactly (the conversion tests), so the
+    # flow over the total-drive ideal flow is not the correlation's Cd.
     spec = HoleCd(
         correlation="McGreehanSchotsch" if ms else "IdelchikThick", inlet_crossflow="none"
     )
@@ -623,3 +625,110 @@ def test_a_duct_fed_hole_that_ingests_has_an_analytic_jacobian() -> None:
     x = np.array([r[n] for n in s.unknown_names])
     row = [s.unknown_names.index("h.m_dot")]
     assert _fd_check(s, x, rows=row) < 1e-5
+
+
+# --- a duct-fed panel at a MomentumChamberNode station (review C1) -----------
+
+
+def _chamber_station_net(spec: HoleCd, area: float = 3e-4, angle: float = 30.0) -> FlowNetwork:
+    """A dead-end duct into a MomentumChamberNode station (it carries its
+    own Pt), a single-hole duct-fed panel into 1 atm: crossflow_segments
+    ("s0", None)."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("in", Pt=1.30 * P_ATM, Tt=290.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("gas", Pt=P_ATM, Tt=290.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("n1", area=area))
+    g.add_element(CrossflowSegmentElement("s0", "in", "n1", length=0.03, area=A_DUCT, entry_K=0.0))
+    t = 6 * D_HOLE * math.sin(math.radians(angle))
+    g.add_element(
+        EffusionPlateElement(
+            "h", "n1", "gas", hole_diameter=D_HOLE, wall_thickness=t, pitch_x=0.06,
+            pitch_y=0.06, panel_length=0.06, panel_width=0.06, angle_deg=angle,
+            hole_cd=spec, crossflow_segments=("s0", None), crossflow_area=A_DUCT,
+        )
+    )  # fmt: skip
+    return g
+
+
+def _chamber_static_T(Tt: float, P: float, G: float) -> float:
+    """Static T at stagnation Tt, static P and mass flux G, from h(Tt) = h(T)
+    + (G R T / P)^2 / 2 by bisection: independent of the C++ closure."""
+    R = cb.specific_gas_constant(X_AIR)
+    ht = cb.h_mass(Tt, X_AIR)
+    lo, hi = 0.3 * Tt, Tt
+    for _ in range(200):
+        T = 0.5 * (lo + hi)
+        if ht - cb.h_mass(T, X_AIR) - 0.5 * (G * R * T / P) ** 2 > 0.0:
+            lo = T
+        else:
+            hi = T
+    return 0.5 * (lo + hi)
+
+
+def test_eq_17_at_a_chamber_station_is_the_static_referenced_flow() -> None:
+    # A MomentumChamberNode station carries its own Pt, the drive already.
+    # Eq. 17's static-referenced Cd is converted onto it exactly, as at a
+    # PlenumNode station: the flow is Cd_S times the ideal flow from the
+    # chamber's STATIC P and static T (its own closure at its through-flow).
+    # Unconverted (Cd_S on the chamber's Pt, the pre-fix wiring) it is 1.5 %
+    # more here. Independent closed form, not the kernel.
+    area = 3e-4
+    s, r = _solve(_chamber_station_net(HoleCd(correlation="McGreehanSchotsch"), area=area))
+    el = s.network.elements["h"]
+    x = np.array(r["__x_solution__"])
+    si = s._get_node_state(s.network.nodes["n1"], x)
+    so = s._get_node_state(s.network.nodes["gas"], x)
+    si.m_dot = so.m_dot = r["h.m_dot"]
+    cd_s = el._effective_Cd(si, so, s._network_flows(el, x))
+    P1, Pt1, m = r["n1.P"], r["n1.Pt"], r["h.m_dot"]
+    assert Pt1 - P1 > 500.0  # a chamber with a head worth converting
+    T1 = _chamber_static_T(290.0, P1, abs(m) / area)
+    a_h = math.pi * D_HOLE**2 / 4.0
+    assert m == pytest.approx(cd_s * a_h * _ideal_flux(P1, T1, P_ATM), rel=2e-4)
+    unconverted = cd_s * a_h * _ideal_flux(Pt1, 290.0, P_ATM)
+    assert 0.005 < unconverted / m - 1.0 < 0.03
+    d = r["__element_diag__"]["h"]
+    assert d["Cd"] == pytest.approx(m / (a_h * _ideal_flux(Pt1, 290.0, P_ATM)), rel=2e-4)
+    # It passes zero at the chamber static (f = 0).
+    assert d["dP_drive"] == pytest.approx(P1 - P_ATM, rel=1e-12)
+
+
+def test_eq_17_at_a_chamber_station_has_an_analytic_jacobian() -> None:
+    for area in (1.2e-3, 3e-4):
+        s, r = _solve(_chamber_station_net(HoleCd(correlation="McGreehanSchotsch"), area=area))
+        x = np.array(r["__x_solution__"])
+        assert _fd_check(s, x) < 1e-5
+
+
+# --- duct-flow reversal: a refused proxy root is named (review B1, #1125) -----
+
+
+def test_a_proxy_root_refused_by_the_second_law_is_named() -> None:
+    # A 3-segment liner on a 5 mm duct, 1.3e5 into 1.25e5 Pa with the gas
+    # side a flowing chamber: the duct flow reverses past the first station
+    # (+---), and booked at the duct total the station's reversed-flow model
+    # manufactures total pressure (#1125). The solve fails; its message must
+    # say the warm-start proxy root was refused by the second law, name the
+    # element and its sigma_norm and point at #1125, not just "did not
+    # converge".
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("cin", Pt=1.3e5, Tt=600.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("cout", Pt=1.25e5, Tt=600.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("gas_in", Pt=1.003e5, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=1.0e5, Tt=1500.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("ch", main_inlet="duct"))
+    g.add_element(ChannelElement("duct", "gas_in", "ch", length=0.2, diameter=0.08))
+    g.add_element(ChannelElement("tail", "ch", "exit", length=0.2, diameter=0.08))
+    EffusionLiner(
+        "ln", n_segments=3, length=0.152, width=0.152, duct_height=0.005,
+        hole_diameter=3.27e-3, wall_thickness=6.3e-3, pitch_x=15.24e-3,
+        pitch_y=15.24e-3, angle_deg=30.0,
+    ).add_to(g, "cin", "cout", "ch")  # fmt: skip
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = NetworkSolver(g).solve(timeout=60)
+    assert not r["__success__"]
+    msg = r["__message__"]
+    assert "proxy root was refused by the second law at ln__s" in msg
+    assert "(sigma_norm -" in msg
+    assert "#1125" in msg

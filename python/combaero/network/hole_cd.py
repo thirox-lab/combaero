@@ -142,18 +142,26 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #:               compressible, T1 the station's static temperature. That is
 #:               the authors' own flow (f = 0): the hole passes zero at the
 #:               station static, and the flow is the pre-0.12 one up to the
-#:               static-temperature correction (+1 to +3 % on the probe
-#:               liners).
+#:               static-temperature correction, which grows with the station
+#:               Mach (+1 to +3 % on the probe liners, +3.6 % at a high-Mach
+#:               single station, up to +5.4 % on 12-station liners at
+#:               high duct Mach). At a MomentumChamberNode station p1, T1
+#:               are the chamber's static P and T. In the incompressible
+#:               regime (the solver's incompressible proxy included) the
+#:               ratio is that kernel's exact sqrt(1 - X), X = q1/(Pt1 - p2).
 #:             - Without an inlet term (inlet_crossflow="none"): the plain
 #:               Cd from the total to the static, i.e. the full supply head
 #:               recovered (f = 1), the behaviour of a hole leaning WITH the
 #:               supply flow (Gritsch 1998). On a liner with the term off
-#:               this bleeds +70 to +250 % more than the pre-0.12 static
-#:               drive did.
+#:               this bleeds +70 to +250 % more (from +4 % at a low duct
+#:               Mach) than the pre-0.12 static drive did, and a reversed
+#:               jet discharges against the duct total.
 #:   "static"  the pre-0.12 drive: the station static p1 with the node's
-#:             TOTAL temperature. Kept to reproduce earlier results; it books
-#:             the duct head outside the hole's control volume (against the
-#:             rule).
+#:             TOTAL temperature. It BREAKS the Pt-to-static rule (it books
+#:             the duct head outside the hole's control volume) and exists
+#:             only to reproduce v0.11.1 liner results. Route: removed once
+#:             the lean/recovery term (#1124) is settled by Gritsch 2001 or
+#:             Rohde data.
 #: Every other hole drives from its supply node's Pt, its total already.
 #: Held data (cross-source) give f ~ 0 for normal holes and holes leaning
 #: across the supply flow, f ~ 1 for 30 deg holes leaning with it (one lab):
@@ -161,9 +169,11 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #: lean- and direction-dependent recovery is a Cd-model term to come (#1124),
 #: sourced from Rohde 1969 Fig. 11 and Gritsch, Schulz & Wittig 2001 (J.
 #: Turbomach. 123(4), 781-787, doi:10.1115/1.1397306; wanted entry in #1120).
-#: A liner whose duct flow REVERSES at a station is demoted by the second-law
-#: check: booked at the duct total, the hole stream shows the station's
-#: reversed-flow model manufacturing total pressure (#1125).
+#: A liner whose duct flow REVERSES at a station (fed from both ends, or
+#: back-pressured) is demoted by the second-law check: booked at the duct
+#: total, the hole stream shows the station's reversed-flow model
+#: manufacturing total pressure (#1125). The solver's failure message names
+#: a warm-start proxy root refused for it (NetworkSolver, #1125).
 #: Cd_supply_drive_head_fraction reports how much of the drive the supply
 #: head is.
 HOLE_CD_SUPPLY_DRIVES = ("auto", "static", "total")
@@ -248,7 +258,8 @@ class HoleCd:
     FilmCoolingElement, SlotFilmElement, ImpingementPlateElement and the
     EffusionLiner and ImpingementArray builders. A field left at None or
     "auto" is THAT ELEMENT's default, which differs per element (see each
-    field); every default is the element's behaviour before the spec.
+    field); every default is the element's behaviour before the spec except
+    a duct-fed panel's supply_drive, the duct total since 0.12.0.
 
     Attributes
     ----------
@@ -294,9 +305,13 @@ class HoleCd:
         from the upstream total to the downstream static, and
         McGreehan-Schotsch's static-referenced Eq. 17 Cd is converted onto
         it exactly. "static" is the pre-0.12 drive (station static, node
-        total temperature), kept to reproduce earlier results. Every other
-        hole drives from its supply node's Pt, its total already ("static"
-        is refused there). See HOLE_CD_SUPPLY_DRIVES.
+        total temperature); it BREAKS the Pt-to-static rule and exists only
+        to reproduce v0.11.1 liner results, to be removed once the
+        lean/recovery term (#1124) is settled by Gritsch 2001 or Rohde
+        data. Every other hole drives from its supply node's Pt, its total
+        already ("static" is refused there). A duct-flow reversal at a
+        station is refused by the second-law check (#1125). See
+        HOLE_CD_SUPPLY_DRIVES.
     """
 
     correlation: str | None = None
@@ -709,6 +724,7 @@ class _HoleCdChain:
         # its chamber's static pressure.
         self.supply_drive = "total"
         self.station_holds_static = False
+        self.station_node: Any = None
         self.exit_static = False
         self.drive_resolved = False
 
@@ -783,6 +799,7 @@ class _HoleCdChain:
         el = self._el
         src = graph.nodes.get(el.from_node)
         self.station_holds_static = self.duct_fed and isinstance(src, PlenumNode)
+        self.station_node = src if self.duct_fed and isinstance(src, MomentumChamberNode) else None
         self.exit_static = bool(exit_static) and isinstance(
             graph.nodes.get(el.to_node), MomentumChamberNode
         )
@@ -864,40 +881,84 @@ class _HoleCdChain:
     ) -> tuple[float, dict[str, float]]:
         """Cd_T / Cd_S of McGreehan-Schotsch's static-referenced Eq. 17 Cd on
         the duct-total drive, and its derivatives by name: C++
-        hole_static_to_total_cd_ratio at the station's STATIC state (p1, the
-        static T of the duct's mean flow, as U1/Vi reads it), its total
-        (pt1, the node's T0) and the discharge static p2."""
+        hole_static_to_total_cd_ratio at the station's STATIC state, its
+        total (pt1, the node's T0) and the discharge static p2.
+
+        The station's static state: at a PlenumNode station, p1 its P and T1
+        the static T of the duct's mean flow (as U1/Vi reads it); at a
+        MomentumChamberNode station, the chamber's own static P and static T
+        (its closure at its through-flow). In the incompressible regime (the
+        solver's incompressible proxy included) the ratio is that kernel's
+        exact sqrt(1 - X), X = q1/(Pt1 - p2), which no temperature enters:
+        the forward kernel and its conversion are one model."""
         from .components import _moving_static_T
 
         el = self._el
-        st = _moving_static_T(
-            state_in,
-            self._station_mean_flow(flows),
-            el.crossflow_area,
-            el.regime == "incompressible",
-        )
-        c = cb.hole_static_to_total_cd_ratio(
-            float(state_in.P), st.T, pt1, float(state_in.Tt), float(state_out.P), list(state_in.Y)
-        )
+        incompressible = el.regime == "incompressible"
         d: dict[str, float] = {}
 
         def add(key: str, v: float) -> None:
             if v != 0.0:
                 d[key] = d.get(key, 0.0) + v
 
+        # T1 and its derivatives by name (none in the incompressible form).
+        t1_terms: dict[str, float] = {}
+        mean_flow_dT1 = 0.0
+        if incompressible:
+            T1 = float(state_in.Tt)
+        elif self.station_holds_static:
+            st = _moving_static_T(state_in, self._station_mean_flow(flows), el.crossflow_area)
+            T1 = st.T
+            t1_terms[f"{el.from_node}.P"] = st.dP
+            t1_terms[f"{el.from_node}.Tt"] = st.dT0
+            for k, v in st.dY.items():
+                t1_terms[f"{el.from_node}.Y[{k}]"] = v
+            # st.dm is d(T1)/d(mean flow).
+            mean_flow_dT1 = st.dm
+        else:
+            T1 = self._chamber_static_T(state_in, t1_terms)
+        c = cb.hole_static_to_total_cd_ratio(
+            float(state_in.P),
+            T1,
+            pt1,
+            float(state_in.Tt),
+            float(state_out.P),
+            list(state_in.Y),
+            incompressible,
+        )
         dT1 = float(c.d_dT1)
-        add(f"{el.from_node}.P", float(c.d_dP1) + dT1 * st.dP)
-        add(f"{el.from_node}.Tt", float(c.d_dTt1) + dT1 * st.dT0)
-        for k, v in st.dY.items():
-            add(f"{el.from_node}.Y[{k}]", dT1 * v)
-        # st.dm is d(T1)/d(mean flow).
-        self._add_mean_flow_columns(d, dT1 * st.dm)
+        add(f"{el.from_node}.P", float(c.d_dP1))
+        add(f"{el.from_node}.Tt", float(c.d_dTt1))
+        for key, v in t1_terms.items():
+            add(key, dT1 * v)
+        self._add_mean_flow_columns(d, dT1 * mean_flow_dT1)
         for key, v in dpt1.items():
             add(key, float(c.d_dPt1) * v)
         add(f"{el.to_node}.P", float(c.d_dP2))
         for k, v in enumerate(c.d_dY):
             add(f"{el.from_node}.Y[{k}]", float(v))
         return float(c.ratio), d
+
+    def _chamber_static_T(self, state_in: "NetworkMixtureState", terms: dict[str, float]) -> float:
+        """A MomentumChamberNode station's static T (its own closure at its
+        through-flow, as MomentumChamberNode.static_density reads it), its
+        derivatives by name added to ``terms``."""
+        node = self.station_node
+        r = node._closure(state_in, float(getattr(node, "_total_m_dot", 0.0)))
+
+        def add(key: str, v: float) -> None:
+            if v != 0.0:
+                terms[key] = terms.get(key, 0.0) + v
+
+        add(f"{node.id}.P", float(r.dT_static_dP))
+        add(f"{node.id}.Tt", float(r.dT_static_dT))
+        for k, v in enumerate(r.dT_static_dY):
+            add(f"{node.id}.Y[{k}]", float(v))
+        dm = float(r.dT_static_dmdot)
+        if dm != 0.0:
+            for var, coeff in getattr(node, "_upstream_m_dot_jac", {}).items():
+                add(var, dm * coeff)
+        return float(r.T_static)
 
     def drive_pair(
         self,
@@ -938,11 +999,16 @@ class _HoleCdChain:
                 # (its Pt, = P at a PlenumNode root); q for the diagnostics.
                 q = self.station_head(state_in, flows)
         elif self.duct_fed:
-            # A station carrying its own Pt (a MomentumChamberNode).
+            # A station carrying its own Pt (a MomentumChamberNode): the drive
+            # is that Pt already, and Eq. 17 is converted onto it as at a
+            # PlenumNode station, from the chamber's static P and static T.
             q = float(state_in.Pt) - float(state_in.P)
             if self.supply_drive == "static":
                 p_up, dp_up, supply = float(state_in.P), {f"{el.from_node}.P": 1.0}, True
-        if not (supply or self.exit_static):
+            elif self.supply_duct and self.station_node is not None:
+                conv = self._static_to_total_conversion(state_in, state_out, flows, p_up, dp_up)
+                p_rev, dp_rev = float(state_in.P), {f"{el.from_node}.P": 1.0}
+        if not (supply or self.exit_static or conv is not None):
             return None
         if self.exit_static:
             p_dn, dp_dn = float(state_out.P), {f"{el.to_node}.P": 1.0}

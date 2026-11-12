@@ -6843,10 +6843,13 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       .def_readonly("d_dY", &HoleDriveCdRatio::d_dY);
   m.def("hole_static_to_total_cd_ratio", &hole_static_to_total_cd_ratio, py::arg("P1"),
         py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"),
+        py::arg("incompressible") = false,
         "The exact conversion of a static-referenced hole Cd onto the total drive:\n"
         "Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2), both ideal flows\n"
         "from the network's compressible nozzle kernel; (P1, T1) the supply's STATIC\n"
-        "state, (Pt1, Tt1) its stagnation state. 0 where P1 <= P2. Analytic partials\n"
+        "state, (Pt1, Tt1) its stagnation state. incompressible: the incompressible\n"
+        "kernel's exact ratio sqrt((P1 - P2)/(Pt1 - P2)) (T1, Tt1, Y do not enter).\n"
+        "0 where P1 <= P2. Analytic partials\n"
         "by P1, T1, Pt1, Tt1, P2 and the mass fractions Y.");
 
   m.def("solve_orifice_mdot",

@@ -440,6 +440,11 @@ d.P_drive, d.q_dyn, d.dP_dP, d.dP_dm_dot
 c = cb.hole_static_to_total_cd_ratio(P1=1.2e5, T1=430.0, Pt1=1.32e5, Tt1=450.0,
                                      P2=1.05e5, Y=list(cb.mole_to_mass(X)))
 c.ratio, c.d_dP1, c.d_dT1, c.d_dPt1, c.d_dTt1, c.d_dP2
+# incompressible=True: the incompressible kernel's exact ratio sqrt(1 - X),
+# X = (Pt1 - P1)/(Pt1 - P2), as an incompressible-regime element (and the
+# solver's incompressible proxy) uses; T1, Tt1 and Y do not enter.
+ci = cb.hole_static_to_total_cd_ratio(1.2e5, 430.0, 1.32e5, 450.0, 1.05e5,
+                                      list(cb.mole_to_mass(X)), incompressible=True)
 
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
@@ -2177,18 +2182,30 @@ volume has no node model yet.
 
 **Holes and orifices (owner's rule, 2026-11-12).** A hole drives from the
 upstream `Pt` to the downstream static, and the hole element owns the energy
-closure: the jet's head is its own, not the receiver's. The orifice family's
-forward drive already follows it. Its flow direction does not yet: into a
-`MomentumChamberNode` it is still decided from `Pt - Pt` ([#1087](https://github.com/thirox-lab/combaero/issues/1087)). [#1122](https://github.com/thirox-lab/combaero/pull/1122) (open)
-moves film, effusion and slot holes to the static drive; the plain
-`OrificeElement` and the connection elements follow after it.
+closure: the jet's head is its own, not the receiver's. Since 0.12.0
+([#1087](https://github.com/thirox-lab/combaero/issues/1087),
+[#1122](https://github.com/thirox-lab/combaero/pull/1122)):
+- **Exit side.** A film, effusion or slot hole into a `MomentumChamberNode`
+  takes its direction from its drive against the chamber's STATIC pressure,
+  and a reversed jet draws from that static. The orifice family's forward
+  drive already ran to the downstream static.
+- **Supply side.** A duct-fed `EffusionPlateElement` (each `EffusionLiner`
+  panel) drives from the duct's TOTAL pressure at its station, rebuilt from
+  the station static and the mean segment flow, not from the station
+  static. McGreehan-Schotsch's static-referenced Eq. 17 Cd is converted onto
+  that drive exactly. See `HoleCd.supply_drive` below.
+- **Not yet.** The plain `OrificeElement` and the connection elements still
+  take their direction from `Pt - Pt` into a `MomentumChamberNode`; they
+  follow later.
 
 **Known gaps:**
 - How much of the supply head a hole recovers depends on its lean relative to
   the supply flow and on the solved flow direction. No element declares the
   lean: [#1124](https://github.com/thirox-lab/combaero/issues/1124).
 - A `CrossflowSegmentElement` station with the duct flow reversed creates
-  total pressure: [#1125](https://github.com/thirox-lab/combaero/issues/1125).
+  total pressure, and a duct-fed hole booked at the duct total exposes it
+  to the second-law check: [#1125](https://github.com/thirox-lab/combaero/issues/1125)
+  (see `HoleCd.supply_drive`, "Duct-flow reversal", below).
 - Outflow boundaries are inconsistent. `ChannelElement` and
   `PortDischargeElement` honour `PressureBoundary.exit_head_lost`, and the
   orifice family loses its head anyway. `PressureLossElement`,
@@ -2242,9 +2259,10 @@ HoleCd(
 )
 ```
 
-A field left at None or `"auto"` is THAT ELEMENT's default, exactly its
-behaviour before the spec; the defaults differ per element and are not
-unified:
+A field left at None or `"auto"` is THAT ELEMENT's default; the defaults
+differ per element and are not unified. They are each element's behaviour
+before the spec, except the duct-fed panel's supply drive, which moved to
+the duct total in 0.12.0 (`supply_drive` below):
 
 | Field | `OrificeElement` | `EffusionPlateElement` | `FilmCoolingElement` | `SlotFilmElement` | `ImpingementPlateElement` |
 |---|---|---|---|---|---|
@@ -2276,27 +2294,52 @@ unified:
     station's static temperature. That is the authors' own model (f = 0):
     the hole passes zero at the station static, and a reversed jet
     discharges against it. Flows equal the pre-0.12 ones up to the
-    static-temperature correction (+1 to +3 % on the probe liners). The
-    reported `Cd` and `Cd_base` are on the total basis.
+    static-temperature correction, which grows with the station Mach: +1 to
+    +3 % on the probe liners, +3.6 % at a high-Mach single station, up to
+    +5.4 % on 12-station liners at high duct Mach (2.5e5 Pa into a 1.2e5 Pa
+    duct exit). The
+    reported `Cd` and `Cd_base` are on the total basis. An element in the
+    incompressible regime, and the solver's incompressible warm-start proxy,
+    take the incompressible kernel's exact ratio sqrt(1 - X),
+    X = q1/(Pt1 - p2), instead.
   - **With `inlet_crossflow="none"`.** The plain Cd runs from the total to
     the static, so the full supply head is recovered (f = 1). That is the
     behaviour of a hole leaning WITH the supply flow (Gritsch 1998). On a
-    liner with the term off it bleeds **+70 to +250 %** more than the
-    pre-0.12 static drive did.
-  - **`"static"`** is the pre-0.12 drive (station static, node total
-    temperature), kept to reproduce earlier results. It books the duct head
-    outside the hole's control volume, against the rule. It is refused on a
-    hole that is not duct-fed.
+    liner with the term off it bleeds **+70 to +250 %** (from +4 % at a low duct Mach) more than the
+    pre-0.12 static drive did. The flow passes zero at the duct total, so a
+    reversed (ingesting) jet discharges against the duct total, not the
+    station static.
+  - **`"static"` breaks the Pt-to-static rule.** It is the pre-0.12 drive
+    (station static, node total temperature) and books the duct head
+    outside the hole's control volume. It exists only to reproduce v0.11.1
+    liner results. It will be removed once the lean- and direction-dependent
+    recovery term (#1124) is settled by Gritsch 2001 or Rohde data. It is
+    refused on a hole that is not duct-fed.
+  - **Duct-flow reversal (limitation, #1125).** Where the duct flow reverses
+    at a station (a liner fed from both ends, a dead-ended or back-pressured
+    duct), the station's reversed-flow model manufactures total pressure,
+    and a hole booked at the duct total exposes it: the second-law check
+    refuses the root. Both the converged root and the solver's
+    incompressible warm-start proxies are affected; when a proxy root is
+    refused, the solve's failure message names the element and its
+    `sigma_norm` and points at #1125. Example (`test_hole_supply_drive.py`):
+    a 3-segment liner on a 5 mm duct, 1.3e5 Pa into 1.25e5 Pa, gas side a
+    flowing chamber, 30 deg holes. 0.11.x converged it (segment signs
+    `+---`); on 0.12 the inlet-referenced proxy root is refused (sigma_norm
+    -3.8e-2) and the warm-started root is demoted (-1.1e-2). A single
+    station with both duct ends at the same Pt is demoted (-1.0e-4) where
+    `"static"` passes.
   - **Known gaps.** Held data (cross-source) give f ~ 0 for normal holes and
     for holes leaning across the supply flow, and f ~ 1 for 30 deg holes
     leaning with it (one lab). So Eq. 17 misses co-aligned holes, and a
     term-off base misses normal ones. The lean- and direction-dependent
     recovery is a Cd-model term to come (#1124), sourced from Rohde 1969
     Fig. 11 and Gritsch, Schulz & Wittig 2001 (J. Turbomach. 123(4),
-    781-787, doi:10.1115/1.1397306; wanted entry in #1120). A liner whose
-    duct flow reverses at a station is demoted by the second-law check:
-    booked at the duct total, the hole stream exposes the station's
-    reversed-flow model manufacturing total pressure (#1125). A duct-fed
+    781-787, doi:10.1115/1.1397306; wanted entry in #1120). Duct-flow
+    reversal is the limitation above (#1125). Cold-start convergence of
+    12-station liners with `inlet_crossflow="none"` drops against 0.11.x
+    (a serial sweep: 61 -> 52 and 46 -> 30 of 64), and one `HoleCd()` case
+    of 128 is lost (#1130). A duct-fed
     panel's jet momentum into a merge chamber (`injection_momentum`) takes
     the station's own pressure, because the hook sees no segment flows.
     That is consistent for the converted Eq. 17 Cd (f = 0).
@@ -2324,7 +2367,9 @@ unified:
   plate CR-3630 Table 4.1 does not cover. Every refusal names the element.
 - **`inlet_crossflow="none"` means no supply-crossflow term.** U1/Vi is held
   at 0 whatever feeds the hole, so a duct-fed panel is taken as plenum-fed
-  by the caller's choice, and the duct-fed panel's refusal of a correlation
+  by the caller's choice, the plenum sitting at the duct TOTAL (f = 1, the
+  full supply head recovered; `supply_drive="static"` puts it at the station
+  static), and the duct-fed panel's refusal of a correlation
   without the crossflow term (which exists because the duct would be dropped
   silently) no longer applies. Not hidden: the panel still reports the
   duct's `Cd_inlet_crossflow_U1_over_Vi` and flags `Cd_inlet_crossflow_ignored` = 1.

@@ -26,7 +26,7 @@ Here p1, T1 is the supply station's static state, Pt1, Tt1 its stagnation state,
 - **The static temperature matters.** Taking the static with the TOTAL temperature (the pre-0.12 station state) instead of the static temperature moves the ideal flow by 0 to +3.5 % on Gritsch's points.
 - **Where p1 <= p2, the static Cd is undefined, although the hole flows.** This applies to 2 cylindrical and 14 shaped Gritsch points.
 
-combaero implements the conversion as `hole_static_to_total_cd_ratio`. It takes both ideal flows from the network's own compressible nozzle kernel, so a static-referenced Cd on the total drive gives that model's own flow to round-off.
+combaero implements the conversion as `hole_static_to_total_cd_ratio`. It takes both ideal flows from the network's own compressible nozzle kernel, so a static-referenced Cd on the total drive gives that model's own flow to round-off. An element in the incompressible regime (the solver's incompressible warm-start proxy included) takes the incompressible form `sqrt(1 - X)` instead (`incompressible=True`), so the proxy's forward kernel and its conversion are one model (review of #1122, B2).
 
 ## What each held source references
 
@@ -40,7 +40,7 @@ combaero implements the conversion as `hole_static_to_total_cd_ratio`. It takes 
 | Thole et al. 1997 | stagnation at hole entrance -> exit static | Ma_c |
 | Adkins & Gueroui 1986 | annulus total -> core static | Phi = 1 - 1/VHR |
 
-Five of the six digitised or printed sources are total-referenced. Rohde (p. 9) states the trade-off himself: the static suits a normal hole, because there is no head recovery, and the total suits an inclined one, which recovers some of it.
+Six of the seven held sources are total-referenced; McGreehan & Schotsch alone reference the static. Rohde (p. 9) states the trade-off himself: the static suits a normal hole, because there is no head recovery, and the total suits an inclined one, which recovers some of it.
 
 ## Which convention collapses the data
 

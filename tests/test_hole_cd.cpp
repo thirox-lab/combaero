@@ -409,3 +409,39 @@ TEST(HoleStaticToTotalCdRatio, IsTheKernelsIdealFlowRatio) {
   EXPECT_NEAR((f(P1, T1, Pt1, Tt1, P2 + hp) - f(P1, T1, Pt1, Tt1, P2 - hp)) / (2 * hp), r.d_dP2,
               1e-6 * std::abs(r.d_dP2));
 }
+
+// The incompressible kernel's exact ratio (review of #1122, B2: the solver's
+// incompressible proxy converts with the form its forward kernel has):
+// sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2); no temperature or composition
+// enters, 0 where P1 <= P2, partials against central differences, and the
+// compressible ratio tends to it at low supply Mach.
+TEST(HoleStaticToTotalCdRatio, IncompressibleIsSqrtOneMinusX) {
+  using combaero::hole_static_to_total_cd_ratio;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P1 = 1.2e5, T1 = 430.0, Pt1 = 1.32e5, Tt1 = 450.0, P2 = 1.05e5;
+  const auto r = hole_static_to_total_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, true);
+  const double X = (Pt1 - P1) / (Pt1 - P2);
+  EXPECT_DOUBLE_EQ(r.ratio, std::sqrt(1.0 - X));
+  EXPECT_EQ(r.d_dT1, 0.0);
+  EXPECT_EQ(r.d_dTt1, 0.0);
+  for (double v : r.d_dY) {
+    EXPECT_EQ(v, 0.0);
+  }
+  EXPECT_DOUBLE_EQ(hole_static_to_total_cd_ratio(P1, 300.0, Pt1, 900.0, P2, Y, true).ratio,
+                   r.ratio);
+  EXPECT_EQ(hole_static_to_total_cd_ratio(P2, T1, Pt1, Tt1, P2, Y, true).ratio, 0.0);
+  auto f = [&](double a, double c, double e) {
+    return hole_static_to_total_cd_ratio(a, T1, c, Tt1, e, Y, true).ratio;
+  };
+  const double hp = 1.0;
+  EXPECT_NEAR((f(P1 + hp, Pt1, P2) - f(P1 - hp, Pt1, P2)) / (2 * hp), r.d_dP1,
+              1e-6 * std::abs(r.d_dP1));
+  EXPECT_NEAR((f(P1, Pt1 + hp, P2) - f(P1, Pt1 - hp, P2)) / (2 * hp), r.d_dPt1,
+              1e-6 * std::abs(r.d_dPt1));
+  EXPECT_NEAR((f(P1, Pt1, P2 + hp) - f(P1, Pt1, P2 - hp)) / (2 * hp), r.d_dP2,
+              1e-6 * std::abs(r.d_dP2));
+  // Low supply Mach (static T = total T, a 50 Pa head): the two forms agree.
+  const auto lo_c = hole_static_to_total_cd_ratio(1.2e5, Tt1, 1.2e5 + 50.0, Tt1, 1.0e5, Y);
+  const auto lo_i = hole_static_to_total_cd_ratio(1.2e5, Tt1, 1.2e5 + 50.0, Tt1, 1.0e5, Y, true);
+  EXPECT_NEAR(lo_c.ratio, lo_i.ratio, 1e-4);
+}

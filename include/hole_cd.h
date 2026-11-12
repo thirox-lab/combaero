@@ -172,6 +172,12 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
 // temperature"), (Pt1, Tt1) its stagnation state. Incompressibly the ratio
 // is sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2); the compressible ratio depends
 // on the supply Mach as well (docs/archive/hole_drive_convention.md).
+// `incompressible`: the exact ratio of the incompressible kernel (an element
+// in the incompressible regime, the solver's incompressible proxy included),
+// whose ideal flows are A sqrt(2 rho dp) at one density:
+//   Cd_T / Cd_S = sqrt(1 - X),  X = (Pt1 - P1)/(Pt1 - P2),
+// i.e. sqrt((P1 - P2)/(Pt1 - P2)); T1, Tt1 and Y do not enter (their
+// partials are 0). The compressible ratio tends to it at low supply Mach.
 // ratio = 0 (and every partial 0) where P1 <= P2: the static-referenced Cd
 // gives no forward flow there, or where m_id(Pt1, Tt1 -> P2) = 0.
 struct HoleDriveCdRatio {
@@ -185,6 +191,7 @@ struct HoleDriveCdRatio {
 };
 
 HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
-                                               double P2, const std::vector<double>& Y);
+                                               double P2, const std::vector<double>& Y,
+                                               bool incompressible = false);
 
 }  // namespace combaero
