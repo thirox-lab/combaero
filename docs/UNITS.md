@@ -381,13 +381,13 @@ All functions use consistent units to avoid conversion errors.
 
 #### Chemical Equilibrium
 
-| Function                          | Input Units                         | Output Unit |
-|-----------------------------------|-------------------------------------|-------------|
-| `wgs_equilibrium`                 | State (T: K, P: Pa, X: mol/mol)     | State       |
-| `wgs_equilibrium_adiabatic`       | State                               | State       |
-| `reforming_equilibrium`           | State                               | State       |
-| `reforming_equilibrium_adiabatic` | State                               | State       |
-| `combustion_equilibrium`          | State, smooth: bool (default False) | State       |
+| Function                          | Input Units                        | Output Unit |
+|-----------------------------------|------------------------------------|-------------|
+| `wgs_equilibrium`                 | State (T: K, P: Pa, X: mol/mol)    | State       |
+| `wgs_equilibrium_adiabatic`       | State                              | State       |
+| `reforming_equilibrium`           | State                              | State       |
+| `reforming_equilibrium_adiabatic` | State                              | State       |
+| `combustion_equilibrium`          | State, smooth: bool (default True) | State       |
 
 ---
 

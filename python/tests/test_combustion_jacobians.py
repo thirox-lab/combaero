@@ -193,10 +193,10 @@ def test_the_combustor_derivatives_match_central_differences(method: str, phi: f
 
     mf = phi * _M_ST
     r = burn(1.0, mf)
-    # Inside the complete model's phi = 1 softmin (about 1e-4 wide in phi, 6e-6
-    # kg/s of fuel here) the slope swings from +24000 to -7000 K/(kg/s): a step
-    # that resolves it is 1e-9.
-    in_band = method == "complete" and abs(phi - 1.0) < 1e-3
+    # Inside the phi = 1 softmin (about 1e-4 wide in phi, 6e-6 kg/s of fuel
+    # here; both methods since #1048) the slope swings from +24000 to -7000
+    # K/(kg/s): a step that resolves it is 1e-9.
+    in_band = abs(phi - 1.0) < 1e-3
     h, hT = (1e-9 if in_band else 1e-7), 1e-3
     ico = _cb.species_index_from_name("CO" if method == "equilibrium" else "CO2")
     checks = [
@@ -206,19 +206,7 @@ def test_the_combustor_derivatives_match_central_differences(method: str, phi: f
         (r.dY_mix_d_stream[ico][1].d_mdot, lambda d: burn(1.0, mf + d).Y_mix[ico], h),
         (r.dY_mix_d_stream[ico][0].d_Tt, lambda d: burn(1.0, mf, 700.0 + d).Y_mix[ico], hT),
     ]
-    # The equilibrium path runs its complete-combustion step without the
-    # phi = 1 softmin, and its T has a kink at the stoichiometric peak (no
-    # O2-side dissociation): at phi = 1 exactly (since #1037 removed the
-    # ln2/k0 offset that put it near phi = 1.00018) a flow derivative is a
-    # subgradient, between the one-sided slopes.
-    at_kink = method == "equilibrium" and phi == 1.0
-    for i, (an, f, step) in enumerate(checks):
-        if at_kink and i in (0, 1, 3):
-            f0 = f(0.0)
-            one_sided = sorted(((f(step) - f0) / step, (f0 - f(-step)) / step))
-            tol = 2e-6 * max(abs(s) for s in one_sided)
-            assert one_sided[0] - tol <= an <= one_sided[1] + tol, (an, one_sided)
-            continue
+    for an, f, step in checks:
         fd = (f(step) - f(-step)) / (2 * step)
         assert an == pytest.approx(fd, rel=2e-6, abs=1e-9 * max(1.0, abs(fd))), (an, fd)
 
@@ -248,3 +236,61 @@ def test_the_complete_products_jacobian_is_exact_and_conserves_atoms() -> None:
         o_in = sum(X0[names.index(k)] * w for k, w in o_atoms.items()) / X0[iN2]
         o_out = sum(Xb[names.index(k)] * w for k, w in o_atoms.items()) / Xb[iN2]
         assert o_out == pytest.approx(o_in, rel=1e-12), phi
+
+
+def _fuel_air(fuel: str, phi: float) -> tuple[np.ndarray, np.ndarray]:
+    """X(phi) of a fuel in dry air, and dX/dphi (sum zero)."""
+    i_f = _cb.species_index_from_name(fuel)
+    X_air = np.array(_X_AIR)
+    Xf = np.zeros(len(X_air))
+    Xf[i_f] = 1.0
+    c = X_air[_cb.species_index_from_name("O2")] / _cb.oxygen_required_per_mol_fuel(i_f)
+    X = (X_air + c * phi * Xf) / (1.0 + c * phi)
+    return X, c * (Xf - X) / (1.0 + c * phi)
+
+
+@pytest.mark.parametrize("fuel", ["CH4", "H2", "C3H8"])
+def test_equilibrium_T_is_smooth_through_stoichiometric(fuel: str) -> None:
+    """combustion_equilibrium runs its complete-combustion step with the phi = 1
+    softmin (#1048), so T is C1 at phi = 1. Without it the slope jumped there,
+    +1478 to -961 K per unit phi for CH4-air at 300 K (one-sided slopes 1e-8
+    either side of phi = 1), and the analytic derivative sat between them.
+    Here the slopes either side agree to the step's curvature, and the
+    analytic dT/dphi matches central differences across the band."""
+    T_in, P = 700.0, 5e5
+
+    def T_of(phi: float) -> float:
+        return float(_cb.combustion_equilibrium(T_in, _fuel_air(fuel, phi)[0], P).state.T)
+
+    h = 1e-8  # resolves the band, ~1/SMOOTHING_K_PHI1 = 5e-5 wide in phi
+    T0 = T_of(1.0)
+    fwd, bwd = (T_of(1.0 + h) - T0) / h, (T0 - T_of(1.0 - h)) / h
+    # Smooth: the one-sided slopes differ by about T'' h (T'' ~ 1e7 per phi^2
+    # in the band): 0.1 K per unit phi, against the kink's 2400.
+    assert abs(fwd - bwd) < 1.0, (fwd, bwd)
+    for phi in (0.9999, 0.99995, 1.0, 1.00002, 1.00005, 1.0001):
+        X, dX = _fuel_air(fuel, phi)
+        ej = _cb.combustion_equilibrium_and_jacobian(T_in, X, P)
+        an = float(np.array(ej.dT_dX) @ dX)
+        fd = (T_of(phi + h) - T_of(phi - h)) / (2 * h)
+        assert an == pytest.approx(fd, rel=1e-5, abs=1e-2), (phi, an, fd)
+
+
+def test_equilibrium_softmin_moves_T_only_near_stoichiometric() -> None:
+    """The softmin changes T only within about 1e-3 of phi = 1 (#1048): at
+    phi = 1 it is 0.083 K below the unsmoothed burn followed by the same
+    reforming + WGS stage (CH4-air, 700 K), and at |phi - 1| >= 1e-3 equal to
+    it to round-off."""
+    T_in, P = 700.0, 5e5
+
+    def change(phi: float) -> float:
+        X = _fuel_air("CH4", phi)[0]
+        smooth = _cb.combustion_equilibrium(T_in, X, P).state.T
+        # The burn without the phi = 1 softmin, then the same reforming + WGS stage.
+        b = _cb.complete_combustion(T_in, X, P, smooth_phi0=True, smooth_phi1=False)
+        return smooth - _cb.reforming_equilibrium_adiabatic(b.T, list(b.X), b.P).state.T
+
+    for phi in (0.99, 0.999, 1.001, 1.01):
+        assert abs(change(phi)) < 1e-9, phi
+    # ln2/k1 of the fuel is left unburnt at phi = 1: measured -0.0833 K.
+    assert -0.1 < change(1.0) < -0.07
