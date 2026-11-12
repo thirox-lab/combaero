@@ -30,6 +30,9 @@ back pressure); a failure is a finding to triage, not automatically a bug.
                 or a closed end
   splitter      a flow splitter (#903), 2-6 outlets at drawn fractions, fed
                 from a reservoir through an orifice or at a fixed flow
+  fuel_controller  a FuelBoundary on a combustor (#892): lean, rich, near-peak and
+                unreachable targets, fuel routes, a wall or turbine downstream;
+                each draw tags its expected outcome (expect:...)
 """
 
 from __future__ import annotations
@@ -53,6 +56,7 @@ from combaero.network import (
     EnergyBoundary,
     FlowNetwork,
     FlowSplitter,
+    FuelBoundary,
     HoleCd,
     IdealMomentumTeeElement,
     ImpingementArray,
@@ -68,6 +72,7 @@ from combaero.network import (
     SmoothModel,
     TeeJunctionElement,
     ThermalWall,
+    TurbineElement,
     VortexElement,
     WallLayer,
     WallNode,
@@ -1166,6 +1171,240 @@ def splitter(seed: int) -> tuple[FlowNetwork, list[str]]:
     return g, tags + (["remainder"] if remainder else [])
 
 
+# ---------------------------------------------------------------------------
+# fuel_controller: a FuelBoundary on a combustor (#892, #1049)
+# ---------------------------------------------------------------------------
+
+#: The cases, one per seed in turn (seed % len), so every range of
+#: len(FUEL_CASES) consecutive seeds draws each once.
+FUEL_CASES = (
+    "lean",  # a target between the unfuelled Tt and the peak, lean root
+    "rich",  # the same on the rich side (rich-quench-lean, reformers)
+    "near_peak",  # a few K below the peak, where the two roots meet
+    "below",  # below the unfuelled Tt: no root
+    "above",  # above the peak: no root
+    "rich_no_root",  # rich asked, only a lean root within phi 10
+    "leak",  # part of the fuel bypasses the combustor
+    "coupled_wall",  # the burnt gas heats a coolant channel through a wall
+    "coupled_turbine",  # the burnt gas drives a turbine at a fixed pressure ratio
+)
+#: The fuel's routes to the combustor, in turn per len(FUEL_CASES) seeds.
+FUEL_ROUTES = ("direct", "injector", "premix")
+#: The expected-outcome tags run.py checks: converged on the branch, or
+#: refused (an exception out of solve(), or no success) with the message part.
+EXPECT_CONVERGED = "expect:converged:"
+EXPECT_REFUSED = "expect:refused:"
+#: A refusal before any solve (resolve_topology): the harness test asserts it.
+EXPECT_REFUSED_AT_BUILD = "expect:refused_at_build:"
+
+_FUEL_SPECIES = ("CH4", "CH4", "H2", "C3H8")
+
+
+def _stream(m: float, T: float, P: float, Y: list[float]) -> cb.Stream:
+    st = cb.Stream()
+    st.set_T(T)
+    st.set_P(P)
+    st.set_X(list(cb.mass_to_mole(Y)))
+    st.set_mdot(m)
+    return st
+
+
+def _burnt_at_phi(
+    phi: float, T_air: float, T_fuel: float, P: float, Y_f: list[float], method: str
+) -> float:
+    """Tt of 1 kg/s of dry air with fuel at equivalence ratio phi, burnt by the
+    combustor's model (mix, then complete or partial-equilibrium combustion),
+    as the solver's fuel start computes it."""
+    o2 = Y_AIR[cb.species.indices["O2"]]
+    m_st = o2 / float(cb.oxygen_required_per_kg_mixture(list(cb.mass_to_mole(Y_f))))
+    if phi <= 0.0:
+        return T_air
+    mixed = cb.mix([_stream(1.0, T_air, P, Y_AIR), _stream(phi * m_st, T_fuel, P, Y_f)])
+    if method == "equilibrium":
+        return float(cb.combustion_equilibrium(mixed.T, list(mixed.X), mixed.P).state.T)
+    return float(cb.complete_combustion(mixed.T, list(mixed.X), mixed.P).T)
+
+
+def fuel_controller(seed: int) -> tuple[FlowNetwork, list[str]]:
+    """A FuelBoundary controlling a combustor's exit Tt (#892, #1049).
+
+    Air (a reservoir through an orifice, or a fixed flow) and a fuel
+    controller meet in a combustor, which exits to an outlet through an
+    orifice. The case (FUEL_CASES, by seed) sets the target from the
+    combustor's own model at the draw's air and fuel: a phi on the branch, a
+    few K under the peak, or past either end of the reachable window. The
+    route (FUEL_ROUTES): the fuel straight in, through an injector orifice, or
+    into a premix plenum the air also enters. The coupled cases put a
+    wall-cooled channel or a fixed-PR turbine downstream.
+
+    Every draw declares its expected outcome as a tag (EXPECT_*): converged
+    on the asked branch, or refused with a part of the reason.
+    """
+    case = FUEL_CASES[seed % len(FUEL_CASES)]
+    route = FUEL_ROUTES[(seed // len(FUEL_CASES)) % len(FUEL_ROUTES)]
+    r = random.Random(seed)
+    g = FlowNetwork()
+    method = r.choice(["complete", "equilibrium"])
+    fuel = r.choice(_FUEL_SPECIES)
+    Y_f = list(cb.species.to_mass(cb.species.pure_species(fuel)))
+    T_air = r.choice([300.0, 450.0, 650.0, 800.0])
+    T_fuel = r.choice([300.0, 400.0])
+    supply = r.choice(["pressure", "mass"])
+    P = r.choice([1.5e5, 5e5, 2e6])
+    if case == "coupled_turbine":
+        P = max(P, 5e5)
+    m_air = r.choice([0.05, 0.5, 5.0]) * P / 5e5
+    branch = r.choice(["lean", "rich"]) if case in ("near_peak", "below", "above") else "lean"
+    if case in ("rich", "rich_no_root") or (case.startswith("coupled") and r.random() < 0.3):
+        branch = "rich"
+
+    def burnt(phi: float) -> float:
+        return _burnt_at_phi(phi, T_air, T_fuel, P, Y_f, method)
+
+    T_peak = max(burnt(1.0 + 0.005 * k) for k in range(-10, 11))
+    T_rich_end = burnt(10.0)  # the solver's rich bracket ends at phi 10
+    tags = [
+        "fuel_controller", f"case:{case}", f"route:{route}", f"method:{method}",
+        f"fuel:{fuel}", f"branch:{branch}", f"supply:{supply}",
+    ]  # fmt: skip
+    if case in ("lean", "rich", "coupled_wall", "coupled_turbine", "leak"):
+        phi = r.uniform(0.25, 0.85) if branch == "lean" else r.uniform(1.2, 2.5)
+        target = burnt(phi)
+        expect = EXPECT_CONVERGED + branch
+    elif case == "near_peak":
+        target = T_peak - r.choice([1.0, 3.0, 10.0, 30.0])
+        expect = EXPECT_CONVERGED + branch
+    elif case == "below":
+        target = T_air - r.choice([2.0, 20.0, 150.0])
+        expect = EXPECT_REFUSED + "with no injected fuel"
+    elif case == "above":
+        target = T_peak + r.choice([3.0, 20.0, 300.0])
+        expect = EXPECT_REFUSED + "above the peak"
+    else:  # rich_no_root
+        lo, hi = T_air, T_rich_end
+        if hi - lo > 40.0:
+            target = lo + r.uniform(0.2, 0.8) * (hi - lo)
+            expect = EXPECT_REFUSED + "not the rich one asked for"
+        else:  # the rich branch reaches below the oxidizer: a rich root
+            target = burnt(r.uniform(1.2, 2.5))
+            expect = EXPECT_CONVERGED + "rich"
+            tags.append("rich_root_exists")
+    if case == "leak":
+        expect = EXPECT_REFUSED_AT_BUILD + "without passing"
+    tags.append(expect)
+
+    if supply == "pressure":
+        _pb(g, "air", P, T_air)
+    else:
+        g.add_node(MassFlowBoundary("air", m_dot=m_air, Tt=T_air, Y=Y_AIR))
+    g.add_node(
+        FuelBoundary("fuel", combustor="burner", Tt_target=target, branch=branch, Tt=T_fuel, Y=Y_f)
+    )
+    g.add_node(CombustorNode("burner", method=method))
+    # Air orifice sized for ~ m_air at a 4 % drop (rho ~ P / (R T)).
+    rho = P / (287.0 * T_air)
+    d_air = math.sqrt(4.0 * m_air / (0.8 * math.pi * math.sqrt(2.0 * rho * 0.04 * P)))
+    into = "burner"
+    if route == "premix":
+        g.add_node(PlenumNode("premix"))
+        into = "premix"
+    if supply == "pressure":
+        g.add_element(
+            OrificeElement(
+                "a_in", "air", into, Cd=0.8, diameter=d_air, correlation="fixed", in_pipe=False
+            )
+        )
+    else:
+        g.add_element(LosslessConnectionElement("a_in", "air", into))
+    if case == "leak":
+        g.add_node(PlenumNode("fsplit"))
+        g.add_element(LosslessConnectionElement("inj", "fuel", "fsplit"))
+        g.add_element(
+            OrificeElement(
+                "f_main", "fsplit", into, Cd=0.7, diameter=0.004, correlation="fixed", in_pipe=False
+            )
+        )
+    elif route == "direct":
+        g.add_element(LosslessConnectionElement("inj", "fuel", into))
+    else:
+        g.add_element(
+            OrificeElement(
+                "inj",
+                "fuel",
+                into,
+                Cd=0.7,
+                diameter=r.choice([0.002, 0.005, 0.01]) * math.sqrt(m_air / 0.5),
+                correlation="fixed",
+                in_pipe=False,
+            )
+        )
+    if route == "premix":
+        g.add_element(
+            OrificeElement(
+                "holder", "premix", "burner", Cd=0.8, diameter=1.5 * d_air,
+                correlation="fixed", in_pipe=False,
+            )
+        )  # fmt: skip
+
+    # Downstream: an exit orifice sized for a ~10 % drop at the burnt density.
+    T_out_guess = max(target, T_air)
+    d_exit = 1.2 * d_air * (T_out_guess / T_air) ** 0.25
+    P_out = P * r.uniform(0.75, 0.9)
+    if case == "coupled_wall":
+        D, L = 2.0 * d_exit, r.choice([0.1, 0.5])
+        _pb(g, "out", P_out)
+        g.add_element(
+            ChannelElement(
+                "hot", "burner", "out", length=L, diameter=D, regime="compressible",
+                surface=ConvectiveSurface(area=math.pi * D * L),
+            )
+        )  # fmt: skip
+        _pb(g, "ci", P * 1.05, 300.0)
+        _pb(g, "co", P)
+        g.add_element(
+            ChannelElement(
+                "cold", "ci", "co", length=L, diameter=D, regime="compressible",
+                surface=ConvectiveSurface(area=math.pi * D * L),
+            )
+        )  # fmt: skip
+        g.add_wall(
+            ThermalWall(
+                id="w",
+                element_a="hot",
+                element_b="cold",
+                layers=[WallLayer(0.002, r.choice([1.0, 25.0, 200.0]))],
+            )
+        )
+    elif case == "coupled_turbine":
+        PR = r.choice([2.0, 3.0, 4.0])
+        g.add_node(PlenumNode("t_out"))
+        _pb(g, "out", min(P_out / PR, 0.8 * P / PR))
+        g.add_element(TurbineElement("turb", "burner", "t_out", PR, eta_poly=0.9))
+        g.add_element(
+            OrificeElement(
+                "nozzle", "t_out", "out", Cd=0.8, diameter=2.0 * d_exit,
+                correlation="fixed", in_pipe=False,
+            )
+        )  # fmt: skip
+    else:
+        _pb(g, "out", P_out)
+        g.add_element(
+            OrificeElement(
+                "exit", "burner", "out", Cd=0.8, diameter=d_exit, correlation="fixed",
+                in_pipe=False,
+            )
+        )  # fmt: skip
+    if case == "leak":
+        # The bypass: part of the fuel reaches the outlet unburnt.
+        g.add_element(
+            OrificeElement(
+                "f_leak", "fsplit", "out", Cd=0.7, diameter=0.002, correlation="fixed",
+                in_pipe=False,
+            )
+        )  # fmt: skip
+    return g, tags
+
+
 FAMILIES: dict[str, Builder] = {
     "random": layered_random,
     "hotcold": hot_cold,
@@ -1182,4 +1421,5 @@ FAMILIES: dict[str, Builder] = {
     "series": series,
     "jet_chain": jet_chain,
     "splitter": splitter,
+    "fuel_controller": fuel_controller,
 }
