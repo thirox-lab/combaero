@@ -329,6 +329,29 @@ class ChannelData(BaseModel):
     label: str | None = None
 
 
+#: Correlations removed from the library, refused on load with their history
+#: and the replacement (#876); silently swapping in another Cd would change
+#: the result.
+_REMOVED_CORRELATIONS = {
+    "Miller": (
+        "The 'Miller' correlation was removed: no published source matched its "
+        "formula (Stolz, which 'Miller' had computed, was removed in 0.9.0, #876)."
+    ),
+    "Stolz": (
+        "The 'Stolz' correlation (ISO 5167:1980) was removed in 0.9.0 (#876): ISO "
+        "replaced it with Reader-Harris/Gallagher."
+    ),
+}
+_ANY_HOLE_PICK = (
+    "Pick 'ReaderHarrisGallagher' for an orifice, or a discharge-hole correlation "
+    "('IdelchikThick', 'Lichtarowicz', 'McGreehanSchotsch') for a cooling hole."
+)
+
+
+def _removed_correlation_message(corr: str, pick: str) -> str:
+    return f"{_REMOVED_CORRELATIONS[corr]} {pick}"
+
+
 class HoleCdData(BaseModel):
     """A hole's discharge coefficient as one spec, the library's HoleCd
     (python/combaero/network/hole_cd.py): the same fields, values and
@@ -338,9 +361,10 @@ class HoleCdData(BaseModel):
     None or "auto" is the ELEMENT's default, which differs per node type
     (HoleCd's docstring has the table). Which choices a node type takes is
     the element's rule: it refuses the others when the network is built.
+    A key HoleCd does not have (a misspelling) is refused, not ignored.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
     correlation: (
         Literal[
             "fixed",
@@ -353,7 +377,8 @@ class HoleCdData(BaseModel):
         ]
         | None
     ) = None
-    # The 'fixed' correlation's value and nothing else (#872).
+    # The 'fixed' correlation's value and nothing else (#872); positive and
+    # finite (HoleCd checks finite; a Cd of 0 would divide by zero).
     Cd: float | None = None
     inclination: Literal["auto", "none", "idelchik_3_2"] = "auto"
     inlet_crossflow: Literal["auto", "none", "mcgreehan_schotsch"] = "auto"
@@ -367,21 +392,22 @@ class HoleCdData(BaseModel):
         # A file saved before the removal names a correlation that no longer
         # exists. Say which one and what to pick, rather than a bare Literal
         # mismatch; silently swapping in another Cd would change the result.
+        # The node types name their own replacement (HoleNodeData); this is
+        # the message for a HoleCdData on its own.
         corr = data.get("correlation") if isinstance(data, dict) else None
-        if corr == "Miller":
-            raise ValueError(
-                "The 'Miller' orifice correlation was removed: no published "
-                "source matched its formula. Pick 'ReaderHarrisGallagher' for "
-                "this orifice (Stolz, which 'Miller' had computed, was removed "
-                "in 0.9.0, #876)."
-            )
-        if corr == "Stolz":
-            raise ValueError(
-                "The 'Stolz' orifice correlation (ISO 5167:1980) was removed in "
-                "0.9.0 (#876): ISO replaced it with Reader-Harris/Gallagher. Pick "
-                "'ReaderHarrisGallagher' for this orifice."
-            )
+        if corr in _REMOVED_CORRELATIONS:
+            raise ValueError(_removed_correlation_message(corr, _ANY_HOLE_PICK))
         return data
+
+    @field_validator("Cd")
+    @classmethod
+    def positive_cd(cls, v: float | None) -> float | None:
+        if v is not None and not (math.isfinite(v) and v > 0.0):
+            raise ValueError(
+                f"Cd = {v!r}: a fixed discharge coefficient must be a positive finite "
+                "number (0 would pass no flow and divide by zero)."
+            )
+        return v
 
     @model_validator(mode="after")
     def validate_as_hole_cd(self) -> "HoleCdData":
@@ -391,10 +417,13 @@ class HoleCdData(BaseModel):
         return self
 
 
-#: The hole-Cd fields a v0.11.1 GUI file carries loose on the node, lifted
-#: into ``hole_cd`` on load. cd_inclination and cd_exit_crossflow were added
-#: after v0.11.1 and replaced before a release: no file carries them.
-_LOOSE_HOLE_CD_KEYS = ("correlation", "Cd", "cd_crossflow")
+#: The node keys of the unreleased dev builds (#1074 to #1098): refused on
+#: load, not lifted (no released file carries them) and not ignored (an
+#: ignored "none" would silently switch the term back to "auto").
+_PRE_RELEASE_HOLE_CD_KEYS = {
+    "cd_inclination": "hole_cd.inclination",
+    "cd_exit_crossflow": "hole_cd.exit_crossflow",
+}
 
 
 class HoleNodeData(BaseModel):
@@ -402,47 +431,71 @@ class HoleNodeData(BaseModel):
     array, the effusion liner): its Cd choices in ``hole_cd``.
 
     ``legacy_hole_cd`` is the node type's (correlation, Cd) defaults of the
-    v0.11.1 loose fields, None for a type that never had them. A file saved
-    before ``hole_cd`` carries ``correlation``, ``Cd`` (and, on an
-    impingement array, ``cd_crossflow``) on the node; they are lifted into
-    ``hole_cd`` as the builder read them then: the correlation (its default
-    where the key is absent), the Cd for 'fixed' only (#872), and
-    cd_crossflow as exit_crossflow. That builds the same element.
+    v0.11.1 loose fields, None for a type that never had them, and
+    ``legacy_hole_cd_keys`` the loose keys it had. A file saved before
+    ``hole_cd`` carries ``correlation`` and ``Cd`` (and, on an impingement
+    array, ``cd_crossflow``) on the node; they are lifted into ``hole_cd``
+    as the builder read them then: the correlation (its default where the
+    key is absent), the Cd for 'fixed' only (#872) or its default where
+    absent, and cd_crossflow as exit_crossflow. That builds the same element.
+    A key the type never had is ignored, as it always was.
+    ``removed_correlation_pick`` is the replacement a removed correlation's
+    refusal names for this node type.
     """
 
     legacy_hole_cd: ClassVar[tuple[str, float] | None] = None
+    legacy_hole_cd_keys: ClassVar[tuple[str, ...]] = ("correlation", "Cd")
+    removed_correlation_pick: ClassVar[str] = (
+        "Pick a discharge-hole correlation for this node: 'IdelchikThick', "
+        "'Lichtarowicz' or 'McGreehanSchotsch'."
+    )
     hole_cd: HoleCdData = Field(default_factory=HoleCdData)
 
     @model_validator(mode="before")
     @classmethod
     def lift_loose_hole_cd(cls, data: Any) -> Any:
-        if not isinstance(data, dict) or cls.legacy_hole_cd is None:
+        if not isinstance(data, dict):
             return data
-        loose = [k for k in _LOOSE_HOLE_CD_KEYS if k in data]
-        if not loose:
-            return data
-        if data.get("hole_cd") is not None:
+        pre = [k for k in _PRE_RELEASE_HOLE_CD_KEYS if k in data]
+        if pre:
+            moves = ", ".join(f"{k} -> {_PRE_RELEASE_HOLE_CD_KEYS[k]}" for k in pre)
             raise ValueError(
-                f"hole_cd and the pre-hole_cd field(s) {', '.join(loose)} together: put "
-                "every hole-Cd choice in hole_cd."
+                f"{', '.join(pre)}: a field of pre-release development builds, no longer "
+                f"read. Move it into the node's hole_cd ({moves}) and remove it."
             )
-        data = dict(data)
-        corr_default, cd_default = cls.legacy_hole_cd
-        corr = data.pop("correlation", None) or corr_default
-        cd = data.pop("Cd", None)
-        crossflow = data.pop("cd_crossflow", None)
-        hole: dict[str, Any] = {"correlation": corr}
-        if corr == "fixed":
-            hole["Cd"] = cd if cd is not None else cd_default
-        if crossflow is not None:
-            hole["exit_crossflow"] = crossflow
-        data["hole_cd"] = hole
+        loose = [k for k in cls.legacy_hole_cd_keys if k in data]
+        if loose and cls.legacy_hole_cd is not None:
+            if data.get("hole_cd") is not None:
+                raise ValueError(
+                    f"hole_cd and the pre-hole_cd field(s) {', '.join(loose)} together: put "
+                    "every hole-Cd choice in hole_cd."
+                )
+            data = dict(data)
+            corr_default, cd_default = cls.legacy_hole_cd
+            corr = data.pop("correlation", None) or corr_default
+            cd = data.pop("Cd", None)
+            crossflow = (
+                data.pop("cd_crossflow", None)
+                if "cd_crossflow" in cls.legacy_hole_cd_keys
+                else None
+            )
+            hole: dict[str, Any] = {"correlation": corr}
+            if corr == "fixed":
+                hole["Cd"] = cd if cd is not None else cd_default
+            if crossflow is not None:
+                hole["exit_crossflow"] = crossflow
+            data["hole_cd"] = hole
+        hole_cd = data.get("hole_cd")
+        corr = hole_cd.get("correlation") if isinstance(hole_cd, dict) else None
+        if corr in _REMOVED_CORRELATIONS:
+            raise ValueError(_removed_correlation_message(corr, cls.removed_correlation_pick))
         return data
 
 
 class OrificeData(HoleNodeData):
     model_config = ConfigDict(extra="ignore")
     legacy_hole_cd = ("ReaderHarrisGallagher", 0.6)
+    removed_correlation_pick = "Pick 'ReaderHarrisGallagher' for this orifice."
     diameter: float | None = None  # None = the default bore (a bore never inherits)
     # hole_cd: the Cd. Normed metering (ISO 5167, function of beta) and
     # discharge-hole (Idelchik / McGreehan-Schotsch, function of L/d and r/d)
@@ -640,6 +693,14 @@ class SlotFilmData(HoleNodeData):
     film_htc: Literal["none", "seban1960", "ballal_lefebvre1973"] = "none"
     label: str | None = None
 
+    @model_validator(mode="after")
+    def slot_cd_at_most_one(self) -> "SlotFilmData":
+        # The slot's v0.11.1 bound, Cd in (0, 1]; HoleCdData has the > 0.
+        cd = self.hole_cd.Cd
+        if cd is not None and cd > 1.0:
+            raise ValueError(f"hole_cd.Cd = {cd!r}: a slot's fixed Cd is at most 1.")
+        return self
+
 
 class FilmCoolingData(HoleNodeData):
     """Film-cooling holes (#386): coolant from the upstream node into the gas,
@@ -688,6 +749,7 @@ class ImpingementArrayData(HoleNodeData):
 
     model_config = ConfigDict(extra="ignore")
     legacy_hole_cd = ("fixed", 0.79)  # Florschuetz's own, cb.FLORSCHUETZ_1981_DEFAULT_CD
+    legacy_hole_cd_keys = ("correlation", "Cd", "cd_crossflow")
     n_rows: int = Field(default=10, ge=1)
     d_jet: float = Field(default=0.00254, gt=0.0)
     xn_d: float = Field(default=5.0, gt=0.0)

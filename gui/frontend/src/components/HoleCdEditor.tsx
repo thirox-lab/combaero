@@ -3,6 +3,7 @@ import {
 	autoInletCrossflow,
 	correlationLabel,
 	exitCrossflowLabel,
+	fixedCdDefault,
 	HOLE_CD_RULES,
 	inclinationLabel,
 	inletCrossflowLabel,
@@ -39,6 +40,11 @@ interface HoleCdEditorProps {
 const labelCls = "text-xs font-bold text-gray-500 uppercase";
 const selectCls = "p-2 border rounded bg-white text-xs border-stone-200";
 
+// The user's last fixed Cd per editor (per node), so fixed -> another
+// correlation -> fixed restores it. UI state for this session only: the file
+// carries the Cd with 'fixed' alone, as HoleCd does.
+const rememberedCd = new Map<string, number>();
+
 const HoleCdEditor: React.FC<HoleCdEditorProps> = ({
 	id,
 	type,
@@ -72,15 +78,18 @@ const HoleCdEditor: React.FC<HoleCdEditorProps> = ({
 					id={`${id}_correlation`}
 					className={selectCls}
 					value={hc.correlation ?? ""}
-					onChange={(e) =>
+					onChange={(e) => {
+						if (correlation === "fixed" && hc.Cd != null)
+							rememberedCd.set(id, hc.Cd);
 						onChange(
 							withCorrelation(
 								type,
 								hc,
 								(e.target.value || null) as HoleCdCorrelation | null,
+								rememberedCd.get(id),
 							),
-						)
-					}
+						);
+					}}
 				>
 					<option value="">
 						{`Default: ${correlationLabel(type, rules.defaultCorrelation)}`}
@@ -99,12 +108,23 @@ const HoleCdEditor: React.FC<HoleCdEditorProps> = ({
 					</label>
 					<NumericInput
 						id={`${id}_Cd`}
-						value={hc.Cd ?? rules.fixedCd}
+						value={hc.Cd ?? null}
 						onChange={(val) => set({ Cd: val })}
+						onClear={() => set({ Cd: null })}
 						className="p-1.5 h-8 text-sm border rounded bg-white"
-						placeholder={String(rules.fixedCd)}
+						placeholder={
+							fixedCdDefault(type) != null
+								? `${fixedCdDefault(type)} (default)`
+								: "required"
+						}
 						min={0}
 					/>
+					{hc.Cd == null && fixedCdDefault(type) == null && (
+						<p className="text-[9px] text-amber-700">
+							No Cd: a fixed discharge coefficient needs a value; the solver
+							refuses it without one.
+						</p>
+					)}
 				</div>
 			)}
 			{showInclination && (

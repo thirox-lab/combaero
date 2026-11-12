@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	autoInclination,
 	exitCrossflowLabel,
+	fixedCdDefault,
 	HOLE_CD_RULES,
 	inclinationLabel,
 	liftLooseHoleCd,
+	preReleaseHoleCdKeys,
 	resolvedCorrelation,
 	withCorrelation,
 } from "./holeCd";
@@ -138,5 +140,60 @@ describe("a v0.11.1 file's loose Cd fields are lifted into hole_cd", () => {
 		expect(liftLooseHoleCd({ correlation: "x" }, "effusion_liner")).toEqual({
 			correlation: "x",
 		});
+	});
+});
+
+describe("review follow-ups", () => {
+	it("lifts cd_crossflow on the impingement array only", () => {
+		expect(
+			liftLooseHoleCd(
+				{ correlation: "IdelchikThick", cd_crossflow: "none" },
+				"film_cooling",
+			),
+		).toEqual({
+			cd_crossflow: "none",
+			hole_cd: { correlation: "IdelchikThick" },
+		});
+		const stray = {
+			hole_cd: { correlation: "fixed", Cd: 0.7 },
+			cd_crossflow: "x",
+		};
+		expect(liftLooseHoleCd(stray, "orifice")).toBe(stray);
+		expect(liftLooseHoleCd({ cd_crossflow: "none" }, "slot_film")).toEqual({
+			cd_crossflow: "none",
+		});
+	});
+
+	it("restores the user's last fixed Cd", () => {
+		const away = withCorrelation(
+			"orifice",
+			{ correlation: "fixed", Cd: 0.72 },
+			"IdelchikThick",
+		);
+		expect(away).toEqual({ correlation: "IdelchikThick" });
+		expect(withCorrelation("orifice", away, "fixed", 0.72)).toEqual({
+			correlation: "fixed",
+			Cd: 0.72,
+		});
+		expect(withCorrelation("orifice", away, "fixed")).toEqual({
+			correlation: "fixed",
+			Cd: 0.6,
+		});
+	});
+
+	it("a fixed hole_cd without a Cd has a default only on the array", () => {
+		expect(fixedCdDefault("impingement_array")).toBe(0.79);
+		expect(fixedCdDefault("orifice")).toBeNull();
+		expect(fixedCdDefault("slot_film")).toBeNull();
+	});
+
+	it("names the pre-release keys for the load notice", () => {
+		expect(
+			preReleaseHoleCdKeys([
+				{ id: "f", type: "film_cooling", data: { cd_inclination: "none" } },
+				{ id: "p", type: "plenum", data: { cd_inclination: "none" } },
+				{ id: "e", type: "effusion_plate", data: {} },
+			]),
+		).toEqual(["f.cd_inclination -> hole_cd.inclination"]);
 	});
 });

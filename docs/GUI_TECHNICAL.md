@@ -109,8 +109,16 @@ File version 1.3. A file saved before it (up to v0.11.1) carries
 node: they are lifted into `hole_cd` on load (backend and frontend alike) as
 that build read them -- the correlation (its default where the key is
 absent), the Cd for `"fixed"` only, `cd_crossflow` as `exit_crossflow` -- and
-solve to the same result. A node with both the loose fields and `hole_cd` is
-refused.
+solve to the same result. `cd_crossflow` is lifted on the impingement array
+only (other node types never read it and still ignore it). A node with both
+the loose fields and `hole_cd` is refused.
+
+Also refused on load: the pre-release node keys `cd_inclination` and
+`cd_exit_crossflow` (development builds only; move them into
+`hole_cd.inclination` / `hole_cd.exit_crossflow`), an unknown key inside
+`hole_cd`, a fixed `Cd` that is not positive and finite, and a slot's `Cd`
+above 1. A `"fixed"` `hole_cd` without `Cd` takes the element's default where
+it has one (0.79 on the impingement array) and is refused elsewhere.
 
 #### Compressor and Turbine (`compressor`, `turbine`)
 A `CompressorElement` / `TurbineElement` at a fixed total-to-total pressure

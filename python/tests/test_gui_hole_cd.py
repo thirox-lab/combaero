@@ -178,3 +178,72 @@ def test_the_shipped_examples_are_in_the_hole_cd_shape() -> None:
         for n in doc["nodes"]:
             if n["type"] in HOLE_NODES:
                 assert not {"correlation", "Cd", "cd_crossflow"} & set(n["data"]), f.name
+
+
+# --- review follow-ups ------------------------------------------------------
+
+
+def test_cd_crossflow_is_lifted_on_the_impingement_array_only() -> None:
+    # v0.11.1 ignored the key on every other node type, and still does.
+    film = schemas.FilmCoolingData(correlation="IdelchikThick", cd_crossflow="none")
+    assert film.hole_cd.model_dump(exclude_defaults=True) == {"correlation": "IdelchikThick"}
+    stray = OrificeData(hole_cd={"correlation": "fixed", "Cd": 0.7}, cd_crossflow="none")
+    assert stray.hole_cd.exit_crossflow == "auto"
+    arr = schemas.ImpingementArrayData(cd_crossflow="none")
+    assert arr.hole_cd.exit_crossflow == "none"
+
+
+@pytest.mark.parametrize("cd", [0.0, -0.5, float("inf")])
+def test_a_fixed_cd_must_be_positive_and_finite(cd: float) -> None:
+    with pytest.raises(ValidationError, match="positive finite"):
+        HoleCdData(correlation="fixed", Cd=cd)
+    # A v0.11.1 file with Cd 0 is refused the same way, not a ZeroDivisionError.
+    with pytest.raises(ValidationError, match="positive finite"):
+        OrificeData(correlation="fixed", Cd=cd)
+
+
+def test_a_slot_keeps_its_cd_at_most_one() -> None:
+    with pytest.raises(ValidationError, match="at most 1"):
+        schemas.SlotFilmData(hole_cd={"correlation": "fixed", "Cd": 1.2})
+    assert schemas.SlotFilmData(hole_cd={"correlation": "fixed", "Cd": 1.0}).hole_cd.Cd == 1.0
+    # The other types had no upper bound in v0.11.1 and get none.
+    assert OrificeData(hole_cd={"correlation": "fixed", "Cd": 1.2}).hole_cd.Cd == 1.2
+
+
+@pytest.mark.parametrize(
+    ("key", "field"),
+    [("cd_inclination", "hole_cd.inclination"), ("cd_exit_crossflow", "hole_cd.exit_crossflow")],
+)
+@pytest.mark.parametrize("cls", [schemas.FilmCoolingData, schemas.EffusionPlateData])
+def test_pre_release_keys_are_refused_naming_their_hole_cd_field(
+    cls: type, key: str, field: str
+) -> None:
+    # Neither lifted (never released) nor ignored (an ignored "none" would
+    # switch the inclination term back on silently).
+    with pytest.raises(ValidationError, match=rf"{key}.*pre-release.*{field}"):
+        cls(**{key: "none"})
+
+
+def test_a_removed_correlation_names_the_replacement_for_the_node_type() -> None:
+    with pytest.raises(ValidationError, match="ReaderHarrisGallagher' for this orifice"):
+        OrificeData(correlation="Miller")
+    for cls in (schemas.FilmCoolingData, schemas.ImpingementArrayData, schemas.SlotFilmData):
+        with pytest.raises(ValidationError, match="Stolz.*discharge-hole correlation") as exc:
+            cls(hole_cd={"correlation": "Stolz"})
+        assert "ReaderHarrisGallagher' for this orifice" not in str(exc.value)
+
+
+def test_a_misspelled_hole_cd_key_is_refused() -> None:
+    with pytest.raises(ValidationError, match="Cdd"):
+        OrificeData(hole_cd={"correlation": "fixed", "Cdd": 0.7})
+
+
+def test_a_term_a_node_has_no_select_for_gets_a_file_hint() -> None:
+    from gui.backend.messages import humanize
+
+    msg = (
+        "SlotFilmElement 'f': HoleCd(inclination='idelchik_3_2') does not apply to "
+        "this element; it takes ['auto', 'none']."
+    )
+    out = humanize(msg, NetworkGraphSchema(nodes=[], edges=[]))
+    assert "does not show it" in out and "hole_cd" in out

@@ -136,7 +136,7 @@ const CORRELATION_LABEL_OVERRIDES: Partial<
 	effusion_liner: {
 		McGreehanSchotsch: "Cooling Hole (M-S 1988, duct-fed)",
 	},
-	impingement_array: { fixed: "Fixed (Florschuetz 0.79)" },
+	impingement_array: { fixed: "Fixed value (Florschuetz default 0.79)" },
 };
 
 export const correlationLabel = (
@@ -261,17 +261,26 @@ export const resolvedExitCrossflow = (
 	return v === "auto" ? autoExitCrossflow(type) : v;
 };
 
+/** The Cd a 'fixed' hole_cd WITHOUT one builds with: the element's own
+ *  default where it has one (Florschuetz's 0.79 on an impingement array),
+ *  null where the solver refuses it (HoleCd: None = the element default). */
+export const fixedCdDefault = (type: HoleCdNodeType): number | null =>
+	type === "impingement_array" ? HOLE_CD_RULES[type].fixedCd : null;
+
 /** A correlation change (null = the node type's default). The library
  *  refuses a forced term that does not compose with the new correlation, so
  *  leaving IdelchikThick resets a forced "idelchik_3_2" and leaving
  *  McGreehan-Schotsch a forced "mcgreehan_schotsch" to "auto" (#1094): no
  *  hidden choice makes the build fail. The Cd is the 'fixed' correlation's
  *  only (HoleCd refuses it with any other): switching to 'fixed' keeps the
- *  node's Cd or fills the type's default, switching away drops it. */
+ *  node's Cd, else restores `remembered` (the user's last fixed Cd on this
+ *  node, held by the editor, not in the file), else fills the type's
+ *  default; switching away drops it. */
 export const withCorrelation = (
 	type: HoleCdNodeType,
 	hc: HoleCdData | null | undefined,
 	correlation: HoleCdCorrelation | null,
+	remembered?: number | null,
 ): HoleCdData => {
 	const { Cd, ...rest } = hc ?? {};
 	const next: HoleCdData = { ...rest, correlation };
@@ -283,12 +292,14 @@ export const withCorrelation = (
 		next.inlet_crossflow === "mcgreehan_schotsch"
 	)
 		next.inlet_crossflow = "auto";
-	if (resolved === "fixed") next.Cd = Cd ?? HOLE_CD_RULES[type].fixedCd;
+	if (resolved === "fixed")
+		next.Cd = Cd ?? remembered ?? HOLE_CD_RULES[type].fixedCd;
 	return next;
 };
 
 // The node types whose v0.11.1 files carry the Cd choices loose on the node,
-// with the defaults that build read: (correlation, Cd).
+// with the defaults that build read: (correlation, Cd). Only the impingement
+// array had `cd_crossflow`; on any other type it was ignored, and still is.
 const LEGACY_DEFAULTS: Partial<
 	Record<HoleCdNodeType, [HoleCdCorrelation, number]>
 > = {
@@ -298,6 +309,28 @@ const LEGACY_DEFAULTS: Partial<
 	slot_film: ["IdelchikThick", 0.6],
 	impingement_array: ["fixed", 0.79],
 };
+const legacyKeys = (type: HoleCdNodeType): string[] =>
+	type === "impingement_array"
+		? ["correlation", "Cd", "cd_crossflow"]
+		: ["correlation", "Cd"];
+
+// Node keys of the unreleased dev builds (#1074 to #1098): not lifted, not
+// ignored -- the backend refuses them, and the load notice says where each
+// goes (an ignored "none" would silently switch the term back to "auto").
+export const PRE_RELEASE_HOLE_CD_KEYS: Record<string, string> = {
+	cd_inclination: "hole_cd.inclination",
+	cd_exit_crossflow: "hole_cd.exit_crossflow",
+};
+
+/** "node.key -> hole_cd.field" for every pre-release hole-Cd key in a file. */
+export const preReleaseHoleCdKeys = (nodes: any[]): string[] =>
+	(nodes ?? []).flatMap((n: any) =>
+		isHoleCdNode(n?.type) && n.data && typeof n.data === "object"
+			? Object.keys(PRE_RELEASE_HOLE_CD_KEYS)
+					.filter((k) => k in n.data)
+					.map((k) => `${n.id}.${k} -> ${PRE_RELEASE_HOLE_CD_KEYS[k]}`)
+			: [],
+	);
 
 /** A file saved before `hole_cd` (up to v0.11.1): its loose `correlation`,
  *  `Cd` and (impingement array) `cd_crossflow` lifted into `hole_cd` as the
@@ -307,13 +340,15 @@ export const liftLooseHoleCd = (data: any, type?: string): any => {
 	if (!data || typeof data !== "object" || !isHoleCdNode(type)) return data;
 	const legacy = LEGACY_DEFAULTS[type];
 	if (!legacy) return data;
-	if (!("correlation" in data || "Cd" in data || "cd_crossflow" in data))
-		return data;
+	const keys = legacyKeys(type);
+	if (!keys.some((k) => k in data)) return data;
 	if (data.hole_cd != null) return data;
-	const { correlation, Cd, cd_crossflow, ...rest } = data;
-	const corr: HoleCdCorrelation = correlation || legacy[0];
+	const rest: any = { ...data };
+	for (const k of keys) delete rest[k];
+	const corr: HoleCdCorrelation = data.correlation || legacy[0];
 	const hole_cd: HoleCdData = { correlation: corr };
-	if (corr === "fixed") hole_cd.Cd = Cd ?? legacy[1];
-	if (cd_crossflow != null) hole_cd.exit_crossflow = cd_crossflow;
+	if (corr === "fixed") hole_cd.Cd = data.Cd ?? legacy[1];
+	if (keys.includes("cd_crossflow") && data.cd_crossflow != null)
+		hole_cd.exit_crossflow = data.cd_crossflow;
 	return { ...rest, hole_cd };
 };
