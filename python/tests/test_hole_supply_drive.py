@@ -33,6 +33,7 @@ import warnings
 
 import numpy as np
 import pytest
+from _fd_jacobian import fd_jacobian, scaled_error
 
 import combaero as cb
 from combaero.network import (
@@ -305,7 +306,7 @@ def test_the_converted_eq_17_hole_passes_zero_at_the_station_static() -> None:
         s.network.nodes["gas"].Pt = p1 + dpg
         F = np.asarray(s._residuals(x))
         m.append(x[i] - F[i])
-        assert _fd_check(s, x, max(abs(dpg), 0.05), rows=[i]) < 1e-5
+        assert _fd_check(s, x, rows=[i]) < 1e-5
     assert m[0] > m[1] > m[2] >= 0.0 and m[3] <= 0.0
     assert abs(m[2]) < 1e-2 * m[0]
 
@@ -313,7 +314,7 @@ def test_the_converted_eq_17_hole_passes_zero_at_the_station_static() -> None:
 def test_eq_17_on_the_total_drive_has_an_analytic_jacobian() -> None:
     s, r = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
     x = np.array(r["__x_solution__"])
-    assert _fd_check(s, x, abs(r["__element_diag__"]["h"]["dP_drive"])) < 1e-5
+    assert _fd_check(s, x) < 1e-5
 
 
 @pytest.mark.parametrize("area", [6e-5, 2e-5, 1.2e-5])
@@ -371,17 +372,16 @@ def test_the_drive_is_smooth_through_a_duct_flow_reversal() -> None:
     x0 = np.array(r["__x_solution__"])
     i_h = s.unknown_names.index("h.m_dot")
     i_a, i_b = s.unknown_names.index("s0.m_dot"), s.unknown_names.index("s1.m_dot")
-    dp = abs(r["__element_diag__"]["h"]["dP_drive"])
     for mean in (-1e-3, -1e-6, 0.0, 1e-6, 1e-3):
         x = x0.copy()
         x[i_a] = mean + 0.5 * x0[i_h]
         x[i_b] = mean - 0.5 * x0[i_h]
-        assert _fd_check(s, x, dp, rows=[i_h]) < 1e-5, mean
+        assert _fd_check(s, x, rows=[i_h]) < 1e-5, mean
     for spec in (HoleCd(correlation="IdelchikThick", inlet_crossflow="none"),):
         s2, r2 = _solve(_duct_net(spec))
         x = np.array(r2["__x_solution__"])
         x[i_a], x[i_b] = 0.5 * x[i_h], -0.5 * x[i_h]
-        assert _fd_check(s2, x, abs(r2["__element_diag__"]["h"]["dP_drive"]), rows=[i_h]) < 1e-5
+        assert _fd_check(s2, x, rows=[i_h]) < 1e-5
 
 
 def test_an_unknown_supply_drive_is_refused() -> None:
@@ -560,27 +560,14 @@ def _liner_net(spec: HoleCd | None = None, chamber: bool = False) -> FlowNetwork
     return g
 
 
-def _fd_check(
-    s: NetworkSolver, x: np.ndarray, dp_min: float, rows: list[int] | None = None
-) -> float:
-    """Worst |J - J_fd| |x_j| over its row's largest |J_fd| |x_j|. Pressure
-    columns step min(1e-6 |P|, 1e-3 dp_min) (#1107), others 1e-6 |x|."""
-    _, J = s._residuals_and_jacobian(x, compute_jacobian=True)
-    J = J.toarray()
-    Jfd = np.zeros_like(J)
-    for j, name in enumerate(s.unknown_names):
-        if name.endswith((".P", ".Pt")):
-            h = min(1e-6 * abs(x[j]), 1e-3 * dp_min)
-        else:
-            h = 1e-6 * max(abs(x[j]), 1e-6)
-        e = np.zeros_like(x)
-        e[j] = h
-        Jfd[:, j] = (np.asarray(s._residuals(x + e)) - np.asarray(s._residuals(x - e))) / (2 * h)
-    if rows is not None:
-        J, Jfd = J[rows], Jfd[rows]
-    scale = np.abs(Jfd * x[None, :]).max(axis=1, keepdims=True)
-    scale[scale == 0.0] = 1.0
-    return float((np.abs((J - Jfd) * x[None, :]) / scale).max())
+def _fd_check(s: NetworkSolver, x: np.ndarray, rows: list[int] | None = None) -> float:
+    """Worst scaled |J - J_fd| (J_ij |x_j|) over the rows (all by default):
+    the shared helper's central differences, pressure steps capped at a
+    fraction of the smallest pressure gap, i.e. sized on the drops (#1107)."""
+    J = s._residuals_and_jacobian(x, compute_jacobian=True)[1].toarray()
+    fd = fd_jacobian(s, x)
+    err = scaled_error(J, fd, x)
+    return float((err if rows is None else err[rows]).max())
 
 
 @pytest.mark.parametrize("chamber", [False, True])
@@ -593,17 +580,14 @@ def test_the_liner_jacobian_is_analytic(variant: str, chamber: bool) -> None:
     }[variant]
     s, r = _solve(_liner_net(spec, chamber=chamber))
     x = np.array(r["__x_solution__"])
-    d = r["__element_diag__"]
-    dp_min = min(abs(d[e]["dP_drive"]) for e in ("ln__p1", "ln__p2", "ln__p3"))
-    assert _fd_check(s, x, dp_min) < 1e-5
+    assert _fd_check(s, x) < 1e-5
 
 
 @pytest.mark.parametrize("make", [_film, _plate])
 def test_the_band_jacobian_is_analytic(make) -> None:
     s, r = _solve(_chamber_net(make(), dp=-0.01))
     x = np.array([r[n] for n in s.unknown_names])
-    dp = abs(r["__element_diag__"]["eff"]["dP_drive"])
-    assert _fd_check(s, x, dp) < 1e-5
+    assert _fd_check(s, x) < 1e-5
 
 
 def test_the_jacobian_is_analytic_inside_the_blend() -> None:
@@ -613,7 +597,16 @@ def test_the_jacobian_is_analytic_inside_the_blend() -> None:
     x = np.array([r[n] for n in s.unknown_names])
     # Move the coolant boundary onto the chamber's static.
     s.network.nodes["cool"].Pt = float(r["ch.P"]) + 0.05
-    assert _fd_check(s, x, 0.5) < 1e-5
+    # Inside the 0.1 Pa logistic the shared helper's pressure-step floor
+    # (1e-8 |P| = 5e-3 Pa here) is too coarse: a 5e-4 Pa central step.
+    J = s._residuals_and_jacobian(x, compute_jacobian=True)[1].toarray()
+    fd = np.zeros_like(J)
+    for j, name in enumerate(s.unknown_names):
+        h = 5e-4 if name.endswith((".P", ".Pt")) else 1e-6 * max(abs(x[j]), 1e-6)
+        e = np.zeros_like(x)
+        e[j] = h
+        fd[:, j] = (np.asarray(s._residuals(x + e)) - np.asarray(s._residuals(x - e))) / (2 * h)
+    assert float(scaled_error(J, fd, x).max()) < 1e-5
 
 
 def test_a_duct_fed_hole_that_ingests_has_an_analytic_jacobian() -> None:
@@ -629,4 +622,4 @@ def test_a_duct_fed_hole_that_ingests_has_an_analytic_jacobian() -> None:
     assert r["h.m_dot"] < 0.0 and d["is_ingesting"] == 1.0
     x = np.array([r[n] for n in s.unknown_names])
     row = [s.unknown_names.index("h.m_dot")]
-    assert _fd_check(s, x, abs(d["dP_drive"]), rows=row) < 1e-5
+    assert _fd_check(s, x, rows=row) < 1e-5

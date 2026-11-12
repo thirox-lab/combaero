@@ -130,3 +130,20 @@ def test_a_wall_downstream_can_take_the_liners_film() -> None:
     assert r["T_aw_a"] == pytest.approx(
         r["T_aw_unfilmed"] - r["eta_film"] * (r["T_aw_unfilmed"] - r["T_coolant_film"])
     )
+
+
+@pytest.mark.parametrize(
+    ("hole_cd", "drive"),
+    [(None, "total"), ({}, "total"), ({"supply_drive": "static"}, "static")],
+)
+def test_the_supply_drive_passes_through_to_every_panel(hole_cd, drive: str) -> None:
+    # HoleCdData.supply_drive (#1087): a pass-through field, "auto" = "total"
+    # (every hole from the upstream total to the downstream static). A file
+    # without the key (1.3, or a lifted v0.11.1 one) takes "auto".
+    liner = {} if hole_cd is None else {"hole_cd": hole_cd}
+    net = build_network_from_schema(NetworkGraphSchema(**_schema(liner)))
+    net.resolve_all_topology()
+    for i in range(1, EffusionLinerData().n_segments + 1):
+        panel = net.elements[f"ln__p{i}"]
+        assert panel._hole_cd.supply_drive == drive
+        assert panel.hole_cd.supply_drive == (hole_cd or {}).get("supply_drive", "auto")
