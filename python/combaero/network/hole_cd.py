@@ -790,7 +790,7 @@ class _HoleCdChain:
         that is a MomentumChamberNode carries its own Pt. Exit side
         (``exit_static``: the film, effusion and slot elements, and a plain
         orifice or connection where OrificeElement._discharges_to_exit_static
-        holds -- no approach or recovery pipe): a hole
+        holds -- a side jet into a merge chamber): a hole
         discharging into a MomentumChamberNode takes its direction from the
         chamber's STATIC pressure, the pressure its jet discharges against,
         and a reversed jet draws from that static (#1087: none of the

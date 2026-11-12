@@ -5518,36 +5518,45 @@ class OrificeElement(NetworkElement):
         into, as the hole elements; a reversed flow draws from that static
         and discharges against the from-node's Pt. Only where
         _discharges_to_exit_static holds; elsewhere Pt to Pt as before."""
-        self._hole_cd.resolve_drive(graph, exit_static=self._discharges_to_exit_static())
+        self._hole_cd.resolve_drive(graph, exit_static=self._discharges_to_exit_static(graph))
 
-    def _discharges_to_exit_static(self) -> bool:
+    def _discharges_to_exit_static(self, graph: "FlowNetwork") -> bool:
         """THE gate of the orifice family's static exit drive (#1087): a
-        restriction that is not closed, not a pass-through and recovers no
-        pressure in a pipe beyond (#645). A recovering in-pipe metering
-        orifice keeps the Pt-Pt direction its ISO permanent-loss row is
-        built on (the tap pressure reads both nodes' Pt). A velocity of
-        approach does not exclude: forward the approach static is the
-        pipe's, from Pt_from as before; reversed, the flow draws from the
-        chamber static (_approach_along)."""
-        return not (self.closed or self._pass_through or self._recovery_fwd or self._recovery_rev)
+        SIDE JET into a merge chamber, i.e. the to-node is a
+        MomentumChamberNode with ``main_inlet`` declared and this element is
+        not that main inlet, and the restriction is not closed, not a
+        pass-through and recovers no pressure in a pipe beyond (#645).
+        The jet then discharges against the chamber's static, which the
+        main stream sets. Every other configuration -- the orifice as the
+        chamber's main inlet, a chamber without main_inlet, an orifice in
+        line with a pipe, a recovering metering orifice -- keeps the Pt-Pt
+        form exactly. (resolve_drive itself only asks for a
+        MomentumChamberNode: the hole elements pass True unconditionally.)
+        On a side jet's reversed leg the flow draws from the chamber static
+        with no velocity of approach (_approach_along)."""
+        node = graph.nodes.get(self.to_node)
+        merge_side_jet = (
+            isinstance(node, MomentumChamberNode)
+            and node.main_inlet is not None
+            and node.main_inlet != self.id
+        )
+        return merge_side_jet and not (
+            self.closed or self._pass_through or self._recovery_fwd or self._recovery_rev
+        )
 
     def _approach_along(self, forward: bool) -> tuple[float, float, bool]:
         """(beta, pipe-Cd ratio, recovers) along the flow (#554, #645). On
         the reversed leg of a static exit drive (#1087) the source is the
-        discharge chamber's STATIC pressure (_approach_static reads it as
-        p1, no #651 correction on top). Whether its flow approaches the bore
-        is the topology's: a chamber IN LINE (_reverse_in_line: its only
-        elements are this orifice and the pipe beta_reverse comes from)
-        carries the orifice's own flow down that pipe, so E and the pipe Cd
-        stay; a chamber with other through-flow (side injection) has no
-        approach flow toward the bore, so the leg has none."""
+        discharge chamber's STATIC pressure: the approach pipe's static
+        correction (#651) and E would count its head a second time, so the
+        reversed leg has no velocity of approach there."""
         if forward:
             return (
                 float(getattr(self, "beta", 0.0)),
                 float(getattr(self, "_pipe_cd_ratio_fwd", 1.0)),
                 bool(getattr(self, "_recovery_fwd", False)),
             )
-        if self._hole_cd.exit_static and not getattr(self, "_reverse_in_line", False):
+        if self._hole_cd.exit_static:
             return 0.0, 1.0, False
         return (
             float(getattr(self, "beta_reverse", 0.0)),
@@ -5619,7 +5628,6 @@ class OrificeElement(NetworkElement):
         # orifice's p1 in reverse (#651).
         self._reverse_pipe_diameter = None
         self._reverse_pipe_source = ""
-        self._reverse_in_line = False
 
         if not self.in_pipe:
             # No pipe diameter (#788): a lumped Cd*A restriction, a hole in a
@@ -5663,12 +5671,6 @@ class OrificeElement(NetworkElement):
             self.beta_reverse = d_bore / to_pipes[0].diameter
             self._reverse_pipe_diameter = to_pipes[0].diameter
             self._reverse_pipe_source = f"channel '{to_pipes[0].id}'"
-            # In line (#1087, _approach_along): the to-node joins only this
-            # orifice and that pipe, so the approach flow is the orifice's.
-            at_to = graph.get_upstream_elements(self.to_node) + graph.get_downstream_elements(
-                self.to_node
-            )
-            self._reverse_in_line = {e.id for e in at_to} == {self.id, to_pipes[0].id}
 
         if self.upstream_diameter and self.upstream_diameter > 0:
             self.beta = d_bore / self.upstream_diameter
@@ -6043,12 +6045,9 @@ class OrificeElement(NetworkElement):
         reports P = Pt by definition, which gave the orifice p1 and rho1 a
         dynamic head too high (1.5% flow at beta 0.7, pipe Mach 0.18).
         Without E the node's static is returned (the kernels then read Pt).
-        So is it on the reversed leg of a static exit drive (#1087): the
-        source is the chamber's static, already the approach pipe's static
-        state where the chamber is in line, so no correction on top.
         """
         D = self.upstream_diameter if forward else getattr(self, "_reverse_pipe_diameter", None)
-        if not (0.0 < beta < 1.0) or not D or (not forward and self._hole_cd.exit_static):
+        if not (0.0 < beta < 1.0) or not D:
             return float(src.P), {f"{src_id}.P": 1.0}
         A = math.pi * D * D / 4.0
         m = float(src.m_dot)
@@ -6189,14 +6188,7 @@ class OrificeElement(NetworkElement):
             return forward()
 
         src = copy.copy(state_out)
-        # A reversed flow out of a chamber in line with its pipe
-        # (_reverse_in_line): the chamber's static is the approach pipe's
-        # static p1 (_approach_static) and its Pt the approach total, so the
-        # kernel reads both as they are, E kept (_approach_along). Every
-        # other reversed jet draws from p_dn as its total.
-        in_line = pair.exit_static and getattr(self, "_reverse_in_line", False)
-        if not in_line:
-            src.Pt = pair.p_dn
+        src.Pt = pair.p_dn
         dst = state_in
         # A reversed jet discharges against p_rev, the pressure the flow
         # passes zero at, whatever feeds the hole: a supply node's static
@@ -6208,8 +6200,7 @@ class OrificeElement(NetworkElement):
             dst = copy.copy(state_in)
             dst.P = pair.p_rev
         m_r, d_r = self._kernel_from(src, dst, self.to_node, self.from_node, cd)
-        if not in_line:
-            d_r = onto(d_r, f"{self.to_node}.Pt", pair.dp_dn)
+        d_r = onto(d_r, f"{self.to_node}.Pt", pair.dp_dn)
         if rev_moved:
             d_r = onto(d_r, f"{self.from_node}.P", pair.dp_rev)
         m_r, d_r = -m_r, {k: -v for k, v in d_r.items()}
@@ -6315,10 +6306,8 @@ class OrificeElement(NetworkElement):
         """Does m_calc read this element's own flow through the approach
         pipe's static state (#651)? With E and a pipe, in either direction."""
         fwd = 0.0 < self.beta < 1.0 and bool(self.upstream_diameter)
-        rev = (
-            not self._hole_cd.exit_static
-            and 0.0 < self._approach_along(False)[0] < 1.0
-            and bool(getattr(self, "_reverse_pipe_diameter", None))
+        rev = 0.0 < self._approach_along(False)[0] < 1.0 and bool(
+            getattr(self, "_reverse_pipe_diameter", None)
         )
         return fwd or rev
 
