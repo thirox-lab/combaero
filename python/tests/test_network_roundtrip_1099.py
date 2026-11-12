@@ -201,16 +201,94 @@ def test_stress_family_round_trip(family: str, seed: int) -> None:
     _assert_round_trip(net)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#1099 follow-up: a node's initial_guess is solver state set after "
-    "construction and is not serialised; F/J agree, x0 does not",
-)
+# --- initial_guess (#1101) ----------------------------------------------------
+
+
+def _x0(net: FlowNetwork) -> np.ndarray:
+    return np.array(NetworkSolver(net)._build_x0(), dtype=float)
+
+
+def _compressible_ejector() -> FlowNetwork:
+    """An ejector stress draw in the compressible regime, the one the
+    element seeds; its port chambers carry the user's seeds."""
+    for seed in range(40):
+        net, tags = FAMILIES["ejector"](seed)
+        if "compressible" in tags:
+            return net
+    raise AssertionError("no compressible ejector draw")
+
+
 def test_initial_guess_is_serialised() -> None:
     net, _ = FAMILIES["ejector"](0)
     net.resolve_all_topology()
     net2 = FlowNetwork.from_dict(net.to_dict())
     net2.resolve_all_topology()
-    x1 = np.array(NetworkSolver(net)._build_x0(), dtype=float)
-    x2 = np.array(NetworkSolver(net2)._build_x0(), dtype=float)
-    assert np.array_equal(x1, x2)
+    assert np.array_equal(_x0(net), _x0(net2))
+
+
+def test_plain_user_seed_round_trips_exactly() -> None:
+    net = FlowNetwork()
+    net.add_node(_pb("in", 2.0e5))
+    net.add_node(_pb("out", 1.0e5))
+    net.add_node(PlenumNode("p"))
+    net.add_element(OrificeElement("o1", "in", "p", Cd=0.7, diameter=0.01, correlation="fixed"))
+    net.add_element(OrificeElement("o2", "p", "out", Cd=0.7, diameter=0.01, correlation="fixed"))
+    net.nodes["p"].initial_guess = {"p.P": 1.234567890123e5, "p.Pt": 1.5e5}
+    net.elements["o1"].initial_guess = {"o1.m_dot": 0.0123456789}
+    d = net.to_dict()
+    assert d["nodes"]["p"]["initial_guess"] == {"p.P": 1.234567890123e5, "p.Pt": 1.5e5}
+    assert d["elements"]["o1"]["initial_guess"] == {"o1.m_dot": 0.0123456789}
+    assert "initial_guess" not in d["nodes"]["in"]
+    assert "initial_guess" not in d["elements"]["o2"]
+    net2 = _assert_round_trip(net)
+    assert net2.nodes["p"].initial_guess == net.nodes["p"].initial_guess
+    assert net2.elements["o1"].initial_guess == net.elements["o1"].initial_guess
+    assert np.array_equal(_x0(net), _x0(net2))
+
+
+def test_ejector_auto_seeds_are_not_saved() -> None:
+    net = _compressible_ejector()
+    net.nodes["mp"].initial_guess = {}  # the element seeds this port itself
+    net.resolve_all_topology()
+    auto = net.elements["ej"]._auto_seeds
+    assert ("mp", "mp.P") in auto and ("ej", "ej.P_jct") in auto
+    d = net.to_dict()
+    saved = {
+        (cid, k)
+        for group in ("nodes", "elements")
+        for cid, c in d[group].items()
+        for k in c.get("initial_guess", {})
+    }
+    assert not saved & set(auto)
+    # The user's seeds on the other ports are saved as given.
+    assert d["nodes"]["ms"]["initial_guess"] == net.nodes["ms"].initial_guess
+    net2 = FlowNetwork.from_dict(d)
+    net2.resolve_all_topology()
+    assert net2.elements["ej"]._auto_seeds == auto
+    assert np.array_equal(_x0(net), _x0(net2))
+
+
+def test_ejector_user_seed_survives_reload_and_overrides_auto_seed() -> None:
+    net = _compressible_ejector()
+    net.nodes["mp"].initial_guess = {}
+    net.resolve_all_topology()
+    auto_p = net.elements["ej"]._auto_seeds[("mp", "mp.P")]
+    auto_jct = net.elements["ej"]._auto_seeds[("ej", "ej.P_jct")]
+    # The user overrides two of the element's seeds after it wrote them.
+    user_p, user_jct = 0.97 * auto_p, 1.01 * auto_jct
+    net.nodes["mp"].initial_guess = {"mp.P": user_p, "mp.Pt": user_p}
+    net.elements["ej"].initial_guess = {**net.elements["ej"].initial_guess, "ej.P_jct": user_jct}
+    d = net.to_dict()
+    assert d["nodes"]["mp"]["initial_guess"] == {"mp.P": user_p, "mp.Pt": user_p}
+    assert d["elements"]["ej"]["initial_guess"]["ej.P_jct"] == user_jct
+    net2 = FlowNetwork.from_dict(d)
+    for n in (net, net2):
+        n.resolve_all_topology()
+        assert n.nodes["mp"].initial_guess == {"mp.P": user_p, "mp.Pt": user_p}
+        assert n.elements["ej"].initial_guess["ej.P_jct"] == user_jct
+        assert ("mp", "mp.P") not in n.elements["ej"]._auto_seeds
+    s2 = NetworkSolver(net2)
+    x2 = np.array(s2._build_x0(), dtype=float)
+    assert x2[s2.unknown_names.index("ej.P_jct")] == user_jct
+    assert x2[s2.unknown_names.index("mp.P")] == user_p
+    assert np.array_equal(_x0(net), x2)
