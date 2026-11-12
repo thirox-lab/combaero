@@ -99,8 +99,12 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 // exit_total selects what P_target is matched against:
 //   true  -- the exit STAGNATION pressure (the exit dynamic head is recovered
 //            downstream: a diffuser, or a node that carries its own Pt);
-//   false -- the exit STATIC pressure (the head is lost in a sudden expansion,
-//            a bare exit into a plenum or the atmosphere).
+//   false -- the exit STATIC pressure (the head is lost in a sudden expansion).
+// The network's ChannelElement passes false only where the flow discharges
+// into a PressureBoundary whose exit_head_lost is true (an outflow under
+// coupling "auto", or "static"). Into a PlenumNode or CombustorNode it passes
+// true: those nodes are at rest (Pt = P), so the duct's exit head is
+// recovered there, not lost (see "Drive conventions" in docs/API_PYTHON.md).
 //
 // Below kFannoFlowDriveFloor of drive (Pt0 - P_target) the flux law, whose
 // slope is infinite at zero drive, is blended C1 into an odd cubic through
