@@ -5786,7 +5786,7 @@ class OrificeElement(NetworkElement):
                 return self._flow_consistent_residuals(state_in, state_out, flows, effective_cd)
             return self._self_consistent_residuals(state_in, state_out, flows, effective_cd)
 
-        m_calc, partials = self._flow_and_partials(state_in, state_out, effective_cd)
+        m_calc, partials = self._flow_and_partials(state_in, state_out, effective_cd, flows)
         dm_dcd = partials.pop(_DM_DCD, 0.0)
         res = [m_dot - m_calc]
 
@@ -6014,6 +6014,7 @@ class OrificeElement(NetworkElement):
         state_in: "NetworkMixtureState",
         state_out: "NetworkMixtureState",
         cd: float,
+        flows: dict[str, float] | None = None,
     ) -> tuple[float, dict[str, float]]:
         """Signed m_calc (positive from -> to) and its partials, FOLLOWING THE FLOW.
 
@@ -6031,7 +6032,15 @@ class OrificeElement(NetworkElement):
         exactly as before. An orifice into a dead end (no flow boundary beyond its
         to-node, see _side_is_closed) is never reversed: every root has zero
         flow there.
+
+        A hole whose drive pair is not the two nodes' Pt (#1087,
+        _HoleCdChain.drive_pair: a duct-fed hole's supply drive, a cooling
+        hole into a flowing chamber) runs between that pair instead
+        (_flow_on_drive_pair); every other orifice evaluates as before.
         """
+        pair = self._hole_cd.drive_pair(state_in, state_out, flows)
+        if pair is not None:
+            return self._flow_on_drive_pair(state_in, state_out, cd, pair)
         # Into a dead end (no flow boundary beyond, a WallNode included) every
         # root has zero flow here: the forward form alone is exact there.
         if getattr(self, "_to_side_closed", False):
@@ -6058,6 +6067,99 @@ class OrificeElement(NetworkElement):
         out[f"{self.to_node}.Pt"] = out.get(f"{self.to_node}.Pt", 0.0) - g
         return w * m_f + (1.0 - w) * m_r, out
 
+    def _flow_on_drive_pair(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        cd: float,
+        pair: Any,
+    ) -> tuple[float, dict[str, float]]:
+        """_flow_and_partials between a drive pair (#1087, _DrivePair): forward
+        from the supply drive p_up, an upstream TOTAL (with the supply's Tt and
+        composition), against the discharge pressure p_dn, times the
+        static-to-total conversion of a static-referenced Cd where one
+        applies; reverse from p_dn (with the discharge node's Tt and
+        composition) against p_rev; blended through p_rev = p_dn over
+        ORIFICE_REVERSAL_P_SCALE. Both forms are zero there, so the flow
+        passes zero continuously: no form switches to a full jet across the
+        3 Pa blend, as the Pt-Pt direction did into a flowing chamber.
+
+        The kernels take the pair through their state arguments, so their
+        partials by the replaced pressures are carried onto the pair's own
+        derivatives by name: the forward source's Pt is p_up, the reverse
+        source's Pt is p_dn, the reverse destination's static is p_rev."""
+
+        def onto(d: dict[str, float], key: str, deps: dict[str, float]) -> dict[str, float]:
+            # d(m)/d(key) is d(m)/d(p): spread it over p's own derivatives,
+            # in key's place (the key order sets how assemble() sums
+            # coinciding terms; a pressure that IS the node's keeps its bits).
+            if key not in d or deps == {key: 1.0}:
+                return d
+            out: dict[str, float] = {}
+            for k, val in d.items():
+                if k == key:
+                    for name, c in deps.items():
+                        out[name] = out.get(name, 0.0) + val * c
+                else:
+                    out[k] = out.get(k, 0.0) + val
+            return out
+
+        def forward() -> tuple[float, dict[str, float]]:
+            src = copy.copy(state_in)
+            src.Pt = pair.p_up
+            m, d = self._kernel_from(src, state_out, self.from_node, self.to_node, cd)
+            d = onto(d, f"{self.from_node}.Pt", pair.dp_up)
+            if pair.conv is None:
+                return m, d
+            # A static-referenced Cd on the total drive (#1087): the forward
+            # form times Cd_T / Cd_S, whose partials ride along (m is linear
+            # in cd, so d(m)/d(cd) scales with it).
+            ratio, dratio = pair.conv
+            out = {k: v * ratio for k, v in d.items()}
+            for name, c in dratio.items():
+                out[name] = out.get(name, 0.0) + m * c
+            return m * ratio, out
+
+        if getattr(self, "_to_side_closed", False) or not (
+            float(state_out.P) > 0.0 and float(state_out.Tt) > 0.0
+        ):
+            return forward()
+        # Through zero where the forward and reverse forms both vanish:
+        # p_rev (the drive, or the station static of a converted Cd).
+        w, dw = _pressure_blend(pair.p_rev - pair.p_dn)
+        if w == 1.0:
+            return forward()
+
+        src = copy.copy(state_out)
+        src.Pt = pair.p_dn
+        dst = state_in
+        # A reversed jet discharges against p_rev, the pressure the flow
+        # passes zero at, whatever feeds the hole: a supply node's static
+        # would leave a jump of up to its dynamic head at the switch (a hole
+        # fed from a flowing MomentumChamberNode, review of e471aced). Only
+        # where p_rev IS the node's static is the original form kept.
+        rev_moved = pair.dp_rev != {f"{self.from_node}.P": 1.0}
+        if rev_moved:
+            dst = copy.copy(state_in)
+            dst.P = pair.p_rev
+        m_r, d_r = self._kernel_from(src, dst, self.to_node, self.from_node, cd)
+        d_r = onto(d_r, f"{self.to_node}.Pt", pair.dp_dn)
+        if rev_moved:
+            d_r = onto(d_r, f"{self.from_node}.P", pair.dp_rev)
+        m_r, d_r = -m_r, {k: -v for k, v in d_r.items()}
+        if w == 0.0:
+            return m_r, d_r
+        m_f, d_f = forward()
+        out: dict[str, float] = {}
+        for k in dict.fromkeys([*d_f, *d_r]):
+            out[k] = w * d_f.get(k, 0.0) + (1.0 - w) * d_r.get(k, 0.0)
+        g = (m_f - m_r) * dw
+        for name, c in pair.dp_rev.items():
+            out[name] = out.get(name, 0.0) + g * c
+        for name, c in pair.dp_dn.items():
+            out[name] = out.get(name, 0.0) - g * c
+        return w * m_f + (1.0 - w) * m_r, out
+
     def _self_consistent_residuals(
         self,
         state_in: "NetworkMixtureState",
@@ -6075,7 +6177,7 @@ class OrificeElement(NetworkElement):
         """
         m_dot = float(state_in.m_dot)
         cd0 = max(cd_iterate, 1e-4)
-        K = self._flow_and_partials(state_in, state_out, cd0)[0] / cd0
+        K = self._flow_and_partials(state_in, state_out, cd0, flows)[0] / cd0
         sgn = 1.0 if K >= 0.0 else -1.0
         aK = abs(K)
         probe = copy.copy(state_in)
@@ -6125,7 +6227,7 @@ class OrificeElement(NetworkElement):
         # floor; the sensitivities below are of the HELD value (#760).
         cd_star, cd_m = cd_and_slope(a, continued=False)
         probe.m_dot = sgn * a
-        m_star, partial = self._flow_and_partials(probe, state_out, cd_star)
+        m_star, partial = self._flow_and_partials(probe, state_out, cd_star, flows)
         # Linear in Cd here: the discharge-hole family never recovers (#645),
         # so K above is exact and d(m)/d(Cd) = K.
         partial.pop(_DM_DCD, None)
@@ -6182,7 +6284,7 @@ class OrificeElement(NetworkElement):
             p_in.m_dot = a
             p_out.m_dot = a
             cd = self._effective_Cd(p_in, p_out, flows) if own_cd else cd_iterate
-            m, part = self._flow_and_partials(p_in, p_out, cd)
+            m, part = self._flow_and_partials(p_in, p_out, cd, flows)
             dm_dcd = part.pop(_DM_DCD, 0.0)
             dcd = (
                 self._dCd_dnames(p_in, p_out, flows, continue_re_floor=continued)
@@ -6229,7 +6331,8 @@ class OrificeElement(NetworkElement):
                 return [0.0, m0, 2.0 * m0, 4.0 * m0]
 
             a = _root_on_bracket(h_of, a, lo, hi, probes)
-        a = self._drive_signed_root(evaluate, a, float(state_in.Pt) - float(state_out.Pt))
+        p_up, p_dn = self._hole_cd.drive_pressures(state_in, state_out, flows)
+        a = self._drive_signed_root(evaluate, a, p_up - p_dn)
         # Sensitivities of the HELD Cd below its Re floor (#760).
         m_star, slope, part, dm_dcd, dcd = evaluate(a, continued=False)
         hp = 1.0 - slope
@@ -6321,14 +6424,31 @@ class OrificeElement(NetworkElement):
         # the declared direction (#554).
         gamma = cs.thermo.gamma
         pr_crit = (2.0 / (gamma + 1.0)) ** (gamma / (gamma - 1.0))
-        up, dn = (state_out, state_in) if state_out.Pt > state_in.Pt else (state_in, state_out)
-        p_ratio_throat = dn.P / up.Pt if up.Pt > 0 else 1.0
+        # The direction and the upstream total from the hole's drive pair
+        # (#1087): the nodes' Pt, except on a duct-fed hole's supply drive or
+        # a cooling hole into a flowing chamber.
+        p_up, p_dn = self._hole_cd.drive_pressures(state_in, state_out, flows)
+        forward = not (p_dn > p_up)
+        up, dn = (state_in, state_out) if forward else (state_out, state_in)
+        pair = self._hole_cd.drive_pair(state_in, state_out, flows)
+        if pair is None:
+            pt_up, p_back = (p_up if forward else p_dn), float(dn.P)
+        else:
+            # The pressures the kernels expand between: forward the drive
+            # (an upstream total) to p_dn, reversed p_dn to p_rev.
+            pt_up, p_back = (pair.p_up, pair.p_dn) if forward else (pair.p_dn, pair.p_rev)
+        p_ratio_throat = p_back / pt_up if pt_up > 0 else 1.0
+        # The tap and model blocks read the pair as the nodes' Pt.
+        drive_states = (state_in, state_out)
+        if pair is not None:
+            drive_states = (copy.copy(state_in), copy.copy(state_out))
+            drive_states[0].Pt, drive_states[1].Pt = p_up, p_dn
         if p_ratio_throat >= 1.0:
             mach_throat = 0.0
         elif p_ratio_throat <= pr_crit:
             mach_throat = 1.0
         else:
-            mach_throat = float(cb.mach_from_pressure_ratio(up.Tt, up.Pt, dn.P, up.X))
+            mach_throat = float(cb.mach_from_pressure_ratio(up.Tt, pt_up, p_back, up.X))
 
         # Physical velocity / Mach at the geometric bore (not Cd-adjusted)
         Dh = math.sqrt(4.0 * self.area / math.pi) if self.area > 0 else 0.0
@@ -6364,8 +6484,8 @@ class OrificeElement(NetworkElement):
             "diameter": float(self.diameter or 0.0),
             "beta": float(self.beta),
             "area_source": self._area_source,
-            **self._tap_diagnostics(state_in, state_out, cd),
-            **self._model_diagnostics(state_in, state_out, cd),
+            **self._tap_diagnostics(*drive_states, cd),
+            **self._model_diagnostics(*drive_states, cd),
         }
 
     def _model_diagnostics(
@@ -7011,6 +7131,9 @@ class EffusionPlateElement(OrificeElement):
             for eid in self.crossflow_segments:
                 if eid is not None:
                     self._xf_elems.append((graph.elements[eid], eid))
+        # The drive pair (#1087): a duct-fed panel's supply drive, and the
+        # static of a flowing chamber it discharges into.
+        self._hole_cd.resolve_drive(graph, exit_static=True)
         self._resolve_plate_against_chambers(graph)
 
     def network_flow_inputs(self) -> list[tuple[str, str]]:
@@ -7559,7 +7682,10 @@ class EffusionPlateElement(OrificeElement):
     ) -> dict[str, float]:
         base = super().diagnostics(state_in, state_out, flows)
         m_dot = abs(state_in.m_dot)
-        dP_drive = state_in.Pt - state_out.P
+        # From the supply drive (a duct-fed panel's duct total, #1087) to the
+        # discharge static: the pair the flow's direction is taken from, so
+        # is_ingesting agrees with the sign of the solved flow.
+        dP_drive = self._hole_cd.drive_pressures(state_in, state_out, flows)[0] - state_out.P
         # Deprecated since 0.12.0, removed in 0.13.0: the pre-group names, as
         # 0.11 emitted them (U1/Vi and its bounds on a duct-fed panel only;
         # coolant_crossflow_ignored comes with wall_heat_transfer, always).
@@ -7782,6 +7908,8 @@ class FilmCoolingElement(OrificeElement):
         self._orifice_geom.r = self.edge_radius
         self.beta = 0.0
         self._hole_cd.resolve_exit_mainstream(graph)
+        # Into a flowing chamber the holes drive against its static (#1087).
+        self._hole_cd.resolve_drive(graph, exit_static=True)
         self._resolve_plate_against_chambers(graph)
 
     def validate(self) -> None:
@@ -8013,6 +8141,8 @@ class SlotFilmElement(OrificeElement):
         self._orifice_geom.t = self.lip_thickness
         self._orifice_geom.r = self.edge_radius
         self.beta = 0.0
+        # Into a flowing chamber the slot drives against its static (#1087).
+        self._hole_cd.resolve_drive(graph, exit_static=True)
         self._resolve_plate_against_chambers(graph)
 
     def validate(self) -> None:

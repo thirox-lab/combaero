@@ -20,6 +20,7 @@ from .components import (
     RAYLEIGH_EXIT_PREFIX,
     ChannelElement,
     CombustorNode,
+    CrossflowSegmentElement,
     EnergyBoundary,
     FuelBoundary,
     LosslessConnectionElement,
@@ -5809,6 +5810,9 @@ class NetworkSolver:
 
         _t0 = time.time()
         warm_seeded = False
+        # Warm-start proxy roots the second-law check refused, for the
+        # failure message (_proxy_refusal_note).
+        self._proxy_refusals = []
         if (
             init_strategy == "default"
             and has_compressible
@@ -5949,6 +5953,7 @@ class NetworkSolver:
                     else "skipped: neither the outlet- nor the inlet-referenced "
                     "proxy solve converged]"
                 )
+            sol["__message__"] = self._with_proxy_refusal_note(sol.get("__message__", ""))
             return replay(retrying=False)
 
         remaining = None
@@ -6002,6 +6007,7 @@ class NetworkSolver:
             f"'{init_strategy}' attempt {primary_end} "
             f"with: {primary_msg[:120]}]"
         )
+        retry_sol["__message__"] = self._with_proxy_refusal_note(retry_sol["__message__"])
         # Neither attempt converged, so hand back whichever got closer. The
         # retry used to be returned unconditionally, which could replace a
         # near-miss with something far worse and still warn that the best
@@ -6022,8 +6028,59 @@ class NetworkSolver:
                 else f"{primary_msg} [{_seed_kind} warm-start auto-retry found "
                 f"no admissible root either (|F|={float(retry_norm):.3e})]"
             )
+            sol["__message__"] = self._with_proxy_refusal_note(sol["__message__"])
             return sol
         return retry_sol
+
+    def _record_proxy_refusal(self, kind: str, proxy_sol: dict[str, Any]) -> None:
+        """Keep a warm-start proxy root the second-law check refused (the
+        root converged, its __second_law_failures__ name the elements) for
+        the solve's failure message: a refused proxy is otherwise reported
+        as one that "did not converge"."""
+        bad = list(proxy_sol.get("__second_law_failures__", []) or [])
+        if not bad or bool(proxy_sol.get("__success__", False)):
+            return
+        verdicts = proxy_sol.get("__second_law__", {}) or {}
+        worst = {
+            eid: float((verdicts.get(eid) or {}).get("sigma_norm_high", math.nan)) for eid in bad
+        }
+        refusals = getattr(self, "_proxy_refusals", None)
+        if refusals is None:
+            refusals = self._proxy_refusals = []
+        refusals.append((kind, worst))
+
+    def _with_proxy_refusal_note(self, message: str) -> str:
+        """``message`` with the warm-start proxy roots the second law refused
+        (each element and its sigma_norm_high). A duct-fed hole among them
+        points at #1125: booked at the duct total, a station whose duct flow
+        reverses manufactures total pressure."""
+        refusals = getattr(self, "_proxy_refusals", None) or []
+        if not refusals:
+            return message
+        parts = []
+        duct_fed = False
+        for kind, worst in refusals:
+            els = ", ".join(f"{eid} (sigma_norm {s:+.2e})" for eid, s in worst.items())
+            parts.append(
+                f"the {kind} incompressible proxy root was refused by the second law at {els}"
+            )
+            for eid in worst:
+                el = self.network.elements.get(eid)
+                chain = getattr(el, "_hole_cd", None)
+                duct_fed = (
+                    duct_fed
+                    or bool(getattr(chain, "duct_fed", False))
+                    or isinstance(el, CrossflowSegmentElement)
+                )
+        note = "; ".join(parts)
+        if duct_fed:
+            note += (
+                ": a backside duct whose flow reverses at a station, where the "
+                "station's reversed-flow model manufactures total pressure once its "
+                "duct-fed holes are booked at the duct total (known limitation, "
+                "issue #1125)"
+            )
+        return f"{str(message).strip()} [{note}]"
 
     def _incompressible_element_ids(self) -> list[str]:
         """Elements running the incompressible form of a two-regime closure."""
@@ -6142,6 +6199,8 @@ class NetworkSolver:
                 candidate = getattr(self, "_last_x", None)
                 if candidate is not None:
                     seed = np.asarray(candidate, dtype=float)
+            else:
+                self._record_proxy_refusal(f"{p_ref}-referenced", proxy_sol)
         except Exception as e:
             warnings.warn(
                 "Outlet-referenced incompressible proxy solve raised; "

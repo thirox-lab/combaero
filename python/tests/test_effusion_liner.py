@@ -121,7 +121,8 @@ def test_the_stations_are_wired_as_bleeds_with_duct_fed_panels() -> None:
 
 def test_each_panel_cd_sees_its_stations_crossflow() -> None:
     """The panel's Cd is McGreehan-Schotsch at the U1/Vi of the SOLVED duct
-    flows either side of its station, Vi from the station's static drive.
+    flows either side of its station, Vi from the station's static drive,
+    carried onto the panel's total drive (#1087).
     The ratio's T is the station's STATIC T (#782): the node carries T0, and
     its gas moves at the mean of the two duct flows."""
     s, r = _solve(_net(_liner()))
@@ -144,7 +145,14 @@ def test_each_panel_cd_sees_its_stations_crossflow() -> None:
             hole,
             cb.DischargeHoleState(Re=panel._hole_reynolds(st), U1_over_Vi=ratio.U1_over_Vi),
         )
-        assert d[f"ln__p{i}"]["Cd"] == pytest.approx(cd, rel=1e-9)
+        # On the panel's total drive (the Pt -> static rule, #1087): that Cd,
+        # static-referenced, times the exact conversion Cd_T / Cd_S from the
+        # station's static state (P, T_static) and the duct's total there.
+        m_mean = 0.5 * (m_a + m_b)
+        pt = cb.hole_supply_drive(cb.HoleSupplyDrive.Total, P, T, Y_AIR, m_mean, A).P_drive
+        conv = cb.hole_static_to_total_cd_ratio(P, T_static, pt, T, 1.0e5, Y_AIR).ratio
+        assert 0.0 < conv < 1.0
+        assert d[f"ln__p{i}"]["Cd"] == pytest.approx(cd * conv, rel=1e-9)
 
 
 def test_the_bleed_regains_static_pressure_along_the_duct() -> None:

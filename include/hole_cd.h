@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "crossflow_cd.h"
 #include "orifice.h"
 
@@ -118,5 +120,78 @@ struct HoleCdResult {
 // `orifice` by the Metering base. Throws what the kernels throw.
 HoleCdResult hole_cd_compose(const HoleCdModel& model, const DischargeHoleGeometry& hole,
                              const OrificeGeometry& orifice, const HoleCdInputs& inputs);
+
+// The SUPPLY DRIVE of a duct-fed hole (#1087, supply side): the pressure the
+// hole's ideal flow is taken from, the Cd's reference. A duct station holds
+// the duct's STATIC pressure P with its gas moving at the mean flow m_dot
+// through the duct section `area`.
+//   Total   the duct's stagnation pressure at the station, P + q. The rule
+//           (owner, 2026-11-12): a hole drives from the upstream total to
+//           the downstream static, and its Cd model owns how much of the
+//           supply head it recovers (the recovered fraction f, 0 to 1). A
+//           static-referenced Cd is converted onto it exactly
+//           (hole_static_to_total_cd_ratio).
+//   Static  the station static P: the pre-0.12 drive, kept to reproduce
+//           earlier results.
+// q is the momentum-chamber closure's isentropic dynamic head of the station
+// (solver::momentum_chamber_residual_and_jacobian: static T from h(Tt) =
+// h(T) + v^2/2 at G = |m_dot| / area, compressible, or its low-Mach limit),
+// so the station's total is the one a MomentumChamberNode would hold there;
+// past the sonic static, that closure's bounded continuation (#788). It is
+// even in m_dot and smooth through m_dot = 0 (a duct-flow reversal).
+// Design record: docs/archive/hole_drive_convention.md.
+enum class HoleSupplyDrive { Static, Total };
+
+struct HoleSupplyDriveResult {
+  double P_drive = 0.0;  // the drive pressure [Pa]
+  double q_dyn = 0.0;    // the station's dynamic head Pt - P [Pa], either model
+                         // (past the sonic static: the closure's bounded
+                         // continuation, #788)
+  // Partials of P_drive by the station's static P, stagnation T, the mean
+  // duct flow (signed: P_drive is even in m_dot) and its mass fractions.
+  double dP_dP = 0.0;
+  double dP_dTt = 0.0;
+  double dP_dm_dot = 0.0;
+  std::vector<double> dP_dY;
+};
+
+HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double Tt,
+                                        const std::vector<double>& Y, double m_dot, double area,
+                                        bool incompressible = false);
+
+// The exact conversion of a STATIC-referenced hole Cd onto the TOTAL drive
+// (owner's rule, 2026-11-12: a hole drives from the upstream total to the
+// downstream static, and its Cd model owns how much supply dynamic head is
+// recovered). One measured flow, two ideal flows:
+//   Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2),
+// both from the element's own compressible nozzle kernel
+// (solver::orifice_compressible_residuals_and_jacobian, Cd 1, beta 0), so
+// Cd_T m_id(Pt1, Tt1 -> P2) is Cd_S m_id(P1, T1 -> P2) to round-off: the
+// static-referenced model's own flow. (P1, T1) is the supply station's
+// STATIC state (McGreehan & Schotsch 1988, p. 215: "static pressures and
+// temperature"), (Pt1, Tt1) its stagnation state. Incompressibly the ratio
+// is sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2); the compressible ratio depends
+// on the supply Mach as well (docs/archive/hole_drive_convention.md).
+// `incompressible`: the exact ratio of the incompressible kernel (an element
+// in the incompressible regime, the solver's incompressible proxy included),
+// whose ideal flows are A sqrt(2 rho dp) at one density:
+//   Cd_T / Cd_S = sqrt(1 - X),  X = (Pt1 - P1)/(Pt1 - P2),
+// i.e. sqrt((P1 - P2)/(Pt1 - P2)); T1, Tt1 and Y do not enter (their
+// partials are 0). The compressible ratio tends to it at low supply Mach.
+// ratio = 0 (and every partial 0) where P1 <= P2: the static-referenced Cd
+// gives no forward flow there, or where m_id(Pt1, Tt1 -> P2) = 0.
+struct HoleDriveCdRatio {
+  double ratio = 0.0;
+  double d_dP1 = 0.0;   // [1/Pa]
+  double d_dT1 = 0.0;   // [1/K]
+  double d_dPt1 = 0.0;  // [1/Pa]
+  double d_dTt1 = 0.0;  // [1/K]
+  double d_dP2 = 0.0;   // [1/Pa]
+  std::vector<double> d_dY;  // by mass fraction (the same Y on both sides)
+};
+
+HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y,
+                                               bool incompressible = false);
 
 }  // namespace combaero

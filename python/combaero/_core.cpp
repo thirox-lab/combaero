@@ -6824,6 +6824,46 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "Metzger & Su 1982) that replaces it where it acts. Returns the Cd, its\n"
         "analytic partials by input and each term's value. Internal: the\n"
         "composition point of the network's hole elements (_HoleCdChain).");
+  py::enum_<HoleSupplyDrive>(m, "HoleSupplyDrive",
+                             "The pressure a duct-fed hole's ideal flow is taken from "
+                             "(hole_supply_drive).")
+      .value("Static", HoleSupplyDrive::Static)
+      .value("Total", HoleSupplyDrive::Total);
+  py::class_<HoleSupplyDriveResult>(m, "HoleSupplyDriveResult",
+                                    "A duct-fed hole's drive pressure and its partials.")
+      .def_readonly("P_drive", &HoleSupplyDriveResult::P_drive)
+      .def_readonly("q_dyn", &HoleSupplyDriveResult::q_dyn)
+      .def_readonly("dP_dP", &HoleSupplyDriveResult::dP_dP)
+      .def_readonly("dP_dTt", &HoleSupplyDriveResult::dP_dTt)
+      .def_readonly("dP_dm_dot", &HoleSupplyDriveResult::dP_dm_dot)
+      .def_readonly("dP_dY", &HoleSupplyDriveResult::dP_dY);
+  m.def("hole_supply_drive", &hole_supply_drive, py::arg("drive"), py::arg("P"), py::arg("Tt"),
+        py::arg("Y"), py::arg("m_dot"), py::arg("area"), py::arg("incompressible") = false,
+        "The supply drive of a duct-fed hole (#1087): the pressure its ideal flow\n"
+        "is taken from. Static: the station static P (McGreehan & Schotsch's\n"
+        "convention). Total: the duct's stagnation pressure at the station,\n"
+        "P + q, q the momentum-chamber closure's dynamic head at the mean duct\n"
+        "flow m_dot through `area` (the plenum-fed Cd data's reference). Returns\n"
+        "P_drive, q_dyn and the analytic partials of P_drive by P, Tt, m_dot, Y.");
+  py::class_<HoleDriveCdRatio>(m, "HoleDriveCdRatio",
+                               "Cd_T / Cd_S of a static-referenced hole Cd on the total drive.")
+      .def_readonly("ratio", &HoleDriveCdRatio::ratio)
+      .def_readonly("d_dP1", &HoleDriveCdRatio::d_dP1)
+      .def_readonly("d_dT1", &HoleDriveCdRatio::d_dT1)
+      .def_readonly("d_dPt1", &HoleDriveCdRatio::d_dPt1)
+      .def_readonly("d_dTt1", &HoleDriveCdRatio::d_dTt1)
+      .def_readonly("d_dP2", &HoleDriveCdRatio::d_dP2)
+      .def_readonly("d_dY", &HoleDriveCdRatio::d_dY);
+  m.def("hole_static_to_total_cd_ratio", &hole_static_to_total_cd_ratio, py::arg("P1"),
+        py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"),
+        py::arg("incompressible") = false,
+        "The exact conversion of a static-referenced hole Cd onto the total drive:\n"
+        "Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2), both ideal flows\n"
+        "from the network's compressible nozzle kernel; (P1, T1) the supply's STATIC\n"
+        "state, (Pt1, Tt1) its stagnation state. incompressible: the incompressible\n"
+        "kernel's exact ratio sqrt((P1 - P2)/(Pt1 - P2)) (T1, Tt1, Y do not enter).\n"
+        "0 where P1 <= P2. Analytic partials\n"
+        "by P1, T1, Pt1, Tt1, P2 and the mass fractions Y.");
 
   m.def("solve_orifice_mdot",
         [](const OrificeGeometry &geom, double dP, double rho, double mu,

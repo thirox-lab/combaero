@@ -3575,42 +3575,45 @@ documents:
   verdict: 'Screened 2026-11-06 (was wanted, #807). THE PRIMARY OF LEFEBVRE & BALLAL Eq. 4.15 / Fig. 4.2,
     confirmed: the book''s (K - 1)/[4K^2 - K(2 - alpha)^2]^0.5 is Kaddah''s Analysis I Eq. 11; the book''s
     leading 1.25 is not in Eq. 11 and is presumably the delta = 0.8 of Analysis II (1/0.8 = 1.25) -- check the
-    algebra of Eqs. 26-29 before implementing. The book calls it an MSc thesis; it is a DAE thesis. PLUGS A
-    GAP for #807: the shipped supply-crossflow Cd (McGreehan-Schotsch Eq. 17) is scored only on Rohde''s thick
-    hole (L/d 1.06); TN 3663 (registered) adds thin liner holes but only as rough figure reads. Kaddah gives
-    the thin-wall case (t/d 0.04-0.19) TABULATED, five hole sizes at fixed t, two crossflow velocities --
-    the cleanest cross-source ACCURACY set for Eq. 17 at liner geometry (Cranfield, not NACA Lewis). Caveat:
-    t/d and a* change together (C1-C5 vary d at fixed t), so a wall-thickness term cannot be separated from
-    the area-ratio (bleed) effect inside this set; large a* (0.25-0.6) and slots longer than the 1.25 in duct
-    depth are outside any liner annulus, so score the small-a* configurations first. FIDELITY set for a
-    Kaddah Cd(K, alpha) closure if one is implemented (his own Tables 11-30 vs his Eqs. 11/13 or the
-    book''s 4.15). #813: the measured deflection angle phi is the direct test of Report 1373 Eq. 9 (cos phi =
-    V_A/V_j, the jets keep the whole supply axial velocity). Indicative, read off Table 11 (C1; 10 crossflow points, not transcribed): at V1 130 ft/s, Vj
-    218-487 ft/s, Eq. 9 gives 53/64/70/72/75 deg vs measured 62/69/71/71/72; at 80 ft/s, Vj 135-468, Eq. 9
-    54/71/76/79/80 vs measured 66/70/72/73/75. So the jets are 9-12 deg STEEPER than Eq. 9 at the lowest K
-    (keep less axial velocity) and up to 7 deg SHALLOWER at high K (keep more): Eq. 9 is not a bound either
-    way, and #813''s from_crossflow mode should be scored against these tables, not assumed. Non-circular slots: oval and rectangular
-    data (Dittrich TN 3924 covers rectangular only; no oval data elsewhere in the register).
-    EXTRACTED 2026-11-10 (#1014, user sign-off 2026-11-10): all 20 tables, 269 rows, as printed into
-    validation/cooling/data/kaddah1964 (two independent channels -- Vision OCR and a blind visual read --
-    a third read of every disagreement, the tables'' own arithmetic, and an overlay on every Vol. 2 C/phi vs
-    p1/pj figure). Per-cell read confidence in cell_flags.csv: 43 sequence_judged (not exact, reported
-    separately), 36 arithmetic_confirmed, 7 printed_inconsistent (thesis misprints, kept as printed and
-    excluded by default: T13 80/1 Lj, T14 80/2 C, T16 130/4 C, T17 130/1 C, T24 80/3 alpha, T28 130/3 Lth,
-    T11 nox/4 phi "840"). Table 27 (R5): every mu and Lth implies a* 0.672, not the 0.600 of Section 7.3 --
-    excluded. Table 11 vs Vol. 2 Fig. 35: the figure plots the no-crossflow C 0.03-0.07 lower; the table
-    is primary (self-consistent). SCORED (kaddah_runner.py, ACCURACY, CROSS-SOURCE, C converted to the
-    static basis by the registered sqrt(K/(K-1)), U1/Vi under BOTH Kaddah''s approach V1 and combaero''s mean
-    of approaching and departing flow): Eq. 17 anchored on each table''s no-crossflow block, liner-envelope
+    algebra of Eqs. 26-29 before implementing. The book calls it an MSc thesis; it is a DAE thesis. PLUGS A GAP
+    for #807: the shipped supply-crossflow Cd (McGreehan-Schotsch Eq. 17) is scored only on Rohde''s thick hole
+    (L/d 1.06); TN 3663 (registered) adds thin liner holes but only as rough figure reads. Kaddah gives the
+    thin-wall case (t/d 0.04-0.19) TABULATED, five hole sizes at fixed t, two crossflow velocities -- the
+    cleanest cross-source ACCURACY set for Eq. 17 at liner geometry (Cranfield, not NACA Lewis). Caveat: t/d
+    and a* change together (C1-C5 vary d at fixed t), so a wall-thickness term cannot be separated from the
+    area-ratio (bleed) effect inside this set; large a* (0.25-0.6) and slots longer than the 1.25 in duct depth
+    are outside any liner annulus, so score the small-a* configurations first. FIDELITY set for a Kaddah Cd(K,
+    alpha) closure if one is implemented (his own Tables 11-30 vs his Eqs. 11/13 or the book''s 4.15). #813:
+    the measured deflection angle phi is the direct test of Report 1373 Eq. 9 (cos phi = V_A/V_j, the jets keep
+    the whole supply axial velocity). Indicative, read off Table 11 (C1; 10 crossflow points, not transcribed):
+    at V1 130 ft/s, Vj 218-487 ft/s, Eq. 9 gives 53/64/70/72/75 deg vs measured 62/69/71/71/72; at 80 ft/s, Vj
+    135-468, Eq. 9 54/71/76/79/80 vs measured 66/70/72/73/75. So the jets are 9-12 deg STEEPER than Eq. 9 at
+    the lowest K (keep less axial velocity) and up to 7 deg SHALLOWER at high K (keep more): Eq. 9 is not a
+    bound either way, and #813''s from_crossflow mode should be scored against these tables, not assumed.
+    Non-circular slots: oval and rectangular data (Dittrich TN 3924 covers rectangular only; no oval data
+    elsewhere in the register). EXTRACTED 2026-11-10 (#1014, user sign-off 2026-11-10): all 20 tables, 269
+    rows, as printed into validation/cooling/data/kaddah1964 (two independent channels -- Vision OCR and a
+    blind visual read -- a third read of every disagreement, the tables'' own arithmetic, and an overlay on
+    every Vol. 2 C/phi vs p1/pj figure). Per-cell read confidence in cell_flags.csv: 43 sequence_judged (not
+    exact, reported separately), 36 arithmetic_confirmed, 7 printed_inconsistent (thesis misprints, kept as
+    printed and excluded by default: T13 80/1 Lj, T14 80/2 C, T16 130/4 C, T17 130/1 C, T24 80/3 alpha, T28
+    130/3 Lth, T11 nox/4 phi "840"). Table 27 (R5): every mu and Lth implies a* 0.672, not the 0.600 of Section
+    7.3 -- excluded. Table 11 vs Vol. 2 Fig. 35: the figure plots the no-crossflow C 0.03-0.07 lower; the table
+    is primary (self-consistent). SCORED (kaddah_runner.py, ACCURACY, CROSS-SOURCE, C converted to the static
+    basis by the registered sqrt(K/(K-1)), U1/Vi under BOTH Kaddah''s approach V1 and combaero''s mean of
+    approaching and departing flow): Eq. 17 anchored on each table''s no-crossflow block, liner-envelope
     configurations (C1, O1, R1, C2, O2, R2; 54 clean rows): bias -5.3% / MAE 7.1% (approach), -3.0% / 5.8%
-    (mean); at K < 2 it reads 30-33% LOW, the TN 3663 direction (thin holes keep more Cd under strong
-    crossflow than Eq. 17 predicts). The full chain on C1/C2 (26 rows): -7.3% / 7.9% and -6.7% / 7.6%.
-    Jet angle, reported not scored (no closure yet, #813): Report 1373 Eq. 9 +0.7 deg bias / 3.4 deg MAE on
-    the liner-envelope crossflow rows; NREC Eq. 97 with Cd_inf 0.625 +8.0 / 8.8 deg.'
+    (mean); at K < 2 it reads 30-33% LOW, the TN 3663 direction (thin holes keep more Cd under strong crossflow
+    than Eq. 17 predicts). The full chain on C1/C2 (26 rows): -7.3% / 7.9% and -6.7% / 7.6%. Jet angle,
+    reported not scored (no closure yet, #813): Report 1373 Eq. 9 +0.7 deg bias / 3.4 deg MAE on the
+    liner-envelope crossflow rows; NREC Eq. 97 with Cd_inf 0.625 +8.0 / 8.8 deg. Used 2026-11-11 (#1087 supply
+    side, cross-source ACCURACY): the 43 clean circular duct-fed rows (normal thin holes) under
+    McGreehanSchotsch + Eq. 17: station-static drive -10.4/16.5 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +3.4/13.8 %; with the inlet
+    term off under the total drive +20.8/55.6 % (McGreehanSchotsch), +27.3/60.9 % (IdelchikThick).'
   read_for: ['#807 thin-wall liner-hole Cd under supply crossflow (cross-source accuracy for McGreehan-Schotsch
       Eq. 17)', 'primary of Lefebvre & Ballal Eq. 4.15 / Fig. 4.2', '#813 jet deflection angle vs Report 1373
       Eq. 9 (jets carrying V_A)']
-  issues: [807, 813, 793, 1014]
+  issues: [807, 813, 793, 1014, 1087]
   records: [validation/cooling/data/kaddah1964/tables.yaml, validation/cooling/data/kaddah1964/cell_flags.csv,
     validation/cooling/extractions/kaddah_1964_liner_hole_tables.md, validation/cooling/kaddah_runner.py,
     python/tests/test_kaddah1964.py]
@@ -4420,15 +4423,22 @@ documents:
     r/d, length L/d, relative tangential velocity U1/Vi, expansion factor Y; Eqs (4)-(17) printed; compiled
     data (incl. Rohde) plotted (Figs 4-6).'
   status: implemented
-  verdict: Shipped as orifice::mcgreehan_schotsch (Cd chain, Y factor, analytic (f,J)) for plenum-fed
-    bleed/film/effusion holes. Fig. 6 Rohde series is scored; baseline runs 3-12% above Rohde's measured
-    basic values. Floored at Re 1e4. Envelope 2026-11-10 (hole-Cd audit stage 4); Fig. 3 plots the
-    Lichtarowicz data Eq. (14) was fitted to on an L/d axis to 10 (read from a page render), so L/d > 10
-    (orifice::mcgreehan_schotsch::l_over_d_max) and Re < 1e4 are reported by variable
-    (Cd_extrapolated_l_d / _Re), as information; the per-call C++ warning below Re 1e4 is gone.
+  verdict: 'Shipped as orifice::mcgreehan_schotsch (Cd chain, Y factor, analytic (f,J)) for plenum-fed
+    bleed/film/effusion holes. Fig. 6 Rohde series is scored; baseline runs 3-12% above Rohde''s measured basic
+    values. Floored at Re 1e4. Envelope 2026-11-10 (hole-Cd audit stage 4); Fig. 3 plots the Lichtarowicz data
+    Eq. (14) was fitted to on an L/d axis to 10 (read from a page render), so L/d > 10
+    (orifice::mcgreehan_schotsch::l_over_d_max) and Re < 1e4 are reported by variable (Cd_extrapolated_l_d /
+    _Re), as information; the per-call C++ warning below Re 1e4 is gone. Used 2026-11-11 (#1087 supply side):
+    Eq. 17 is defined on the station-STATIC drive (the paper''s convention). On the authors'' Fig. 6 (FIDELITY,
+    Re 5e4 assumed) the chain + Eq. 17 reads +12.5/14.5 % on that drive and +32.6/48.0 % under the duct-total
+    drive unconverted, which is not the authors'' own model; converted exactly (C++ hole_static_to_total_cd_ratio,
+    the default since #1122 under the Pt -> static rule) it is the static result again, up to the static-temperature
+    correction (the network''s station state now takes the static T, as the paper does).
+    Drive-convention study 2026-11-12 (docs/archive/hole_drive_convention.md): static flattens the normal-hole sets
+    (recovered head f ~ 0), total the 30 deg co-aligned ones (f ~ 1).'
   read_for: ['#375 jet-plate Cd', '#382 expansion factor Y', '#383 analytic (f,J) and U1/Vi singularity',
     '#645 permanent loss']
-  issues: [339, 375, 381, 382, 383, 384, 406, 409, 465, 645, 649]
+  issues: [339, 375, 381, 382, 383, 384, 406, 409, 465, 645, 649, 1087]
   records: [validation/cooling/extractions/orifice_discharge_coefficient.md, validation/cooling/data/mcgreehan_schotsch1988/]
   code: ['include/orifice.h: orifice::mcgreehan_schotsch, McGreehanSchotsch1988']
 - file: sources/orifices/thole_gritsch_schulz_wittig_1997_JFE_119_533_entrance_crossflow.pdf
@@ -4487,44 +4497,49 @@ documents:
     0, Fig. 10), plateau ~0.90 at high PR; at Ma_c 0.6 an unstable double-bend regime near PR 1.2-1.4 (Figs. 9,
     13). Layback changes Cd negligibly.'
   status: extracted
-  verdict: 'Screened 2026-11-02 (#807, #813; was wanted). NO combaero closure is built from it, so nothing here is
-    fidelity: every use is cross-source ACCURACY, labelled as such. What it could score: (1) the McGreehan-Schotsch
-    Eq. 17 U1/Vi term (orifice::mcgreehan_schotsch::cd, used by EffusionPlateElement when duct-fed via
-    crossflow_velocity_ratio) against Fig. 6 (cylindrical, Ma_m 0, ~45 points) and Figs. 3-5 Ma_m 0 curves; but
-    two conversions first -- Gritsch references the coolant TOTAL pressure while combaero builds Vi from the
-    supply STATIC (orifice.h, item 22), and the hole is 30 deg COFLOW-inclined where McGreehan-Schotsch''s term
-    is a tangential (normal-hole, rotation) velocity: the shapes already differ (Gritsch +15% to Ma_c ~0.3, then
-    collapse; McGreehan-Schotsch peaks +5.7% at U1/Vi 0.09, then falls), so expect a regime miss, not a tuning
-    target (Hay et al. 1983, held, show the same coflow rise). (2) The zero-crossflow Cd(PR) of a plenum-fed L/D 6
-    hole (Fig. 3, Ma_m 0: 0.72-0.80) against FilmCoolingElement''s default IdelchikThick or the McGreehan-Schotsch
-    chain at L/d 6 (not computed here; the main .venv build is stale). (3) Exit-side grazing flow (Figs. 3-5, Ma_m
-    0.3-1.2): combaero has NO exit-side crossflow Cd for film or effusion holes; Rogers-Hersh (#800/#818) is wired
-    only into ImpingementPlateElement and is a static-referenced, incompressible, M <= 0.25, normal L/D 1 fit, so
-    only the Ma_m 0.3 curves sit near its envelope, and even those need the total/static conversion. (4) Shaped
-    holes: FilmCoolingElement hole_type "shaped" takes the METERING diameter -- the same area basis as this Cd --
-    but the plain-hole Cd, so it under-predicts shaped-hole flow by up to ~10% without supply crossflow and by up to
-    ~40-50% at Ma_c 0.3 and low PR (Figs. 15-18). A real gap, not closable from this paper (no correlation; the
-    1997 ISABE correlation is wanted). Data are plotted only: digitise Figs. 3 and 6 first (cleanest); fidelity on
-    overplotted near-PR-1 points would be an upper bound. Figs. 3-14 digitised (63 series, 500 marks, 465
-    confirmed, 35 provisional collapsed-curve or continuity-deduced marks filed apart; unscored, cross-source
-    accuracy only; Cd on the inlet area, same convention as hay1983). Digitised 2026-11-08, user-confirmed
-    over three review rounds. Used 2026-11-09 (validation/cooling/hole_cd_inclination_runner.py, cross-source
-    ACCURACY, not scored): fig3_Mac0p0_Mam0p0 (the one plenum-to-plenum 30 deg series) against IdelchikThick at
-    L/D 6, ideal flow total-to-static to choking on the inlet area, exit 1 atm assumed: mean error +6.4% with
-    the angle via length only, -4.3% with the opt-in diagram 3-2 term; the measured rise with PR (0.73 to 0.80)
-    is in neither. Used 2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not
+  verdict: 'Screened 2026-11-02 (#807, #813; was wanted). NO combaero closure is built from it, so nothing here
+    is fidelity: every use is cross-source ACCURACY, labelled as such. What it could score: (1) the
+    McGreehan-Schotsch Eq. 17 U1/Vi term (orifice::mcgreehan_schotsch::cd, used by EffusionPlateElement when
+    duct-fed via crossflow_velocity_ratio) against Fig. 6 (cylindrical, Ma_m 0, ~45 points) and Figs. 3-5 Ma_m
+    0 curves; but two conversions first -- Gritsch references the coolant TOTAL pressure while combaero builds
+    Vi from the supply STATIC (orifice.h, item 22), and the hole is 30 deg COFLOW-inclined where
+    McGreehan-Schotsch''s term is a tangential (normal-hole, rotation) velocity: the shapes already differ
+    (Gritsch +15% to Ma_c ~0.3, then collapse; McGreehan-Schotsch peaks +5.7% at U1/Vi 0.09, then falls), so
+    expect a regime miss, not a tuning target (Hay et al. 1983, held, show the same coflow rise). (2) The
+    zero-crossflow Cd(PR) of a plenum-fed L/D 6 hole (Fig. 3, Ma_m 0: 0.72-0.80) against FilmCoolingElement''s
+    default IdelchikThick or the McGreehan-Schotsch chain at L/d 6 (not computed here; the main .venv build is
+    stale). (3) Exit-side grazing flow (Figs. 3-5, Ma_m 0.3-1.2): combaero has NO exit-side crossflow Cd for
+    film or effusion holes; Rogers-Hersh (#800/#818) is wired only into ImpingementPlateElement and is a
+    static-referenced, incompressible, M <= 0.25, normal L/D 1 fit, so only the Ma_m 0.3 curves sit near its
+    envelope, and even those need the total/static conversion. (4) Shaped holes: FilmCoolingElement hole_type
+    "shaped" takes the METERING diameter -- the same area basis as this Cd -- but the plain-hole Cd, so it
+    under-predicts shaped-hole flow by up to ~10% without supply crossflow and by up to ~40-50% at Ma_c 0.3 and
+    low PR (Figs. 15-18). A real gap, not closable from this paper (no correlation; the 1997 ISABE correlation
+    is wanted). Data are plotted only: digitise Figs. 3 and 6 first (cleanest); fidelity on overplotted
+    near-PR-1 points would be an upper bound. Figs. 3-14 digitised (63 series, 500 marks, 465 confirmed, 35
+    provisional collapsed-curve or continuity-deduced marks filed apart; unscored, cross-source accuracy only;
+    Cd on the inlet area, same convention as hay1983). Digitised 2026-11-08, user-confirmed over three review
+    rounds. Used 2026-11-09 (validation/cooling/hole_cd_inclination_runner.py, cross-source ACCURACY, not
+    scored): fig3_Mac0p0_Mam0p0 (the one plenum-to-plenum 30 deg series) against IdelchikThick at L/D 6, ideal
+    flow total-to-static to choking on the inlet area, exit 1 atm assumed: mean error +6.4% with the angle via
+    length only, -4.3% with the opt-in diagram 3-2 term; the measured rise with PR (0.73 to 0.80) is in
+    neither. Used 2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not
     scored) for the opt-in Rowbury 2001 exit-crossflow term: fig3 Ma_m 0.3 / 0.6 / 1.2, mean error with the
     inclination term +0.8% -> -2.7%, +15.9% -> +3.6%, +46.8% -> +9.9% (without it +12.0% -> +8.5%, +28.9% ->
-    +15.1%, +63.2% -> +20.0%).
-    Re-run 2026-11-10 through FilmCoolingElement for the inclination term''s switch to default-on for
-    cylindrical holes (hole-Cd audit stage 1; the plenum-to-plenum Cd, no crossflow term): exit Ma_m 0.3 / 0.6
-    +12.0% / +28.9% -> +0.8% / +15.9%, coolant crossflow cell +6.2% -> -4.5%; shaped holes stay off by
-    default because the term alone moves them away (fan none -1.5% -> -11.3%, laidback +0.5% -> -9.5%,
-    cross-source accuracy).'
+    +15.1%, +63.2% -> +20.0%). Re-run 2026-11-10 through FilmCoolingElement for the inclination term''s switch
+    to default-on for cylindrical holes (hole-Cd audit stage 1; the plenum-to-plenum Cd, no crossflow term):
+    exit Ma_m 0.3 / 0.6 +12.0% / +28.9% -> +0.8% / +15.9%, coolant crossflow cell +6.2% -> -4.5%; shaped holes
+    stay off by default because the term alone moves them away (fan none -1.5% -> -11.3%, laidback +0.5% ->
+    -9.5%, cross-source accuracy). Used 2026-11-11 (#1087 supply side, HoleCd(supply_drive), scorecard in the
+    PR, cross-source ACCURACY): the 64 duct-fed Ma_m 0 cylindrical points (30 deg co-aligned, one lab) under
+    McGreehanSchotsch + Eq. 17: station-static drive -33.1/43.5 % (2 unreachable), duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) -8.4/43.6 %
+    (all reachable); total drive with the inlet term off -4.5/17.4 % (IdelchikThick) / +2.1/17.9 %
+    (McGreehanSchotsch). The Ma_m 0.3/0.6 points inside the #1087 exit band are reachable as outflow since that
+    PR.'
   read_for: ['#807/#813 inlet-crossflow Cd of duct-fed holes vs McGreehan-Schotsch U1/Vi', 'exit-side crossflow Cd
       to Ma_m 1.2', shaped-hole (fan, laidback) Cd for FilmCoolingElement hole_type shaped, 'hole-inclination Cd
       term, 30 deg no-crossflow accuracy', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']
-  issues: [386, 807, 813, 1074]
+  issues: [386, 807, 813, 1074, 1087]
   records: [validation/cooling/data/gritsch1998/metadata.yaml, validation/cooling/extractions/gritsch_1998_shaped_hole_cd.md,
     validation/cooling/hole_cd_inclination_runner.py, validation/cooling/exit_crossflow_cd_runner.py]
   notes: 'Arrived 2026-11-02 in sources/new/ (from the user) as 557_1.pdf; moved from the wanted list. Companion
@@ -4613,7 +4628,7 @@ documents:
     solved directly): Gritsch 30 deg Ma_m 0.3 +0.8% -> -2.8%, 0.6 +15.9% -> +3.2%, 1.2 +46.8% -> +8.6%; Hay
     Minf 0.31 90 deg +11.2% -> -4.6% (outside the suction rows'' 30-78 deg; margin 0.25/0.5/0.75/1.0 gives
     -0.2/-4.6/-7.4/-9.3%), 30 deg parallel +11.4% -> +6.8%, perpendicular +12.3% -> +8.8%. Points inside p_m
-    < p0c < Pt_m (#1087) are not reachable through the element in a network. Behrendt 2008 E30 plates (k_perp
+    < p0c < Pt_m (#1087) were not reachable through the element in a network before #1122 (the direction now comes from the coolant drive against the chamber static, so they blow). Behrendt 2008 E30 plates (k_perp
     7.8-11.6, beyond 3.8, faded): Cd and coolant flow +1.1-1.6% (+2.8-3.1% with Eq. 8''s -C unfaded), the
     wrong direction for DLR''s coolant-flow excess; E20 (20 deg) is refused (suction-set A < 0 below 20.6
     deg).'
@@ -4694,38 +4709,40 @@ documents:
     at 90 deg, Figs. 8/12 30 deg, plateau maps Figs. 9, 10, 13, 14, Fig. 15 Cd vs u_j/u_inf. No correlation;
     Fig. 7 agrees with Rohde (TN D-5467) at M_inf 0. Detailed data in Benmansour''s 1981 M.Phil. thesis.'
   status: extracted
-  verdict: 'Screened 2026-10-28 (#800/#818, #807, #813). The foundational two-sided crossflow Cd study (Thole et
-    al. 1997 cite it as such). For #813: Cd referenced to the coolant TOTAL pressure (as Thole et al.), so the
-    supply dynamic head is booked once; even so coolant crossflow moves Cd -- 90 deg: -20% at low PR, -6% on
-    the plateau (Fig. 6, Table 4); 30 deg co-aligned: about +30% (Figs. 8, 10); perpendicular layout: lower at
-    both angles (Figs. 12-14) -- an angle- and orientation-dependent residual a duct-fed hole model must carry.
-    For #818 (exit-side default Rogers & Hersh): cross-source ACCURACY only for u_j/u_inf ~0.25-2 with L/D 6
-    holes, never the Gc/Gj ~125 stagnant-row regime; there these thick holes fall BELOW the fit (rough read,
-    Fig. 6, 90 deg, Mc 0: Cd 0.54 vs 0.70 at PR 1.02, 0.66 vs 0.80 at 1.04, 0.76 vs 0.80 at 1.1) -- recorded,
-    not acted on (impingement plates are thin, L/D ~1). Mainstream effect weak (-10 to -15% at low PR, Table 4).
-    For #807: nothing usable -- L/D 2 was measured (parallel tests) but not published as data: "for the range of
-    L/D of interest (2-10) it had hardly any effect on Cd" (p. 244), and without crossflow at high Re "Cd
-    becomes constant at a value ranging between 0.8 and 0.74 depending on L/D" (p. 247), unassigned; only
-    Fig. 7 (unlabelled L/D) might hold L/D 2 points. To use:
-    digitise Figs. 6, 5, 15 (and 8, 12). Digitised 2026-11-08, user-confirmed: Figs. 5, 6, 8, 11,
-    12, 15 (25 series, 174 marks, unscored -- no angle or two-sided crossflow term in combaero, so
-    cross-source accuracy data only); carpet labels of Figs. 9, 10, 13, 14 transcribed (two suspected
-    misprints flagged); Fig. 7 not digitised (symbols over Rohde''s). Used 2026-11-09
-    (validation/cooling/hole_cd_inclination_runner.py, cross-source ACCURACY, not scored) for the opt-in
-    diagram 3-2 hole-inclination term: carpets Mc 0 Minf ~0 (the plenum-to-plenum corners) 30 deg +10.4% ->
-    -0.6% (parallel), +13.5% -> +2.2% (perpendicular), 90 deg unchanged (-0.5%, +3.4%); predicted
-    Cd(30)/Cd(90) 1.00 -> 0.90 against 0.85-0.94 (Figs. 8/6, Mc 0, Minf .31) and 0.90/0.91 (carpets). The Mc
-    0, Minf .31 series keep a +11-12% bias from their low-PR, exit-crossflow points either way. Used
-    2026-11-10 (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not scored) for the
-    opt-in Rowbury 2001 exit-crossflow term on those Mc 0, Minf .31 series (inclination term on): 90 deg +11.2%
-    -> -4.1%, 30 deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%.
-    The inclination term is default-on for cylindrical holes since 2026-11-10 (hole-Cd audit stage 1):
-    through FilmCoolingElement, 30 deg Minf .31 parallel +23.2% -> +11.5%, perpendicular +26.1% -> +14.1% (7
-    clean marks; fig12''s PR >= 1.9 cluster excluded as overplotted), 90 deg cells unchanged bit for bit.'
+  verdict: 'Screened 2026-10-28 (#800/#818, #807, #813). The foundational two-sided crossflow Cd study (Thole
+    et al. 1997 cite it as such). For #813: Cd referenced to the coolant TOTAL pressure (as Thole et al.), so
+    the supply dynamic head is booked once; even so coolant crossflow moves Cd -- 90 deg: -20% at low PR, -6%
+    on the plateau (Fig. 6, Table 4); 30 deg co-aligned: about +30% (Figs. 8, 10); perpendicular layout: lower
+    at both angles (Figs. 12-14) -- an angle- and orientation-dependent residual a duct-fed hole model must
+    carry. For #818 (exit-side default Rogers & Hersh): cross-source ACCURACY only for u_j/u_inf ~0.25-2 with
+    L/D 6 holes, never the Gc/Gj ~125 stagnant-row regime; there these thick holes fall BELOW the fit (rough
+    read, Fig. 6, 90 deg, Mc 0: Cd 0.54 vs 0.70 at PR 1.02, 0.66 vs 0.80 at 1.04, 0.76 vs 0.80 at 1.1) --
+    recorded, not acted on (impingement plates are thin, L/D ~1). Mainstream effect weak (-10 to -15% at low
+    PR, Table 4). For #807: nothing usable -- L/D 2 was measured (parallel tests) but not published as data:
+    "for the range of L/D of interest (2-10) it had hardly any effect on Cd" (p. 244), and without crossflow at
+    high Re "Cd becomes constant at a value ranging between 0.8 and 0.74 depending on L/D" (p. 247),
+    unassigned; only Fig. 7 (unlabelled L/D) might hold L/D 2 points. To use: digitise Figs. 6, 5, 15 (and 8,
+    12). Digitised 2026-11-08, user-confirmed: Figs. 5, 6, 8, 11, 12, 15 (25 series, 174 marks, unscored -- no
+    angle or two-sided crossflow term in combaero, so cross-source accuracy data only); carpet labels of Figs.
+    9, 10, 13, 14 transcribed (two suspected misprints flagged); Fig. 7 not digitised (symbols over Rohde''s).
+    Used 2026-11-09 (validation/cooling/hole_cd_inclination_runner.py, cross-source ACCURACY, not scored) for
+    the opt-in diagram 3-2 hole-inclination term: carpets Mc 0 Minf ~0 (the plenum-to-plenum corners) 30 deg
+    +10.4% -> -0.6% (parallel), +13.5% -> +2.2% (perpendicular), 90 deg unchanged (-0.5%, +3.4%); predicted
+    Cd(30)/Cd(90) 1.00 -> 0.90 against 0.85-0.94 (Figs. 8/6, Mc 0, Minf .31) and 0.90/0.91 (carpets). The Mc 0,
+    Minf .31 series keep a +11-12% bias from their low-PR, exit-crossflow points either way. Used 2026-11-10
+    (validation/cooling/exit_crossflow_cd_runner.py, cross-source ACCURACY, not scored) for the opt-in Rowbury
+    2001 exit-crossflow term on those Mc 0, Minf .31 series (inclination term on): 90 deg +11.2% -> -4.1%, 30
+    deg parallel +11.4% -> +6.9%, perpendicular +12.3% -> +9.0%. The inclination term is default-on for
+    cylindrical holes since 2026-11-10 (hole-Cd audit stage 1): through FilmCoolingElement, 30 deg Minf .31
+    parallel +23.2% -> +11.5%, perpendicular +26.1% -> +14.1% (7 clean marks; fig12''s PR >= 1.9 cluster
+    excluded as overplotted), 90 deg cells unchanged bit for bit. Used 2026-11-11 (#1087 supply side,
+    cross-source ACCURACY): 16 duct-fed Minf 0 points, 90 deg normal holes, McGreehanSchotsch + Eq. 17:
+    station-static drive -3.8/7.6 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +7.1/12.1 %; 30 deg holes are scored only with a
+    mainstream (no exit term: co-aligned -6.0/16.3 u4 -> +6.1/20.3, perpendicular +11.7/14.2 u2 -> +26.4/30.9).'
   read_for: ['#813 duct-fed hole Cd reference pressure and coolant-side crossflow', '#800/#818 cross-source check
       of the exit-side grazing Cd', '#807 L/D effect (none usable)', 'hole-inclination Cd term, 30/90 deg
       ratio', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']
-  issues: [800, 807, 813, 1074]
+  issues: [800, 807, 813, 1074, 1087]
   records: [validation/cooling/data/hay1983/metadata.yaml, validation/cooling/extractions/hay_1983_crossflow_cd.md,
     validation/cooling/hole_cd_inclination_runner.py, validation/cooling/exit_crossflow_cd_runner.py]
   notes: Arrived 2026-10-28 as docs/new/243_1_Bensamour_1983.pdf (was on the wanted list). Its detailed data are in
@@ -4813,10 +4830,12 @@ documents:
     ratio per duct Mach number, inlet corner radius r/d 0-0.488. Charts only, chart-lookup procedure,
     no correlation.'
   status: accuracy
-  verdict: Cross-source accuracy set for the McGreehan-Schotsch crossflow and corner-radius terms (Fig.
-    10 digitised); also supplies validity statements. No correlation to implement.
+  verdict: 'Cross-source accuracy set for the McGreehan-Schotsch crossflow and corner-radius terms (Fig. 10
+    digitised); also supplies validity statements. No correlation to implement. Used 2026-11-11 (#1087 supply
+    side, cross-source ACCURACY but inside MS''s Fig. 4 fitting compilation): Fig. 10''s 30 points under
+    McGreehanSchotsch + Eq. 17: station-static drive +17.9/22.8 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +30.3/41.5 %.'
   read_for: ['#375 jet-plate Cd crossflow validity', McGreehan-Schotsch U1/Vi term accuracy]
-  issues: [333, 339, 375, 381, 382, 388, 389, 433]
+  issues: [333, 339, 375, 381, 382, 388, 389, 433, 1087]
   records: [validation/cooling/data/rohde1969/, validation/cooling/data/mcgreehan_schotsch1988/fig6_rohde_td0p51.csv,
     validation/cooling/extractions/orifice_discharge_coefficient.md, python/tests/test_orifice_validation.py]
 - file: sources/orifices/wu_burton_schoenau_2002_orifces.pdf

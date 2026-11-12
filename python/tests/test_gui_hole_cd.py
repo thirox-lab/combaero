@@ -26,6 +26,7 @@ from combaero.network.hole_cd import (
     HOLE_CD_CORRELATIONS,
     HOLE_CD_EXIT_CROSSFLOW_MODELS,
     HOLE_CD_INLET_CROSSFLOW_MODELS,
+    HOLE_CD_SUPPLY_DRIVES,
 )
 from gui.backend import schemas
 from gui.backend.export import FILE_VERSION
@@ -62,6 +63,7 @@ def test_hole_cd_data_mirrors_the_library_spec() -> None:
     assert _literal("inclination") == set(CD_INCLINATION_MODELS)
     assert _literal("inlet_crossflow") == set(HOLE_CD_INLET_CROSSFLOW_MODELS)
     assert _literal("exit_crossflow") == set(HOLE_CD_EXIT_CROSSFLOW_MODELS)
+    assert _literal("supply_drive") == set(HOLE_CD_SUPPLY_DRIVES)
     assert HoleCd(**HoleCdData().model_dump()) == HoleCd()
 
 

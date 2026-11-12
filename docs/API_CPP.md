@@ -1420,6 +1420,32 @@ struct HoleCdResult {
 HoleCdResult hole_cd_compose(const HoleCdModel& model, const DischargeHoleGeometry& hole,
                              const OrificeGeometry& orifice, const HoleCdInputs& inputs);
 
+// The supply drive of a duct-fed hole (#1087): the pressure its ideal flow is
+// taken from. Total (the rule, the default): the duct's stagnation pressure,
+// the closure's -residual (P + q; past the sonic static its bounded
+// continuation), q at the mean duct flow m_dot through `area`. Static: the
+// station static P (the pre-0.12 drive). Analytic partials of P_drive by P,
+// Tt, m_dot (signed) and Y.
+enum class HoleSupplyDrive { Static, Total };
+struct HoleSupplyDriveResult { double P_drive, q_dyn, dP_dP, dP_dTt, dP_dm_dot;
+                               std::vector<double> dP_dY; };
+HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double Tt,
+                                        const std::vector<double>& Y, double m_dot,
+                                        double area, bool incompressible = false);
+// A static-referenced hole Cd onto the total drive (the rule: holes run from
+// the upstream total to the downstream static): Cd_T / Cd_S =
+// m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2), both ideal flows from
+// orifice_compressible_residuals_and_jacobian (Cd 1, beta 0); (P1, T1) the
+// supply's static state. incompressible: the incompressible kernel's exact
+// ratio sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2) (an element in the
+// incompressible regime, the solver's incompressible proxy included; T1, Tt1
+// and Y do not enter). 0 where P1 <= P2. Analytic partials.
+struct HoleDriveCdRatio { double ratio, d_dP1, d_dT1, d_dPt1, d_dTt1, d_dP2;
+                          std::vector<double> d_dY; };
+HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y,
+                                               bool incompressible = false);
+
 // Merge chamber (#471): the main-inlet face from the impulse balance
 //   P_f + m_main^2 R T_f / (P_f A^2) = P + m_out^2/(rho A^2) - J/A
 // with Tt and Tt_main STAGNATION temperatures (#578): the face's static T_f

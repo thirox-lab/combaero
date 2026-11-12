@@ -385,6 +385,10 @@ class HoleCdData(BaseModel):
     exit_crossflow: Literal[
         "auto", "none", "rowbury_2001", "rogers_hersh_1976", "florschuetz_metzger_su_1982"
     ] = "auto"
+    # The duct-fed hole's drive (#1087): "auto" = "total", every hole from the
+    # upstream total to the downstream static; "static" the pre-0.12 drive. A
+    # pass-through field: no Inspector select yet (#1124).
+    supply_drive: Literal["auto", "static", "total"] = "auto"
 
     @model_validator(mode="before")
     @classmethod

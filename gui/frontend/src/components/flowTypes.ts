@@ -80,6 +80,10 @@ export type HoleCdExitCrossflow =
 	| "rowbury_2001"
 	| "rogers_hersh_1976"
 	| "florschuetz_metzger_su_1982";
+// The duct-fed hole's drive (#1087): "auto" = "total" (upstream total to
+// downstream static); "static" the pre-0.12 drive. Carried through the file,
+// no editor select yet (#1124).
+export type HoleCdSupplyDrive = "auto" | "static" | "total";
 
 export interface HoleCdData {
 	correlation?: HoleCdCorrelation | null;
@@ -88,6 +92,7 @@ export interface HoleCdData {
 	inclination?: HoleCdInclination;
 	inlet_crossflow?: HoleCdInletCrossflow;
 	exit_crossflow?: HoleCdExitCrossflow;
+	supply_drive?: HoleCdSupplyDrive;
 }
 
 // The node types built as a hole element, each with a `hole_cd`.
