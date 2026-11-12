@@ -2261,20 +2261,33 @@ unified:
   reference of the plenum-fed Cd data, coolant total to exit static. A
   fraction of the head in between is not offered (no source gives it);
   `Cd_supply_drive_head_fraction` reports how much of the drive the choice
-  decides. `"static"` on a hole that is not duct-fed is refused. The
-  direction, the reverse flow, `dP_drive` / `is_ingesting`, the exit
+  decides. `"static"` on a hole that is not duct-fed is refused, and so is
+  `"total"` with McGreehan-Schotsch's supply-crossflow term on: Eq. 17's Cd
+  is referenced to the station static, so on the duct total it is not the
+  authors' model, and converted exactly
+  (`Cd_T = Cd_S psi(p1, T1 -> p2) / psi(Pt1, Tt1 -> p2)`) it gives the
+  static drive's flow again. `"total"` goes with `inlet_crossflow="none"`.
+  The direction, the reverse flow, `dP_drive` / `is_ingesting`, the exit
   density of the Rowbury term and the second-law check read the same drive.
-  With `"total"`, a duct-fed panel's jet momentum into a merge chamber
-  (`injection_momentum`) still takes the station's own pressure: the hook
-  sees no segment flows (a known limitation).
-  - **The default is open, not settled (2026-11-12).** Cross-source, the
-    total drive helps co-aligned 30 deg holes (Gritsch 1998, one lab: bias
-    -33 % -> -8 %, RMS unchanged 43.5 %) and worsens normal holes (pooled RMS
-    17.5 % -> 29.6 %, McGreehan & Schotsch's own Fig. 6 14.5 % -> 48 %). The
-    route to a decided default: Gritsch et al. 2001 (inclination x
-    orientation x supply crossflow; on the sources wanted list), and a check
-    whether the published inlet-crossflow correlations convert to one common
-    drive convention.
+  - **Choosing a drive is choosing a recovered-head fraction f** of the
+    supply's dynamic head: f = 0 static, f = 1 total. As bookkeeping the two
+    conventions are equivalent (each held set converts exactly, given its
+    dynamic head). As a drive they are physics, and the held data split by
+    lean (cross-source, `tmp/cd_audit/drive_convention.md`). f ~ 0 holds for
+    normal holes (Kaddah, Rohde, McGreehan-Schotsch, Hay: 4 labs, 11 sets)
+    and for holes leaning across the supply flow (Hay 1983). f ~ 1 holds for
+    30 deg holes leaning WITH it (Gritsch 1998, one lab). So `"static"` is
+    the default (2026-11-12), and co-aligned holes are its known miss.
+  - **The route to a lean-dependent f** (opt-in is not an end state): a
+    second co-aligned lab (Rohde 1969 Fig. 11, held, not digitised) and
+    orientation data, Gritsch, Schulz & Wittig 2001 (J. Turbomach. 123(4),
+    781-787, doi:10.1115/1.1397306; on the sources wanted list).
+  - **Known limitations.** The static drive pairs the station's static P
+    with the node's TOTAL temperature, where McGreehan & Schotsch take the
+    static temperature: 0 to +3.5 % in the ideal flow on Gritsch's points.
+    With `"total"`, a duct-fed panel's jet momentum into a merge chamber
+    (`injection_momentum`) still takes the station's own pressure, because
+    the hook sees no segment flows.
 - **A hole into a flowing chamber (#1087, since 0.12.0).** A film,
   effusion or slot hole discharging into a `MomentumChamberNode` takes its
   direction from its supply drive against the chamber's STATIC pressure,

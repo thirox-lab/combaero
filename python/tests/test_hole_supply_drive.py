@@ -170,10 +170,10 @@ def test_the_total_drive_flows_the_cd_from_the_ducts_total(ms: bool) -> None:
     # (static + the closure's head at the mean of the two segment flows) is
     # the element's Cd; from the static it is not (that is the old wiring,
     # where the same ratio from the STATIC was the Cd).
-    spec = (
-        HoleCd(correlation="McGreehanSchotsch")
-        if ms
-        else HoleCd(correlation="IdelchikThick", inlet_crossflow="none")
+    # Bases without the supply-crossflow term: "total" refuses Eq. 17 (its
+    # Cd is static-referenced, see the refusal test).
+    spec = HoleCd(
+        correlation="McGreehanSchotsch" if ms else "IdelchikThick", inlet_crossflow="none"
     )
     a_h = math.pi * D_HOLE**2 / 4.0
     for drive in ("total", "static"):
@@ -254,6 +254,20 @@ def test_static_is_refused_where_the_hole_is_not_duct_fed(make: str) -> None:
     }[make]  # fmt: skip
     with pytest.raises(ValueError, match="supply_drive='static'"):
         build()
+
+
+@pytest.mark.parametrize("inlet", ["auto", "mcgreehan_schotsch"])
+def test_total_with_the_static_referenced_eq_17_term_is_refused(inlet: str) -> None:
+    # McGreehan-Schotsch's Eq. 17 Cd is defined on the station STATIC; on
+    # the duct total it would be another model (the PR 6 scorecard's normal-
+    # hole 17.5 -> 29.6 % was that mismatch), and converted exactly it is
+    # the static drive's flow again. The liner default (the term on) too.
+    spec = HoleCd(correlation="McGreehanSchotsch", inlet_crossflow=inlet, supply_drive="total")
+    with pytest.raises(ValueError, match="Eq. 17's Cd is referenced to the duct station's STATIC"):
+        _duct_net(spec)
+    with pytest.raises(ValueError, match="inlet_crossflow='none'"):
+        _liner_net(HoleCd(supply_drive="total"))
+    _liner_net(HoleCd(supply_drive="total", inlet_crossflow="none"))  # f = 1, term off
 
 
 def test_an_unknown_supply_drive_is_refused() -> None:
@@ -396,7 +410,8 @@ def test_second_law_holds_inside_the_band_and_on_a_liner() -> None:
     assert r["__second_law__"]["eff"]["verdict"] == "pass"
     assert r["__second_law__"]["eff"]["sigma_norm"] > 0.0
     for chamber, drive in ((False, "auto"), (True, "auto"), (False, "total"), (True, "total")):
-        _, r = _solve(_liner_net(HoleCd(supply_drive=drive), chamber=chamber))
+        spec = HoleCd(supply_drive=drive, inlet_crossflow="none" if drive == "total" else "auto")
+        _, r = _solve(_liner_net(spec, chamber=chamber))
         assert r["__second_law_failures__"] == []
         verdicts = {eid: v["verdict"] for eid, v in r["__second_law__"].items()}
         assert all(v == "pass" for v in verdicts.values()), verdicts
@@ -453,7 +468,8 @@ def _fd_check(
 @pytest.mark.parametrize("chamber", [False, True])
 @pytest.mark.parametrize("drive", ["total", "static"])
 def test_the_liner_jacobian_is_analytic(drive: str, chamber: bool) -> None:
-    s, r = _solve(_liner_net(HoleCd(supply_drive=drive), chamber=chamber))
+    spec = HoleCd(supply_drive=drive, inlet_crossflow="none" if drive == "total" else "auto")
+    s, r = _solve(_liner_net(spec, chamber=chamber))
     x = np.array([r[n] for n in s.unknown_names])
     d = r["__element_diag__"]
     dp_min = min(abs(d[e]["dP_drive"]) for e in ("ln__p1", "ln__p2", "ln__p3"))

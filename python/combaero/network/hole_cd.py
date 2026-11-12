@@ -128,17 +128,23 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #:             convention, which their Eq. 17 inlet-crossflow Cd is defined
 #:             on. Duct-fed holes only.
 #:   "auto"    "static" on a duct-fed hole, "total" (its node's Pt) on every
-#:             other. The duct-fed default is open, not settled (owner,
-#:             2026-11-12): cross-source, the total drive helps co-aligned
-#:             30 deg holes (Gritsch 1998, one lab: bias -33 % -> -8 %) and
-#:             worsens normal ones (pooled RMS 17.5 % -> 29.6 %, including
-#:             McGreehan & Schotsch's own Fig. 6, 14.5 % -> 48 %). Route to a
-#:             decided default: Gritsch et al. 2001 (inclination x
-#:             orientation x supply crossflow, wanted), and a check whether
-#:             the published inlet-crossflow correlations convert to one
-#:             common drive convention. A fraction of the head in between is
-#:             not offered (no source gives it); Cd_supply_drive_head_fraction
-#:             reports how much of the drive the choice decides.
+#:             other. Choosing a drive is choosing the recovered fraction f
+#:             of the supply's dynamic head, f = 0 static, f = 1 total
+#:             (tmp/cd_audit/drive_convention.md, cross-source): held data
+#:             give f ~ 0 for normal holes (4 labs, 11 sets) and for holes
+#:             leaning across the supply flow (Hay 1983), f ~ 1 for 30 deg
+#:             holes leaning WITH it (Gritsch 1998, one lab). Static is
+#:             therefore the default (owner, 2026-11-12); a lean-dependent f
+#:             needs a second co-aligned lab and orientation data: Gritsch,
+#:             Schulz & Wittig 2001 (J. Turbomach. 123(4), 781-787,
+#:             doi:10.1115/1.1397306, on the sources wanted list). "total" with
+#:             McGreehan-Schotsch's static-referenced Eq. 17 term is refused.
+#:             A fraction in between is not offered (no source gives it);
+#:             Cd_supply_drive_head_fraction reports how much of the drive
+#:             the choice decides. The station's static drive pairs the
+#:             static P with the node's TOTAL temperature, where McGreehan
+#:             & Schotsch take the static temperature (0 to +3.5 % in the
+#:             ideal flow on Gritsch's points): a known limitation.
 HOLE_CD_SUPPLY_DRIVES = ("auto", "static", "total")
 #: Deprecation of the per-element hole-Cd keywords (HoleCd replaces them).
 HOLE_CD_KWARGS_DEPRECATED_IN = "0.12.0"
@@ -704,6 +710,22 @@ class _HoleCdChain:
         self.duct_fed = bool(duct_fed)
         self.supply_duct = _resolve_inlet_crossflow(name, spec, duct_fed)
         self.supply_drive = _resolve_supply_drive(name, spec, duct_fed)
+        if self.supply_duct and self.supply_drive == "total":
+            # McGreehan-Schotsch's Eq. 17 Cd is referenced to the station
+            # STATIC: on the duct's total it would be a different, unsourced
+            # model (the 17.5 -> 29.6 % normal-hole RMS of the PR 6 scorecard
+            # was this mismatch, not the drive). Converted exactly,
+            # Cd_T = Cd_S psi(p1, T1 -> p2) / psi(Pt1, Tt1 -> p2), the flow is
+            # the static drive's again, so there is nothing to convert to:
+            # refused. "total" is the recovered head f = 1 of a
+            # total-referenced base, i.e. with the inlet term off.
+            raise ValueError(
+                f"{name}: HoleCd(supply_drive='total') with McGreehan-Schotsch's supply "
+                "crossflow term: Eq. 17's Cd is referenced to the duct station's STATIC "
+                "pressure, so on the duct total it is not the authors' model, and "
+                "converted it is the static drive's flow again. Use supply_drive='static' "
+                "(or 'auto') with the term, or 'total' with inlet_crossflow='none'."
+            )
         return model, exit_model
 
     def configure_plain(self, name: str, spec: HoleCd) -> None:
