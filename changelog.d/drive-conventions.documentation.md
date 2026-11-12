@@ -1,0 +1,5 @@
+- **Drive conventions documented.** A new "Drive conventions" section in `docs/API_PYTHON.md` states which pressure each element reads at its downstream node, and which node owns the exit dynamic head.
+  - **Static-receiving:** the orifice family (holes, rows, connections) and crossflow segments. **Total-receiving:** channels, pressure losses, area changes, lossless links, the splitter reference, vortex, turbomachines and junction port rows.
+  - Into a `PlenumNode` or `CombustorNode` (at rest) a total-receiving element recovers its exit head. A `MomentumChamberNode` carries its own head, and a `PressureBoundary` loses it where `exit_head_lost` is read.
+  - The section records the rule for holes (upstream Pt to downstream static) and the known gaps: #1124, #1125, and outflow boundaries that `PressureLossElement`, `AreaChangeElement` and `LosslessConnectionElement` treat as perfect diffusers.
+  - Three docstrings that said otherwise are corrected: `exit_total` in `include/fanno_mach.h`, `PressureBoundary.coupling`, and `CrossflowSegmentElement`.

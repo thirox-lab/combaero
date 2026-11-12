@@ -4137,7 +4137,8 @@ class PressureBoundary(NetworkNode):
         #: ``"static"``  -- it is the static pressure at the duct face, and the
         #:                  duct's exit dynamic head is dissipated in the
         #:                  expansion. The standard model for a bare duct
-        #:                  discharging into a plenum or to atmosphere.
+        #:                  discharging to atmosphere or a large dump volume
+        #:                  represented by this boundary.
         #: ``"auto"``    -- infer from flow direction: inflow takes total,
         #:                  outflow takes static.
         #:
@@ -4153,6 +4154,16 @@ class PressureBoundary(NetworkNode):
         #: never imposed. Measured on the combustor of #351: 1.34x an
         #: impossible ceiling under total coupling, M = 0.752 and comfortable
         #: under static. See issue #360.
+        #:
+        #: Only elements that read this flag apply it (``exit_head_lost``):
+        #: ChannelElement (incompressible and Fanno) and PortDischargeElement.
+        #: Static-receiving elements (orifices, holes) lose their exit head
+        #: whatever the setting. PressureLossElement, AreaChangeElement and
+        #: LosslessConnectionElement do not read it and recover the head here
+        #: even under ``"static"``, a known inconsistency. A PlenumNode or
+        #: CombustorNode is NOT a static coupling: it is at rest (Pt = P), and
+        #: a channel meeting it recovers its exit head. See "Drive conventions"
+        #: in docs/API_PYTHON.md.
         self.coupling: str = coupling
 
     def exit_head_lost(self, is_outflow: bool) -> bool:
@@ -11604,8 +11615,11 @@ class CrossflowSegmentElement(ChannelElement):
       entry acceleration ``(1 + K_in) m^2/(2 rho A^2)`` at the duct (to-node)
       static density instead of a from-station. Reversed, the duct discharges into
       the reservoir at static continuity, the same as an exit: no term.
-    * an exit into a plenum (no to-station) loses the dynamic head: static
-      continuity, as any Pt-coupled channel into a plenum. Reversed, that node
+    * an exit into a plenum (no to-station) loses the dynamic head: the
+      segment's exit static meets the plenum's pressure (static continuity).
+      A plain ``ChannelElement`` into the same plenum does the opposite: it
+      couples Pt to the plenum's Pt (= P, at rest) and recovers the head
+      (see "Drive conventions" in docs/API_PYTHON.md). Reversed, that node
       at rest is a reservoir: the gas accelerates out of it (one dynamic head,
       no loss; compressible, the duct end takes its Pt).
 

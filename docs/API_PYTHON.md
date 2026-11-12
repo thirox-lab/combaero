@@ -2128,6 +2128,65 @@ panel = EffusionPlateElement("eff", "coolant", "liner", hole_diameter=0.8e-3,
 - In the GUI, inflows on the chamber's "s" handle are side streams; the one on
   its flow handle is the main inlet.
 
+### Drive conventions: which pressure an element reads downstream
+
+Every element reads both of its nodes' `P` and `Pt`. Elements use one of two
+conventions at the node the flow goes into.
+
+- **Static-receiving:** the element drives against the downstream STATIC `P`
+  and loses its own exit head into the receiver.
+  - `OrificeElement` and its subclasses: film, effusion, slot and impingement
+    rows, and the effective-area and Cd connections;
+  - `CrossflowSegmentElement`: its stations hold the duct static, and an exit
+    with no to-station meets the next node at static continuity.
+- **Total-receiving:** the element matches the downstream `Pt`, so the
+  receiving node decides what happens to the head.
+  - `ChannelElement`: incompressible and Fanno, ribbed and pin-fin;
+  - `PressureLossElement`, `AreaChangeElement`, `LosslessConnectionElement`,
+    the `SplitterOutletElement` reference and `VortexElement`;
+  - the turbomachines, whose pressure ratio is total-to-total;
+  - the junction port rows (`MultiPortChamberBase`): the port chambers own
+    each port's head, and the Mynard and constant-K losses are defined on `Pt`.
+
+The receiving node decides where a total-receiving element's head goes:
+
+| receiver | relation | the exit head |
+|---|---|---|
+| `PlenumNode`, `CombustorNode` | at rest, `Pt = P` | recovered: the node takes the element's exit `Pt` as its `P`, so no dump loss is charged |
+| `MomentumChamberNode` | `Pt = P + q`, the head of its own throughput at its own `area` | carried by the chamber; with the element's exit area the two conventions agree |
+| `PressureBoundary` | `exit_head_lost(is_outflow)` from `coupling` (`"auto"`: lost on outflow) | lost where the element reads the flag (`ChannelElement`, and `PortDischargeElement` out of a chamber), recovered where it does not |
+
+Into a plenum a total-receiving element is a perfect diffuser. That is by
+design: plenums are also used as duct stations, as in a duct cut into
+segments, which then sum exactly to the uncut duct. A real dump into a large
+volume has no node model yet.
+
+**Holes and orifices (owner's rule, 2026-11-12).** A hole drives from the
+upstream `Pt` to the downstream static, and the hole element owns the energy
+closure: the jet's head is its own, not the receiver's. The orifice family's
+forward drive already follows it. Its flow direction does not yet: into a
+`MomentumChamberNode` it is still decided from `Pt - Pt` ([#1087](https://github.com/thirox-lab/combaero/issues/1087)). [#1122](https://github.com/thirox-lab/combaero/pull/1122) (open)
+moves film, effusion and slot holes to the static drive; the plain
+`OrificeElement` and the connection elements follow after it.
+
+**Known gaps:**
+- How much of the supply head a hole recovers depends on its lean relative to
+  the supply flow and on the solved flow direction. No element declares the
+  lean: [#1124](https://github.com/thirox-lab/combaero/issues/1124).
+- A `CrossflowSegmentElement` station with the duct flow reversed creates
+  total pressure: [#1125](https://github.com/thirox-lab/combaero/issues/1125).
+- Outflow boundaries are inconsistent. `ChannelElement` and
+  `PortDischargeElement` honour `PressureBoundary.exit_head_lost`, and the
+  orifice family loses its head anyway. `PressureLossElement`,
+  `AreaChangeElement` and `LosslessConnectionElement` do not read the flag and
+  recover the whole head at an outflow boundary. A zero-loss
+  `PressureLossElement` there passes about twice the flow of a short channel of
+  the same area: 0.423 against 0.196 kg/s at 1.05e5 into 1.0e5 Pa
+  (drive-convention audit, 2026-11-12). No issue is filed for it yet.
+- `PressureLossElement` stays `Pt` to `Pt` on purpose. Lefebvre's pressure-loss
+  factor and a `zeta` loss are total-to-total and already include any dump,
+  and a fraction loss has no velocity to make a head from.
+
 ### Network Elements
 
 **Writing or subclassing an element.** Every element declares the units of its residual rows for the solver's row scaling: `residual_scale_kind = "p"` (Pa) or `"mdot"` (kg/s), a class attribute or a property; a junction (`MultiPortChamberBase`) declares `row_scale_kinds()`, one per row. There is no default. `FlowNetwork.validate()` raises `TypeError` unless the declaration sits on the class that defines `residuals` or a subclass of it, so a subclass that rewrites `residuals` re-declares its units. A wrong kind weights the row 1e5-1e9 wrong in the norm the root finder minimises (RESIDUAL-ROW-SCALING in `NetworkSolver._build_residual_scales`). A strict solve (see the safety net above) also checks every declaration against the Jacobian at the converged solution and raises `RowKindMismatchError` (a `TypeError`, in `combaero.network.solver`) on a misfiled row; `solver.check_row_kinds(x)` returns the per-row report (`owner`, `declared`, `measured`, `verdict` = agree / DISAGREE / unclear / untestable) for any `x`, best a converged one.
