@@ -25,8 +25,11 @@ Energy balance note:
 Counterflow pressure budget (both in series):
   dP_total/P = dP_burner/P + dP_cool/P
 
-Design sweep: vary bypass fraction f_cool to find minimum cooling flow
-that keeps T_metal < 800 C for three channel geometries:
+Bypass sweep: vary the cooling fraction f_cool for two channel geometries
+and print, per point, T_metal, the total dP/P (burner + coolant) and the
+thermal performance factor eta_thp, plus the smallest f_cool that keeps
+T_metal < 800 C. The example reports these numbers; it does not judge
+which geometry is the better choice:
   - Smooth
   - Rib-roughened  (Han et al. 1988, e/D=0.07, P/e=8, alpha=60 deg)
 

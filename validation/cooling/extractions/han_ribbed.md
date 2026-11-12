@@ -745,6 +745,35 @@ items above, because those are facts about a page and these are not -- a
 reviewer should be able to disagree with one of these without doubting the
 transcription.
 
+### D7. The element's drop: Han's area weighting run forwards, in Darcy form (#1106)
+
+**Decision.** A ribbed channel's drop uses
+`f_D = 4 [phi f + (1 - phi) 0.046 Re^-0.2]` (C++ `rib_channel_friction`),
+`phi` the ribbed perimeter fraction (`W/(W+H)` for two walls, half for one,
+1 for four).
+
+**Why.** Two definitions in Han and Park (1988). Fanning: p. 187 defines the
+measured `fbar = dP / {4 (dL/D)[G^2/(2 rho g_c)]}` against the Fanning Blasius
+`f(FD) = 0.046 Re^-0.2` (Eq. 8). Four-sided: Eq. 6 forms `f` from `fbar` by area
+weighting. The element previously used `f (L/D) rho V^2/2` -- Fanning as Darcy
+and four-sided for any wall count -- and scored -59.1% on Han's own two-wall
+data through the element (`rib_element_friction_runner`), -0.9% / 5.9% MAE
+after. The correlation-level harness never saw it: it inverted Eq. 6 itself.
+
+**Alternatives.** Keeping `f` and only multiplying by 4: 1.8x high at W/H 1
+for two walls. A per-wall-count constant: no source.
+
+**Outside the measured configuration.** No Han paper measured one or four
+ribbed walls, so both set `extrapolated`. Evidence for the weighting there is
+cross-source: Taslim and Spring's one-side series agree model-free
+(`fbar_1 = (fbar_2 + f_s)/2`) within -12%..+11% at e/D <= 0.107 and miss by
++50% to +275% at e/D >= 0.125 (blockage beyond every Han set); Chandra and
+Cook's printed two- and four-wall drop ratios (Han 2013 p. 414) agree within
+3%. Pinned by `python/tests/test_rib_element_friction.py` and
+`test_ribbed_channel_element.py`. The one-wall high-blockage case (e/D > 0.11,
++62.9% bias over 34 points through the element) stays flagged; a sourced term
+for it, scored as cross-source accuracy, is #1129.
+
 ### D5. Extend `RibCorrelationSet` rather than give Eq. 4.17/4.18 a separate type
 
 **Decision, 2026-09-20.** `han_park_1988_angled()` needed two shapes the

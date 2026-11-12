@@ -21,14 +21,16 @@
 // -- 10^0.35 = 2.24x here -- which never looks like a trend and so survives
 // review. Every term therefore carries its own reference value.
 //
-// R CARRIES NO e+ TERM by construction, so the friction factor this family
-// produces is independent of Reynolds number. That is true of both
-// correlations in scope (Han 1988, Rallabandi et al. 2009) and it makes
-// df/d(mdot) identically zero. A correlation whose R varies with e+ cannot be
+// R CARRIES NO e+ TERM by construction, so the four-sided friction factor
+// this family produces is independent of Reynolds number. That is true of
+// both correlations in scope (Han 1988, Rallabandi et al. 2009). A channel
+// with smooth walls as well still depends on Re through their f_s -- see
+// rib_channel_friction. A correlation whose R varies with e+ cannot be
 // expressed here and would need its own implicit solve.
 
 #include <limits>
 #include <string>
+#include <tuple>
 
 namespace combaero {
 namespace cooling {
@@ -349,12 +351,14 @@ struct RibGeometry {
 // POINTS are guarded smoothly.
 struct RibResult {
   double R = 0.0;        // friction roughness function
-  double f = 0.0;        // four-sided channel friction factor
+  // Four-sided channel friction factor, FANNING (see rib_channel_friction
+  // for a channel's Darcy value with smooth walls as well).
+  double f = 0.0;
   double e_plus = 0.0;   // roughness Reynolds number, signed with the flow
   double G = 0.0;        // heat-transfer roughness function
   double St_r = 0.0;     // ribbed-side Stanton number
-  // d(St_r)/d(Re). df/dRe is identically zero for this family -- R carries no
-  // e+ term -- so it is not reported.
+  // d(St_r)/d(Re). df/dRe of the four-sided f is identically zero for this
+  // family -- R carries no e+ term -- so it is not reported.
   double dSt_dRe = 0.0;
   // Four-wall average G, only when the set prints it (C_Gbar > 0); 0 and
   // false otherwise. Evaluated at the same smoothed e+ as G.
@@ -382,6 +386,61 @@ RibResult evaluate_rib(const RibCorrelationSet &set, const RibGeometry &geom,
 // field. Unlike the validity ranges, these are hard errors: they are mistakes,
 // not operating points.
 void validate_rib_set(const RibCorrelationSet &set);
+
+// ---------------------------------------------------------------------------
+// Channel friction for a duct with some of its walls ribbed (#1106)
+// ---------------------------------------------------------------------------
+//
+// RibResult::f is Han's FOUR-SIDED, FANNING friction factor. Both halves of
+// that sentence are definitions in the source:
+//
+//   FANNING. Han and Park (1988), p. 187, define the measured passage
+//   friction as fbar = dP / {4 (dL/D) [G^2 / (2 rho g_c)]}, i.e. Fanning
+//   (tau_w = f rho V^2 / 2); their smooth reference f(FD) = 0.046 Re^-0.2
+//   (Eq. 8) is the Fanning Blasius form. A Darcy drop needs 4 f.
+//
+//   FOUR-SIDED. The measured fbar is for two OPPOSITE ribbed walls (width W)
+//   and two smooth ones (height H). Han converts it to the all-ribbed channel
+//   by area weighting, f = fbar + (H/W)(fbar - f_s) (Eq. 6, "weighted by
+//   area"), with f_s = f(FD). R is formed from that f.
+//
+// So the friction of a channel with a ribbed perimeter fraction phi is the
+// same area weighting run forwards:
+//
+//   f_channel = phi f + (1 - phi) f_s(Re),   f_D = 4 f_channel   (Darcy)
+//
+// which for two opposite ribbed walls (phi = W/(W+H)) is exactly Han's
+// measured fbar again, and for four ribbed walls (phi = 1) is f. One ribbed
+// wall (phi = W/(2(W+H))) is the same weighting outside the configuration
+// Han measured -- see rib_ribbed_wall_fraction.
+
+// Han's smooth-channel friction f(FD) = 0.046 Re^-0.2, FANNING (Han and Park
+// 1988 Eq. 8; Han, Zhang and Lee 1991 Eq. 2): the f_s of the decomposition.
+inline constexpr double HAN_SMOOTH_FANNING_COEF = 0.046;
+inline constexpr double HAN_SMOOTH_FANNING_RE_EXP = -0.2;
+// Darcy f_D = 4 f_F (Fanning): wall shear tau = f_F rho V^2 / 2.
+inline constexpr double DARCY_PER_FANNING = 4.0;
+
+// Ribbed fraction of the wetted perimeter of a W x H duct with
+// `n_ribbed_walls` ribbed walls, ribs on the walls of width W:
+//   n = 2 (two opposite walls, Han's configuration):  W/(W+H)
+//   n = 4:                                             1
+//   n = 1 (one wall of width W):                       W/(2(W+H))
+// Throws std::invalid_argument for any other n (three ribbed walls has no
+// unambiguous geometry) or a non-positive W_H. A configuration choice, so it
+// is validated, not guarded.
+double rib_ribbed_wall_fraction(double W_H, int n_ribbed_walls);
+
+// (f_D, df_D/dRe): the DARCY friction factor of the whole channel,
+// f_D = 4 [phi f + (1 - phi) f_s(Re)], for the drop
+// dP = f_D (L/D_h) rho V^2 / 2. `Re` may be negative or zero: f_D is even in
+// Re and its derivative odd, with f_s evaluated at a smoothly floored |Re| so
+// both stay finite through zero flow. f itself carries no Re dependence (R
+// has no e+ term), so the derivative is the smooth walls' alone and vanishes
+// for n = 4.
+std::tuple<double, double> rib_channel_friction(const RibCorrelationSet &set,
+                                                const RibGeometry &geom,
+                                                double Re, int n_ribbed_walls);
 
 }  // namespace cooling
 }  // namespace combaero

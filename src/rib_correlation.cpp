@@ -3,6 +3,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 
 namespace combaero {
 namespace cooling {
@@ -362,6 +363,13 @@ constexpr double BRACKET_FLOOR = 1e-3;
 // a crash because it looks like a number.
 constexpr double ST_DENOM_FLOOR = 1e-3;
 
+// Smooth floor on |Re| in the smooth walls' f_s = 0.046 Re^-0.2, which is
+// infinite at zero flow. sqrt(Re^2 + eps^2) keeps f_s and its derivative
+// finite and continuous through zero, as EPLUS_FLOOR does for G; the drop
+// f_s m|m| still vanishes there. At Re = 1000 the distortion is 1e-7, three
+// orders below Han's validity (Re >= 10,000).
+constexpr double SMOOTH_RE_FLOOR = 1.0;
+
 double power_term(const RibTerm &t, double value) {
   if (t.exponent == 0.0) {
     return 1.0;
@@ -701,6 +709,48 @@ void validate_rib_set(const RibCorrelationSet &set) {
   require_positive_reference(set.G_pe, "G_pe");
   require_positive_reference(set.G_WH, "G_WH");
   require_positive_reference(set.G_alpha, "G_alpha");
+}
+
+double rib_ribbed_wall_fraction(double W_H, int n_ribbed_walls) {
+  if (!(W_H > 0.0) || !std::isfinite(W_H)) {
+    throw std::invalid_argument(
+        "rib_ribbed_wall_fraction: W_H must be positive and finite");
+  }
+  // Ribs sit on the walls of width W; the wetted perimeter is 2(W + H).
+  const double width_share = W_H / (W_H + 1.0);  // W / (W + H)
+  switch (n_ribbed_walls) {
+  case 1:
+    return 0.5 * width_share;
+  case 2:
+    return width_share;
+  case 4:
+    return 1.0;
+  default:
+    throw std::invalid_argument(
+        "n_ribbed_walls must be 1, 2 or 4, got " +
+        std::to_string(n_ribbed_walls) +
+        ". 2 means two opposite walls, which is the configuration the "
+        "correlations were measured on.");
+  }
+}
+
+std::tuple<double, double> rib_channel_friction(const RibCorrelationSet &set,
+                                                const RibGeometry &geom,
+                                                double Re, int n_ribbed_walls) {
+  const double phi = rib_ribbed_wall_fraction(geom.W_H, n_ribbed_walls);
+  const double f_four_sided = evaluate_rib(set, geom, Re).f;
+
+  // f_s at a smoothly floored |Re|; d|Re|_safe/dRe = Re / |Re|_safe.
+  const double re_safe = std::sqrt(Re * Re + SMOOTH_RE_FLOOR * SMOOTH_RE_FLOOR);
+  const double f_s =
+      HAN_SMOOTH_FANNING_COEF * std::pow(re_safe, HAN_SMOOTH_FANNING_RE_EXP);
+  const double df_s_dRe =
+      HAN_SMOOTH_FANNING_RE_EXP * f_s / re_safe * (Re / re_safe);
+
+  const double smooth_share = 1.0 - phi;
+  const double f_fanning = phi * f_four_sided + smooth_share * f_s;
+  return {DARCY_PER_FANNING * f_fanning,
+          DARCY_PER_FANNING * smooth_share * df_s_dRe};
 }
 
 }  // namespace cooling

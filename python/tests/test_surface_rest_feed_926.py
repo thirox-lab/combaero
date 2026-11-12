@@ -91,15 +91,17 @@ def _ribbed_on(node: object) -> ChannelElement:
 
 
 def test_the_ribbed_drop_reads_the_duct_static_density_at_a_reservoir() -> None:
-    """Ribbed f has no Re dependence, so at a fixed flow the drop is K / rho:
-    from a reservoir it is the node-density drop times rho_node / rho_static,
-    13% at Mach 0.5 here."""
+    """With four ribbed walls f has no Re dependence (no smooth wall's f_s,
+    #1106), so at a fixed flow the drop is K / rho: from a reservoir it is the
+    node-density drop times rho_node / rho_static, 13% at Mach 0.5 here."""
     m = 0.036
     a, b = _reservoir_states(m)
     reservoir = PressureBoundary("a", Pt=2.6e5, Tt=300.0, Y=Y_AIR)
     moving = MomentumChamberNode("a", area=AREA)  # state_at_rest False
-    dP_new = a.Pt - b.Pt - _ribbed_on(reservoir).residuals(a, b)[0][0]
-    dP_node = a.Pt - b.Pt - _ribbed_on(moving).residuals(a, b)[0][0]
+    el_res, el_mov = _ribbed_on(reservoir), _ribbed_on(moving)
+    el_res.surface.model.n_ribbed_walls = el_mov.surface.model.n_ribbed_walls = 4
+    dP_new = a.Pt - b.Pt - el_res.residuals(a, b)[0][0]
+    dP_node = a.Pt - b.Pt - el_mov.residuals(a, b)[0][0]
     s = cb.duct_htc_static_state(300.0, 2.6e5, m / AREA, X_AIR)
     rho_node = cb.complete_state(300.0, 2.6e5, X_AIR).thermo.rho
     assert pytest.approx(0.5, abs=0.03) == s.M
@@ -131,12 +133,14 @@ def test_every_row_of_a_reservoir_fed_surface_network_matches_fd(
 
 
 def test_diagnostics_report_the_state_the_drop_reads() -> None:
+    # 3.0 bar upstream keeps the duct above Mach 0.45 with Han's two-wall
+    # drop (#1106: it doubled, so 2.6 bar reached only Mach 0.41).
     g = FlowNetwork()
-    g.add_node(PressureBoundary("a", Pt=2.6e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("a", Pt=3.0e5, Tt=300.0, Y=Y_AIR))
     g.add_node(PressureBoundary("b", Pt=2.0e5, Tt=300.0, Y=Y_AIR))
     g.add_element(_channel("ch", "a", "b", "ribbed", "incompressible"))
     _, r = _solve(g)
-    s = cb.duct_htc_static_state(300.0, 2.6e5, float(r["ch.m_dot"]) / AREA, X_AIR)
+    s = cb.duct_htc_static_state(300.0, 3.0e5, float(r["ch.m_dot"]) / AREA, X_AIR)
     assert s.M > 0.45
     assert r["ch.mach_in"] == pytest.approx(s.M, rel=1e-6)
 

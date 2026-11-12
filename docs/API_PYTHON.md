@@ -3630,17 +3630,29 @@ surface = ConvectiveSurface(
 )
 ```
 
-`n_ribbed_walls` accepts 1, 2 or 4. Three is rejected -- it has no unambiguous
-geometry.
+`n_ribbed_walls` accepts 1, 2 or 4 (an integral float such as `2.0` is taken as
+that count). Anything else -- three walls has no unambiguous geometry -- raises
+`ValueError` when the model is built. Every rib set was measured on two opposite ribbed walls, so 1 and 4
+set `extrapolated` (reported, not refused).
 
-**Two asymmetries, both from the source rather than convenience:**
+**Friction and heat transfer are both wall-weighted (#1106):**
 
-- **Friction needs no wall weighting.** The correlation's `f` is already the
-  four-sided channel value, so the element uses it directly. Nothing multiplies
-  pipe friction.
-- **Heat transfer does.** The correlation gives the ribbed side; the smooth
+- **Friction.** `evaluate_rib(...).f` is Han's **four-sided, Fanning** factor
+  (Han and Park 1988: `fbar = dP / {4 (L/D) rho V^2/2}`, p. 187; four-sided by
+  the area weighting of Eq. 6). The element's drop uses the channel's **Darcy**
+  factor from `cb.rib_channel_friction(set, geom, Re, n_ribbed_walls)`:
+
+  ```
+  f_D = 4 [phi f + (1 - phi) 0.046 Re^-0.2]     dP = f_D (L/D) rho V^2 / 2
+  ```
+
+  with `phi = cb.rib_ribbed_wall_fraction(W_H, n)` (`W/(W+H)` for two walls,
+  half that for one, 1 for four). For two walls this is Han's measured passage
+  `fbar` exactly. It returns `(f_D, df_D/dRe)`; only the smooth walls depend on
+  Re. Nothing multiplies pipe friction.
+- **Heat transfer.** The correlation gives the ribbed side; the smooth
   walls come from the base correlation and the channel average is the
-  area-weighted combination. The result exposes `h_ribbed` and `h_smooth`
+  same area-weighted combination. The result exposes `h_ribbed` and `h_smooth`
   separately, because the average hides a modelling choice worth seeing.
 
 **A documented gap.** Plain smooth walls give `h_s/h_r` around 0.42 where Han's

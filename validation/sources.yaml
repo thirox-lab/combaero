@@ -1770,9 +1770,12 @@ documents:
   verdict: 'First non-Texas A&M rib source: taslim_spring_1987 rib-ratio sets (fitted from digitised markers);
     fidelity on own data and cross-source accuracy against han_1988_orthogonal and (friction, since 2026-11-10)
     han_park_1988_angled: the 8 two-sided Fig. 11 friction series, all out of domain, han_park bias -45% to
-    +19% per series (-11.8% on the e/D 0.083 square channel).'
-  read_for: ['#403/#444 independent rib source', '#452 aspect-ratio rib friction']
-  issues: [339, 437, 439, 443, 444, 447, 451, 452, 701, 704]
+    +19% per series (-11.8% on the e/D 0.083 square channel). #1106: the Fig. 11 one-side series are the
+    only measured n = 1 friction we hold. Model-free, area weighting (fbar_1 = (fbar_2 + f_s)/2) holds to
+    -12%..+11% at e/D <= 0.107 and fails at e/D >= 0.125 (+50% to +275%, high blockage); the element scores
+    them as cross-source accuracy (rib_element_friction_runner).'
+  read_for: ['#403/#444 independent rib source', '#452 aspect-ratio rib friction', '#1106 one-wall friction']
+  issues: [339, 437, 439, 443, 444, 447, 451, 452, 701, 704, 1106]
   records: [validation/cooling/extractions/taslim_spring_1987_aspect_ratio.md, validation/cooling/data/taslim_spring1987/metadata.yaml]
   code: ['include/rib_ratio_correlation.h: taslim_spring_1987']
   notes: 'Renamed 2026-10-25 from taslim-spring-2012-friction-factors-...-aspect.pdf (the 2012 was likely
@@ -2027,11 +2030,15 @@ documents:
   verdict: Primary carrier for the shipped rib sets (han_1988_orthogonal, han_park_1988_angled, han_1989_narrow_channel),
     the chyu_1998 pin-fin Nu sets (Table 4.7) and the han2012 fidelity data. Citations inside the book
     are sometimes wrong (Fig. 4.134 cites Brigham & VanFossen wrongly); check against the original before
-    relying on an attribution.
-  read_for: ['#334 rib re-add', '#333 scored rib harness', '#369 Fig. 4.47 digitisation', '#401 G_bar
+    relying on an attribution. Read 2026-11-11 for issue 1106 -- Sec. 4.2.9 (pp. 413-416) and Figs. 4.88-4.90
+    cover the number of ribbed walls (Chandra and Cook 1994, square, 1-4 walls; Chandra, Niland and Han 1997,
+    1:2 rectangle) but print no correlation. Its printed pressure-drop ratios -- two opposite walls 4.35-6.29,
+    four walls 7.96-11.45 x smooth, both with Re -- agree with area weighting ((E + 1)/2 = 4.48-6.23) within
+    3%; Fig. 4.88/4.90 plot f/f0 per wall count and are a digitisation candidate (not done).
+  read_for: ['#1106 effect of the number of ribbed walls', '#334 rib re-add', '#333 scored rib harness', '#369 Fig. 4.47 digitisation', '#401 G_bar
       = 1.2 G', '#402 narrow-channel Eq. 4.19', '#335 pin-fin Table 4.7 and friction figures', Fig. 4.46
       grant/box provenance (NAG3-311 vs NAS3-24227)]
-  issues: [333, 334, 335, 339, 369, 374, 393, 401, 402, 439, 441, 442]
+  issues: [333, 334, 335, 339, 369, 374, 393, 401, 402, 439, 441, 442, 1106]
   records: [validation/cooling/data/han2012/metadata.yaml, validation/cooling/cards/han2012/, validation/cooling/extractions/han_ribbed.md,
     validation/cooling/extractions/han_ribbed_high_re.md, validation/cooling/extractions/han_impingement.md,
     validation/cooling/extractions/pin_fin_sources.md]
@@ -2101,14 +2108,20 @@ documents:
     fbar + (H/W)(fbar - f(FD)) (Eq. 6, f(FD) = 0.046 Re^-0.2, Eq. 8), and fbar is predicted by inverting
     Eqs. 7-9 (p. 193), so the set declares f_channel_two_ribbed. Eq. 9 (12.31/-27.07/17.86, m 0/0.35, W/H
     capped at 2) and the Fig. 14 box match the shipped set. The paper STATES +-6% (R, Eq. 9) and +-8% (G,
-    Eq. 12) for 95% of its data; the set still carries the project-measured 10.5%/8.8%.'
+    Eq. 12) for 95% of its data; the set still carries the project-measured 10.5%/8.8%. Read 2026-11-11 for
+    #1106: fbar is FANNING by its p. 187 definition, fbar = dP / {4 (dL/D) [G^2/(2 rho g_c)]}, against the
+    Fanning Blasius f(FD) = 0.046 Re^-0.2; so a Darcy drop needs 4 f. Eq. 6 is the area weighting ("weighted
+    by area", ref. 7) of two ribbed W walls and two smooth H walls; nothing in the paper covers one or four
+    ribbed walls. rib_channel_friction runs Eq. 6 forwards; through the element, Han''s own two-wall data
+    (Figs. 4.46-4.48, 119 points) score -0.9% bias / 5.9% MAE (was -59.1%, Fanning applied as Darcy).'
   read_for: ['#374 angled-rib set', '#369 Fig. 4.47 digitisation', han_ribbed.md item 23 (Fig. 4.46 vs
-      4.47 are different papers)]
-  issues: [334, 369, 374, 402, 434]
+      4.47 are different papers), '#1106 Fanning vs Darcy and the wall-count rule']
+  issues: [334, 369, 374, 402, 434, 1106]
   records: [validation/cooling/extractions/han_ribbed.md, validation/cooling/data/han2012/metadata.yaml,
     validation/cooling/extractions/naik_2014_te_wedge_ribs.md]
-  code: ['include/rib_correlation.h: han_park_1988_angled', 'src/rib_correlation.cpp: han_park_1988_angled',
-    'validation/cooling/conventions.py: SET_ALSO_PRODUCES f_channel_two_ribbed']
+  code: ['include/rib_correlation.h: han_park_1988_angled, rib_channel_friction', 'src/rib_correlation.cpp:
+      han_park_1988_angled', 'validation/cooling/conventions.py: SET_ALSO_PRODUCES f_channel_two_ribbed',
+    'validation/cooling/rib_element_friction_runner.py']
   notes: Renamed 2026-10-01 from han/han_park_1998.pdf (year off by a decade). Also the acknowledgement
     that names grant NAS3-24227 (link to NASA CR-4015).
 - file: sources/heat_transfer/hollworth/393_1_Hollworth_1980_part_II.pdf
@@ -6510,6 +6523,26 @@ documents:
     as recalled); ref. 21 Ahmed, Ramakrishnan, Ekkad 2021 JTSEA 14(2) (can combustor liner, reacting).
     Arrived 2026-11-08 in sources/new/oa_swirl_1108/ as 1-s2.0-S2214157X25001984-main.pdf.'
 wanted:
+- citation: 'Chandra, P. R., Cook, M. M. (1994). Effect of the number of channel ribbed walls on heat transfer
+    and friction characteristics of turbulent flows. General Papers in Heat and Mass Transfer, ASME HTD-Vol.
+    271, 201-209. (citation verified against Han, Dutta and Ekkad 2013, Fig. 4.88 and reference list)'
+  checked: true
+  issues: [1106]
+  priority: later
+  question: 'Measured passage friction for one, two, three and four ribbed walls in one square channel, with
+    its R correlation per configuration (T_r/T_t wall widths): would score the area-weighted n = 1 and n = 4
+    rib_channel_friction (#1106) as cross-source accuracy at low blockage. The held Han book plots it (Fig. 4.88)
+    but prints no correlation.'
+  where: ASME HTD-Vol. 271 (conference volume); library.
+- citation: 'Chandra, P. R., Niland, M. E., Han, J. C. (1997). Turbulent flow heat transfer and friction in a
+    rectangular channel with varying number of ribbed walls. ASME J. Turbomach. 119, 374-380. (citation verified
+    against Han, Dutta and Ekkad 2013 reference list)'
+  checked: true
+  issues: [1106]
+  priority: later
+  question: 'Same question on a 1:2 rectangle, ribs on one or both wide and narrow walls (Fig. 4.89/4.90 in the
+    held book): settles whether one ribbed wall follows the area weighting at W/H != 1.'
+  where: ASME Digital Collection (paywalled).
 - citation: 'Rhee, D. H., Lee, D. H., Cho, H. H. (2003). Effects of duct aspect ratios on heat/mass transfer with
     discrete V-shaped ribs. ASME Turbo Expo 2003, GT2003-38622. (citation as recalled)'
   checked: false
