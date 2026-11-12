@@ -1120,10 +1120,14 @@ EquilibriumResult reforming_equilibrium_adiabatic(const State &in) {
 // -------------------------------------------------------------
 
 EquilibriumResult combustion_equilibrium(const State &in, bool smooth_phi0, double k0) {
-  // Step 1: Complete combustion (adiabatic)
-  // We use Phi=0 smoothing (if requested) but NOT Phi=1 smoothing for equilibrium,
-  // as equilibrium is naturally smooth at Phi=1.
-  State burned = complete_combustion(in, smooth_phi0, false, k0, SMOOTHING_K_PHI1);
+  // Step 1: Complete combustion (adiabatic), with the Phi = 1 softmin always on
+  // (#1048). The reforming + WGS stage below forms no O2-side dissociation, so
+  // without the softmin T keeps complete combustion's kink at Phi = 1 (one-sided
+  // slopes +1450 and -960 K per unit Phi for CH4-air). The softmin is about
+  // 1/SMOOTHING_K_PHI1 wide, as on the complete path. On its lean side it leaves
+  // a trace of fuel, which reforming_equilibrium_adiabatic stops reforming once
+  // below 1e-10 (|Phi - 1| ~ 5e-4): a step of about 1e-6 K in T there.
+  State burned = complete_combustion(in, smooth_phi0, true, k0, SMOOTHING_K_PHI1);
 
   // Step 2: Reforming + WGS equilibrium on combustion products
   // For rich mixtures: unburned HC + H2O -> CO + H2
@@ -1185,9 +1189,9 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
   const double T_ad = res.state.T;
   const double P = in.P;
 
-  // Stage 1: complete combustion (phi = 1 unsmoothed, as the value path).
+  // Stage 1: complete combustion (phi = 1 softmin on, as the value path).
   const CompleteCombustionJacobian cj =
-      complete_combustion_products_and_jacobian(in.X, smooth_phi0, false, k0, SMOOTHING_K_PHI1);
+      complete_combustion_products_and_jacobian(in.X, smooth_phi0, true, k0, SMOOTHING_K_PHI1);
   const std::vector<double> &n0 = cj.X_b;
 
   // Stage 2: the joint reforming + WGS equilibrium at T_ad (#759), as the

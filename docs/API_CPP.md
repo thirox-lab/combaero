@@ -494,7 +494,8 @@ CombustorLossResult combustor_head_loss(double theta, double mdot, double Tt_in,
 ## Chemical Equilibrium (equilibrium.h)
 
 ```cpp
-// Combustion equilibrium (T, P constant)
+// Combustion equilibrium (adiabatic): complete combustion with the phi = 1
+// softmin always on (#1048; T is C1 through stoichiometric), then reforming + WGS
 State combustion_equilibrium(const State& in, bool smooth = false);
 
 // With analytic derivatives (#716): one implicit-function solve on the joint

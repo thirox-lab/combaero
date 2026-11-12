@@ -77,7 +77,9 @@ EquilibriumResult reforming_equilibrium_adiabatic(const State &in);
 // High-level combustion interface
 // -------------------------------------------------------------
 
-// Computes product state using the specified method (Complete or Equilibrium)
+// Complete combustion (with the Phi = 1 softmin, SMOOTHING_K_PHI1, always on:
+// #1048), then reforming + WGS equilibrium on the products, adiabatic.
+// smooth_phi0 selects the zero-fuel smoothing of the first step.
 EquilibriumResult combustion_equilibrium(const State &reactants,
                                          bool smooth_phi0 = true,
                                          double k0 = SMOOTHING_K_PHI0);
