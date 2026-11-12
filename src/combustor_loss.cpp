@@ -1,5 +1,6 @@
 #include "../include/combustor_loss.h"
 
+#include "../include/composition.h"
 #include "../include/input_validation.h"
 #include "../include/thermo.h"
 #include "../include/thermo_transport_data.h"
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace combaero {
@@ -76,6 +78,52 @@ CombustorLossResult combustor_head_loss(double theta, double mdot, double Tt_in,
     r.dxi_dY[i] = -r.xi / MW * dMW;
   }
   return r;
+}
+
+PressureLossResult pressure_loss_compose(const PressureLossModel &model,
+                                         const PressureLossInputs &inputs) {
+  const std::vector<double> &x = inputs.x;
+  double theta = 0.0;
+  if (model.k != 0.0) {
+    if (x.size() <= PRESSURE_LOSS_INPUT_THETA) {
+      throw std::invalid_argument(
+          "pressure_loss_compose: a model with k != 0 reads theta, x is empty");
+    }
+    theta = x[PRESSURE_LOSS_INPUT_THETA];
+  }
+  PressureLossResult out;
+  out.dxi_dx.assign(x.size(), 0.0);
+  // r: the partials by the state (mdot, Tt_in, Pt_in, Y_in); v: the value and
+  // its partials by the model inputs x, at the composition the value reads.
+  CombustorLossResult r;
+  double dxi_dtheta = 0.0;
+  if (model.kind == PressureLossKind::Fraction) {
+    // A fraction without a design flow does not read the flow.
+    const double m = model.m_ref > 0.0 ? inputs.mdot : 0.0;
+    r = combustor_fraction_loss(theta, m, model.k, model.base, model.m_ref);
+    out.xi = r.xi;
+    dxi_dtheta = r.dxi_dtheta;
+  } else {
+    r = combustor_head_loss(theta, inputs.mdot, inputs.Tt_in, inputs.Pt_in, inputs.Y_in,
+                            model.k, model.base, model.area);
+    out.xi = r.xi;
+    dxi_dtheta = r.dxi_dtheta;
+    if (!inputs.X_in.empty()) {
+      const CombustorLossResult v =
+          combustor_head_loss(theta, inputs.mdot, inputs.Tt_in, inputs.Pt_in,
+                              mole_to_mass(inputs.X_in), model.k, model.base, model.area);
+      out.xi = v.xi;
+      dxi_dtheta = v.dxi_dtheta;
+    }
+  }
+  out.dxi_dmdot = r.dxi_dmdot;
+  out.dxi_dTt_in = r.dxi_dTt_in;
+  out.dxi_dPt_in = r.dxi_dPt_in;
+  out.dxi_dY = std::move(r.dxi_dY);
+  if (model.k != 0.0) {
+    out.dxi_dx[PRESSURE_LOSS_INPUT_THETA] = dxi_dtheta;
+  }
+  return out;
 }
 
 } // namespace combaero

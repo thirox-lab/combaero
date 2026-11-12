@@ -9926,26 +9926,30 @@ class PressureLossElement(NetworkElement):
                 stacklevel=2,
             )
 
+    def _theta_temperatures(
+        self, state_in: NetworkMixtureState, graph: "FlowNetwork | None"
+    ) -> tuple[float, float, float]:
+        """(theta, T_in, T_ad) the loss reads: the theta source's burned and
+        unburned temperatures, T_in the unburned one; without a theta source
+        theta = 0 and T_in = T_ad = the inlet's Tt."""
+        if self._theta_source_resolved is not None and graph is not None:
+            src = graph.nodes[self._theta_source_resolved]
+            T_unburned = float(getattr(src, "_T_unburned", state_in.Tt))
+            T_burned = float(getattr(src, "_T_burned", state_in.Tt))
+            theta = (T_burned / T_unburned - 1.0) if T_unburned > 0 else 0.0
+            return theta, T_unburned, T_burned
+        T = float(state_in.Tt)
+        return 0.0, T, T
+
     def _build_ctx(
         self,
         state_in: NetworkMixtureState,
         state_out: NetworkMixtureState,
         graph: "FlowNetwork | None",
     ) -> SimpleNamespace:
-        """Build a duck-typed PressureLossContext from the current states."""
-        # Theta sourcing: read the reference node's burned/unburned temperatures.
-        if self._theta_source_resolved is not None and graph is not None:
-            src = graph.nodes[self._theta_source_resolved]
-            T_unburned = float(getattr(src, "_T_unburned", state_in.Tt))
-            T_burned = float(getattr(src, "_T_burned", state_in.Tt))
-            theta = (T_burned / T_unburned - 1.0) if T_unburned > 0 else 0.0
-            T_ctx = T_unburned
-            T_ad = T_burned
-        else:
-            theta = 0.0
-            T_ctx = float(state_in.Tt)
-            T_ad = float(state_in.Tt)
-
+        """Build a duck-typed PressureLossContext from the current states (for
+        a user callable; a built-in model reads ``_composed``)."""
+        theta, T_ctx, T_ad = self._theta_temperatures(state_in, graph)
         # The inlet STAGNATION state: Lefebvre's loss factor is total-total
         # (#782 audit); until 0.8 P_in was the static P.
         return PressureLossContext(
@@ -9962,6 +9966,24 @@ class PressureLossElement(NetworkElement):
             Y_products=[],
         )
 
+    def _composed(
+        self,
+        model: "cb.PressureLossModel",
+        state_in: NetworkMixtureState,
+        theta: float,
+        T_in: float,
+        m_abs: float,
+    ) -> "cb.PressureLossResult":
+        """A built-in model in C++ (``cb.pressure_loss_compose``, #725) at the
+        flow-upstream node's state: the value's density reads the state's
+        composition X, the partials are by its mass-fraction unknowns Y (a
+        fraction model reads neither). Positional: (mdot, Tt_in, Pt_in, Y_in,
+        X_in, x), theta the first model input."""
+        inp = cb.PressureLossInputs(
+            m_abs, T_in, float(state_in.Pt), list(state_in.Y), list(state_in.X), [theta]
+        )
+        return cb.pressure_loss_compose(model, inp)
+
     def _directed(
         self,
         up: NetworkMixtureState,
@@ -9972,10 +9994,18 @@ class PressureLossElement(NetworkElement):
     ) -> tuple[float, Callable[[], dict[str, float]]]:
         """Residual and lazy Jacobian row of the loss with the flow up -> dn."""
         graph = getattr(self, "_graph_ref", None)
-        ctx = self._build_ctx(up, dn, graph)
-        ctx.mdot_total = abs(float(m_dot))
+        model_of = getattr(self.correlation, "pressure_loss_model", None)
+        theta, T_in, T_ad = self._theta_temperatures(up, graph)
+        ctx: SimpleNamespace | None = None
+        partials: Any = None
         try:
-            xi, dxi_dtheta = self.correlation(ctx)
+            if model_of is not None:
+                partials = self._composed(model_of(), up, theta, T_in, abs(float(m_dot)))
+                xi, dxi_dtheta = partials.xi, partials.dxi_dtheta
+            else:
+                ctx = self._build_ctx(up, dn, graph)
+                ctx.mdot_total = abs(float(m_dot))
+                xi, dxi_dtheta = self.correlation(ctx)
         except Exception as exc:
             raise RuntimeError(
                 f"PressureLossElement '{self.id}' correlation raised: {exc}"
@@ -9985,7 +10015,9 @@ class PressureLossElement(NetworkElement):
         m_sign = 1.0 if m_dot >= 0.0 else -1.0
 
         def row() -> dict[str, float]:
-            return self._jacobian(up, graph, ctx, xi, dxi_dtheta, up_id, dn_id, m_sign)[0]
+            return self._jacobian(
+                up, graph, T_in, T_ad, xi, dxi_dtheta, up_id, dn_id, m_sign, partials, ctx
+            )[0]
 
         return res, row
 
@@ -10010,9 +10042,9 @@ class PressureLossElement(NetworkElement):
             parts.append((1.0 - w, -r_r, j_rev))
         res = [sum(wt * r for wt, r, _ in parts)]
 
-        # The Jacobian is analytic for a built-in correlation and differenced
-        # for a user callable (one or two calls per variable and species), so
-        # it is computed only when the solver reads it (LazyJacobian, #489).
+        # The Jacobian is analytic for a built-in model and differenced for a
+        # user callable (one or two calls per variable and species), so it is
+        # computed only when the solver reads it (LazyJacobian, #489).
         def jacobian() -> dict[int, dict[str, float]]:
             out: dict[str, float] = {}
             for wt, _, row in parts:
@@ -10029,16 +10061,21 @@ class PressureLossElement(NetworkElement):
         self,
         state_in: NetworkMixtureState,
         graph: "FlowNetwork | None",
-        ctx: SimpleNamespace,
+        T_in: float,
+        T_ad: float,
         xi: float,
         dxi_dtheta: float,
         up_id: str,
         dn_id: str,
         m_sign: float,
+        partials: Any,
+        ctx: SimpleNamespace | None,
     ) -> dict[int, dict[str, float]]:
         """d(Pt_dn - Pt_up (1 - xi))/dx with ``state_in`` the flow-upstream
         node's state; the correlation saw ``|m_dot|``, so its m column carries
-        the flow's sign."""
+        the flow's sign. ``partials`` is a built-in model's composed result
+        (analytic); without it ``ctx`` is the user callable's context, and its
+        other dependences are differenced."""
         jac: dict[int, dict[str, float]] = {
             0: {
                 f"{up_id}.Pt": -(1.0 - xi),
@@ -10048,15 +10085,13 @@ class PressureLossElement(NetworkElement):
 
         # ----- Analytical theta Jacobian (linear-theta correlations) -----
         # d_res/d_T_burned = -Pt_in * dxi_dtheta / Tt_in.
-        if self._theta_source_resolved is not None and dxi_dtheta != 0.0 and ctx.Tt_in > 0:
-            jac[0][f"{self._theta_source_resolved}.Tt"] = state_in.Pt * dxi_dtheta / ctx.Tt_in
+        if self._theta_source_resolved is not None and dxi_dtheta != 0.0 and T_in > 0:
+            jac[0][f"{self._theta_source_resolved}.Tt"] = state_in.Pt * dxi_dtheta / T_in
 
         # ----- The other dependences: m_dot, Pt_in, Tt_in, composition. A
-        # built-in correlation returns them analytically from C++ (evaluate,
-        # #718); a user callable (the loss-map prototype) is differenced.
-        evaluate = getattr(self.correlation, "evaluate", None)
-        partials = evaluate(ctx, list(state_in.Y)) if evaluate is not None else None
-
+        # built-in model returns them analytically from C++
+        # (pressure_loss_compose, #725); a user callable (the loss-map
+        # prototype) is differenced.
         def _dxi_dvar(attr: str, val: float, step_scale: float) -> float:
             if partials is not None:
                 return {
@@ -10064,6 +10099,7 @@ class PressureLossElement(NetworkElement):
                     "Pt_in": partials.dxi_dPt_in,
                     "Tt_in": partials.dxi_dTt_in,
                 }[attr]
+            assert ctx is not None
             eps = step_scale if val == 0.0 else max(abs(val) * 1e-6, step_scale)
             saved = getattr(ctx, attr)
             try:
@@ -10077,24 +10113,27 @@ class PressureLossElement(NetworkElement):
 
         # Only bother if xi actually varies with the velocity/density variables
         # (skip for constant fraction to avoid unneeded correlation calls).
-        dxi_dmdot = _dxi_dvar("mdot_total", ctx.mdot_total, 1e-6)
+        m_abs = ctx.mdot_total if ctx is not None else 0.0
+        dxi_dmdot = _dxi_dvar("mdot_total", m_abs, 1e-6)
         if dxi_dmdot != 0.0:
             jac[0][f"{self.id}.m_dot"] = state_in.Pt * dxi_dmdot * m_sign
 
-        dxi_dPt_in = _dxi_dvar("Pt_in", ctx.Pt_in, 1.0)
+        dxi_dPt_in = _dxi_dvar("Pt_in", float(state_in.Pt), 1.0)
         if dxi_dPt_in != 0.0:
             # Pt_in = state_in.Pt: into the same column as the -(1 - xi) term.
             key = f"{up_id}.Pt"
             jac[0][key] = jac[0].get(key, 0.0) + state_in.Pt * dxi_dPt_in
 
         if self._theta_source_resolved is None:
-            # When no theta source, ctx.Tt_in = state_in.Tt (a derived state).
+            # When no theta source, Tt_in = state_in.Tt (a derived state).
             # Emit a relay-routable Tt Jacobian on the upstream node.
-            dxi_dTt_in = _dxi_dvar("Tt_in", ctx.Tt_in, 0.01)
+            dxi_dTt_in = _dxi_dvar("Tt_in", T_in, 0.01)
             if dxi_dTt_in != 0.0:
                 jac[0][f"{up_id}.Tt"] = state_in.Pt * dxi_dTt_in
-        elif graph is not None and ctx.Tt_in > 0:
-            self._add_unburned_jacobian(jac[0], graph, ctx, state_in.Pt, dxi_dtheta, _dxi_dvar)
+        elif graph is not None and T_in > 0:
+            self._add_unburned_jacobian(
+                jac[0], graph, T_in, T_ad, state_in.Pt, dxi_dtheta, _dxi_dvar
+            )
 
         # Composition of the inlet state (a head loss's density): per species,
         # other mass fractions fixed, relayed as "{node}.Y[k]". A combustor's
@@ -10106,6 +10145,7 @@ class PressureLossElement(NetworkElement):
                 if d != 0.0 and Y_in[k] > 0.0:
                     jac[0][f"{up_id}.Y[{k}]"] = state_in.Pt * d
             return jac
+        assert ctx is not None
         X_saved = ctx.X_in
         try:
             for k, y in enumerate(Y_in):
@@ -10134,7 +10174,8 @@ class PressureLossElement(NetworkElement):
         self,
         row: dict[str, float],
         graph: "FlowNetwork",
-        ctx: SimpleNamespace,
+        T_u: float,
+        T_b: float,
         Pt_in: float,
         dxi_dtheta: float,
         dxi_dvar: Callable[[str, float, float], float],
@@ -10142,7 +10183,7 @@ class PressureLossElement(NetworkElement):
         """d(res)/d(unknowns) through the source's UNBURNED temperature (#481 C1).
 
         T_u enters twice: theta = T_b/T_u - 1 (d theta/dT_u = -T_b/T_u^2) and
-        as the correlation's reference temperature ctx.Tt_in (a head loss's
+        as the correlation's reference temperature Tt_in (a head loss's
         density). T_u is the enthalpy mix of the source's inflows (#718), so
         dT_u = sum(dT_u/dm_i dm_i + dT_u/dTt_i dTt_i + dT_u/dY_i . dY_i), the
         partials from the C++ mixer: the flows' unknowns directly, each Tt_i
@@ -10153,7 +10194,6 @@ class PressureLossElement(NetworkElement):
         streams = getattr(src, "_unburned_streams", None)
         if not streams:
             return
-        T_u, T_b = ctx.Tt_in, ctx.T_ad
         dres_dTu = Pt_in * (dxi_dtheta * (-T_b / (T_u * T_u)) + dxi_dvar("Tt_in", T_u, 0.01))
         if dres_dTu == 0.0:
             return
@@ -10193,10 +10233,15 @@ class PressureLossElement(NetworkElement):
         # xi of the flow as it runs: from its upstream node, at |m_dot|.
         forward = state_in.m_dot >= 0.0
         up, dn = (state_in, state_out) if forward else (state_out, state_in)
-        ctx = self._build_ctx(up, dn, graph)
-        ctx.mdot_total = abs(float(state_in.m_dot))
+        theta, T_in, _ = self._theta_temperatures(up, graph)
+        model_of = getattr(self.correlation, "pressure_loss_model", None)
         try:
-            xi, _ = self.correlation(ctx)
+            if model_of is not None:
+                xi = self._composed(model_of(), up, theta, T_in, abs(float(state_in.m_dot))).xi
+            else:
+                ctx = self._build_ctx(up, dn, graph)
+                ctx.mdot_total = abs(float(state_in.m_dot))
+                xi, _ = self.correlation(ctx)
         except Exception:
             xi = 0.0
 
@@ -10224,7 +10269,7 @@ class PressureLossElement(NetworkElement):
             **_element_pressure_block(state_in, state_out, mach_in=mach_in, mach_out=mach_out),
             **ref,
             "xi": float(xi),
-            "theta": float(ctx.theta),
+            "theta": float(theta),
             "area": float(area or 0.0),
             "area_source": self._area_source,
             # 1 where an unanchored fraction loss sits on its zero-flow blend

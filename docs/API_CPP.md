@@ -489,6 +489,33 @@ CombustorLossResult combustor_head_loss(double theta, double mdot, double Tt_in,
                                         double k, double zeta0, double area);
 ```
 
+`pressure_loss_compose` is the composition point of `PressureLossElement`'s
+loss models (#725): one call returns xi and every partial for any built-in
+model, over the two kernels above. The model's own inputs are a generic vector
+`x` (`x[PRESSURE_LOSS_INPUT_THETA]` = theta), so a model that reads more (a
+loss map over theta and fuel splits) is another kind, not a new field on every
+caller. The element forms the residual and maps the partials onto unknowns.
+
+```cpp
+constexpr std::size_t PRESSURE_LOSS_INPUT_THETA = 0;
+enum class PressureLossKind { Fraction, Head };  // combustor_fraction_loss / combustor_head_loss
+struct PressureLossModel { PressureLossKind kind; double k, base, m_ref, area; };  // base: xi0 or zeta0
+struct PressureLossInputs {
+    double mdot, Tt_in, Pt_in;
+    std::vector<double> Y_in;  // mass fractions the state partials are by
+    std::vector<double> X_in;  // mole fractions the value (and dxi_dx) reads; empty: Y_in
+    std::vector<double> x;     // model inputs, theta first
+};
+struct PressureLossResult {
+    double xi, dxi_dmdot, dxi_dTt_in, dxi_dPt_in;
+    std::vector<double> dxi_dY, dxi_dx;  // dxi_dx: the size of x
+};
+// k = 0: theta not read (x may be empty); Fraction with m_ref <= 0: mdot not read.
+// Throws std::invalid_argument for k != 0 with an empty x.
+PressureLossResult pressure_loss_compose(const PressureLossModel& model,
+                                         const PressureLossInputs& inputs);
+```
+
 ---
 
 ## Chemical Equilibrium (equilibrium.h)

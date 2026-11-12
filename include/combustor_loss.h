@@ -28,6 +28,7 @@
 // each taken with the others held fixed (the "{node}.Y[k]" columns the
 // network relays): MW = sum(Y) / sum(Y_k / W_k).
 
+#include <cstddef>
 #include <vector>
 
 namespace combaero {
@@ -51,5 +52,69 @@ CombustorLossResult combustor_head_loss(double theta, double mdot, double Tt_in,
                                         double Pt_in,
                                         const std::vector<double> &Y_in,
                                         double k, double zeta0, double area);
+
+// ---------------------------------------------------------------------------
+// The composition point of PressureLossElement's loss models (#725): one call
+// returns xi and every partial for any built-in model. The element (python/
+// combaero/network/components.py) forms the residual Pt_dn - Pt_up (1 - xi),
+// gathers the inputs from the network state (theta from the theta source's
+// burned/unburned temperatures, the flow-upstream node's Tt, Pt and Y) and
+// maps the partials onto unknown names; that needs the topology.
+//
+// The model's own inputs are a GENERIC vector x, so a model that reads more
+// than theta (a loss map over theta and fuel splits, #725) is another kind
+// here, not a new field on every caller. Index PRESSURE_LOSS_INPUT_THETA is
+// theta for every kind; dxi_dx has the size of x.
+//
+// Kinds, each the kernel's above (no physics is derived here):
+//   Fraction  combustor_fraction_loss: xi = (k theta + base) g(mdot / m_ref)
+//   Head      combustor_head_loss: xi = (k theta + base) q at (Tt_in, Pt_in)
+// A model with k = 0 does not read theta (x may then be empty), and a
+// Fraction without a design flow (m_ref <= 0) does not read mdot.
+//
+// COMPOSITION. The value's density reads X_in, the mole fractions of the
+// state (the network's clamped and normalised composition), and so do the
+// partials by x; the partials by the state (mdot, Tt_in, Pt_in, Y_in) are
+// taken at the raw mass fractions Y_in, the "{node}.Y[k]" unknowns. MW is
+// invariant to the scale of Y, so these are the derivatives of the value
+// through that normalisation. With X_in empty everything reads Y_in.
+
+// Index of theta in PressureLossInputs::x, for every kind.
+constexpr std::size_t PRESSURE_LOSS_INPUT_THETA = 0;
+
+enum class PressureLossKind { Fraction, Head };
+
+// The resolved model (Python's validation already applied).
+struct PressureLossModel {
+  PressureLossKind kind = PressureLossKind::Fraction;
+  double k = 0.0;     // d(coefficient)/d theta [-]
+  double base = 0.0;  // Fraction: xi0 [-]; Head: zeta0 [-]
+  double m_ref = 0.0; // Fraction: design flow [kg/s]; <= 0: no fade
+  double area = 0.0;  // Head: velocity reference area [m^2]
+};
+
+// The state the model reads.
+struct PressureLossInputs {
+  double mdot = 0.0;         // |m_dot| [kg/s]
+  double Tt_in = 0.0;        // inlet stagnation temperature [K]
+  double Pt_in = 0.0;        // inlet stagnation pressure [Pa]
+  std::vector<double> Y_in;  // inlet mass fractions; the partials are by these
+  std::vector<double> X_in;  // mole fractions the value reads; empty: Y_in
+  std::vector<double> x;     // the model's inputs; x[PRESSURE_LOSS_INPUT_THETA] = theta
+};
+
+struct PressureLossResult {
+  double xi = 0.0;            // fractional total-pressure loss [-]
+  double dxi_dmdot = 0.0;     // [1/(kg/s)]
+  double dxi_dTt_in = 0.0;    // [1/K]
+  double dxi_dPt_in = 0.0;    // [1/Pa]
+  std::vector<double> dxi_dY; // per species [-]; empty for a Fraction
+  std::vector<double> dxi_dx; // per model input; the size of x
+};
+
+// One evaluation of the model. Throws std::invalid_argument for a model with
+// k != 0 and no theta in x, and what the kernels throw.
+PressureLossResult pressure_loss_compose(const PressureLossModel &model,
+                                         const PressureLossInputs &inputs);
 
 } // namespace combaero
