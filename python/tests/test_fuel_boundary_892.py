@@ -497,3 +497,107 @@ def test_the_reference_flow_does_not_read_a_fuel_flow() -> None:
         n.nodes["fuel"].m_dot = leftover
         refs.append(NetworkSolver(n)._infer_reference_state()["m_dot"])
     assert refs[0] == refs[1] == refs[2]
+
+
+# -- an unreachable target refused before the solve (#1114) -------------------
+
+
+def _count_searches(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Counts the Newton searches solve() starts (its _solve_entry calls)."""
+    calls = [0]
+    inner = NetworkSolver._solve_entry
+
+    def counted(self: NetworkSolver, *a: object, **kw: object) -> dict:
+        calls[0] += 1
+        return inner(self, *a, **kw)
+
+    monkeypatch.setattr(NetworkSolver, "_solve_entry", counted)
+    return calls
+
+
+def _fixed_air(target: float, branch: str, method: str = "complete", T_air: float = 800.0):
+    n = FlowNetwork()
+    n.add_node(MassFlowBoundary("air", m_dot=0.3, Tt=T_air, Y=AIR))
+    n.add_node(
+        FuelBoundary("fuel", combustor="burner", Tt_target=target, branch=branch, Tt=300.0, Y=CH4)
+    )
+    n.add_node(CombustorNode("burner", method=method))
+    n.add_node(PressureBoundary("out", Pt=2.0e5, Tt=800.0, Y=AIR))
+    n.add_element(LosslessConnectionElement("a_in", "air", "burner"))
+    n.add_element(LosslessConnectionElement("inj", "fuel", "burner"))
+    n.add_element(
+        OrificeElement(
+            "exit", "burner", "out", diameter=0.05, Cd=0.8, correlation="fixed", in_pipe=False
+        )
+    )
+    return n
+
+
+@pytest.mark.parametrize(
+    ("target", "branch", "method", "says"),
+    [
+        (3000.0, "lean", "complete", "is above the peak"),
+        (3000.0, "rich", "complete", "is above the peak"),
+        (3000.0, "lean", "equilibrium", "is above the peak"),
+        (700.0, "lean", "complete", "reaches with no injected fuel, 800.0 K"),
+        (700.0, "lean", "equilibrium", "reaches with no injected fuel, 800.0 K"),
+        (250.0, "rich", "complete", "reaches with no injected fuel, 800.0 K"),
+    ],
+)
+def test_a_fixed_air_unreachable_target_is_refused_before_the_solve(
+    monkeypatch: pytest.MonkeyPatch, target: float, branch: str, method: str, says: str
+) -> None:
+    """Fixed air flow and state: the combustor's Tt is a function of the fuel
+    to air ratio alone, so the window is known from the inputs and no Newton
+    search runs (was 1.5-8 s through the retries). The reason is the one a
+    failed solve gives."""
+    calls = _count_searches(monkeypatch)
+    _, r = _solve(_fixed_air(target, branch, method))
+    assert not r["__success__"]
+    assert calls[0] == 0
+    assert r["__iterations__"] == 0
+    assert r["__message__"].startswith("Refused before the solve")
+    assert says in r["__message__"]
+    assert r["fuel.Tt_without_fuel"] == pytest.approx(800.0, abs=1e-6)
+
+
+def test_a_premix_plenum_with_fixed_air_is_refused_before_the_solve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _count_searches(monkeypatch)
+    _, r = _solve(_routed("premix", 3000.0))
+    assert calls[0] == 0
+    assert "is above the peak" in r["__message__"]
+
+
+def test_an_unreachable_target_with_pressure_driven_air_goes_through_the_solve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Air from a PressureBoundary: its flow is not fixed by the inputs and
+    can reverse, so nothing is proven before the solve; the solve refuses."""
+    calls = _count_searches(monkeypatch)
+    _, r = _solve(_net(350.0))
+    assert calls[0] >= 1
+    assert not r["__success__"]
+    assert not r["__message__"].startswith("Refused before the solve")
+    assert "reaches with no injected fuel, 389.2 K" in r["__message__"]
+
+
+@pytest.mark.parametrize("method", ["complete", "equilibrium"])
+def test_a_rich_target_below_the_air_is_not_refused_before_the_solve(
+    monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    """Below the air's Tt but above the fuel's, rich: very rich, the fuel
+    cools the burnt gas to the target -- a root at phi ~ 40, beyond the
+    start's phi 10 bracket. Not proven unreachable, so the solve runs; from
+    a start near that root it converges on the rich branch."""
+    calls = _count_searches(monkeypatch)
+    _, r = _solve(_fixed_air(700.0, "rich", method))
+    assert calls[0] >= 1
+    assert not r["__message__"].startswith("Refused before the solve")
+    net = _fixed_air(700.0, "rich", method)
+    net.nodes["fuel"].m_dot_guess = 0.5
+    _, r = _solve(net)
+    assert r["__success__"], r["__message__"]
+    assert r["fuel.phi"] > 30.0
+    assert r["burner.Tt"] == pytest.approx(700.0, abs=1e-3)

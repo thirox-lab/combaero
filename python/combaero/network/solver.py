@@ -127,6 +127,12 @@ _STATE_EXCEPTIONS = (RuntimeError, ValueError, ArithmeticError)
 # undetermined state, so such a "root" is refused, never returned.
 _FUEL_MIN_OXIDIZER_FLOW = 1e-9
 
+# A fuel controller's target proven unreachable before the solve (#1114) must
+# lie at least this far [K] outside the window its fixed oxidizer allows; one
+# at the window's ends is left to the solve. The smoothing at zero fuel moves
+# the combustor's Tt by under 1e-5 K (stress fuels, 300-900 K).
+_FUEL_PROOF_MARGIN_K = 0.1
+
 # Two PressureBoundary total pressures closer than this, relative to the
 # larger, drive no flow (#1004, the fraction-loss check's "driven" rule). The
 # values are the user's inputs, so equal ones are equal floats; the tolerance
@@ -1825,7 +1831,15 @@ class NetworkSolver:
         the peak of the reachable window (complete combustion). ``streams``
         replaces the oxidizer at the point."""
         at_point, Y_f = self._fuel_inflows(fnode, x, sol_dict)
-        streams = at_point if streams is None else streams
+        return self._fuel_stoich_T(fnode, at_point if streams is None else streams, Y_f)
+
+    def _fuel_stoich_T(
+        self,
+        fnode: "FuelBoundary",
+        streams: list[tuple[float, float, list[float]]],
+        Y_f: list[float],
+    ) -> float:
+        """``_fuel_peak_T`` for given oxidizer ``streams`` and fuel ``Y_f``."""
         if not streams:
             return float("nan")
         try:
@@ -1881,6 +1895,36 @@ class NetworkSolver:
         if float(cb.oxygen_required_per_kg_mixture(list(ox.X))) > 0.0:
             return float(cb.complete_combustion(ox.T, list(ox.X), ox.P).T)
         return float(ox.T)
+
+    def _fuel_window_reason(
+        self,
+        fnode: "FuelBoundary",
+        streams: list[tuple[float, float, list[float]]],
+        Y_f: list[float],
+        T_without: float,
+        where: str,
+    ) -> str:
+        """Why a fuel controller's target is outside its reachable window
+        with this oxidizer (#892): not above the Tt with no injected fuel, or
+        above the stoichiometric peak; "" when it is inside."""
+        fid = fnode.id
+        if math.isfinite(T_without) and fnode.Tt_target <= T_without:
+            T_mix = float(cb.mix([self._as_stream(m, T, Y) for m, T, Y in streams]).T)
+            carries = " (the oxidizer carries fuel of its own)" if T_without > T_mix + 1.0 else ""
+            return (
+                f"FuelBoundary '{fid}': the target {fnode.Tt_target:.1f} K is not "
+                f"above what the combustor reaches with no injected fuel, "
+                f"{T_without:.1f} K{carries}{where}: no reacting root (it would need fuel as "
+                "a coolant, combustion efficiency ~ 0)."
+            )
+        T_peak = self._fuel_stoich_T(fnode, streams, Y_f)
+        if math.isfinite(T_peak) and fnode.Tt_target > T_peak:
+            return (
+                f"FuelBoundary '{fid}': the target {fnode.Tt_target:.1f} K "
+                f"is above the peak, {T_peak:.1f} K at stoichiometric: the hottest "
+                f"this fuel burns in this oxidizer (complete combustion){where}."
+            )
+        return ""
 
     def _fuel_guess(
         self, node: "FuelBoundary", mdot_guess: dict[str, float], ref: dict[str, Any]
@@ -2023,6 +2067,193 @@ class NetworkSolver:
             else:
                 hi = mid
         return 0.5 * (lo + hi)
+
+    def _fuel_fixed_oxidizer(
+        self, node: "FuelBoundary"
+    ) -> list[tuple[float, float, list[float]]] | None:
+        """The oxidizer a fuel controller's combustor burns, as fixed-flow
+        streams [(m_dot, Tt, Y)], when the inputs alone fix it (#1114); None
+        otherwise.
+
+        Fixed means: everything upstream of the combustor is an in-tree of
+        plain OrificeElement / LosslessConnectionElement edges (no wall on
+        any) through PlenumNodes with no energy boundary, whose leaves are
+        this fuel and fixed-flow MassFlowBoundaries (m_dot above
+        _FUEL_MIN_OXIDIZER_FLOW, one edge each); and the combustor, with no
+        energy boundary, has exactly one other edge, its outflow. Mass
+        balance from the leaves then fixes every flow in the tree, all
+        towards the combustor whatever the pressures, and those edges and
+        nodes conserve total enthalpy and composition. So at ANY root the
+        combustor burns the fuel with exactly these streams, and with the
+        single outflow nothing else enters it. A PressureBoundary leaf is
+        not fixed: its flow can reverse and carry other gas in."""
+        net = self.network
+        comb = net.nodes.get(node.combustor)
+        if type(comb) is not CombustorNode or comb.energy_boundaries:
+            return None
+        walled: set[str] = set()
+        for w in net.walls.values():
+            walled.update(e for e in (w.element_a, w.element_b) if e)
+        touching: dict[str, list[Any]] = {}
+        for e in net.elements.values():
+            for nid in {*e.all_source_nodes(), *e.all_sink_nodes()}:
+                touching.setdefault(nid, []).append(e)
+
+        def plain(e: Any) -> bool:
+            return (
+                type(e) in (OrificeElement, LosslessConnectionElement)
+                and e.id not in walled
+                and not _is_closed_restriction(e)
+            )
+
+        outflow = [e for e in touching.get(comb.id, []) if e.to_node != comb.id]
+        if len(outflow) != 1 or comb.id in outflow[0].all_sink_nodes():
+            return None
+        stack = [e for e in touching.get(comb.id, []) if e.to_node == comb.id]
+        seen: set[str] = set()
+        fuel_seen = False
+        streams: list[tuple[float, float, list[float]]] = []
+        while stack:
+            e = stack.pop()
+            up = e.from_node
+            if not plain(e) or up in seen or up == comb.id:
+                return None
+            seen.add(up)
+            n = net.nodes[up]
+            edges = touching.get(up, [])
+            if n is node or type(n) is MassFlowBoundary:
+                if len(edges) != 1 or edges[0] is not e:
+                    return None
+                if n is node:
+                    fuel_seen = True
+                    continue
+                if n.Tt is None or n.Y is None or float(n.m_dot) <= _FUEL_MIN_OXIDIZER_FLOW:
+                    return None
+                streams.append((float(n.m_dot), float(n.Tt), list(n.Y)))
+            elif type(n) is PlenumNode and not getattr(n, "energy_boundaries", None):
+                for other in edges:
+                    if other is e:
+                        continue
+                    if other.to_node != up:
+                        return None
+                    stack.append(other)
+            else:
+                return None
+        return streams if fuel_seen and streams else None
+
+    def _fuel_proven_unreachable(self, node: "FuelBoundary") -> tuple[str, float]:
+        """Why no root of the solve can meet this fuel controller's target on
+        its branch, proven from the inputs alone (#1114), or "" when that
+        cannot be proven (the solve then decides, as before); and the Tt with
+        no injected fuel.
+
+        Only with the oxidizer fixed (``_fuel_fixed_oxidizer``). The
+        combustor's Tt is then a function T(r) of the fuel to oxidizer ratio
+        alone (ideal gas: mixing and complete combustion do not depend on P),
+        and, complete combustion being exothermic and its heat release per kg
+        of fuel above the fuel's own sensible heat up to the flame:
+
+        - lean, T(r) rises from T(0), the Tt with no injected fuel, to
+          stoichiometric, so a target below T(0) has no lean root (the
+          partial equilibrium is complete combustion when lean);
+        - T(r) for every r is at most T_hi, complete combustion WITHOUT the
+          phi = 0 / phi = 1 smoothing at stoichiometric (the smoothing burns
+          less, rich fuel only dilutes), so a target above T_hi has no root;
+        - rich, complete combustion is at least the reactants' mixing T, so
+          a target below min(oxidizer Tt, fuel Tt) has no rich root.
+
+        Not proven, and left to the solve: a rich target below T(0) above
+        that minimum (fuel as a coolant has a root at large phi: phi ~ 25 for
+        798 K with air at 800 K and C3H8 at 300 K), and a rich target for an
+        equilibrium combustor, whose reforming is P-dependent and at very rich
+        phi runs above complete combustion. A root on the other branch is
+        refused after the solve anyway. A margin of _FUEL_PROOF_MARGIN_K keeps
+        targets at the window's ends to the solve."""
+        streams = self._fuel_fixed_oxidizer(node)
+        if streams is None:
+            return "", math.nan
+        try:
+            Y_f = list(node.Y if node.Y is not None else cb.mole_to_mass(cb.species.dry_air()))
+            ox = cb.mix([self._as_stream(m, T, Y) for m, T, Y in streams])
+            X_ox = list(ox.X)
+            Y_ox = list(cb.mole_to_mass(X_ox))
+            o2 = Y_ox[list(cb.species.names).index("O2")] - float(
+                cb.oxygen_required_per_kg_mixture(X_ox)
+            )
+            need = float(cb.oxygen_required_per_kg_mixture(list(cb.mass_to_mole(Y_f))))
+            if o2 <= 0.0 or need <= 0.0:
+                return "", math.nan
+            m_st = float(ox.mdot) * o2 / need
+            mixed = cb.mix([ox, self._as_stream(m_st, float(node.Tt), Y_f)])
+            T_hi = float(
+                cb.complete_combustion(
+                    mixed.T, list(mixed.X), mixed.P, smooth_phi0=False, smooth_phi1=False
+                ).T
+            )
+            T_without = self._fuel_T_without(streams)
+        except (ValueError, RuntimeError):
+            return "", math.nan
+        complete = getattr(self.network.nodes[node.combustor], "method", "complete") == "complete"
+        target = float(node.Tt_target)
+        if node.branch == "lean":
+            proven = (
+                target > T_hi + _FUEL_PROOF_MARGIN_K or target < T_without - _FUEL_PROOF_MARGIN_K
+            )
+        else:
+            proven = complete and (
+                target > T_hi + _FUEL_PROOF_MARGIN_K
+                or target < min(float(ox.T), float(node.Tt)) - _FUEL_PROOF_MARGIN_K
+            )
+        if not proven:
+            return "", math.nan
+        return self._fuel_window_reason(node, streams, Y_f, T_without, ""), T_without
+
+    def _fuel_refused_before_solve(self) -> dict[str, Any] | None:
+        """A failed result, without a Newton search, when a fuel controller's
+        target is proven unreachable from the inputs (#1114,
+        ``_fuel_proven_unreachable``); None otherwise. The reason is the one
+        a failed solve reports."""
+        fuels = [n for n in self.network.nodes.values() if isinstance(n, FuelBoundary)]
+        if not fuels:
+            return None
+        self.network.resolve_all_topology()
+        proofs = {f.id: self._fuel_proven_unreachable(f) for f in fuels}
+        reasons = [why for why, _ in proofs.values() if why]
+        if not reasons:
+            return None
+        self.network.validate()
+        self._caught_exceptions = []
+        self._caught_count = 0
+        self._init_overrides = {}
+        x0 = self._build_x0()
+        sol: dict[str, Any] = {
+            "__success__": False,
+            "__message__": (
+                "Refused before the solve (the combustor's inflows are fixed by the "
+                f"inputs): {' '.join(reasons)}"
+            ),
+            "__iterations__": 0,
+            "__converged__": False,
+            "__consistent__": None,
+            "__inconsistent_elements__": [],
+            "__P_nonpositive__": [],
+            "__T_clamped__": [],
+            "__heat_faded__": [],
+            "__supersonic_chambers__": [],
+            "__choked_bounded_junctions__": [],
+            "__outcome__": SolveOutcome.NOT_CONVERGED,
+            "__final_norm__": float("inf"),
+            "__worst_residuals__": [],
+            "__unknown_names__": list(self.unknown_names),
+            "__x_solution__": list(x0),
+        }
+        for f in fuels:
+            sol[f"{f.id}.m_dot"] = float("nan")
+            sol[f"{f.id}.phi"] = float("nan")
+            sol[f"{f.id}.Tt_target"] = float(f.Tt_target)
+            sol[f"{f.id}.Tt_without_fuel"] = proofs[f.id][1]
+            sol[f"{f.id}.rich_branch"] = 1.0 if f.branch == "rich" else 0.0
+        return self._with_caught(sol)
 
     def _guess_start(
         self,
@@ -4761,7 +4992,10 @@ class NetworkSolver:
         depth = getattr(self, "_solve_depth", 0)
         self._solve_depth = depth + 1
         try:
-            sol = self._solve_entry(
+            # A fuel controller's target proven unreachable (#1114): refused
+            # without the Newton search and its retries (up to 8 s).
+            refused = self._fuel_refused_before_solve() if depth == 0 else None
+            sol = refused or self._solve_entry(
                 method=method,
                 timeout=timeout,
                 options=options,
@@ -7502,7 +7736,7 @@ class NetworkSolver:
                     message = f"{message} {note}"
                 warnings.warn(f"NetworkSolver: {message}", stacklevel=2)
             if not success:
-                streams, _ = self._fuel_inflows(fnode, final_x, sol_dict)
+                streams, Y_f = self._fuel_inflows(fnode, final_x, sol_dict)
                 m_ox = sum(m for m, _, _ in streams)
                 where = ""
                 start_ox = getattr(fnode, "_start_oxidizer", [])
@@ -7521,25 +7755,10 @@ class NetworkSolver:
                         f"{message} FuelBoundary '{fid}': the combustor {fnode.combustor!r} gets no "
                         "oxidizer flow at this point: the fuel has nothing to burn with."
                     )
-                elif math.isfinite(T_without) and fnode.Tt_target <= T_without:
-                    T_mix = float(cb.mix([self._as_stream(m, T, Y) for m, T, Y in streams]).T)
-                    carries = (
-                        " (the oxidizer carries fuel of its own)" if T_without > T_mix + 1.0 else ""
-                    )
-                    message = (
-                        f"{message} FuelBoundary '{fid}': the target {fnode.Tt_target:.1f} K is not "
-                        f"above what the combustor reaches with no injected fuel, "
-                        f"{T_without:.1f} K{carries}{where}: no reacting root (it would need fuel as "
-                        "a coolant, combustion efficiency ~ 0)."
-                    )
                 else:
-                    T_peak = self._fuel_peak_T(fnode, final_x, sol_dict, streams)
-                    if math.isfinite(T_peak) and fnode.Tt_target > T_peak:
-                        message = (
-                            f"{message} FuelBoundary '{fid}': the target {fnode.Tt_target:.1f} K "
-                            f"is above the peak, {T_peak:.1f} K at stoichiometric: the hottest "
-                            f"this fuel burns in this oxidizer (complete combustion){where}."
-                        )
+                    reason = self._fuel_window_reason(fnode, streams, Y_f, T_without, where)
+                    if reason:
+                        message = f"{message} {reason}"
 
         # An effusion plate with no cooling path (#998): no coolant through its
         # holes and no gas flow on its other side, so nothing takes heat from
