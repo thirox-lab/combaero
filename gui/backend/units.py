@@ -48,6 +48,7 @@ UNIT_MAP: dict[str, str] = {
     "mach_throat": "-",
     "mach_loss_ref": "-",
     "dPt_loss": "Pa",  # AreaChangeElement: the closure's stagnation loss (#731)
+    "exit_head_recovered": "Pa",  # head a node at rest recovers from a Pt-coupled exit
     "choked": "-",
     # --- Node stagnation ---
     "Tt": "K",

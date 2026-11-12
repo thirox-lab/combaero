@@ -3195,6 +3195,85 @@ class NetworkNode(ABC):
 # ---------------------------------------------------------------------------
 
 
+def _exit_head_recovered(
+    nodes: tuple[Any, Any],
+    state_in: "NetworkMixtureState",
+    state_out: "NetworkMixtureState",
+    area: float | None,
+    rho_exit: float | None = None,
+    incompressible: bool = False,
+) -> float:
+    """EXIT-HEAD-RECOVERED [Pa]: the dynamic head a node AT REST silently
+    recovers from a total-receiving element (information only).
+
+    A channel, pressure loss, area change or lossless link matches the
+    receiving node's Pt. At a PlenumNode or CombustorNode (Pt = P), or a
+    boundary the element does not lose its head at, that makes the node's
+    static pressure the element's exit TOTAL pressure: the exit head
+    q = G^2 / (2 rho), G = |m_dot| / area, is recovered with no dump loss.
+    This reports q; no residual or Jacobian reads it, and nothing warns.
+
+    ``nodes`` is the element's (from, to) node pair; the receiver is the one
+    the flow goes into. 0 when that node is not at rest (a momentum chamber
+    carries its own head), with no exit area, or with no flow. The caller
+    passes 0 itself where its residual loses the head (a boundary declaring
+    ``exit_head_lost``, a static-receiving element). ``rho_exit`` is the exit
+    static density when the element already holds it; otherwise the exit
+    static state is the isentropic one from the flow's Tt and the receiver's
+    Pt at G (C++ ``duct_static_state``); a flux above that state's sonic
+    one is a choked exit, not matched to the receiver's Pt: 0. An
+    ``incompressible`` element's head is at its constant density, that of
+    the flow's Tt at the receiver's Pt.
+    """
+    m = float(state_in.m_dot)
+    if m == 0.0 or not math.isfinite(m) or not area or not area > 0.0:
+        return 0.0
+    receiver = nodes[1] if m >= 0.0 else nodes[0]
+    if receiver is None or not bool(getattr(receiver, "state_at_rest", False)):
+        return 0.0
+    src, dst = (state_in, state_out) if m >= 0.0 else (state_out, state_in)
+    G = abs(m) / float(area)
+    if rho_exit is None and incompressible:
+        if not (dst.Pt > 0.0 and src.Tt > 0.0):
+            return math.nan
+        rho_exit = float(cb.density(float(src.Tt), float(dst.Pt), src.X))
+    if rho_exit is None:
+        if not (dst.Pt > 0.0 and src.Tt > 0.0):
+            return math.nan
+        try:
+            st = cb.duct_static_state(float(src.Tt), float(dst.Pt), G, src.X)
+        except (RuntimeError, ValueError):
+            return math.nan
+        if bool(st.choked):
+            # G above the sonic flux at the receiver's Pt: the exit is choked
+            # above it, not matched to it, and its head is not recovered.
+            return 0.0
+        rho_exit = float(st.rho)
+    if not rho_exit > 0.0:
+        return math.nan
+    return 0.5 * G * G / rho_exit
+
+
+def _source_chamber_head(
+    nodes: tuple[Any, Any],
+    state_in: "NetworkMixtureState",
+    state_out: "NetworkMixtureState",
+) -> float:
+    """``_exit_head_recovered`` for an element with no area of its own (a
+    lossless link, a splitter reference): it carries on the head of the
+    MomentumChamberNode the flow leaves, at that chamber's area and its own
+    static density. 0 from any other node."""
+    m = float(state_in.m_dot)
+    src_node = nodes[0] if m >= 0.0 else nodes[1]
+    if not (isinstance(src_node, MomentumChamberNode) and src_node.area and src_node.area > 0.0):
+        return 0.0
+    src = state_in if m >= 0.0 else state_out
+    if not (src.T > 0.0 and src.P > 0.0):
+        return math.nan
+    rho = float(cb.density(float(src.T), float(src.P), src.X))
+    return _exit_head_recovered(nodes, state_in, state_out, float(src_node.area), rho_exit=rho)
+
+
 def _element_pressure_block(
     state_in: "NetworkMixtureState",
     state_out: "NetworkMixtureState",
@@ -9079,7 +9158,8 @@ class LosslessConnectionElement(NetworkElement):
         return 0.0
 
     def resolve_topology(self, graph: "FlowNetwork") -> None:
-        pass  # Zero-loss elements do not need upstream geometry
+        # No geometry needed; the end nodes are for exit_head_recovered.
+        self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
 
     def unknowns(self) -> list[str]:
         return [f"{self.id}.m_dot"]
@@ -9127,10 +9207,18 @@ class LosslessConnectionElement(NetworkElement):
         v_in = ref["velocity"]
         mach_in = v_in / cs_in.thermo.a if cs_in.thermo.a > 0 and v_in > 0 else 0.0
 
+        nodes = getattr(self, "_end_nodes", (None, None))
         return {
             "m_dot": float(state_in.m_dot),
             **_element_pressure_block(state_in, state_out, mach_in=mach_in, mach_out=mach_in),
             **ref,
+            # Info only: with no area of its own the link carries the head of
+            # the momentum chamber it leaves (0 from any other node).
+            "exit_head_recovered": (
+                _exit_head_recovered(nodes, state_in, state_out, self.area)
+                if self.area
+                else _source_chamber_head(nodes, state_in, state_out)
+            ),
         }
 
     def n_equations(self) -> int:
@@ -9288,6 +9376,8 @@ class SplitterOutletElement(NetworkElement):
             )
         self._outlet_nodes = {e.id: e.to_node for e in members}
         self._reference_id = refs[0]
+        # The receiving node, for exit_head_recovered (diagnostics only).
+        self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
 
     def _throughput(self, m_self: float, flows: dict[str, float] | None) -> tuple[float, list[str]]:
         """(sum of the splitter's outlet flows, the sibling ids)."""
@@ -9378,6 +9468,7 @@ class SplitterOutletElement(NetworkElement):
             "fraction": self.fraction,
             "is_reference": 1.0 if self.reference else 0.0,
             **self.valve(state_in, state_out, m),
+            "exit_head_recovered": self._exit_head_recovered(state_in, state_out, m),
         }
         if flows is not None:
             M, _ = self._throughput(m, flows)
@@ -9385,6 +9476,20 @@ class SplitterOutletElement(NetworkElement):
             if M != 0.0:
                 out["fraction_achieved"] = m / M
         return out
+
+    def _exit_head_recovered(
+        self, state_in: NetworkMixtureState, state_out: NetworkMixtureState, m: float
+    ) -> float:
+        """The exit head a node at rest recovers (information only). Only
+        the reference couples Pt to Pt; a metered outlet's row holds no
+        pressure, so it reports 0. The velocity reference is the valve
+        ``area``, else the momentum chamber the splitter draws from."""
+        if not self.reference:
+            return 0.0
+        nodes = getattr(self, "_end_nodes", (None, None))
+        if self.area:
+            return _exit_head_recovered(nodes, state_in, state_out, self.area)
+        return _source_chamber_head(nodes, state_in, state_out)
 
     def second_law_hint(self, sol: dict[str, Any]) -> str:
         """Why the second-law check refused this outlet: it needs its total
@@ -10229,6 +10334,24 @@ class PressureLossElement(NetworkElement):
             return c.m_ref is None and (c.k != 0.0 or c.xi0 != 0.0)
         return False
 
+    def _exit_head_recovered(
+        self, graph: Any, state_in: NetworkMixtureState, state_out: NetworkMixtureState
+    ) -> float:
+        """The exit head a node at rest recovers (``exit_head_recovered``,
+        information only). The loss is Pt to Pt and reads no boundary's
+        ``exit_head_lost``, so an outflow boundary recovers it too. Its
+        velocity reference is a given or inherited area, else the
+        correlation's own; a loss on the DEFAULT_CHAMBER_AREA placeholder (a
+        fraction loss with no neighbour to inherit from) has none: 0."""
+        area = None if self._area_source == "default" else self.area
+        area = area or getattr(self.correlation, "area", None)
+        nodes = (
+            (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
+            if graph is not None
+            else (None, None)
+        )
+        return _exit_head_recovered(nodes, state_in, state_out, area)
+
     def diagnostics(
         self, state_in: NetworkMixtureState, state_out: NetworkMixtureState
     ) -> dict[str, float | str]:
@@ -10283,6 +10406,7 @@ class PressureLossElement(NetworkElement):
             # cannot tell (it needs the network's inputs and topology): NaN until the
             # solver sets it; 0 for any other loss, which is anchored.
             "fraction_unanchored": math.nan if self.unanchored_fraction else 0.0,
+            "exit_head_recovered": self._exit_head_recovered(graph, state_in, state_out),
         }
 
         if self.has_convective_surface:
@@ -10358,6 +10482,10 @@ class ChannelElement(NetworkElement):
     #: A crossflow segment solves its duct between its own station states
     #: (#802), so it keeps the node states there.
     _rest_end_state_from_duct: bool = True
+    #: Whether the duct matches the receiving node's Pt (total-receiving),
+    #: so a node at rest recovers its exit head (``exit_head_recovered``). A
+    #: crossflow segment meets its nodes at static continuity instead.
+    _receives_total: bool = True
 
     # to_dict serialises the given diameter and Dh, not the inherited ones
     # (#1099).
@@ -11143,6 +11271,30 @@ class ChannelElement(NetworkElement):
         )
         mach_out = v_out / cs_out.thermo.a if cs_out.thermo.a > 0 and v_out > 0 else 0.0
 
+        # The exit head a node at rest recovers (information only): at the
+        # duct's own exit static state where _rest_end_states solved it.
+        m_diag = float(state_in.m_dot)
+        if (
+            not self._receives_total
+            or self._exit_head_lost(m_diag)
+            or (flow is not None and bool(flow.choked))
+        ):
+            # Static-receiving, head lost at a boundary, or choked: a choked
+            # duct's exit is not matched to the receiver's Pt.
+            head_recovered = 0.0
+        else:
+            incompressible = self.regime == "incompressible"
+            end_exit, cs_exit = (end_out, cs_out) if m_diag >= 0.0 else (end_in, cs_in)
+            use_end = end_exit is not None and not incompressible
+            head_recovered = _exit_head_recovered(
+                (getattr(self, "_upstream_node", None), getattr(self, "_downstream_node", None)),
+                state_in,
+                state_out,
+                self.area,
+                rho_exit=float(cs_exit.thermo.rho) if use_end else None,
+                incompressible=incompressible,
+            )
+
         # Already at the duct's own inlet static state (#636), not the node's.
         h_res = self.htc_and_T(state_in)
         surface_diag: dict[str, float] = {}
@@ -11230,6 +11382,7 @@ class ChannelElement(NetworkElement):
             "T_aw": float(T_aw),
             "f": float(f),
             **surface_diag,
+            "exit_head_recovered": float(head_recovered),
         }
 
     def _rayleigh_exit_state(
@@ -11643,6 +11796,8 @@ class CrossflowSegmentElement(ChannelElement):
 
     # Its duct runs between its own station states (#802): see ChannelElement.
     _rest_end_state_from_duct = False
+    # Static continuity at its nodes loses the exit head by construction.
+    _receives_total = False
 
     # The channel's area is re-derived from a diameter, which need not give
     # the given area back bit for bit, and a constant segment sets area_to
@@ -12371,6 +12526,8 @@ class AreaChangeElement(NetworkElement):
         return 1
 
     def resolve_topology(self, graph: "FlowNetwork") -> None:
+        # The receiving node, for exit_head_recovered (diagnostics only).
+        self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
         # An explicit face against the pipe at it (#1023): before inference,
         # so an inherited face (equal by construction) is never compared.
         if self._F0_source == "user" and self.F0:
@@ -12524,6 +12681,14 @@ class AreaChangeElement(NetworkElement):
             "F1": f1,
             "F0_source": self._F0_source,
             "F1_source": self._F1_source,
+            # The head at the exit face a node at rest recovers (info only).
+            "exit_head_recovered": _exit_head_recovered(
+                getattr(self, "_end_nodes", (None, None)),
+                state_in,
+                state_out,
+                F_out,
+                incompressible=self.regime == "incompressible",
+            ),
         }
 
     def _pass_through_diagnostics(
@@ -12559,6 +12724,13 @@ class AreaChangeElement(NetworkElement):
             "F1": f1,
             "F0_source": self._F0_source,
             "F1_source": self._F1_source,
+            "exit_head_recovered": _exit_head_recovered(
+                getattr(self, "_end_nodes", (None, None)),
+                state_in,
+                state_out,
+                area,
+                incompressible=self.regime == "incompressible",
+            ),
         }
 
 
@@ -13447,16 +13619,24 @@ class MultiPortChamberBase(NetworkElement):
 # ---------------------------------------------------------------------------
 
 
-def _swirl_static_pressure(Pt: float, Tt: float, v: float, X: list[float]) -> tuple[float, float]:
-    """(static P [Pa], swirl Mach [-]) of a stream at stagnation (Pt, Tt)
-    moving at speed v: h = h_t - v^2/2, then isentropic from the stagnation
-    state. Variable cp throughout, from C++."""
+def _swirl_static_state(
+    Pt: float, Tt: float, v: float, X: list[float]
+) -> tuple[float, float, float]:
+    """(static P [Pa], static T [K], swirl Mach [-]) of a stream at
+    stagnation (Pt, Tt) moving at speed v: h = h_t - v^2/2, then isentropic
+    from the stagnation state. Variable cp throughout, from C++."""
     if v == 0.0:
-        return Pt, 0.0
+        return Pt, Tt, 0.0
     h = cb.h_mass(Tt, X) - 0.5 * v * v
     T = cb.calc_T_from_h_mass(h, X, Tt)
     M = abs(v) / cb.speed_of_sound(T, X)
-    return float(cb.P_from_stagnation(Pt, Tt, M, X)), float(M)
+    return float(cb.P_from_stagnation(Pt, Tt, M, X)), float(T), float(M)
+
+
+def _swirl_static_pressure(Pt: float, Tt: float, v: float, X: list[float]) -> tuple[float, float]:
+    """(static P [Pa], swirl Mach [-]) of ``_swirl_static_state``."""
+    P, _, M = _swirl_static_state(Pt, Tt, v, X)
+    return P, M
 
 
 class VortexElement(NetworkElement):
@@ -13523,7 +13703,8 @@ class VortexElement(NetworkElement):
         return v_in, v_in * self.r_in / self.r_out
 
     def resolve_topology(self, graph: "FlowNetwork") -> None:
-        pass
+        # The receiving node, for exit_head_recovered (diagnostics only).
+        self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
 
     def unknowns(self) -> list[str]:
         return [f"{self.id}.m_dot"]
@@ -13547,6 +13728,7 @@ class VortexElement(NetworkElement):
             "m_dot": float(state_in.m_dot),
             "shaft_speed_rpm": float(self.shaft_speed_rpm),
             **_element_pressure_block(state_in, state_out, mach_in=0.0, mach_out=0.0),
+            "exit_head_recovered": 0.0,
         }
         v_in, v_out = self.swirl()
         out["v_theta_in"] = float(v_in)
@@ -13570,4 +13752,29 @@ class VortexElement(NetworkElement):
                 "M_theta_out": m_out,
             }
         )
+        out["exit_head_recovered"] = self._exit_head_recovered(state_in, up, v_in, v_out)
         return out
+
+    def _exit_head_recovered(
+        self, state_in: NetworkMixtureState, up: NetworkMixtureState, v_in: float, v_out: float
+    ) -> float:
+        """The swirl head 0.5 rho V_theta^2 at the exit radius that a node at
+        rest recovers (information only): Pt is conserved, so the node's
+        static pressure is the swirling exit's total. The vortex has no
+        through-flow area, so this is the swirl's head alone."""
+        m = float(state_in.m_dot)
+        if m == 0.0 or not math.isfinite(m):
+            return 0.0
+        nodes = getattr(self, "_end_nodes", (None, None))
+        receiver = nodes[1] if m >= 0.0 else nodes[0]
+        if receiver is None or not bool(getattr(receiver, "state_at_rest", False)):
+            return 0.0
+        v = v_out if m >= 0.0 else v_in
+        if v == 0.0:
+            return 0.0
+        try:
+            P, T, _ = _swirl_static_state(up.Pt, up.Tt, v, up.X)
+            rho = float(cb.density(T, P, up.X))
+        except (RuntimeError, ValueError):
+            return math.nan
+        return 0.5 * rho * v * v
