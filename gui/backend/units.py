@@ -109,27 +109,45 @@ UNIT_MAP: dict[str, str] = {
     "zeta": "-",
     "area_ratio": "-",  # Phase 2 name
     "is_correlation": "-",
+    # --- The hole-Cd group (hole_cd.HOLE_CD_DIAGNOSTIC_KEYS): the same keys
+    # on every hole element; a term that is off reads applied 0. The
+    # *_model / Cd_correlation keys are text (TEXT_KEYS).
+    "Cd_base": "-",  # the base Cd, before any exit-crossflow term
     "Cd_in_range": "-",  # 1 inside the discharge correlation's source range
     # 1 per variable outside the hole Cd's source range (info, not a warning)
     "Cd_extrapolated_Re": "-",
     "Cd_extrapolated_l_d": "-",
     "Cd_extrapolated_edge": "-",
-    "Cd_crossflow_extrapolated_velocity_ratio": "-",  # Rogers & Hersh Vi/V_inf
-    "Cd_crossflow_extrapolated_l_d": "-",
-    "Cd_crossflow_extrapolated_grazing_velocity": "-",
+    "Cd_inclination_applied": "-",
     "Cd_inclination_dzeta": "-",  # inclined-inlet increment on zeta' (0 when off or at 90 deg)
-    # Opt-in exit-crossflow Cd term (#1074), emitted only when opted in.
-    "Cd_no_exit_crossflow": "-",
-    "Cd_exit_crossflow_ratio": "-",
-    "exit_crossflow_rho_u2": "Pa",  # mainstream momentum flux rho_m u_m^2
-    "exit_crossflow_k_perp": "-",
-    "exit_crossflow_k_used": "-",
-    "exit_crossflow_k_floor": "-",
-    "exit_crossflow_faded": "-",
-    "exit_crossflow_floor_above_fit": "-",
-    "exit_crossflow_delta": "-",
-    "exit_crossflow_held": "-",
-    "exit_crossflow_in_range": "-",
+    "Cd_inlet_crossflow_applied": "-",
+    "Cd_inlet_crossflow_U1_over_Vi": "-",  # a duct-fed hole's U1/Vi, 0 plenum-fed
+    "Cd_inlet_crossflow_U1_over_Vi_max": "-",  # effusion liner: max over panels
+    "Cd_inlet_crossflow_beyond_8pct": "-",
+    "Cd_inlet_crossflow_degraded": "-",
+    "Cd_inlet_crossflow_ignored": "-",
+    "Cd_exit_crossflow_applied": "-",
+    "Cd_exit_crossflow_ratio": "-",  # Cd / Cd_base, 1 when off
+    "Cd_exit_crossflow_rho_u2": "Pa",  # mainstream momentum flux rho_m u_m^2
+    "Cd_exit_crossflow_k_perp": "-",
+    "Cd_exit_crossflow_k_used": "-",
+    "Cd_exit_crossflow_k_floor": "-",
+    "Cd_exit_crossflow_faded": "-",
+    "Cd_exit_crossflow_floor_above_fit": "-",
+    "Cd_exit_crossflow_delta": "-",
+    "Cd_exit_crossflow_held": "-",
+    "Cd_exit_crossflow_in_range": "-",
+    "Cd_exit_crossflow_extrapolated_velocity_ratio": "-",  # Rogers & Hersh Vi/V_inf
+    "Cd_exit_crossflow_extrapolated_l_d": "-",
+    "Cd_exit_crossflow_extrapolated_grazing_velocity": "-",
+    # Deprecated since 0.12.0, removed in 0.13.0 (hole_cd.HOLE_CD_DIAGNOSTIC_ALIASES):
+    # still emitted beside the group; nothing in the GUI reads them.
+    "Cd_own": "-",
+    "U1_over_Vi": "-",
+    "U1_over_Vi_max": "-",
+    "coolant_crossflow_ignored": "-",
+    "crossflow_cd_beyond_8pct": "-",
+    "crossflow_cd_degraded": "-",
     # --- Impingement plate / crossflow (#465) ---
     "n_holes": "-",
     "Re_j": "-",
@@ -174,8 +192,6 @@ UNIT_MAP: dict[str, str] = {
     "m_dot_bleed": "kg/s",
     "bleed_fraction": "-",
     "n_segments": "-",
-    "U1_over_Vi": "-",
-    "U1_over_Vi_max": "-",
     "bleed_nonuniformity": "-",
     "station_psi_min": "-",
     "T_wall_hot_max": "K",
@@ -195,7 +211,6 @@ UNIT_MAP: dict[str, str] = {
     "bypass_fraction": "-",
     "eta_r": "-",  # CR-3936 recovery-temperature effectiveness (#713)
     "eta_r_extrapolated": "-",
-    "Cd_own": "-",
     "f": "-",
     "Cd": "-",
     "phi": "-",
@@ -314,7 +329,6 @@ UNIT_MAP: dict[str, str] = {
     "area_approach_total": "m\u00b2",
     "area_hole_total": "m\u00b2",
     "approach_to_hole_area_ratio": "-",  # approach area / hole area (#773)
-    "coolant_crossflow_ignored": "-",
     "coolant_ht_plenum_assumed": "-",
     "hole_count_exact": "-",
     "internal_Nu_multiplier": "-",
@@ -325,8 +339,6 @@ UNIT_MAP: dict[str, str] = {
     "wall_above_limit": "-",
     "no_cooling_path": "-",
     # Effusion liner (#471)
-    "crossflow_cd_beyond_8pct": "-",
-    "crossflow_cd_degraded": "-",
     "station_psi_beyond_bassett": "-",
     # Impingement array (#465)
     "n_rows_unresolved": "-",
@@ -429,6 +441,11 @@ def unit_of(key: str) -> str | None:
 TEXT_KEYS: frozenset[str] = frozenset(
     {
         "area_source",  # where an element's area came from (#773)
+        # The hole-Cd group's model names (hole_cd.HOLE_CD_DIAGNOSTIC_TEXT_KEYS).
+        "Cd_correlation",
+        "Cd_inclination_model",
+        "Cd_inlet_crossflow_model",
+        "Cd_exit_crossflow_model",
         "compressible_model",  # the orifice expansion model (#854)
         "F0_source",
         "F1_source",

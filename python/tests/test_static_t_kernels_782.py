@@ -153,7 +153,7 @@ def test_the_panel_crossflow_ratio_uses_the_static_duct_state() -> None:
         U1 = abs(m_mean) / (cb.density(T, P, X_AIR) * A)
         w = cb.jet_impulse(1.0, P, T, 1.0e5, X_AIR).J
         Vi = math.sqrt(w * w + cb.CROSSFLOW_VI_FLOOR**2)
-        assert d[f"ln__p{i}"]["U1_over_Vi"] == pytest.approx(U1 / Vi, rel=1e-9)
+        assert d[f"ln__p{i}"]["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(U1 / Vi, rel=1e-9)
     assert min(gaps) > 0.05
 
 

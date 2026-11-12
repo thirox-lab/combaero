@@ -139,12 +139,12 @@ def test_the_hole_angle_cd_term_is_on_by_default_and_threads_through() -> None:
 
 def test_auto_applies_the_hole_angle_term_on_idelchik_thick_only() -> None:
     on = build_network_from_schema(NetworkGraphSchema(**_liner({"angle_deg": 30.0})))
-    assert on.elements["eff"]._hole_cd.inclination_diagnostics()["Cd_inclination_dzeta"] > 0.0
+    assert on.elements["eff"]._hole_cd.inclination_dzeta() > 0.0
     off = build_network_from_schema(
         NetworkGraphSchema(**_liner({"angle_deg": 30.0, "correlation": "Lichtarowicz"}))
     )
     assert off.elements["eff"].cd_inclination == "none"
-    assert off.elements["eff"]._hole_cd.inclination_diagnostics()["Cd_inclination_dzeta"] == 0.0
+    assert off.elements["eff"]._hole_cd.inclination_dzeta() == 0.0
 
 
 def test_an_explicit_hole_angle_term_off_idelchik_thick_is_refused() -> None:

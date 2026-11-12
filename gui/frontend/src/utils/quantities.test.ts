@@ -110,6 +110,16 @@ describe("quantityMeta", () => {
 		expect(quantityMeta("NTU").unit).toBe("—");
 	});
 
+	it("a deprecated alias shows its new key's meta, marked", () => {
+		const m = quantityMeta("U1_over_Vi_max");
+		const n = quantityMeta("Cd_inlet_crossflow_U1_over_Vi_max");
+		expect(m.label).toBe(
+			`${n.label} (deprecated, use Cd_inlet_crossflow_U1_over_Vi_max)`,
+		);
+		expect(m.unit).toBe(n.unit);
+		expect(m.catalogued).toBe(true);
+	});
+
 	it("a key nobody knows still renders", () => {
 		const meta = quantityMeta("no_such_key");
 		expect(meta.unit).toBe("—");

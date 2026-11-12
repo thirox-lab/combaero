@@ -304,7 +304,7 @@ def behrendt_effect(ds: list[SeriesMetadata] | None = None) -> list[dict[str, fl
                 "Cd_off": off["Cd"],
                 "Cd_on": on["Cd"],
                 "m_ratio": on["m_dot"] / off["m_dot"],
-                "k_perp": on["exit_crossflow_k_perp"],
+                "k_perp": on["Cd_exit_crossflow_k_perp"],
                 "eta_off": off["eta_overall"],
                 "eta_on": on["eta_overall"],
             }

@@ -182,11 +182,23 @@ def test_a_normal_hole_is_unchanged_by_the_term(make, inc: str) -> None:
     assert make(angle_deg=90.0, hole_cd=HoleCd(inclination=inc)).cd_inclination == (
         "none" if inc == "auto" else "idelchik_3_2"
     )
-    assert {k: v for k, v in on.items() if not k.startswith("__")} == {
-        k: v for k, v in off.items() if not k.startswith("__")
-    }
+
+    # Every unknown and diagnostic but the configured model, which names the
+    # choice.
+    def rest(r: dict) -> dict:
+        return {
+            k: v
+            for k, v in r.items()
+            if not k.startswith("__") and not k.endswith(".Cd_inclination_model")
+        }
+
+    assert rest(on) == rest(off)
+    eid = next(iter(on["__element_diag__"]))
+    d_on, d_off = on["__element_diag__"][eid], off["__element_diag__"][eid]
+    assert d_on.pop("Cd_inclination_model") == ("none" if inc == "auto" else "idelchik_3_2")
+    assert d_off.pop("Cd_inclination_model") == "none"
     assert on["__element_diag__"] == off["__element_diag__"]
-    assert on["__element_diag__"][next(iter(on["__element_diag__"]))]["Cd_inclination_dzeta"] == 0.0
+    assert d_on["Cd_inclination_dzeta"] == 0.0 and d_on["Cd_inclination_applied"] == 0.0
 
 
 @pytest.mark.parametrize("make", [_plate, _film])

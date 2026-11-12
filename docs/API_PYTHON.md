@@ -841,11 +841,11 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   Baldauf's envelope. Scored on Andrews 88-GT-290 the data refuse it offered
   alone; the missing physics is the gas-side augmentation.
 - **Plenum-fed.** McGreehan-Schotsch's U1/Vi stays 0 and the coolant side is
-  Andrews' still plenum; `coolant_crossflow_ignored` is 1 where the supply
+  Andrews' still plenum; `Cd_inlet_crossflow_ignored` is 1 where the supply
   crossflow is not in the Cd: a supply node a channel runs through on a
   plenum-fed panel, or a duct-fed panel (`crossflow_segments`) with
   `HoleCd(inlet_crossflow="none")`. The latter still reports the duct's
-  `U1_over_Vi` (information; its `crossflow_cd_*` bounds read 0). A
+  `Cd_inlet_crossflow_U1_over_Vi` (information; its `Cd_inlet_crossflow_beyond_8pct` / `_degraded` bounds read 0). A
   channel-fed liner segment is a separate element.
 - With `wall_conductivity` large the wall reduces exactly to
   `overall_effectiveness` below.
@@ -917,14 +917,14 @@ diag["T_wall_hot"], diag["T_wall_cold"], diag["q_wall"], diag["eta_overall"]
   0.054 fan, all data; 3.8 suction, the authors' Fig. 9, its data reaching
   0.58, `cb.rowbury_2001_k_data_max`) the -C offset fades (our
   extrapolation, our threshold), so Cd returns to Cd0 continuously as the
-  mainstream vanishes. `exit_crossflow_faded` reports the tier: 0 inside
+  mainstream vanishes. `Cd_exit_crossflow_faded` reports the tier: 0 inside
   the data, 0.5 inside only the authors' application, 1 faded. Cd can exceed 1 with the leading-edge set at Cd0 near
-  1 (not capped). Below a k floor the term is held. Reported when on:
-  `Cd_no_exit_crossflow`, `Cd_exit_crossflow_ratio`, `exit_crossflow_rho_u2`
-  [Pa], `exit_crossflow_k_perp` (actual), `exit_crossflow_k_used`,
-  `exit_crossflow_k_floor`, `exit_crossflow_delta`, `exit_crossflow_held`,
-  `exit_crossflow_faded` (0 / 0.5 / 1, the k tier), `exit_crossflow_floor_above_fit` (the hold covers
-  the whole fitted k range: info), `exit_crossflow_in_range` (Table 1's angle
+  1 (not capped). Below a k floor the term is held. Reported (in the hole-Cd group, neutral when off):
+  `Cd_base`, `Cd_exit_crossflow_ratio`, `Cd_exit_crossflow_rho_u2`
+  [Pa], `Cd_exit_crossflow_k_perp` (actual), `Cd_exit_crossflow_k_used`,
+  `Cd_exit_crossflow_k_floor`, `Cd_exit_crossflow_delta`, `Cd_exit_crossflow_held`,
+  `Cd_exit_crossflow_faded` (0 / 0.5 / 1, the k tier), `Cd_exit_crossflow_floor_above_fit` (the hold covers
+  the whole fitted k range: info), `Cd_exit_crossflow_in_range` (Table 1's angle
   span). Fidelity (the authors' Fig. 9 predictions) and cross-source accuracy
   (Gritsch 1998, Hay 1983): `validation/cooling/exit_crossflow_cd_runner.py`.
   Off is the default and bit-identical. No GUI Inspector control yet (the
@@ -977,7 +977,7 @@ liner.summarize(res["__element_diag__"])   # bleed, U1/Vi, Cd, P_backside, T_wal
 - **What sets U1/Vi** is mainly the duct's own pressure drop against the
   holes' drive, roughly `sqrt(dp_duct/dp_hole)`, not the duct size: a
   pressure-driven duct carries more flow when made bigger. Flags:
-  `crossflow_cd_beyond_8pct` (> 0.2) and `crossflow_cd_degraded` (> 0.35),
+  `Cd_inlet_crossflow_beyond_8pct` (> 0.2) and `Cd_inlet_crossflow_degraded` (> 0.35),
   the Rohde-scored bounds.
 - **Flagged, provisional:** the coolant-side heat transfer is still Andrews'
   plenum-fed correlation (`coolant_ht_plenum_assumed`), and the stations
@@ -2177,19 +2177,84 @@ unified:
   by the caller's choice, and the duct-fed panel's refusal of a correlation
   without the crossflow term (which exists because the duct would be dropped
   silently) no longer applies. Not hidden: the panel still reports the
-  duct's `U1_over_Vi` and flags `coolant_crossflow_ignored` = 1.
+  duct's `Cd_inlet_crossflow_U1_over_Vi` and flags `Cd_inlet_crossflow_ignored` = 1.
 - **The plain orifice keeps `correlation` and `Cd`** as its own keywords
   (the ISO 5167 metering use), not deprecated; a `HoleCd` field left at None
   takes them, and one that disagrees with them raises.
 - **`element.hole_cd`** holds the resolved spec (correlation and Cd as
   used, the terms as given); `cd_inclination`, `cd_exit_crossflow` (film,
   effusion) and `cd_crossflow` (impingement) read the models in use, "auto"
-  resolved. Diagnostics keys are unchanged.
+  resolved. The diagnostics are one group, below.
 - **Deprecated keywords.** `correlation` and `Cd` (effusion, film, slot,
   impingement row and array) and `cd_crossflow` (impingement row and array)
   still work until 0.13.0; see "Hole-Cd keywords" below. The pre-release
   `cd_inclination` and `cd_exit_crossflow` keywords never shipped and are
   gone (an unknown keyword, `TypeError`).
+
+#### The hole-Cd diagnostics: one `Cd_*` group
+
+Every hole element (`OrificeElement` and every subclass: the plate, film,
+slot and impingement elements, the effusion liner's panels, the
+effective-area and diameter-Cd connections) reports the SAME keys
+(`combaero.network.hole_cd.HOLE_CD_DIAGNOSTIC_KEYS`), whether or not a term
+is on. A term that is off reads its model `"none"`, `_applied` 0 and neutral
+values, so a results table has the same columns on every hole. The values
+are the chain's own (`hole_cd_compose`); the group adds no physics. Only a
+closed orifice (zero area, #1024) reports none: it has no Cd. Metering keys
+(`tap`, `beta_flow`, `E`, `Cd_pipe_ratio`, `dP_tap`, ...) and `is_correlation`
+stay where they were.
+
+| Key | Meaning | When off / not applicable |
+|---|---|---|
+| `Cd` | the element's Cd, every term composed | -- |
+| `Cd_correlation` (text) | the base correlation in use (`"fixed"`, `"IdelchikThick"`, ...) | -- |
+| `Cd_base` | the base Cd: the correlation with its inclination and inlet-crossflow terms, or the fixed value; before any exit-crossflow term | equals `Cd` |
+| `Cd_in_range` | 1 inside the base correlation's stated range | 1 for `"fixed"` |
+| `Cd_extrapolated_Re` / `_l_d` / `_edge` | 1 per base input outside its source's range (info) | 0 |
+| `Cd_inclination_model` (text) | `"idelchik_3_2"` or `"none"`, `"auto"` resolved | `"none"` |
+| `Cd_inclination_applied` | 1 where the inclined-inlet term enters the Cd | 0 |
+| `Cd_inclination_dzeta` | its increment on zeta' | 0 |
+| `Cd_inlet_crossflow_model` (text) | `"mcgreehan_schotsch"` or `"none"` | `"none"` |
+| `Cd_inlet_crossflow_applied` | 1 where the Cd reads a supply-duct U1/Vi | 0 |
+| `Cd_inlet_crossflow_U1_over_Vi` | a duct-fed hole's U1/Vi, reported even with the term off (information) | 0 plenum-fed |
+| `Cd_inlet_crossflow_beyond_8pct` / `_degraded` | the Rohde-scored bounds U1/Vi > 0.2 / > 0.35, where the term is on | 0 |
+| `Cd_inlet_crossflow_ignored` | 1 where a supply crossflow is not in the Cd (a channel through a plenum-fed panel's supply node, or `inlet_crossflow="none"` on a duct-fed panel) | 0 |
+| `Cd_exit_crossflow_model` (text) | `"rowbury_2001"`, an impingement row's jet law, or `"none"` | `"none"` |
+| `Cd_exit_crossflow_applied` | 1 where the term changed the Cd here (Rowbury: a mainstream with momentum; a jet law: acting, not capped) | 0 |
+| `Cd_exit_crossflow_ratio` | `Cd / Cd_base` | 1 |
+| `Cd_exit_crossflow_rho_u2` [Pa] | Rowbury: the approaching mainstream's momentum flux | 0 |
+| `Cd_exit_crossflow_k_perp` / `_k_used` | Rowbury: actual k_perp, and the one evaluated (the floor where held) | NaN where not evaluated |
+| `Cd_exit_crossflow_k_floor` | Rowbury: the set's k floor | NaN without the term |
+| `Cd_exit_crossflow_delta` / `_held` / `_faded` / `_floor_above_fit` | Rowbury: the offset, held below the floor, the k tier (0 / 0.5 / 1), the floor above the fitted range | 0 |
+| `Cd_exit_crossflow_in_range` | Rowbury: inside Table 1's angle span | 1 without the term |
+| `Cd_exit_crossflow_extrapolated_velocity_ratio` / `_l_d` / `_grazing_velocity` | Rogers & Hersh: the input outside CR-2681's envelope, where the law acts | 0 |
+
+The `EffusionLiner` summary carries `Cd_inlet_crossflow_U1_over_Vi_max`,
+`Cd_inlet_crossflow_beyond_8pct` / `_degraded` (any panel) and
+`rows_Cd_inlet_crossflow_U1_over_Vi`; the `ImpingementArray` summary the
+range and envelope flags as "any row".
+
+**Renamed keys (0.12.0).** Keys that never shipped are renamed outright.
+Keys that shipped in 0.11.1 are still emitted under the old name beside the
+new one, with the same value and where they were before: deprecated since
+0.12.0, removed in 0.13.0 (`hole_cd.HOLE_CD_DIAGNOSTIC_ALIASES`,
+`LINER_CD_DIAGNOSTIC_ALIASES`). Read the new names.
+
+| Old key | New key | In 0.11.1 | Old name |
+|---|---|---|---|
+| `Cd_own` (impingement) | `Cd_base` | yes | alias until 0.13.0 |
+| `U1_over_Vi` (duct-fed panel) | `Cd_inlet_crossflow_U1_over_Vi` | yes | alias until 0.13.0 |
+| `crossflow_cd_beyond_8pct` (panel, liner) | `Cd_inlet_crossflow_beyond_8pct` | yes | alias until 0.13.0 |
+| `crossflow_cd_degraded` (panel, liner) | `Cd_inlet_crossflow_degraded` | yes | alias until 0.13.0 |
+| `coolant_crossflow_ignored` (effusion plate, also in `wall_heat_transfer()`) | `Cd_inlet_crossflow_ignored` | yes | alias until 0.13.0 |
+| `U1_over_Vi_max` (liner) | `Cd_inlet_crossflow_U1_over_Vi_max` | yes | alias until 0.13.0 |
+| `rows_U1_over_Vi` (liner) | `rows_Cd_inlet_crossflow_U1_over_Vi` | yes | alias until 0.13.0 |
+| `Cd_no_exit_crossflow` | `Cd_base` | no | removed |
+| `exit_crossflow_rho_u2`, `_k_perp`, `_k_used`, `_k_floor`, `_delta`, `_held`, `_faded`, `_floor_above_fit`, `_in_range` | `Cd_exit_crossflow_*` (same suffix) | no | removed |
+| `Cd_crossflow_extrapolated_velocity_ratio` / `_l_d` / `_grazing_velocity` | `Cd_exit_crossflow_extrapolated_*` | no | removed |
+
+`Cd`, `Cd_in_range` (shipped), `Cd_extrapolated_*`, `Cd_inclination_dzeta`
+and `Cd_exit_crossflow_ratio` keep their names.
 
 ```python
 from combaero.network import (
@@ -3711,14 +3776,14 @@ are crossflow.
   Resolved in q, the row flow goes as dP^1.07 under a strong crossflow (a
   linear resistance) instead of sqrt(dP), which removed the alternating-sign
   stagnant rows of CR-3630 B(5,4,1) (#799). Diagnostics add `Cd` (the one
-  used) beside `Cd_own`. Where Rogers & Hersh's law acts (not capped), the
+  used) beside `Cd_base` (the hole's own). Where Rogers & Hersh's law acts (not capped), the
   inputs outside CR-2681's envelope are named, 1.0 each, as information:
-  `Cd_crossflow_extrapolated_velocity_ratio` (Vi/V_inf = Cd q outside
-  Fig. 11's 0.004-0.5), `Cd_crossflow_extrapolated_l_d` (injecting: hole L/D
+  `Cd_exit_crossflow_extrapolated_velocity_ratio` (Vi/V_inf = Cd q outside
+  Fig. 11's 0.004-0.5), `Cd_exit_crossflow_extrapolated_l_d` (injecting: hole L/D
   outside 0.12-2.0, or outside 0.6-1.0 above Vi/V_inf 0.35; a reversed jet,
   the suction branch: outside 0.6-1.0, since CR-2681 finds the L/D effect
   considerable there and its fit is L/D 1),
-  `Cd_crossflow_extrapolated_grazing_velocity` (G_c / rho of the channel
+  `Cd_exit_crossflow_extrapolated_grazing_velocity` (G_c / rho of the channel
   outside 24-85 m/s); C++ `cb.rogers_hersh_1976_envelope`. `ImpingementArray`
   reports each as "any row". A cold solve that fails is retried once from the
   constant-Cd root (`NetworkSolver`, "[from the constant-Cd solution]"). With

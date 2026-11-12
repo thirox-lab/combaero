@@ -5,9 +5,9 @@
   - **Beyond the fitted range.** The threshold for each set is the larger of two values (`rowbury_2001_k_fit_max`). The paper does not print the true fitted range, so the threshold is combaero's choice. Beyond it the `-C` offset fades, which is our extrapolation. It makes the Cd return to the no-crossflow value continuously as the mainstream vanishes.
     - **The data the paper fitted.** The largest `k` that the set's rows in the paper's Table 1 provably reach (`rowbury_2001_k_data_max`). This value sets the threshold for the pressure set (4.7), the leading edge (4.3) and both fan-shaped sets (0.13 and 0.054).
     - **The authors' own use.** The largest `k` at which the authors applied the set themselves. This value sets the threshold for the suction set: 3.8, from their Fig. 9. The suction set's data alone reach only 0.58.
-    - **Diagnostic.** `exit_crossflow_faded` reports which range a hole is in: 0 inside the data, 0.5 inside only the authors' use, and 1 beyond both, where the offset fades. With the leading-edge set at a no-crossflow Cd near 1, the Cd can exceed 1.
+    - **Diagnostic.** `Cd_exit_crossflow_faded` reports which range a hole is in: 0 inside the data, 0.5 inside only the authors' use, and 1 beyond both, where the offset fades. With the leading-edge set at a no-crossflow Cd near 1, the Cd can exceed 1.
   - **Where it does not apply.** Without a chamber with an approaching mainstream, the opt-in is refused. Below a `k` floor the term is held. The defaults are unchanged bit for bit.
-  - **Diagnostics, reported only when the term is on.** The actual and the evaluated `k`, the floor, the loss, and hold, fade and range flags.
+  - **Diagnostics, in the hole-Cd group (`Cd_exit_crossflow_*`).** The actual and the evaluated `k`, the floor, the loss, and hold, fade and range flags; neutral values when the term is off.
   - **GUI.** The GUI backend reads the three fields from network JSON. There is no Inspector control yet.
 - **New C++ `rowbury_2001_exit_crossflow_cd`, `rowbury_2001_coefficients`, `rowbury_2001_k_perp`, `rowbury_2001_exit_density`, `rowbury_2001_k_floor` and `rowbury_2001_in_range` (`crossflow_cd.h`).** All derivatives are analytic.
 - **`validation/cooling/exit_crossflow_cd_runner.py` reports fidelity and cross-source accuracy for the term.**
