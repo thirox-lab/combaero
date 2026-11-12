@@ -6795,7 +6795,7 @@ wanted:
   checked: true
   issues:
   - 1087
-  priority: later
+  priority: now
   question: 'How much of the SUPPLY dynamic head a duct-fed hole recovers, as a function of inclination and of the
     hole''s orientation to the supply flow -- i.e. whether a duct-fed hole drives from the supply static, the
     total, or a lean-dependent mix (#1087 supply_drive). Held data (2026-11-12 drive-convention study) give the
