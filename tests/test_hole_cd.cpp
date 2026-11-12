@@ -335,9 +335,10 @@ TEST(HoleSupplyDrive, StaticIsTheStationStaticAndTotalAddsTheClosuresHead) {
         combaero::solver::momentum_chamber_residual_and_jacobian(P, 0.0, m, Tt, Y, A, inc);
     EXPECT_EQ(s.P_drive, P);
     EXPECT_EQ(s.dP_dP, 1.0);
-    EXPECT_EQ(s.q_dyn, c.q_dyn);
+    EXPECT_NEAR(s.q_dyn, c.q_dyn, 1e-12 * c.q_dyn);  // -residual - P: round-off apart
     EXPECT_GT(t.q_dyn, 0.0);
-    EXPECT_EQ(t.P_drive, P + c.q_dyn);
+    EXPECT_EQ(t.P_drive, -c.residual);
+    EXPECT_NEAR(t.P_drive, P + c.q_dyn, 1e-12 * t.P_drive);
     auto f = [&](double P_, double T_, double m_) {
       return hole_supply_drive(HoleSupplyDrive::Total, P_, T_, Y, m_, A, inc).P_drive;
     };
@@ -352,4 +353,59 @@ TEST(HoleSupplyDrive, StaticIsTheStationStaticAndTotalAddsTheClosuresHead) {
     EXPECT_EQ(r.P_drive, t.P_drive);
     EXPECT_EQ(r.dP_dm_dot, -t.dP_dm_dot);
   }
+}
+
+// Past the station's sonic static the closure is its bounded continuation
+// (#788): the drive's value and its partials must still be one function.
+TEST(HoleSupplyDrive, BoundedBranchPartialsMatchTheValue) {
+  using combaero::hole_supply_drive;
+  using combaero::HoleSupplyDrive;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P = 1.2e5, Tt = 450.0, A = 1.2e-3;
+  for (const double m : {0.35, 0.8, 1.2}) {
+    const auto t = hole_supply_drive(HoleSupplyDrive::Total, P, Tt, Y, m, A, false);
+    const auto c = combaero::solver::momentum_chamber_residual_and_jacobian(P, 0.0, m, Tt, Y, A,
+                                                                            false);
+    EXPECT_EQ(t.P_drive, -c.residual);
+    EXPECT_EQ(t.q_dyn, t.P_drive - P);
+    auto f = [&](double P_, double T_, double m_) {
+      return hole_supply_drive(HoleSupplyDrive::Total, P_, T_, Y, m_, A, false).P_drive;
+    };
+    const double hP = 1e-3 * std::abs(t.q_dyn), hT = 1e-4, hm = 1e-7 * m;
+    EXPECT_NEAR((f(P + hP, Tt, m) - f(P - hP, Tt, m)) / (2 * hP), t.dP_dP,
+                1e-5 * std::abs(t.dP_dP) + 1e-9);
+    EXPECT_NEAR((f(P, Tt + hT, m) - f(P, Tt - hT, m)) / (2 * hT), t.dP_dTt,
+                1e-5 * std::abs(t.dP_dTt) + 1e-6);
+    EXPECT_NEAR((f(P, Tt, m + hm) - f(P, Tt, m - hm)) / (2 * hm), t.dP_dm_dot,
+                1e-5 * std::abs(t.dP_dm_dot) + 1e-3);
+  }
+}
+
+// The static-to-total Cd conversion: the ratio of the kernel's own ideal
+// flows, 0 where P1 <= P2, partials against central differences.
+TEST(HoleStaticToTotalCdRatio, IsTheKernelsIdealFlowRatio) {
+  using combaero::hole_static_to_total_cd_ratio;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P1 = 1.2e5, T1 = 430.0, Pt1 = 1.32e5, Tt1 = 450.0, P2 = 1.05e5;
+  const auto r = hole_static_to_total_cd_ratio(P1, T1, Pt1, Tt1, P2, Y);
+  const auto s = combaero::solver::orifice_compressible_residuals_and_jacobian(0.0, P1, P1, T1, Y,
+                                                                               P2, 1.0, 1.0, 0.0);
+  const auto t = combaero::solver::orifice_compressible_residuals_and_jacobian(
+      0.0, Pt1, Pt1, Tt1, Y, P2, 1.0, 1.0, 0.0);
+  EXPECT_DOUBLE_EQ(r.ratio, s.m_dot_calc / t.m_dot_calc);
+  EXPECT_EQ(hole_static_to_total_cd_ratio(P2, T1, Pt1, Tt1, P2, Y).ratio, 0.0);
+  auto f = [&](double a, double b, double c, double d, double e) {
+    return hole_static_to_total_cd_ratio(a, b, c, d, e, Y).ratio;
+  };
+  const double hp = 1.0, ht = 1e-3;
+  EXPECT_NEAR((f(P1 + hp, T1, Pt1, Tt1, P2) - f(P1 - hp, T1, Pt1, Tt1, P2)) / (2 * hp), r.d_dP1,
+              1e-6 * std::abs(r.d_dP1));
+  EXPECT_NEAR((f(P1, T1 + ht, Pt1, Tt1, P2) - f(P1, T1 - ht, Pt1, Tt1, P2)) / (2 * ht), r.d_dT1,
+              1e-6 * std::abs(r.d_dT1));
+  EXPECT_NEAR((f(P1, T1, Pt1 + hp, Tt1, P2) - f(P1, T1, Pt1 - hp, Tt1, P2)) / (2 * hp), r.d_dPt1,
+              1e-6 * std::abs(r.d_dPt1));
+  EXPECT_NEAR((f(P1, T1, Pt1, Tt1 + ht, P2) - f(P1, T1, Pt1, Tt1 - ht, P2)) / (2 * ht), r.d_dTt1,
+              1e-6 * std::abs(r.d_dTt1));
+  EXPECT_NEAR((f(P1, T1, Pt1, Tt1, P2 + hp) - f(P1, T1, Pt1, Tt1, P2 - hp)) / (2 * hp), r.d_dP2,
+              1e-6 * std::abs(r.d_dP2));
 }

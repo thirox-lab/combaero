@@ -6832,6 +6832,22 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "P + q, q the momentum-chamber closure's dynamic head at the mean duct\n"
         "flow m_dot through `area` (the plenum-fed Cd data's reference). Returns\n"
         "P_drive, q_dyn and the analytic partials of P_drive by P, Tt, m_dot, Y.");
+  py::class_<HoleDriveCdRatio>(m, "HoleDriveCdRatio",
+                               "Cd_T / Cd_S of a static-referenced hole Cd on the total drive.")
+      .def_readonly("ratio", &HoleDriveCdRatio::ratio)
+      .def_readonly("d_dP1", &HoleDriveCdRatio::d_dP1)
+      .def_readonly("d_dT1", &HoleDriveCdRatio::d_dT1)
+      .def_readonly("d_dPt1", &HoleDriveCdRatio::d_dPt1)
+      .def_readonly("d_dTt1", &HoleDriveCdRatio::d_dTt1)
+      .def_readonly("d_dP2", &HoleDriveCdRatio::d_dP2)
+      .def_readonly("d_dY", &HoleDriveCdRatio::d_dY);
+  m.def("hole_static_to_total_cd_ratio", &hole_static_to_total_cd_ratio, py::arg("P1"),
+        py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"),
+        "The exact conversion of a static-referenced hole Cd onto the total drive:\n"
+        "Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2), both ideal flows\n"
+        "from the network's compressible nozzle kernel; (P1, T1) the supply's STATIC\n"
+        "state, (Pt1, Tt1) its stagnation state. 0 where P1 <= P2. Analytic partials\n"
+        "by P1, T1, Pt1, Tt1, P2 and the mass fractions Y.");
 
   m.def("solve_orifice_mdot",
         [](const OrificeGeometry &geom, double dP, double rho, double mu,

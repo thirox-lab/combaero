@@ -3588,7 +3588,7 @@ documents:
     reported not scored (no closure yet, #813): Report 1373 Eq. 9 +0.7 deg bias / 3.4 deg MAE on the
     liner-envelope crossflow rows; NREC Eq. 97 with Cd_inf 0.625 +8.0 / 8.8 deg. Used 2026-11-11 (#1087 supply
     side, cross-source ACCURACY): the 43 clean circular duct-fed rows (normal thin holes) under
-    McGreehanSchotsch + Eq. 17: station-static drive -10.4/16.5 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; since refused) +3.4/13.8 %; with the inlet
+    McGreehanSchotsch + Eq. 17: station-static drive -10.4/16.5 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +3.4/13.8 %; with the inlet
     term off under the total drive +20.8/55.6 % (McGreehanSchotsch), +27.3/60.9 % (IdelchikThick).'
   read_for: ['#807 thin-wall liner-hole Cd under supply crossflow (cross-source accuracy for McGreehan-Schotsch
       Eq. 17)', 'primary of Lefebvre & Ballal Eq. 4.15 / Fig. 4.2', '#813 jet deflection angle vs Report 1373
@@ -4411,9 +4411,10 @@ documents:
     _Re), as information; the per-call C++ warning below Re 1e4 is gone. Used 2026-11-11 (#1087 supply side):
     Eq. 17 is defined on the station-STATIC drive (the paper''s convention). On the authors'' Fig. 6 (FIDELITY,
     Re 5e4 assumed) the chain + Eq. 17 reads +12.5/14.5 % on that drive and +32.6/48.0 % under the duct-total
-    drive unconverted, which is not the authors'' own model; converted exactly it is the static result again, so
-    HoleCd(supply_drive="total") with the Eq. 17 term is refused and the default ("auto" = "static") keeps it.
-    Drive-convention study 2026-11-12 (tmp/cd_audit/drive_convention.md): static flattens the normal-hole sets
+    drive unconverted, which is not the authors'' own model; converted exactly (C++ hole_static_to_total_cd_ratio,
+    the default since #1122 under the Pt -> static rule) it is the static result again, up to the static-temperature
+    correction (the network''s station state now takes the static T, as the paper does).
+    Drive-convention study 2026-11-12 (docs/archive/hole_drive_convention.md): static flattens the normal-hole sets
     (recovered head f ~ 0), total the 30 deg co-aligned ones (f ~ 1).'
   read_for: ['#375 jet-plate Cd', '#382 expansion factor Y', '#383 analytic (f,J) and U1/Vi singularity',
     '#645 permanent loss']
@@ -4511,7 +4512,7 @@ documents:
     stay off by default because the term alone moves them away (fan none -1.5% -> -11.3%, laidback +0.5% ->
     -9.5%, cross-source accuracy). Used 2026-11-11 (#1087 supply side, HoleCd(supply_drive), scorecard in the
     PR, cross-source ACCURACY): the 64 duct-fed Ma_m 0 cylindrical points (30 deg co-aligned, one lab) under
-    McGreehanSchotsch + Eq. 17: station-static drive -33.1/43.5 % (2 unreachable), duct-total drive (Eq. 17 unconverted, a different model, not a convention test; since refused) -8.4/43.6 %
+    McGreehanSchotsch + Eq. 17: station-static drive -33.1/43.5 % (2 unreachable), duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) -8.4/43.6 %
     (all reachable); total drive with the inlet term off -4.5/17.4 % (IdelchikThick) / +2.1/17.9 %
     (McGreehanSchotsch). The Ma_m 0.3/0.6 points inside the #1087 exit band are reachable as outflow since that
     PR.'
@@ -4607,7 +4608,7 @@ documents:
     solved directly): Gritsch 30 deg Ma_m 0.3 +0.8% -> -2.8%, 0.6 +15.9% -> +3.2%, 1.2 +46.8% -> +8.6%; Hay
     Minf 0.31 90 deg +11.2% -> -4.6% (outside the suction rows'' 30-78 deg; margin 0.25/0.5/0.75/1.0 gives
     -0.2/-4.6/-7.4/-9.3%), 30 deg parallel +11.4% -> +6.8%, perpendicular +12.3% -> +8.8%. Points inside p_m
-    < p0c < Pt_m (#1087) are not reachable through the element in a network. Behrendt 2008 E30 plates (k_perp
+    < p0c < Pt_m (#1087) were not reachable through the element in a network before #1122 (the direction now comes from the coolant drive against the chamber static, so they blow). Behrendt 2008 E30 plates (k_perp
     7.8-11.6, beyond 3.8, faded): Cd and coolant flow +1.1-1.6% (+2.8-3.1% with Eq. 8''s -C unfaded), the
     wrong direction for DLR''s coolant-flow excess; E20 (20 deg) is refused (suction-set A < 0 below 20.6
     deg).'
@@ -4716,7 +4717,7 @@ documents:
     parallel +23.2% -> +11.5%, perpendicular +26.1% -> +14.1% (7 clean marks; fig12''s PR >= 1.9 cluster
     excluded as overplotted), 90 deg cells unchanged bit for bit. Used 2026-11-11 (#1087 supply side,
     cross-source ACCURACY): 16 duct-fed Minf 0 points, 90 deg normal holes, McGreehanSchotsch + Eq. 17:
-    station-static drive -3.8/7.6 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; since refused) +7.1/12.1 %; 30 deg holes are scored only with a
+    station-static drive -3.8/7.6 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +7.1/12.1 %; 30 deg holes are scored only with a
     mainstream (no exit term: co-aligned -6.0/16.3 u4 -> +6.1/20.3, perpendicular +11.7/14.2 u2 -> +26.4/30.9).'
   read_for: ['#813 duct-fed hole Cd reference pressure and coolant-side crossflow', '#800/#818 cross-source check
       of the exit-side grazing Cd', '#807 L/D effect (none usable)', 'hole-inclination Cd term, 30/90 deg
@@ -4812,7 +4813,7 @@ documents:
   verdict: 'Cross-source accuracy set for the McGreehan-Schotsch crossflow and corner-radius terms (Fig. 10
     digitised); also supplies validity statements. No correlation to implement. Used 2026-11-11 (#1087 supply
     side, cross-source ACCURACY but inside MS''s Fig. 4 fitting compilation): Fig. 10''s 30 points under
-    McGreehanSchotsch + Eq. 17: station-static drive +17.9/22.8 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; since refused) +30.3/41.5 %.'
+    McGreehanSchotsch + Eq. 17: station-static drive +17.9/22.8 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +30.3/41.5 %.'
   read_for: ['#375 jet-plate Cd crossflow validity', McGreehan-Schotsch U1/Vi term accuracy]
   issues: [333, 339, 375, 381, 382, 388, 389, 433, 1087]
   records: [validation/cooling/data/rohde1969/, validation/cooling/data/mcgreehan_schotsch1988/fig6_rohde_td0p51.csv,

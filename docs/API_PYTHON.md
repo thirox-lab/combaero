@@ -434,6 +434,12 @@ res.Cd, res.cd_base, res.dCd_dRe, res.dCd_dG_h, res.exit.k_used, res.exit_k_tier
 d = cb.hole_supply_drive(cb.HoleSupplyDrive.Total, P=1.2e5, Tt=450.0,
                          Y=list(cb.mole_to_mass(X)), m_dot=0.35, area=1.2e-3)
 d.P_drive, d.q_dyn, d.dP_dP, d.dP_dm_dot
+# A static-referenced Cd (McGreehan-Schotsch Eq. 17) onto the total drive,
+# exactly: Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2), both from
+# the network's compressible nozzle kernel; 0 where P1 <= P2.
+c = cb.hole_static_to_total_cd_ratio(P1=1.2e5, T1=430.0, Pt1=1.32e5, Tt1=450.0,
+                                     P2=1.05e5, Y=list(cb.mole_to_mass(X)))
+c.ratio, c.d_dP1, c.d_dT1, c.d_dPt1, c.d_dTt1, c.d_dP2
 
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
@@ -2232,7 +2238,7 @@ HoleCd(
     inlet_crossflow="auto",  # "none" / "mcgreehan_schotsch"
     exit_crossflow="auto",   # "none" / "rowbury_2001" / "rogers_hersh_1976"
                              #   / "florschuetz_metzger_su_1982"
-    supply_drive="auto",     # "static" / "total" (duct-fed holes, #1087)
+    supply_drive="auto",     # = "total"; "static": the pre-0.12 drive (#1087)
 )
 ```
 
@@ -2246,48 +2252,57 @@ unified:
 | `inclination` `"auto"` | none | Idelchik 3-2 on an inclined IdelchikThick hole | the same, cylindrical holes only | none | none |
 | `inlet_crossflow` `"auto"` | none (U1/Vi = 0) | McGreehan-Schotsch's U1/Vi when duct-fed (`crossflow_segments`) | none | none | none |
 | `exit_crossflow` `"auto"` | none | none (`"rowbury_2001"` opts in) | none (`"rowbury_2001"` opts in) | none | `"rogers_hersh_1976"` |
-| `supply_drive` `"auto"` | `"total"` (the supply node's Pt) | `"static"` when duct-fed (the station static), else `"total"` | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) |
+| `supply_drive` `"auto"` | `"total"` (the supply node's Pt) | `"total"`: duct-fed, the duct's total at the station | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) |
 
-- **The supply drive (#1087, since 0.12.0).** The pressure a hole's ideal
-  flow is taken from: the reference its Cd is defined on. It differs from
-  the supply node's Pt on a DUCT-FED `EffusionPlateElement` only (an
+- **Every hole drives from the upstream TOTAL to the downstream STATIC
+  (#1087, since 0.12.0).** The rule (2026-11-12) makes the element own the
+  energy balance. How much of a supply's dynamic head the hole recovers (the
+  recovered fraction f: 0 sees the static, 1 the total) is its Cd model's
+  business. Design record: `docs/archive/hole_drive_convention.md`.
+- **`supply_drive` (`"auto"` = `"total"`).** The drive differs from the
+  supply node's Pt only on a DUCT-FED `EffusionPlateElement` (an
   `EffusionLiner` panel, or a plate with `crossflow_segments`), whose supply
-  node is a duct station holding the duct's static pressure. `"static"`
-  (`"auto"`, the wiring as before) drives from the station static, McGreehan
-  & Schotsch's own convention (their Eq. 17 inlet-crossflow Cd is defined on
-  it). `"total"` (selectable) drives from the duct's stagnation pressure
-  there, the station static plus the dynamic head of the mean of its two
-  segment flows (C++ `hole_supply_drive`, the momentum-chamber closure): the
-  reference of the plenum-fed Cd data, coolant total to exit static. A
-  fraction of the head in between is not offered (no source gives it);
-  `Cd_supply_drive_head_fraction` reports how much of the drive the choice
-  decides. `"static"` on a hole that is not duct-fed is refused, and so is
-  `"total"` with McGreehan-Schotsch's supply-crossflow term on: Eq. 17's Cd
-  is referenced to the station static, so on the duct total it is not the
-  authors' model, and converted exactly
-  (`Cd_T = Cd_S psi(p1, T1 -> p2) / psi(Pt1, Tt1 -> p2)`) it gives the
-  static drive's flow again. `"total"` goes with `inlet_crossflow="none"`.
-  The direction, the reverse flow, `dP_drive` / `is_ingesting`, the exit
-  density of the Rowbury term and the second-law check read the same drive.
-  - **Choosing a drive is choosing a recovered-head fraction f** of the
-    supply's dynamic head: f = 0 static, f = 1 total. As bookkeeping the two
-    conventions are equivalent (each held set converts exactly, given its
-    dynamic head). As a drive they are physics, and the held data split by
-    lean (cross-source, `tmp/cd_audit/drive_convention.md`). f ~ 0 holds for
-    normal holes (Kaddah, Rohde, McGreehan-Schotsch, Hay: 4 labs, 11 sets)
-    and for holes leaning across the supply flow (Hay 1983). f ~ 1 holds for
-    30 deg holes leaning WITH it (Gritsch 1998, one lab). So `"static"` is
-    the default (2026-11-12), and co-aligned holes are its known miss.
-  - **The route to a lean-dependent f** (opt-in is not an end state): a
-    second co-aligned lab (Rohde 1969 Fig. 11, held, not digitised) and
-    orientation data, Gritsch, Schulz & Wittig 2001 (J. Turbomach. 123(4),
-    781-787, doi:10.1115/1.1397306; on the sources wanted list).
-  - **Known limitations.** The static drive pairs the station's static P
-    with the node's TOTAL temperature, where McGreehan & Schotsch take the
-    static temperature: 0 to +3.5 % in the ideal flow on Gritsch's points.
-    With `"total"`, a duct-fed panel's jet momentum into a merge chamber
-    (`injection_momentum`) still takes the station's own pressure, because
-    the hook sees no segment flows.
+  node is a duct station holding the duct's static pressure. There the drive
+  is the duct's stagnation pressure at the station: the static plus the
+  dynamic head of the mean of its two segment flows (C++ `hole_supply_drive`,
+  the momentum-chamber closure). It is even in the duct flow and smooth
+  through a duct-flow reversal.
+  - **With McGreehan-Schotsch's Eq. 17 term (the liner default).** Their Cd
+    is defined on the station STATIC pressure and temperature, so it is
+    converted exactly onto the total drive (C++
+    `hole_static_to_total_cd_ratio`):
+    `Cd_T = Cd_S m_id(p1, T1 -> p2) / m_id(Pt1, Tt1 -> p2)`. Both ideal
+    flows come from the network's compressible nozzle kernel, with T1 the
+    station's static temperature. That is the authors' own model (f = 0):
+    the hole passes zero at the station static, and a reversed jet
+    discharges against it. Flows equal the pre-0.12 ones up to the
+    static-temperature correction (+1 to +3 % on the probe liners). The
+    reported `Cd` and `Cd_base` are on the total basis.
+  - **With `inlet_crossflow="none"`.** The plain Cd runs from the total to
+    the static, so the full supply head is recovered (f = 1). That is the
+    behaviour of a hole leaning WITH the supply flow (Gritsch 1998). On a
+    liner with the term off it bleeds **+70 to +250 %** more than the
+    pre-0.12 static drive did.
+  - **`"static"`** is the pre-0.12 drive (station static, node total
+    temperature), kept to reproduce earlier results. It books the duct head
+    outside the hole's control volume, against the rule. It is refused on a
+    hole that is not duct-fed.
+  - **Known gaps.** Held data (cross-source) give f ~ 0 for normal holes and
+    for holes leaning across the supply flow, and f ~ 1 for 30 deg holes
+    leaning with it (one lab). So Eq. 17 misses co-aligned holes, and a
+    term-off base misses normal ones. The lean- and direction-dependent
+    recovery is a Cd-model term to come (#1124), sourced from Rohde 1969
+    Fig. 11 and Gritsch, Schulz & Wittig 2001 (J. Turbomach. 123(4),
+    781-787, doi:10.1115/1.1397306; wanted entry in #1120). A liner whose
+    duct flow reverses at a station is demoted by the second-law check:
+    booked at the duct total, the hole stream exposes the station's
+    reversed-flow model manufacturing total pressure (#1125). A duct-fed
+    panel's jet momentum into a merge chamber (`injection_momentum`) takes
+    the station's own pressure, because the hook sees no segment flows.
+    That is consistent for the converted Eq. 17 Cd (f = 0).
+  - **Consistency.** The direction, the reverse flow, `dP_drive` /
+    `is_ingesting`, the throat Mach, the Rowbury exit density and the
+    second-law control volumes read the same pair of pressures.
 - **A hole into a flowing chamber (#1087, since 0.12.0).** A film,
   effusion or slot hole discharging into a `MomentumChamberNode` takes its
   direction from its supply drive against the chamber's STATIC pressure,
@@ -2355,8 +2370,8 @@ stay where they were.
 | `Cd_inlet_crossflow_beyond_8pct` / `_degraded` | the Rohde-scored bounds U1/Vi > 0.2 / > 0.35, where the term is on | 0 |
 | `Cd_inlet_crossflow_ignored` | 1 where a supply crossflow is not in the Cd (a channel through a plenum-fed panel's supply node, or `inlet_crossflow="none"` on a duct-fed panel) | 0 |
 | `Cd_supply_drive_model` (text) | `"total"` or `"static"`, `"auto"` resolved | `"total"` (not duct-fed) |
-| `Cd_supply_drive_applied` | 1 where the drive is not the supply node's own Pt (a duct-fed hole's rebuilt duct total) | 0 |
-| `Cd_supply_drive_head_fraction` | the duct's dynamic head over the full drive, q / (Pt_duct - p_exit) (information: the share the unsourced recovered fraction decides); NaN where Pt_duct <= p_exit | 0 not duct-fed |
+| `Cd_supply_drive_applied` | 1 where the drive is not the supply node's own Pt: a duct-fed hole's rebuilt duct total, or `"static"` from a station that carries its own Pt (a MomentumChamberNode) | 0 |
+| `Cd_supply_drive_head_fraction` | the duct's dynamic head over the full drive, q / (Pt_duct - p_exit) (information: the share of the drive the Cd model's recovered fraction decides); NaN where Pt_duct <= p_exit | 0 not duct-fed |
 | `Cd_exit_crossflow_model` (text) | `"rowbury_2001"`, an impingement row's jet law, or `"none"` | `"none"` |
 | `Cd_exit_crossflow_applied` | 1 where the term changed the Cd here (Rowbury: a mainstream with momentum; a jet law: acting, not capped) | 0 |
 | `Cd_exit_crossflow_ratio` | `Cd / Cd_base` | 1 |

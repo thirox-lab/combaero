@@ -144,20 +144,55 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
   const solver::MomentumChamberResult c =
       solver::momentum_chamber_residual_and_jacobian(P, 0.0, m_dot, Tt, Y, area, incompressible);
   HoleSupplyDriveResult out;
-  out.q_dyn = c.q_dyn;
+  // The closure's own value, -residual at Pt = 0: P + q on the subsonic
+  // branch, and past the station's sonic static the closure's bounded
+  // continuation 2 Pt* - Pt_cl(P) (#788), so value and partials (the
+  // residual's, negated) stay one function on both branches.
+  const double pt_station = -c.residual;
+  out.q_dyn = pt_station - P;
   if (drive == HoleSupplyDrive::Static) {
     out.P_drive = P;
     out.dP_dP = 1.0;
     out.dP_dY.assign(Y.size(), 0.0);
     return out;
   }
-  out.P_drive = P + c.q_dyn;
+  out.P_drive = pt_station;
   out.dP_dP = -c.d_res_dP;
   out.dP_dTt = -c.d_res_dT;
   out.dP_dm_dot = -c.d_res_dmdot;
   out.dP_dY.resize(c.d_res_dY.size());
   for (std::size_t k = 0; k < c.d_res_dY.size(); ++k) {
     out.dP_dY[k] = -c.d_res_dY[k];
+  }
+  return out;
+}
+
+HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y) {
+  HoleDriveCdRatio out;
+  out.d_dY.assign(Y.size(), 0.0);
+  if (!(P1 > P2) || !(Pt1 > P2)) {
+    return out;
+  }
+  // Each side's ideal flow from rest at its own (pressure, temperature):
+  // beta 0, so the kernel expands from (P_total_up, Tt_up) as given.
+  const solver::OrificeResult s =
+      solver::orifice_compressible_residuals_and_jacobian(0.0, P1, P1, T1, Y, P2, 1.0, 1.0, 0.0);
+  const solver::OrificeResult t =
+      solver::orifice_compressible_residuals_and_jacobian(0.0, Pt1, Pt1, Tt1, Y, P2, 1.0, 1.0, 0.0);
+  if (!(t.m_dot_calc > 0.0)) {
+    return out;
+  }
+  const double r = s.m_dot_calc / t.m_dot_calc;
+  const double inv = 1.0 / t.m_dot_calc;
+  out.ratio = r;
+  out.d_dP1 = s.d_mdot_dP_total_up * inv;
+  out.d_dT1 = s.d_mdot_dTt_up * inv;
+  out.d_dPt1 = -r * t.d_mdot_dP_total_up * inv;
+  out.d_dTt1 = -r * t.d_mdot_dTt_up * inv;
+  out.d_dP2 = (s.d_mdot_dP_static_down - r * t.d_mdot_dP_static_down) * inv;
+  for (std::size_t k = 0; k < Y.size() && k < s.d_mdot_dY_up.size(); ++k) {
+    out.d_dY[k] = (s.d_mdot_dY_up[k] - r * t.d_mdot_dY_up[k]) * inv;
   }
   return out;
 }

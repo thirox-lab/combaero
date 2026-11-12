@@ -2,13 +2,17 @@
 (``HoleCd.supply_drive``) and the direction of a cooling hole into a flowing
 chamber.
 
-Supply side. A duct-fed EffusionPlateElement's supply node is a duct station
-holding the duct's STATIC pressure. ``supply_drive="total"`` takes
-the hole's ideal flow from the duct's stagnation pressure there, static plus
-the dynamic head of its mean flow (C++ hole_supply_drive, the momentum
-chamber closure): the reference the plenum-fed Cd data are taken on, the
-hole-Cd audit's option (a). "static" ("auto", the default and the wiring
-before) drives from the station static, McGreehan & Schotsch's convention.
+Supply side. Every hole drives from the upstream TOTAL to the downstream
+static (the owner's rule, 2026-11-12); its Cd model owns how much supply
+head it recovers. A duct-fed EffusionPlateElement's supply node is a duct
+station holding the duct's STATIC pressure, so ``supply_drive="auto"``
+("total") rebuilds the duct's stagnation pressure there (C++
+hole_supply_drive, the momentum-chamber closure). McGreehan & Schotsch's
+static-referenced Eq. 17 Cd is converted onto it exactly (C++
+hole_static_to_total_cd_ratio, f = 0: the flow is the static-referenced
+model's own, at the station's static temperature); a base without the term
+recovers the whole head (f = 1). "static" is the pre-0.12 drive.
+Design record: docs/archive/hole_drive_convention.md.
 
 Exit side. A film, effusion or slot hole into a MomentumChamberNode takes its
 direction from its supply drive against the chamber's STATIC pressure, the
@@ -47,7 +51,7 @@ from combaero.network import (
     PressureBoundary,
     SlotFilmElement,
 )
-from combaero.network.components import _moving_total_P
+from combaero.network.components import _moving_static_T, _moving_total_P
 from combaero.network.hole_cd import HOLE_CD_DIAGNOSTIC_KEYS
 
 Y_AIR = list(cb.mole_to_mass(cb.species.dry_air()))
@@ -70,7 +74,8 @@ def test_the_total_drive_is_the_momentum_chamber_closures_total(incompressible: 
     c = cb._core.momentum_chamber_residual_and_jacobian(
         P, 0.0, m, Tt, Y_AIR, A_DUCT, incompressible
     )
-    assert tot.q_dyn == sta.q_dyn == c.q_dyn > 0.0
+    assert tot.q_dyn == sta.q_dyn == pytest.approx(c.q_dyn, rel=1e-12) and c.q_dyn > 0.0
+    assert tot.P_drive == -c.residual  # the closure's value, bounded branch included
     assert tot.P_drive == pytest.approx(P + c.q_dyn, rel=1e-15)
     assert sta.P_drive == P and sta.dP_dP == 1.0 and sta.dP_dTt == 0.0 and sta.dP_dm_dot == 0.0
     if not incompressible:
@@ -218,12 +223,10 @@ def test_a_hole_whose_station_static_is_below_the_exit_blows() -> None:
     assert r["__element_diag__"]["h"]["is_ingesting"] == 1.0
 
 
-@pytest.mark.parametrize("drive", ["auto", "static"])
-def test_static_on_a_station_reads_it_as_before(drive: str) -> None:
-    # supply_drive="static" -- the default on a duct-fed hole, "auto" -- on a
-    # PlenumNode station is the wiring as before: no drive pair, the original
-    # evaluation path, bit for bit.
-    g = _duct_net(HoleCd(correlation="McGreehanSchotsch", supply_drive=drive))
+def test_static_on_a_station_reads_it_as_before() -> None:
+    # supply_drive="static" on a PlenumNode station is the pre-0.12 wiring:
+    # no drive pair, the original evaluation path, bit for bit.
+    g = _duct_net(HoleCd(correlation="McGreehanSchotsch", supply_drive="static"))
     g.resolve_all_topology()
     s = NetworkSolver(g)
     s._propagate_states(np.array(s._build_x0(), dtype=float))
@@ -256,18 +259,129 @@ def test_static_is_refused_where_the_hole_is_not_duct_fed(make: str) -> None:
         build()
 
 
-@pytest.mark.parametrize("inlet", ["auto", "mcgreehan_schotsch"])
-def test_total_with_the_static_referenced_eq_17_term_is_refused(inlet: str) -> None:
-    # McGreehan-Schotsch's Eq. 17 Cd is defined on the station STATIC; on
-    # the duct total it would be another model (the PR 6 scorecard's normal-
-    # hole 17.5 -> 29.6 % was that mismatch), and converted exactly it is
-    # the static drive's flow again. The liner default (the term on) too.
-    spec = HoleCd(correlation="McGreehanSchotsch", inlet_crossflow=inlet, supply_drive="total")
-    with pytest.raises(ValueError, match="Eq. 17's Cd is referenced to the duct station's STATIC"):
-        _duct_net(spec)
-    with pytest.raises(ValueError, match="inlet_crossflow='none'"):
-        _liner_net(HoleCd(supply_drive="total"))
-    _liner_net(HoleCd(supply_drive="total", inlet_crossflow="none"))  # f = 1, term off
+def test_eq_17_on_the_total_drive_is_the_static_referenced_flow() -> None:
+    # McGreehan-Schotsch's Eq. 17 Cd is static-referenced; on the duct-total
+    # drive it is converted exactly, so the hole's flow is that Cd times the
+    # ideal flow from the station's STATIC state (p1 and its static T) -- the
+    # authors' own model -- and the reported Cd is that over the ideal flow
+    # from the duct's total. Independent closed form, not the kernel.
+    s, r = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
+    d = r["__element_diag__"]["h"]
+    el = s.network.elements["h"]
+    x = np.array(r["__x_solution__"])
+    si = s._get_node_state(s.network.nodes["n1"], x)
+    so = s._get_node_state(s.network.nodes["gas"], x)
+    si.m_dot = so.m_dot = r["h.m_dot"]
+    cd_s = el._effective_Cd(si, so, s._network_flows(el, x))
+    m_d = 0.5 * (r["s0.m_dot"] + r["s1.m_dot"])
+    T1 = _moving_static_T(si, m_d, A_DUCT).T
+    a_h = math.pi * D_HOLE**2 / 4.0
+    P1 = r["n1.P"]
+    assert r["h.m_dot"] == pytest.approx(cd_s * a_h * _ideal_flux(P1, T1, P_ATM), rel=2e-4)
+    pt = _moving_total_P(P1, 290.0, Y_AIR, m_d, A_DUCT).Pt
+    assert d["Cd"] == pytest.approx(r["h.m_dot"] / (a_h * _ideal_flux(pt, 290.0, P_ATM)), rel=2e-4)
+    assert d["Cd_supply_drive_model"] == "total" and d["Cd_supply_drive_applied"] == 1.0
+    # It passes zero at the station static (f = 0), so the direction, and
+    # dP_drive / is_ingesting with it, are taken from there.
+    assert d["dP_drive"] == pytest.approx(P1 - P_ATM, rel=1e-12)
+    # The pre-0.12 drive gives the same model at the node's TOTAL temperature:
+    # the only difference is the static-temperature correction.
+    _, r0 = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch", supply_drive="static")))
+    corr = r["h.m_dot"] / r0["h.m_dot"] - 1.0
+    assert 0.0 < corr < 0.03
+
+
+def test_the_converted_eq_17_hole_passes_zero_at_the_station_static() -> None:
+    # f = 0: the converted Cd's forward flow vanishes where the exit meets the
+    # station static, and above it the hole does not blow (its reversed jet
+    # discharges against that static; Eq. 17's Cd underflows there, as on the
+    # static drive). Evaluated at fixed states, with drop-sized FD.
+    s, r = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
+    x = np.array(r["__x_solution__"])
+    p1 = r["n1.P"]
+    i = s.unknown_names.index("h.m_dot")
+    m = []
+    for dpg in (-200.0, -5.0, -0.05, 0.05, 5.0, 200.0):
+        s.network.nodes["gas"].Pt = p1 + dpg
+        F = np.asarray(s._residuals(x))
+        m.append(x[i] - F[i])
+        assert _fd_check(s, x, max(abs(dpg), 0.05), rows=[i]) < 1e-5
+    assert m[0] > m[1] > m[2] >= 0.0 and m[3] <= 0.0
+    assert abs(m[2]) < 1e-2 * m[0]
+
+
+def test_eq_17_on_the_total_drive_has_an_analytic_jacobian() -> None:
+    s, r = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
+    x = np.array(r["__x_solution__"])
+    assert _fd_check(s, x, abs(r["__element_diag__"]["h"]["dP_drive"])) < 1e-5
+
+
+@pytest.mark.parametrize("area", [6e-5, 2e-5, 1.2e-5])
+def test_a_hole_fed_from_a_flowing_chamber_passes_zero_continuously(area: float) -> None:
+    # Review of e471aced: a hole fed FROM a MomentumChamberNode (not duct-fed)
+    # into a flowing chamber. Its drive is the supply's Pt; the reversed jet
+    # must discharge against that same Pt, not the supply's static, or the
+    # flow jumps by the supply's dynamic head at the switch (it was -0.02 to
+    # -0.16 of a full jet at the old switch). The supply chamber's area sets
+    # its head: about 100 / 1000 / 3000 Pa here.
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("cin", Pt=5.15e5, Tt=600.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("cool", area=area))
+    g.add_element(LosslessConnectionElement("cfeed", "cin", "cool"))
+    g.add_node(MassFlowBoundary("gas_in", m_dot=2.0, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=5e5, Tt=1500.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("ch", area=0.01, main_inlet="feed"))
+    g.add_element(LosslessConnectionElement("feed", "gas_in", "ch"))
+    g.add_element(LosslessConnectionElement("tail", "ch", "exit"))
+    g.add_element(_film())
+    s, r = _solve(g)
+    el = s.network.elements["eff"]
+    x = np.array(r["__x_solution__"])
+    si = s._get_node_state(s.network.nodes["cool"], x)
+    so = s._get_node_state(s.network.nodes["ch"], x)
+    si.m_dot = so.m_dot = r["eff.m_dot"]
+    q = float(si.Pt) - float(si.P)
+    assert q > 50.0
+    flows = s._network_flows(el, x)
+
+    def m_at(dp: float) -> tuple[float, float]:
+        # The chamber static dp below the supply's total, at fixed states.
+        st = copy.copy(so)
+        st.P = float(si.Pt) - dp
+        m = el._flow_and_partials(si, st, el._effective_Cd(si, st, flows), flows)[0]
+        return m, el._hole_cd.drive_pressures(si, st, flows)[0] - st.P
+
+    m_ref = m_at(2e4)[0]
+    for dp in (-3.0, -0.3, 0.0, 0.3, 3.0):
+        m, drive = m_at(dp)
+        assert abs(m) < 0.02 * m_ref, (q, dp, m / m_ref)
+        if abs(dp) >= 0.3:
+            assert (m > 0.0) == (drive > 0.0), (dp, m, drive)  # is_ingesting agrees
+    # Falsification: the supply's static as the reversed jet's back pressure
+    # leaves the old jump.
+    pair = el._hole_cd.drive_pair(si, so, flows)
+    assert pair.p_rev == float(si.Pt)
+
+
+def test_the_drive_is_smooth_through_a_duct_flow_reversal() -> None:
+    # The station's mean duct flow enters only through the closure's |m| /
+    # A, whose head and partials are even and smooth through zero: the hole
+    # row's Jacobian holds at states where the mean flow crosses zero.
+    s, r = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
+    x0 = np.array(r["__x_solution__"])
+    i_h = s.unknown_names.index("h.m_dot")
+    i_a, i_b = s.unknown_names.index("s0.m_dot"), s.unknown_names.index("s1.m_dot")
+    dp = abs(r["__element_diag__"]["h"]["dP_drive"])
+    for mean in (-1e-3, -1e-6, 0.0, 1e-6, 1e-3):
+        x = x0.copy()
+        x[i_a] = mean + 0.5 * x0[i_h]
+        x[i_b] = mean - 0.5 * x0[i_h]
+        assert _fd_check(s, x, dp, rows=[i_h]) < 1e-5, mean
+    for spec in (HoleCd(correlation="IdelchikThick", inlet_crossflow="none"),):
+        s2, r2 = _solve(_duct_net(spec))
+        x = np.array(r2["__x_solution__"])
+        x[i_a], x[i_b] = 0.5 * x[i_h], -0.5 * x[i_h]
+        assert _fd_check(s2, x, abs(r2["__element_diag__"]["h"]["dP_drive"]), rows=[i_h]) < 1e-5
 
 
 def test_an_unknown_supply_drive_is_refused() -> None:
@@ -409,12 +523,16 @@ def test_second_law_holds_inside_the_band_and_on_a_liner() -> None:
     s, r = _solve(_chamber_net(_film(), dp=-0.01))
     assert r["__second_law__"]["eff"]["verdict"] == "pass"
     assert r["__second_law__"]["eff"]["sigma_norm"] > 0.0
-    for chamber, drive in ((False, "auto"), (True, "auto"), (False, "total"), (True, "total")):
-        spec = HoleCd(supply_drive=drive, inlet_crossflow="none" if drive == "total" else "auto")
-        _, r = _solve(_liner_net(spec, chamber=chamber))
-        assert r["__second_law_failures__"] == []
-        verdicts = {eid: v["verdict"] for eid, v in r["__second_law__"].items()}
-        assert all(v == "pass" for v in verdicts.values()), verdicts
+    for chamber in (False, True):
+        for spec in (
+            HoleCd(),  # the default: Eq. 17 converted onto the duct total
+            HoleCd(inlet_crossflow="none"),  # f = 1
+            HoleCd(supply_drive="static"),
+        ):
+            _, r = _solve(_liner_net(spec, chamber=chamber))
+            assert r["__second_law_failures__"] == []
+            verdicts = {eid: v["verdict"] for eid, v in r["__second_law__"].items()}
+            assert all(v == "pass" for v in verdicts.values()), verdicts
 
 
 # --- the Jacobian, FD with drop-sized pressure steps (#1107) ----------------
@@ -466,11 +584,15 @@ def _fd_check(
 
 
 @pytest.mark.parametrize("chamber", [False, True])
-@pytest.mark.parametrize("drive", ["total", "static"])
-def test_the_liner_jacobian_is_analytic(drive: str, chamber: bool) -> None:
-    spec = HoleCd(supply_drive=drive, inlet_crossflow="none" if drive == "total" else "auto")
+@pytest.mark.parametrize("variant", ["default", "term_off", "static"])
+def test_the_liner_jacobian_is_analytic(variant: str, chamber: bool) -> None:
+    spec = {
+        "default": HoleCd(),
+        "term_off": HoleCd(inlet_crossflow="none"),
+        "static": HoleCd(supply_drive="static"),
+    }[variant]
     s, r = _solve(_liner_net(spec, chamber=chamber))
-    x = np.array([r[n] for n in s.unknown_names])
+    x = np.array(r["__x_solution__"])
     d = r["__element_diag__"]
     dp_min = min(abs(d[e]["dP_drive"]) for e in ("ln__p1", "ln__p2", "ln__p3"))
     assert _fd_check(s, x, dp_min) < 1e-5

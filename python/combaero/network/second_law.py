@@ -348,7 +348,7 @@ class SecondLawReport:
             # discharges at the pressure it drives against (a flowing
             # chamber's static); reversed, it draws from that pressure and
             # discharges against the drive.
-            inflow.Pt, outflow.Pt = (pair.p_up, pair.p_dn) if forward else (pair.p_dn, pair.p_up)
+            inflow.Pt, outflow.Pt = (pair.p_up, pair.p_dn) if forward else (pair.p_dn, pair.p_rev)
         cv = _Volume([inflow], [outflow])
         if Q:
             M_in, M_out = self._element_mach(eid, up, dn, forward)
@@ -430,9 +430,11 @@ class SecondLawReport:
                 Pt = self._state(at).Pt
                 pair = self._drive_pair(element) if at == element.from_node else None
                 if pair is not None and pair.supply:
-                    # A duct-fed hole drawing at its supply drive (#1087):
-                    # the duct's total at the station, in either direction.
-                    Pt = pair.p_up
+                    # A duct-fed hole at its drive pair (#1087): it draws at
+                    # the duct's total, and a reversed jet discharges at
+                    # p_rev (the total, or the station static where a
+                    # converted static-referenced Cd recovers no head).
+                    Pt = pair.p_up if m >= 0.0 else pair.p_rev
                 stream = self._stream_at(
                     src if into_chain else station,
                     abs(m),
