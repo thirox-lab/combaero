@@ -2034,12 +2034,19 @@ documents:
     cover the number of ribbed walls (Chandra and Cook 1994, square, 1-4 walls; Chandra, Niland and Han 1997,
     1:2 rectangle) but print no correlation. Its printed pressure-drop ratios -- two opposite walls 4.35-6.29,
     four walls 7.96-11.45 x smooth, both with Re -- agree with area weighting ((E + 1)/2 = 4.48-6.23) within
-    3%; Fig. 4.88/4.90 plot f/f0 per wall count and are a digitisation candidate (not done).
-  read_for: ['#1106 effect of the number of ribbed walls', '#334 rib re-add', '#333 scored rib harness', '#369 Fig. 4.47 digitisation', '#401 G_bar
+    3%. Figs. 4.88/4.90 DIGITISED 2026-11-12 (owner-approved; 102 friction readings, 41 flagged where symbols
+    overlap, pooled apart) -- the same study's two-wall case predicts 1, 3 and 4 walls by area weighting within
+    4% bias (cross-source), and the element misses the 1:2 narrow-wall cases. Read for the rig -- the book
+    prints wall count, which walls are ribbed, the 7.62/3.81 cm wall widths (Fig. 4.89) and transverse ribs
+    for the square case C only -- no e/D, P/e, other rib angle or Re range, recorded as unknown.
+  read_for: ['#1106 effect of the number of ribbed walls', 'Figs. 4.88-4.90 wall-count friction digitisation
+      and rig (pp. 414-418)', '#334 rib re-add', '#333 scored rib harness', '#369 Fig. 4.47 digitisation', '#401 G_bar
       = 1.2 G', '#402 narrow-channel Eq. 4.19', '#335 pin-fin Table 4.7 and friction figures', Fig. 4.46
       grant/box provenance (NAG3-311 vs NAS3-24227)]
   issues: [333, 334, 335, 339, 369, 374, 393, 401, 402, 439, 441, 442, 1106]
-  records: [validation/cooling/data/han2012/metadata.yaml, validation/cooling/cards/han2012/, validation/cooling/extractions/han_ribbed.md,
+  records: [validation/cooling/data/han2012/metadata.yaml, validation/cooling/data/han2012/fig4.88_fig4.90_point_flags.csv,
+    validation/cooling/rib_wall_count_runner.py, python/tests/test_rib_wall_count.py, validation/cooling/cards/han2012/,
+    validation/cooling/extractions/han_ribbed.md,
     validation/cooling/extractions/han_ribbed_high_re.md, validation/cooling/extractions/han_impingement.md,
     validation/cooling/extractions/pin_fin_sources.md]
   code: ['include/rib_correlation.h: han_1988_orthogonal, han_park_1988_angled, han_1989_narrow_channel',
@@ -6532,7 +6539,9 @@ wanted:
   question: 'Measured passage friction for one, two, three and four ribbed walls in one square channel, with
     its R correlation per configuration (T_r/T_t wall widths): would score the area-weighted n = 1 and n = 4
     rib_channel_friction (#1106) as cross-source accuracy at low blockage. The held Han book plots it (Fig. 4.88)
-    but prints no correlation.'
+    but prints no correlation. Since 2026-11-12 the book''s Fig. 4.88 supplies its friction ratios second-hand
+    (digitised, validation/cooling/data/han2012); still wanted for e/D, P/e, rib angle and Re, which the book
+    does not print, to score the element''s absolute level.'
   where: ASME HTD-Vol. 271 (conference volume); library.
 - citation: 'Chandra, P. R., Niland, M. E., Han, J. C. (1997). Turbulent flow heat transfer and friction in a
     rectangular channel with varying number of ribbed walls. ASME J. Turbomach. 119, 374-380. (citation verified
@@ -6541,7 +6550,10 @@ wanted:
   issues: [1106]
   priority: later
   question: 'Same question on a 1:2 rectangle, ribs on one or both wide and narrow walls (Fig. 4.89/4.90 in the
-    held book): settles whether one ribbed wall follows the area weighting at W/H != 1.'
+    held book): settles whether one ribbed wall follows the area weighting at W/H != 1. Since 2026-11-12 the
+    book''s Fig. 4.90 supplies its friction ratios second-hand (digitised; area weighting holds within 4%);
+    still wanted for e/D, P/e, rib angle and Re, which the book does not print -- needed to score the
+    element''s narrow-wall miss on an absolute level.'
   where: ASME Digital Collection (paywalled).
 - citation: 'Rhee, D. H., Lee, D. H., Cho, H. H. (2003). Effects of duct aspect ratios on heat/mass transfer with
     discrete V-shaped ribs. ASME Turbo Expo 2003, GT2003-38622. (citation as recalled)'

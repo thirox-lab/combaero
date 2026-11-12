@@ -774,6 +774,35 @@ Cook's printed two- and four-wall drop ratios (Han 2013 p. 414) agree within
 +62.9% bias over 34 points through the element) stays flagged; a sourced term
 for it, scored as cross-source accuracy, is #1129.
 
+**Wall-count evidence, Figs. 4.88 and 4.90 digitised (2026-11-12).** The
+book plots Chandra and Cook's square channel (cases A-E, 0-4 ribbed walls)
+and Chandra, Niland and Han's 1:2 rectangle (cases A-F, ribs on the 7.62 cm
+or 3.81 cm walls) as Nu ratio against f/f0. 102 friction readings were
+digitised, 41 of them flagged where the symbols overlap. The owner approved
+the values; flagged readings are pooled separately. The book prints the wall
+count, which walls are ribbed, the wall widths and "transverse ribs" for the
+square case C. It does not print e/D, P/e, any other rib angle or the Re
+range, so these are recorded as unknown (`rig:` in
+`data/han2012/metadata.yaml`). Scored by `rib_wall_count_runner.py`, all
+cross-source:
+
+- *Model-free:* the same study's two-wall case predicts every other wall
+  count by area weighting within -3.5% to +3.7% bias per case in both
+  pools. The n-independent rule misses by +32% to +322%. This holds for one
+  narrow wall too (1:2 case D, phi 1/6: +0.7% clean, -0.6% flagged), so the
+  weighting itself does not depend on which walls carry the ribs.
+- *Through the element,* conditional on transverse ribs, as a ratio to the
+  two-wall case over han_1988_orthogonal's validity box: the square and
+  wide-wall rectangle cases bracket zero. With ribs on the narrow walls
+  (W/H 0.5, outside the set's 1-4) the element is low at every point of the
+  box, case E by 20-45%. Its absolute f/f0 for those two cases lies below
+  the measured range everywhere in the box. So the miss comes from
+  evaluating R at W/H 0.5, not from phi. Not acted on here.
+- Three ribbed walls (square case D) has no element rule. Area weighting
+  predicts it at +2.8%.
+
+The one-wall high-blockage gap (Taslim and Spring, e/D >= 0.125) is #1129.
+
 ### D5. Extend `RibCorrelationSet` rather than give Eq. 4.17/4.18 a separate type
 
 **Decision, 2026-09-20.** `han_park_1988_angled()` needed two shapes the

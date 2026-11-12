@@ -1,0 +1,42 @@
+series,index,x,y,flag,note
+fig4.88_upper_caseA_smooth.csv,0,1.0147,1.0664,stacked,filled squares stacked at f/f_ss ~1; at least two, count unknown
+fig4.88_upper_caseA_smooth.csv,1,1.0978,1.0664,stacked,right-hand square of the stack
+fig4.88_upper_caseB_T_smooth.csv,2,3.1268,1.1317,split_merge,two stars touching; left one
+fig4.88_upper_caseB_T_smooth.csv,3,3.2876,1.1085,split_merge,two stars touching; right one
+fig4.88_lower_caseD_B_ribbed.csv,0,5.9577,2.8687,overlapped,open square drawn over a star; centre from its top edge + 16 px
+fig4.88_lower_caseD_B_ribbed.csv,1,6.4138,2.7158,overlapped,open square drawn over a star; centre from its top edge + 16 px
+fig4.88_lower_caseD_B_ribbed.csv,2,7.3261,2.4291,overlapped,open square drawn over a star; centre from its top edge + 16 px
+fig4.88_lower_caseD_B_ribbed.csv,3,7.9700,2.2189,overlapped,open square drawn over a star; centre from its top edge + 16 px
+fig4.88_lower_caseD_B_ribbed.csv,4,8.6274,2.0660,overlapped,open square drawn over a star; centre from its top edge + 16 px
+fig4.88_lower_caseD_FR_ribbed.csv,0,5.9577,2.7970,hidden,star under the open square; y from its bottom fragment, x shared
+fig4.88_lower_caseD_FR_ribbed.csv,1,6.4138,2.6441,hidden,star under the open square; y from its bottom fragment, x shared
+fig4.88_lower_caseD_FR_ribbed.csv,2,7.3261,2.4148,hidden,star under the open square; y from its bottom fragment, x shared
+fig4.88_lower_caseD_FR_ribbed.csv,3,7.9700,2.1664,hidden,star under the open square; y from its bottom fragment, x shared
+fig4.88_lower_caseD_FR_ribbed.csv,4,8.6274,2.0135,hidden,star under the open square; y from its bottom fragment, x shared
+fig4.90_upper_caseD_FR_smooth.csv,0,2.4370,1.4383,overlapped,cluster; edges read on 5x grid
+fig4.90_upper_caseD_FR_smooth.csv,1,2.5975,1.3302,overlapped,
+fig4.90_upper_caseD_FR_smooth.csv,2,2.8516,1.2843,overlapped,
+fig4.90_upper_caseD_FR_smooth.csv,3,3.0656,1.1467,overlapped,
+fig4.90_upper_caseD_FR_smooth.csv,4,3.2997,1.0583,overlapped,stacked over D[T] #5
+fig4.90_upper_caseD_T_smooth.csv,0,2.4370,1.2024,overlapped,cluster; edges read on 5x grid
+fig4.90_upper_caseD_T_smooth.csv,1,2.5975,1.1271,overlapped,
+fig4.90_upper_caseD_T_smooth.csv,2,2.8516,1.0714,overlapped,
+fig4.90_upper_caseD_T_smooth.csv,3,3.0656,1.0419,hidden,only a fragment visible under D[F/R] #4
+fig4.90_upper_caseD_T_smooth.csv,4,3.2997,1.0223,overlapped,under D[F/R] #5
+fig4.90_upper_caseB_TB_smooth.csv,0,4.0085,1.6381,overlapped,open square touching filled square below
+fig4.90_upper_caseB_TB_smooth.csv,1,4.4031,1.4841,overlapped,
+fig4.90_upper_caseB_TB_smooth.csv,2,4.9180,1.3760,overlapped,
+fig4.90_upper_caseB_TB_smooth.csv,3,5.2323,1.2483,overlapped,
+fig4.90_upper_caseB_TB_smooth.csv,4,5.6068,1.1664,overlapped,
+fig4.90_upper_caseB_R_smooth.csv,0,4.0085,1.4972,overlapped,filled square under open square
+fig4.90_upper_caseB_R_smooth.csv,1,4.4098,1.3891,overlapped,
+fig4.90_upper_caseB_R_smooth.csv,2,4.9180,1.2679,overlapped,
+fig4.90_upper_caseB_R_smooth.csv,3,5.1922,1.1631,overlapped,
+fig4.90_upper_caseB_R_smooth.csv,4,5.5934,1.0812,overlapped,
+fig4.90_upper_caseE_FR_smooth.csv,0,3.8882,1.5496,hidden,triangle behind filled square; only left tip visible
+fig4.90_upper_caseE_FR_smooth.csv,1,4.2092,1.4022,hidden,
+fig4.90_upper_caseE_FR_smooth.csv,2,4.7709,1.3203,hidden,
+fig4.90_upper_caseE_FR_smooth.csv,3,5.0718,1.1893,hidden,
+fig4.90_upper_caseE_FR_smooth.csv,4,5.3728,1.1140,hidden,
+fig4.90_lower_caseD_B_ribbed.csv,3,3.0595,1.8371,split_merge,two markers touching; upper-left
+fig4.90_lower_caseD_B_ribbed.csv,4,3.2945,1.7624,split_merge,two markers touching; lower-right

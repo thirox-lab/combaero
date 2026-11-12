@@ -3648,6 +3648,1164 @@ files:
       plot_x_limits: [45, 1100]
       plot_y_limits: [4, 30]
 
+  # -- Figures 4.88 and 4.90: friction ratio against the number of ribbed walls
+  #
+  # Fig. 4.88 (p. 416) is after Chandra and Cook (1994), a SQUARE channel,
+  # cases A-E: A all smooth, B one ribbed wall, C two opposite ribbed walls,
+  # D three, E four (p. 414 text and the case sketches). Fig. 4.90 (p. 418)
+  # is after Chandra, Niland and Han (1997), a 1:2 RECTANGLE, cases A-F
+  # (Fig. 4.89, p. 417): walls F/R are 7.62 cm, T/B 3.81 cm; B ribs on one
+  # 7.62 cm wall [F], C both 7.62 cm walls [F/R], D one 3.81 cm wall [B],
+  # E both 3.81 cm walls [T/B], F all four. Both are performance plots: Nu
+  # ratio (upper panel smooth walls, lower panel ribbed walls) against
+  # friction ratio, one mark per run, Re increasing to the right. Every run
+  # is plotted in each panel at the same abscissa, so each friction ratio is
+  # read two or three times -- these readings are what the wall-count scorer
+  # (validation/cooling/rib_wall_count_runner.py) uses. The Nu ordinates are
+  # carried, not scored.
+  #
+  # AXES AS PRINTED. Fig. 4.88: x `fr/fss`, y `Nus/Nuss` (upper) and
+  # `Nur/Nuss` (lower). Fig. 4.90: x `f/f0`, y `Nus/Nu0` and `Nur/Nu0`. The
+  # book defines neither baseline; case A (all smooth) sits at x = 1.01-1.10,
+  # so f_ss is a smooth-channel reference close to the measured smooth duct.
+  # x_axis is f_ratio for both figures; the y axes have their own names
+  # (Nu_ratio_smooth_wall / Nu_ratio_ribbed_wall), deliberately NOT
+  # `Nu_ratio`, whose han2012 convention (conventions.py) is Han, Zhang and
+  # Lee's Dittus-Boelter-over-fbar basis, which the book does not state here.
+  #
+  # RIG. The book prints, and `rig:` records: the wall count, which walls are
+  # ribbed (lettered by the legends; Fig. 4.88 case C only as "two opposite
+  # walls"), the Fig. 4.89 wall widths, and "transverse ribs" for Fig. 4.88
+  # case C (p. 414). It prints NO rib height e/D, pitch P/e, rib angle for any
+  # other case, or Reynolds-number range, and neither primary paper is held
+  # (both are on the sources.yaml wanted list), so those are null -- unknown,
+  # not defaulted. `phi` (ribbed share of the wetted perimeter) and `W_H`
+  # (ribbed-wall width over the adjacent wall, the element's convention) are
+  # DERIVED from the printed widths. `geometry:` stays null so the rib runner
+  # refuses these series rather than scoring them at a default e/D.
+  #
+  # DIGITISATION (2026-11-12). Automated pass on 600 dpi renders of pp. 416
+  # and 418 (blob detection of the marks, overlapped clusters read by hand on
+  # a 5x grid), then a review page with the scan beside the values. The
+  # owner reviewed and approved all values on 2026-11-12: "I agree but for
+  # the heavy overlaps can't be very sure. But this is totally acceptable
+  # because any error will not cause significant scoring error. The symbols
+  # overlap". The scan, crops, overlays and the review page stay in
+  # sources/; only coordinates are committed.
+  #
+  # CALIBRATION. One linear map per axis per panel, fitted to every printed
+  # tick found (fig4.88_ticks_top/bot.csv, fig4.90_ticks_top/bot.csv: axis,
+  # pixel, printed label, fitted value, residual). Max tick residual, in axis
+  # units (hold-one-out in brackets):
+  #   Fig. 4.88 upper  x 0.026 (0.037)  y 0.002 (0.002)   ~180 px per unit x
+  #   Fig. 4.88 lower  x 0.028 (0.041)  y 0.008 (0.011)   ~149 px per unit x
+  #   Fig. 4.90 upper  x 0.048 (0.055)  y 0.002 (0.005)   ~150 px per unit x
+  #   Fig. 4.90 lower  x 0.043 (0.057)  y 0.007 (0.010)   ~149 px per unit x
+  # The x residuals are systematic along the axis (the printed tick spacing
+  # is uneven, drafting), at most 0.6% of the friction ratios read. Axis
+  # skew over each panel is at most 2 px (0.013 x units, 0.007 y units) and
+  # is not corrected. Fig. 4.88's lower x axis has no tick found at 2; the
+  # map uses the other 12.
+  #
+  # PRINTED MISPRINT, kept as printed. Fig. 4.88's upper y axis labels its
+  # top tick "5"; the ticks 0, 1, 2 are equally spaced (344 px) and the top
+  # tick sits one more spacing up, so it is read as 3 (y_label_misprint on
+  # those cards). It affects only the Nu ordinate, never the friction ratio.
+  #
+  # CHECKS AGAINST THE PRINTED TEXT (p. 414, Chandra and Cook, square):
+  #   case C pressure drop 4.35-6.29 x smooth: lower-panel reading
+  #          4.348-6.306, upper 4.371-6.312
+  #   case E pressure drop 7.96-11.45: reading 7.983-11.472
+  #   case C ribbed-side Nu 2.64-1.92: reading 2.651-1.935
+  #   case E ribbed-side Nu 2.99-2.12: reading 3.005-2.135
+  # The text numbers are the third channel the scan cannot supply; the
+  # friction reads agree within 0.4%, the Nu reads within 0.8%.
+  #
+  # PER-VALUE FLAGS. 41 of the 102 readings carry a flag in
+  # fig4.88_fig4.90_point_flags.csv (series, pick index, x, y, flag, note;
+  # match rows by x and y -- the index is the pick order, the CSVs are
+  # sorted by x): `stacked` (several marks on one spot, count unknown),
+  # `overlapped` (centre read from the visible edges of a partly covered
+  # mark), `hidden` (mark mostly covered; placed from a fragment and, where
+  # noted, the x of the same run in the covering series) and `split_merge`
+  # (two touching marks split at the ends of their joint outline). The flags
+  # exist because the symbols overlap. The owner judged the resulting
+  # position error to be well below scoring significance; that is a review
+  # judgement, not a measured band, so `uncertainty` stays null. Flagged
+  # readings are scored in their own pool, never merged with the clean ones.
+  #
+  # NOT scored by the rib runner (`scores: null`, no eligible set: the
+  # geometry is unknown and the y quantities have no declared convention).
+  # Scored for friction only, by rib_wall_count_runner.py, as CROSS-SOURCE
+  # accuracy: Chandra et al. are Han's lab but different studies from Han
+  # and Park (1988), so nothing here is fidelity.
+
+  - path: fig4.88_upper_caseA_smooth.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: upper
+    item: "Figure 4.88, upper panel, legend 'Case A'"
+    series: "Case A, smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 2 of 2 readings flagged (stacked). all walls smooth; two filled squares stacked at f/f_ss ~1, count unknown. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: A
+      channel: square
+      n_ribbed_walls: 0
+      ribbed_walls: []
+      walls_plotted: [F, R, T, B]
+      phi: 0.0  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 10]
+      plot_y_limits: [0, 3]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nus/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3]
+      # PRINTED MISPRINT, kept: the top tick is labelled 5 but sits at 3
+      # (equal 344 px spacing). Nu ordinate only.
+      y_label_misprint: {printed: 5, read_as: 3}
+      printed_curve: null
+      monotonic: null
+      expected_points: null  # stacked marks, count unknown
+    scores: null
+
+  - path: fig4.88_upper_caseB_FR_smooth.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: upper
+    item: "Figure 4.88, upper panel, legend 'Case B [F/R]'"
+    series: "Case B [F/R], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. ribbed wall B by elimination from the legend ([F/R] and [T] are the smooth walls). Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: B
+      channel: square
+      n_ribbed_walls: 1
+      ribbed_walls: [B]
+      walls_plotted: [F, R]
+      phi: 0.25  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 10]
+      plot_y_limits: [0, 3]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nus/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3]
+      # PRINTED MISPRINT, kept: the top tick is labelled 5 but sits at 3
+      # (equal 344 px spacing). Nu ordinate only.
+      y_label_misprint: {printed: 5, read_as: 3}
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_upper_caseB_T_smooth.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: upper
+    item: "Figure 4.88, upper panel, legend 'Case B [T]'"
+    series: "Case B [T], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 2 of 5 readings flagged (split_merge). T is the smooth wall opposite the ribbed one. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: B
+      channel: square
+      n_ribbed_walls: 1
+      ribbed_walls: [B]
+      walls_plotted: [T]
+      phi: 0.25  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 10]
+      plot_y_limits: [0, 3]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nus/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3]
+      # PRINTED MISPRINT, kept: the top tick is labelled 5 but sits at 3
+      # (equal 344 px spacing). Nu ordinate only.
+      y_label_misprint: {printed: 5, read_as: 3}
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_upper_caseC_smooth.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: upper
+    item: "Figure 4.88, upper panel, legend 'Case C'"
+    series: "Case C, smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. p. 414: 'Case C, with transverse ribs on two opposite walls'. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: C
+      channel: square
+      n_ribbed_walls: 2
+      ribbed_walls: null  # 'two opposite walls' (p. 414); not lettered
+      walls_plotted: null  # side walls, not lettered
+      phi: 0.5  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: 90.0  # stated, p. 414 ('transverse ribs')
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 10]
+      plot_y_limits: [0, 3]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nus/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3]
+      # PRINTED MISPRINT, kept: the top tick is labelled 5 but sits at 3
+      # (equal 344 px spacing). Nu ordinate only.
+      y_label_misprint: {printed: 5, read_as: 3}
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_upper_caseD_smooth.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: upper
+    item: "Figure 4.88, upper panel, legend 'Case D'"
+    series: "Case D, smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. three ribbed walls; the one smooth wall is T. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: D
+      channel: square
+      n_ribbed_walls: 3
+      ribbed_walls: [F, R, B]
+      walls_plotted: [T]
+      phi: 0.75  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 10]
+      plot_y_limits: [0, 3]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nus/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3]
+      # PRINTED MISPRINT, kept: the top tick is labelled 5 but sits at 3
+      # (equal 344 px spacing). Nu ordinate only.
+      y_label_misprint: {printed: 5, read_as: 3}
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_lower_caseB_ribbed.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: lower
+    item: "Figure 4.88, lower panel, legend 'Case B'"
+    series: "Case B, ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: B
+      channel: square
+      n_ribbed_walls: 1
+      ribbed_walls: [B]
+      walls_plotted: [B]
+      phi: 0.25  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 12]
+      plot_y_limits: [0, 5]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nur/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4, 5]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_lower_caseC_ribbed.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: lower
+    item: "Figure 4.88, lower panel, legend 'Case C'"
+    series: "Case C, ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. p. 414: 'Case C, with transverse ribs on two opposite walls'. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: C
+      channel: square
+      n_ribbed_walls: 2
+      ribbed_walls: null  # 'two opposite walls' (p. 414); not lettered
+      walls_plotted: null  # ribbed walls, not lettered
+      phi: 0.5  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: 90.0  # stated, p. 414 ('transverse ribs')
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 12]
+      plot_y_limits: [0, 5]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nur/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4, 5]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_lower_caseD_FR_ribbed.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: lower
+    item: "Figure 4.88, lower panel, legend 'Case D [F/R]'"
+    series: "Case D [F/R], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (hidden). every mark hidden under the case D [B] open square. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: D
+      channel: square
+      n_ribbed_walls: 3
+      ribbed_walls: [F, R, B]
+      walls_plotted: [F, R]
+      phi: 0.75  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 12]
+      plot_y_limits: [0, 5]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nur/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4, 5]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_lower_caseD_B_ribbed.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: lower
+    item: "Figure 4.88, lower panel, legend 'Case D [B]'"
+    series: "Case D [B], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (overlapped). open squares drawn over the case D [F/R] stars. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: D
+      channel: square
+      n_ribbed_walls: 3
+      ribbed_walls: [F, R, B]
+      walls_plotted: [B]
+      phi: 0.75  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 12]
+      plot_y_limits: [0, 5]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nur/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4, 5]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.88_lower_caseE_ribbed.csv
+    after: "Chandra, P.R. and Cook, M.M. (1994). ASME HTD-Vol. 271, 201-209."
+    page: 416
+    figure: "4.88"
+    panel: lower
+    item: "Figure 4.88, lower panel, legend 'Case E'"
+    series: "Case E, ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_cook_1994
+      case: E
+      channel: square
+      n_ribbed_walls: 4
+      ribbed_walls: [F, R, T, B]
+      walls_plotted: [F, R, T, B]
+      phi: 1.0  # derived: ribbed share of the wetted perimeter
+      W_H: 1.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [0, 12]
+      plot_y_limits: [0, 5]
+      printed_x_label: "fr/fss"
+      printed_y_label: "Nur/Nuss"
+      x_ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4, 5]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_upper_caseB_R_smooth.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: upper
+    item: "Figure 4.90, upper panel, legend 'Case B [R]'"
+    series: "Case B [R], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (overlapped). filled squares under the case B [T/B] open squares. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: B
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 1
+      ribbed_walls: [F]
+      walls_plotted: [R]
+      phi: 0.3333  # derived: ribbed share of the wetted perimeter
+      W_H: 2.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nus/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_upper_caseB_TB_smooth.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: upper
+    item: "Figure 4.90, upper panel, legend 'Case B [T/B]'"
+    series: "Case B [T/B], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (overlapped). open squares touching the case B [R] filled squares. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: B
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 1
+      ribbed_walls: [F]
+      walls_plotted: [T, B]
+      phi: 0.3333  # derived: ribbed share of the wetted perimeter
+      W_H: 2.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nus/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_upper_caseC_TB_smooth.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: upper
+    item: "Figure 4.90, upper panel, legend 'Case C [T/B]'"
+    series: "Case C [T/B], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: C
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 2
+      ribbed_walls: [F, R]
+      walls_plotted: [T, B]
+      phi: 0.6667  # derived: ribbed share of the wetted perimeter
+      W_H: 2.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nus/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_upper_caseD_FR_smooth.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: upper
+    item: "Figure 4.90, upper panel, legend 'Case D [F/R]'"
+    series: "Case D [F/R], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (overlapped). cluster with case D [T]; edges read on a 5x grid. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: D
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 1
+      ribbed_walls: [B]
+      walls_plotted: [F, R]
+      phi: 0.1667  # derived: ribbed share of the wetted perimeter
+      W_H: 0.5  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nus/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_upper_caseD_T_smooth.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: upper
+    item: "Figure 4.90, upper panel, legend 'Case D [T]'"
+    series: "Case D [T], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (hidden, overlapped). cluster with case D [F/R]; mark 4 only a fragment. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: D
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 1
+      ribbed_walls: [B]
+      walls_plotted: [T]
+      phi: 0.1667  # derived: ribbed share of the wetted perimeter
+      W_H: 0.5  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nus/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_upper_caseE_FR_smooth.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: upper
+    item: "Figure 4.90, upper panel, legend 'Case E [F/R]'"
+    series: "Case E [F/R], smooth-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_smooth_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 5 of 5 readings flagged (hidden). triangles behind filled squares; only the left tips visible. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: E
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 2
+      ribbed_walls: [T, B]
+      walls_plotted: [F, R]
+      phi: 0.3333  # derived: ribbed share of the wetted perimeter
+      W_H: 0.5  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nus/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_lower_caseB_F_ribbed.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: lower
+    item: "Figure 4.90, lower panel, legend 'Case B [F]'"
+    series: "Case B [F], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: B
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 1
+      ribbed_walls: [F]
+      walls_plotted: [F]
+      phi: 0.3333  # derived: ribbed share of the wetted perimeter
+      W_H: 2.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nur/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_lower_caseC_FR_ribbed.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: lower
+    item: "Figure 4.90, lower panel, legend 'Case C [F/R]'"
+    series: "Case C [F/R], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: C
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 2
+      ribbed_walls: [F, R]
+      walls_plotted: [F, R]
+      phi: 0.6667  # derived: ribbed share of the wetted perimeter
+      W_H: 2.0  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nur/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_lower_caseD_B_ribbed.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: lower
+    item: "Figure 4.90, lower panel, legend 'Case D [B]'"
+    series: "Case D [B], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; 2 of 5 readings flagged (split_merge). marks 4 and 5 touch; split at the ends of their outline. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: D
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 1
+      ribbed_walls: [B]
+      walls_plotted: [B]
+      phi: 0.1667  # derived: ribbed share of the wetted perimeter
+      W_H: 0.5  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nur/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_lower_caseE_TB_ribbed.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: lower
+    item: "Figure 4.90, lower panel, legend 'Case E [T/B]'"
+    series: "Case E [T/B], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: E
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 2
+      ribbed_walls: [T, B]
+      walls_plotted: [T, B]
+      phi: 0.3333  # derived: ribbed share of the wetted perimeter
+      W_H: 0.5  # derived: ribbed-wall width / adjacent wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nur/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
+  - path: fig4.90_lower_caseF_all_ribbed.csv
+    after: "Chandra, P.R., Niland, M.E. and Han, J.C. (1997). ASME J. Turbomach. 119, 374."
+    page: 418
+    figure: "4.90"
+    panel: lower
+    item: "Figure 4.90, lower panel, legend 'Case F [F/R/T/B]'"
+    series: "Case F [F/R/T/B], ribbed-wall Nu ratio"
+    geometry: null  # e/D, P/e and Re are not printed; see rig
+    alpha_deg: null
+    x_axis: f_ratio
+    x_scale: 1.0
+    y_axis: Nu_ratio_ribbed_wall
+    kind: measured
+    extraction: figure-digitised
+    confidence: band
+    uncertainty: null  # no measurement band printed; flags are a review judgement
+    cross_check: >-
+      Owner-approved 2026-11-12; all 5 readings clean. all four walls ribbed: no single ribbed wall defines W/H. Nu ratio falls as the
+      friction ratio rises with Re, as p. 414 states. The same runs are
+      plotted in the other panel at the same abscissa, so the friction reads
+      must agree across panels (pinned in test_rib_wall_count.py).
+    rig:
+      study: chandra_niland_han_1997
+      case: F
+      channel: rectangle_1_to_2
+      wall_widths_cm: {F: 7.62, R: 7.62, T: 3.81, B: 3.81}  # Fig. 4.89 labels
+      n_ribbed_walls: 4
+      ribbed_walls: [F, R, T, B]
+      walls_plotted: [F, R, T, B]
+      phi: 1.0  # derived: ribbed share of the wetted perimeter
+      W_H: null  # no single ribbed wall
+      alpha_deg: null  # not printed
+      e_D: null  # not printed
+      p_e: null  # not printed
+      Re_range: null  # not printed; the figure marks only the direction of increasing Re
+    verification:
+      x_axis_type: linear
+      y_axis_type: linear
+      plot_x_limits: [1, 15]
+      x_limits: [1, 15]  # the frame starts at tick 1
+      plot_y_limits: [0, 4]
+      printed_x_label: "f/f0"
+      printed_y_label: "Nur/Nu0"
+      x_ticks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      x_multiplier: 1.0
+      y_ticks: [0, 1, 2, 3, 4]
+      printed_curve: null
+      monotonic: decreasing
+      expected_points: 5
+    scores: null
+
 # The Han and Zhang (1992) rig geometry (e/D, P/e, W/H) is NOT stated in the
 # extracted text and is recorded as missing rather than guessed. It costs
 # nothing for han_1988_orthogonal, whose G carries zero exponents on all
