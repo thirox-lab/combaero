@@ -2199,9 +2199,13 @@ closure: the jet's head is its own, not the receiver's. Since 0.12.0
   `Pt`), a pass-through bore (#788, #1016) and a closed restriction (#1024).
   The one gate is `OrificeElement._discharges_to_exit_static`. An approach
   pipe alone does not exclude: forward the drive reads the pipe's static as
-  before (#651); reversed, the flow draws from the chamber's static, which
-  carries no approach head, so `beta_reverse` and its pipe Cd are not
-  applied on that leg (`beta_flow` reports 0). The tap and model
+  before (#651). Reversed, the flow draws from the chamber's static as the
+  approach static `p1`, with no #651 correction on top. A chamber in line
+  with its pipe (its only elements are the orifice and that one pipe)
+  carries the orifice's own flow, so `E` and the pipe Cd of `beta_reverse`
+  stay, with the chamber's `Pt`. A chamber with other through-flow (side
+  injection) has no approach toward the bore, so that leg applies none
+  (`beta_flow` reports 0). The tap and model
   diagnostics of a reversed jet read the kernel's pair, so `dP_tap` is the
   chamber static minus the supply `Pt`.
 - **Supply side.** A duct-fed `EffusionPlateElement` (each `EffusionLiner`

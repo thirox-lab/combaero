@@ -24,6 +24,7 @@ local drop (#1107, the shared _fd_jacobian helper).
 from __future__ import annotations
 
 import copy
+import math
 import warnings
 from collections.abc import Callable
 
@@ -42,6 +43,7 @@ from combaero.network import (
     MomentumChamberNode,
     NetworkSolver,
     OrificeElement,
+    PlenumNode,
     PressureBoundary,
 )
 
@@ -318,30 +320,69 @@ def test_the_outcome_does_not_depend_on_the_chambers_outlet(tail_channel: bool, 
     assert r_pipe["orf.m_dot"] == pytest.approx(r_wall["orf.m_dot"], rel=1e-6)
 
 
-def _dead_chamber_net(p_exit: float, in_pipe: bool = True) -> FlowNetwork:
-    """beta_reverse = 0.4: the orifice into a small chamber drained by a
-    single 10 mm pipe, nothing else through it. Reversed (p_exit above the
-    supply), the flow approaches through that pipe."""
+def _in_line_net(p_exit: float, node: str = "chamber") -> FlowNetwork:
+    """In line: the supply boundary feeds the orifice (d 50 mm), which
+    discharges into a node whose only other element is a single D 0.1 pipe
+    to the outlet (beta_reverse = 0.5). Reversed (p_exit above the supply)
+    the flow approaches the bore down that pipe. The chamber's area is the
+    pipe's, so its static is the approach pipe's static state."""
     g = FlowNetwork()
-    g.add_node(PressureBoundary("cool", Pt=2.0e5, Tt=300.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("exit", Pt=p_exit, Tt=300.0, Y=Y_AIR))
-    g.add_node(MomentumChamberNode("ch", area=7.85e-5))
-    g.add_element(OrificeElement("orf", "cool", "ch", diameter=4e-3, in_pipe=in_pipe))
-    g.add_element(ChannelElement("p2", "ch", "exit", length=0.05, diameter=0.01))
+    g.add_node(PressureBoundary("in", Pt=1.2e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("out", Pt=p_exit, Tt=300.0, Y=Y_AIR))
+    if node == "chamber":
+        g.add_node(MomentumChamberNode("ch", area=math.pi * 0.1**2 / 4.0))
+    else:
+        g.add_node(PlenumNode("ch"))
+    g.add_element(OrificeElement("orf", "in", "ch", diameter=0.05))
+    g.add_element(ChannelElement("p2", "ch", "out", length=0.5, diameter=0.1))
     return g
 
 
-@pytest.mark.parametrize("p_exit", [1.5e5, 2.5e5])  # forward, reversed
-def test_the_reversed_leg_reads_no_approach_head(p_exit: float) -> None:
-    # Reversed, the kernel draws from the chamber STATIC: the approach
-    # pipe's static correction (#651) and E on top would count the pipe's
-    # head twice, so beta_reverse must not change the root. Before the
-    # review it did (_approach_along).
-    s, r_pipe = _solve(_dead_chamber_net(p_exit, in_pipe=True))
+def test_an_in_line_reversed_orifice_keeps_its_approach() -> None:
+    # Reviewer's case (re-review of 274c1e49): the chamber's flow IS the
+    # approach flow, so the reversed leg keeps E from p1 = P_chamber (the
+    # pipe's static, no #651 correction on top) and the chamber's Pt. It
+    # then matches the plenum version (Pt - Pt, #651 approach static), as
+    # main did; dropping E was ~3 % low (sqrt(1 - beta^4)).
+    s, r_ch = _solve(_in_line_net(1.4e5))
     el = s.network.elements["orf"]
-    assert el.beta_reverse == pytest.approx(0.4) and el._hole_cd.exit_static is True
-    _, r_wall = _solve(_dead_chamber_net(p_exit, in_pipe=False))
-    assert (r_pipe["orf.m_dot"] < 0.0) is (p_exit > 2.0e5)
+    assert el._hole_cd.exit_static is True and el._reverse_in_line is True
+    assert el._approach_along(False)[0] == pytest.approx(0.5)
+    s_pl, r_pl = _solve(_in_line_net(1.4e5, node="plenum"))
+    assert s_pl.network.elements["orf"]._hole_cd.exit_static is False
+    assert r_ch["orf.m_dot"] < 0.0
+    assert r_ch["orf.m_dot"] == pytest.approx(r_pl["orf.m_dot"], rel=1e-6)
+
+
+def _side_pipe_net(dp: float, in_pipe: bool = True) -> FlowNetwork:
+    """Side injection with a large reverse approach ratio (beta_reverse 0.4):
+    a flowing chamber fed by a lossless link and drained by one 10 mm pipe;
+    the orifice (d 4 mm) is NOT in line, so its reversed leg reads no
+    approach."""
+    g = FlowNetwork()
+    g.add_node(MassFlowBoundary("gas_in", m_dot=0.02, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("cool", Pt=1.0e5 * (1.0 + dp), Tt=300.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("ch", area=math.pi * 0.01**2 / 4.0, main_inlet="feed"))
+    g.add_element(LosslessConnectionElement("feed", "gas_in", "ch"))
+    g.add_element(ChannelElement("p2", "ch", "exit", length=0.05, diameter=0.01))
+    g.add_element(OrificeElement("orf", "cool", "ch", diameter=4e-3, in_pipe=in_pipe))
+    return g
+
+
+def test_a_side_injection_reversed_leg_reads_no_approach_head() -> None:
+    # Not in line: the chamber's through-flow is not an approach to the
+    # bore, so beta_reverse must not change the root (E and the #651
+    # correction would count the pipe's head twice). Reversed below the
+    # chamber static.
+    _, r0 = _solve(_side_pipe_net(0.0, in_pipe=False))
+    dp = (r0["ch.P"] - 2e3) / 1.0e5 - 1.0
+    s, r_pipe = _solve(_side_pipe_net(dp, in_pipe=True))
+    el = s.network.elements["orf"]
+    assert el.beta_reverse == pytest.approx(0.4) and el._reverse_in_line is False
+    assert el._hole_cd.exit_static is True
+    _, r_wall = _solve(_side_pipe_net(dp, in_pipe=False))
+    assert r_pipe["orf.m_dot"] < 0.0
     assert r_pipe["orf.m_dot"] == pytest.approx(r_wall["orf.m_dot"], rel=1e-9)
 
 
@@ -367,8 +408,10 @@ def _approach_net(dp: float, **orifice_kw) -> FlowNetwork:
         (lambda dp: _side_net(dp, tail_channel=False), -0.01, 1.0),  # beta_reverse > 0: band
         (lambda dp: _side_net(dp, tail_channel=False), -0.06, -1.0),  # reverse
         (lambda dp: _side_net(dp, tail_channel=False), 0.02, 1.0),  # forward
-        (lambda dp: _dead_chamber_net(2.0e5 * (1.0 - dp)), -0.25, -1.0),  # beta_rev 0.4
-        (lambda dp: _dead_chamber_net(2.0e5 * (1.0 - dp)), 0.25, 1.0),
+        (lambda dp: _in_line_net(1.2e5 * (1.0 - dp)), -0.15, -1.0),  # in line, reverse
+        (lambda dp: _in_line_net(1.2e5 * (1.0 - dp)), 0.15, 1.0),  # in line, forward
+        (lambda dp: _side_pipe_net(dp), -0.2, -1.0),  # side, beta_rev 0.4: reverse
+        (lambda dp: _side_pipe_net(dp), 0.2, 1.0),
         (_approach_net, -0.01, 1.0),  # beta > 0: band
         (_approach_net, -0.06, -1.0),  # reverse
         (_approach_net, 0.02, 1.0),  # forward
