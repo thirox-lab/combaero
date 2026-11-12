@@ -1470,7 +1470,7 @@ inline constexpr Entry function_units[] = {
     {"wgs_equilibrium_adiabatic", "State", "State"},
     {"reforming_equilibrium", "State", "State"},
     {"reforming_equilibrium_adiabatic", "State", "State"},
-    {"combustion_equilibrium", "State, smooth: bool (default False)", "State"},
+    {"combustion_equilibrium", "State, smooth: bool (default True)", "State"},
 
     // -------------------------------------------------------------------------
     // state.h - State Properties

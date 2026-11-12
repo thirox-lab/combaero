@@ -496,7 +496,8 @@ CombustorLossResult combustor_head_loss(double theta, double mdot, double Tt_in,
 ```cpp
 // Combustion equilibrium (adiabatic): complete combustion with the phi = 1
 // softmin always on (#1048; T is C1 through stoichiometric), then reforming + WGS
-State combustion_equilibrium(const State& in, bool smooth = false);
+EquilibriumResult combustion_equilibrium(const State& in, bool smooth_phi0 = true,
+                                         double k0 = SMOOTHING_K_PHI0);
 
 // With analytic derivatives (#716): one implicit-function solve on the joint
 // extents (reforming per hydrocarbon, WGS; #759) and the adiabatic root; a
