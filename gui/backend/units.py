@@ -127,6 +127,8 @@ UNIT_MAP: dict[str, str] = {
     "Cd_inlet_crossflow_beyond_8pct": "-",
     "Cd_inlet_crossflow_degraded": "-",
     "Cd_inlet_crossflow_ignored": "-",
+    "Cd_supply_drive_applied": "-",  # 1 where a duct-fed hole drives from its duct total (#1087)
+    "Cd_supply_drive_head_fraction": "-",  # duct head over the full drive (info), 0 not duct-fed
     "Cd_exit_crossflow_applied": "-",
     "Cd_exit_crossflow_ratio": "-",  # Cd / Cd_base, 1 when off
     "Cd_exit_crossflow_rho_u2": "Pa",  # mainstream momentum flux rho_m u_m^2
@@ -446,6 +448,7 @@ TEXT_KEYS: frozenset[str] = frozenset(
         "Cd_correlation",
         "Cd_inclination_model",
         "Cd_inlet_crossflow_model",
+        "Cd_supply_drive_model",
         "Cd_exit_crossflow_model",
         "compressible_model",  # the orifice expansion model (#854)
         "F0_source",

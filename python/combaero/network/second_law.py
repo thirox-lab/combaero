@@ -301,6 +301,15 @@ class SecondLawReport:
 
     # -- control volumes ---------------------------------------------------
 
+    def _drive_pair(self, element: Any) -> Any:
+        """A hole's drive pair (#1087, _HoleCdChain.drive_pair), or None
+        where its streams are at its nodes' Pt."""
+        chain = getattr(element, "_hole_cd", None)
+        if chain is None:
+            return None
+        flows = self.solver._network_flows(element, self.x)
+        return chain.drive_pair(self._state(element.from_node), self._state(element.to_node), flows)
+
     def _two_port(self, eid: str, element: Any) -> _Volume | str:
         m = self._flow(eid)
         if m is None:
@@ -332,6 +341,14 @@ class SecondLawReport:
             inflow.Y,
             self._incompressible_head(dn),
         )
+        pair = self._drive_pair(element)
+        if pair is not None:
+            # A hole between its drive pair (#1087): the stream leaves its
+            # supply at the drive (a duct-fed hole's duct total) and its jet
+            # discharges at the pressure it drives against (a flowing
+            # chamber's static); reversed, it draws from that pressure and
+            # discharges against the drive.
+            inflow.Pt, outflow.Pt = (pair.p_up, pair.p_dn) if forward else (pair.p_dn, pair.p_up)
         cv = _Volume([inflow], [outflow])
         if Q:
             M_in, M_out = self._element_mach(eid, up, dn, forward)
@@ -410,10 +427,16 @@ class SecondLawReport:
                 into_chain = (m >= 0.0) == (element.to_node == station)
                 src = element.from_node if m >= 0.0 else element.to_node
                 at = src if eid in jets else station
+                Pt = self._state(at).Pt
+                pair = self._drive_pair(element) if at == element.from_node else None
+                if pair is not None and pair.supply:
+                    # A duct-fed hole drawing at its supply drive (#1087):
+                    # the duct's total at the station, in either direction.
+                    Pt = pair.p_up
                 stream = self._stream_at(
                     src if into_chain else station,
                     abs(m),
-                    Pt=self._state(at).Pt,
+                    Pt=Pt,
                     pt_node=at,
                 )
             if stream.m:

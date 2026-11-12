@@ -115,6 +115,31 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
     "rogers_hersh_1976",
     "florschuetz_metzger_su_1982",
 )
+#: HoleCd.supply_drive: the pressure a hole's ideal flow (the Cd's reference)
+#: is taken from (#1087, supply side; C++ hole_supply_drive). It differs from
+#: the supply node's own Pt only on a DUCT-FED hole, whose supply node is a
+#: duct station holding the duct's static pressure:
+#:   "total"   the duct's stagnation pressure at the station, static plus the
+#:             dynamic head of its mean flow: the reference of the plenum-fed
+#:             Cd data (coolant total to exit static) and the hole-Cd audit's
+#:             option (a) (2026-11-10). On any other hole, the supply node's
+#:             own Pt, which is its total already.
+#:   "static"  the station static: McGreehan & Schotsch's (1988) own
+#:             convention, which their Eq. 17 inlet-crossflow Cd is defined
+#:             on. Duct-fed holes only.
+#:   "auto"    "static" on a duct-fed hole, "total" (its node's Pt) on every
+#:             other. The duct-fed default is open, not settled (owner,
+#:             2026-11-12): cross-source, the total drive helps co-aligned
+#:             30 deg holes (Gritsch 1998, one lab: bias -33 % -> -8 %) and
+#:             worsens normal ones (pooled RMS 17.5 % -> 29.6 %, including
+#:             McGreehan & Schotsch's own Fig. 6, 14.5 % -> 48 %). Route to a
+#:             decided default: Gritsch et al. 2001 (inclination x
+#:             orientation x supply crossflow, wanted), and a check whether
+#:             the published inlet-crossflow correlations convert to one
+#:             common drive convention. A fraction of the head in between is
+#:             not offered (no source gives it); Cd_supply_drive_head_fraction
+#:             reports how much of the drive the choice decides.
+HOLE_CD_SUPPLY_DRIVES = ("auto", "static", "total")
 #: Deprecation of the per-element hole-Cd keywords (HoleCd replaces them).
 HOLE_CD_KWARGS_DEPRECATED_IN = "0.12.0"
 HOLE_CD_KWARGS_REMOVED_IN = "0.13.0"
@@ -139,6 +164,9 @@ HOLE_CD_DIAGNOSTIC_KEYS = (
     "Cd_inlet_crossflow_beyond_8pct",
     "Cd_inlet_crossflow_degraded",
     "Cd_inlet_crossflow_ignored",
+    "Cd_supply_drive_model",
+    "Cd_supply_drive_applied",
+    "Cd_supply_drive_head_fraction",
     "Cd_exit_crossflow_model",
     "Cd_exit_crossflow_applied",
     "Cd_exit_crossflow_ratio",
@@ -160,6 +188,7 @@ HOLE_CD_DIAGNOSTIC_TEXT_KEYS = (
     "Cd_correlation",
     "Cd_inclination_model",
     "Cd_inlet_crossflow_model",
+    "Cd_supply_drive_model",
     "Cd_exit_crossflow_model",
 )
 #: The pre-0.12 names that shipped in 0.11.1, each its group key. Emitted
@@ -229,6 +258,15 @@ class HoleCd:
         (film and effusion holes discharging into a flowing chamber, #1074);
         'rogers_hersh_1976' and 'florschuetz_metzger_su_1982' (impingement
         rows only); 'none' everywhere.
+    supply_drive : str
+        The pressure the hole's ideal flow is taken from, one of
+        HOLE_CD_SUPPLY_DRIVES. It matters on a duct-fed EffusionPlateElement
+        only, whose supply node is a duct station holding the duct's static:
+        "total" drives from the duct's stagnation pressure there (static
+        plus the dynamic head of its mean flow), "static" ("auto") from the
+        station static (McGreehan & Schotsch's convention). Every other hole
+        drives from its supply node's Pt, its total already ("auto" =
+        "total"; "static" is refused there).
     """
 
     correlation: str | None = None
@@ -236,6 +274,7 @@ class HoleCd:
     inclination: str = "auto"
     inlet_crossflow: str = "auto"
     exit_crossflow: str = "auto"
+    supply_drive: str = "auto"
 
     def __post_init__(self) -> None:
         if self.correlation is not None and self.correlation not in HOLE_CD_CORRELATIONS:
@@ -257,6 +296,7 @@ class HoleCd:
             ("inclination", CD_INCLINATION_MODELS),
             ("inlet_crossflow", HOLE_CD_INLET_CROSSFLOW_MODELS),
             ("exit_crossflow", HOLE_CD_EXIT_CROSSFLOW_MODELS),
+            ("supply_drive", HOLE_CD_SUPPLY_DRIVES),
         ):
             value = getattr(self, name)
             if value not in allowed:
@@ -346,6 +386,52 @@ def _resolve_inlet_crossflow(name: str, spec: HoleCd, duct_fed: bool) -> bool:
             f"own crossflow term; it does not compose with correlation={spec.correlation!r}."
         )
     return True
+
+
+def _resolve_supply_drive(name: str, spec: HoleCd, duct_fed: bool) -> str:
+    """The supply drive a hole is built with ("auto": "static" duct-fed, see
+    HOLE_CD_SUPPLY_DRIVES; "total", its node's Pt, otherwise), "static"
+    refused on a hole that is not duct-fed: its supply node carries its own
+    total pressure, so there is no station static to drive from."""
+    drive = spec.supply_drive
+    if drive == "auto":
+        drive = "static" if duct_fed else "total"
+    if drive == "static" and not duct_fed:
+        raise ValueError(
+            f"{name}: HoleCd(supply_drive='static') is a duct-fed hole's drive from its "
+            "duct station's static pressure; this hole is not duct-fed (its supply node "
+            "carries its own total pressure). A duct-fed EffusionPlateElement names its "
+            "crossflow_segments."
+        )
+    return drive
+
+
+@dataclass
+class _DrivePair:
+    """The two pressures a hole's flow runs between (#1087), with their
+    derivatives by unknown name.
+
+    ``p_up`` is the supply side's: the drive the forward flow is taken from
+    (HoleCd.supply_drive), and the pressure a reversed jet discharges
+    against. ``p_dn`` is the discharge side's: the pressure the forward jet
+    discharges against, and the one a reversed jet draws from. The flow's
+    direction is the sign of ``p_up - p_dn``, so the forward and reverse
+    forms vanish together and the flow passes zero continuously.
+
+    ``supply`` is True where p_up is not the supply node's Pt (a duct-fed
+    hole's reconstructed duct total, or a static drive from a station that
+    carries its own Pt), ``exit_static`` where p_dn is the discharge node's
+    STATIC pressure rather than its Pt (a cooling hole into a flowing
+    chamber). ``q_supply`` is the duct's dynamic head at the station (0 when
+    not duct-fed)."""
+
+    p_up: float
+    dp_up: dict[str, float]
+    p_dn: float
+    dp_dn: dict[str, float]
+    supply: bool
+    exit_static: bool
+    q_supply: float = 0.0
 
 
 # Unknown-name key of d(Cd)/d(own m_dot) THROUGH THE DISCHARGE CHAMBER'S
@@ -467,6 +553,7 @@ def _resolve_jet_row(name: str, spec: HoleCd, xn_d: float, yn_d: float, z_d: flo
     _refuse_choice(name, "inclination", spec.inclination, ("auto", "none"))
     _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto",) + _CD_CROSSFLOW_LAWS)
     _resolve_inlet_crossflow(name, spec, False)
+    _resolve_supply_drive(name, spec, False)
     law = "rogers_hersh_1976" if spec.exit_crossflow == "auto" else spec.exit_crossflow
     _check_jet_crossflow_law(name, law, xn_d, yn_d, z_d)
     return law
@@ -523,6 +610,9 @@ class _Context:
     q: float = 0.0  # mainstream momentum flux
     dq: dict[str, float] = field(default_factory=dict)
     exit_density: Any = None
+    # The supply total the exit density expands from, by name: the supply
+    # node's Pt, or a duct-fed hole's drive (#1087).
+    dpt_up: dict[str, float] | None = None
     a_exit: float = 0.0
     jet: _JetContext | None = None
 
@@ -566,6 +656,13 @@ class _HoleCdChain:
         self.exit_node: Any = None
         self.exit_mainstream: tuple[str, ...] = ()
         self.exit_main_src: str | None = None
+        # The drive pair (#1087, resolve_drive): the supply drive ("auto"
+        # resolved), whether the supply station holds the duct's static (a
+        # PlenumNode station, Pt = P) and whether the hole discharges against
+        # its chamber's static pressure.
+        self.supply_drive = "total"
+        self.station_holds_static = False
+        self.exit_static = False
 
     # --- options ------------------------------------------------------------
 
@@ -606,6 +703,7 @@ class _HoleCdChain:
         )
         self.duct_fed = bool(duct_fed)
         self.supply_duct = _resolve_inlet_crossflow(name, spec, duct_fed)
+        self.supply_drive = _resolve_supply_drive(name, spec, duct_fed)
         return model, exit_model
 
     def configure_plain(self, name: str, spec: HoleCd) -> None:
@@ -615,6 +713,137 @@ class _HoleCdChain:
         _refuse_choice(name, "inclination", spec.inclination, ("auto", "none"))
         _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto", "none"))
         self.supply_duct = _resolve_inlet_crossflow(name, spec, False)
+        self.supply_drive = _resolve_supply_drive(name, spec, False)
+
+    # --- the drive pair (#1087) ---------------------------------------------
+
+    def resolve_drive(self, graph: "FlowNetwork", exit_static: bool) -> None:
+        """Which pressures the hole's flow runs between, from the topology.
+
+        Supply side: a duct-fed hole's station is a PlenumNode holding the
+        duct's static (CrossflowSegmentElement's rule), so its total is
+        rebuilt from the station's static state and mean flow; a station
+        that is a MomentumChamberNode carries its own Pt. Exit side
+        (``exit_static``, the film, effusion and slot elements): a hole
+        discharging into a MomentumChamberNode takes its direction from the
+        chamber's STATIC pressure, the pressure its jet discharges against,
+        and a reversed jet draws from that static (#1087: none of the
+        chamber's dynamic head is taken as recovered, as no source gives the
+        fraction). A plenum's P is its Pt, so nothing changes there."""
+        from .components import MomentumChamberNode, PlenumNode
+
+        el = self._el
+        src = graph.nodes.get(el.from_node)
+        self.station_holds_static = self.duct_fed and isinstance(src, PlenumNode)
+        self.exit_static = bool(exit_static) and isinstance(
+            graph.nodes.get(el.to_node), MomentumChamberNode
+        )
+
+    def _station_drive(
+        self,
+        state_in: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+        drive: "cb.HoleSupplyDrive",
+    ) -> tuple[Any, dict[str, float]]:
+        """C++ hole_supply_drive at a duct-fed hole's station (its static P,
+        T0 and composition, the mean of the arriving and leaving segment
+        flows, as U1/Vi reads them) and P_drive's derivatives by name."""
+        el = self._el
+        flows = flows or {}
+        prev_id, next_id = el.crossflow_segments
+        m_a = flows.get(prev_id, 0.0) if prev_id else 0.0
+        m_b = flows.get(next_id, 0.0) if next_id else 0.0
+        r = cb.hole_supply_drive(
+            drive,
+            float(state_in.P),
+            float(state_in.Tt),
+            list(state_in.Y),
+            0.5 * (m_a + m_b),
+            float(el.crossflow_area),
+            el.regime == "incompressible",
+        )
+        d: dict[str, float] = {}
+        coeff_m = 0.5 * float(r.dP_dm_dot)
+        if coeff_m != 0.0:
+            for elem, _eid in el._xf_elems:
+                names = elem.unknowns()
+                for local, c in elem.flow_jac_at_node(
+                    el.from_node, list(range(len(names)))
+                ).items():
+                    d[names[local]] = d.get(names[local], 0.0) + coeff_m * c
+        for key, v in (
+            (f"{el.from_node}.P", float(r.dP_dP)),
+            (f"{el.from_node}.Tt", float(r.dP_dTt)),
+        ):
+            if v != 0.0:
+                d[key] = d.get(key, 0.0) + v
+        for k, v in enumerate(r.dP_dY):
+            if v != 0.0:
+                key = f"{el.from_node}.Y[{k}]"
+                d[key] = d.get(key, 0.0) + float(v)
+        return r, d
+
+    def drive_pair(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+    ) -> "_DrivePair | None":
+        """The pressures the hole's flow runs between (_DrivePair), or None
+        where they are the supply node's Pt and the discharge node's Pt --
+        every hole that is not duct-fed with a moved drive and does not
+        discharge into a flowing chamber, which then evaluates exactly as
+        before."""
+        el = self._el
+        supply = False
+        p_up, dp_up = float(state_in.Pt), {f"{el.from_node}.Pt": 1.0}
+        q = 0.0
+        if self.duct_fed and self.station_holds_static:
+            if self.supply_drive == "total":
+                r, dp_up = self._station_drive(state_in, flows, cb.HoleSupplyDrive.Total)
+                p_up, q, supply = float(r.P_drive), float(r.q_dyn), True
+            else:
+                # The static drive reads the station as the hole always did
+                # (its Pt, = P at a PlenumNode root); q for the diagnostics.
+                q = self.station_head(state_in, flows)
+        elif self.duct_fed:
+            # A station carrying its own Pt (a MomentumChamberNode).
+            q = float(state_in.Pt) - float(state_in.P)
+            if self.supply_drive == "static":
+                p_up, dp_up, supply = float(state_in.P), {f"{el.from_node}.P": 1.0}, True
+        if not (supply or self.exit_static):
+            return None
+        if self.exit_static:
+            p_dn, dp_dn = float(state_out.P), {f"{el.to_node}.P": 1.0}
+        else:
+            p_dn, dp_dn = float(state_out.Pt), {f"{el.to_node}.Pt": 1.0}
+        return _DrivePair(p_up, dp_up, p_dn, dp_dn, supply, self.exit_static, q)
+
+    def station_head(
+        self, state_in: "NetworkMixtureState", flows: dict[str, float] | None
+    ) -> float:
+        """The duct's dynamic head at a duct-fed hole's station [Pa] (0 when
+        not duct-fed): the momentum-chamber closure at its mean flow, or the
+        station's own Pt - P where it carries one."""
+        if not self.duct_fed:
+            return 0.0
+        if not self.station_holds_static:
+            return float(state_in.Pt) - float(state_in.P)
+        r, _ = self._station_drive(state_in, flows, cb.HoleSupplyDrive.Static)
+        return float(r.q_dyn)
+
+    def drive_pressures(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+    ) -> tuple[float, float]:
+        """(p_up, p_dn) of drive_pair as numbers: the supply node's and the
+        discharge node's Pt where it is None."""
+        pair = self.drive_pair(state_in, state_out, flows)
+        if pair is None:
+            return float(state_in.Pt), float(state_out.Pt)
+        return pair.p_up, pair.p_dn
 
     # --- the composed Cd ----------------------------------------------------
 
@@ -723,7 +952,7 @@ class _HoleCdChain:
             model.exit_set = spec.coefficient_set
             model.exit_theta_deg = spec.theta_deg
             model.exit_alpha_deg = spec.alpha_deg
-            self._exit_inputs(spec, state_in, state_out, inp, ctx)
+            self._exit_inputs(spec, state_in, state_out, inp, ctx, flows)
         if jet and self.jet_crossflow != "none" and not self.jet_crossflow_suspended:
             self._jet_inputs(state_in, state_out, flows, model, inp, ctx)
         return cb.hole_cd_compose(model, hole, orifice, inp), ctx
@@ -735,6 +964,7 @@ class _HoleCdChain:
         state_out: "NetworkMixtureState",
         inp: Any,
         ctx: "_Context",
+        flows: dict[str, float] | None = None,
     ) -> None:
         """The exit-crossflow term's inputs (#1074, rowbury_2001_* in
         crossflow_cd.h): k_perp = G_h^2 f / (rho_h rho_m u_m^2), f = u_perp /
@@ -744,7 +974,8 @@ class _HoleCdChain:
                    take the exit-plane flux, p. 262), 1 otherwise;
           rho_h    the coolant's exit-plane static density, the isentropic
                    expansion from the supply (Pt, Tt) to the discharge
-                   static P (rowbury_2001_exit_density): with it the
+                   static P (rowbury_2001_exit_density; the supply total is
+                   a duct-fed hole's drive, #1087): with it the
                    authors' own Fig. 9 predictions are reproduced (the
                    supply-Tt density left Ma_m 1.2 0.008 high);
           rho_m u_m^2  the APPROACHING mainstream's momentum flux, G_m^2 /
@@ -760,7 +991,11 @@ class _HoleCdChain:
         ctx.q = q
         if not q > 0.0:
             return
-        ex = cb.rowbury_2001_exit_density(state_in.Pt, state_in.Tt, state_out.P, state_in.X)
+        pt_up = state_in.Pt
+        pair = self.drive_pair(state_in, state_out, flows) if self.duct_fed else None
+        if pair is not None and pair.supply:
+            pt_up, ctx.dpt_up = pair.p_up, pair.dp_up
+        ex = cb.rowbury_2001_exit_density(pt_up, state_in.Tt, state_out.P, state_in.X)
         ctx.exit_density = ex
         ctx.a_exit = self._el.area * spec.exit_area_ratio
         inp.G_h = abs(float(state_in.m_dot)) / ctx.a_exit
@@ -1018,11 +1253,12 @@ class _HoleCdChain:
             )
         ex = ctx.exit_density
         c_rho = float(r.dCd_drho_h)
-        for key, d in (
-            (f"{el.from_node}.Pt", ex.drho_dPt),
-            (f"{el.from_node}.Tt", ex.drho_dTt),
-            (f"{el.to_node}.P", ex.drho_dP),
-        ):
+        if ctx.dpt_up is None:
+            terms = [(f"{el.from_node}.Pt", float(ex.drho_dPt))]
+        else:
+            terms = [(k, float(ex.drho_dPt) * v) for k, v in ctx.dpt_up.items()]
+        terms += [(f"{el.from_node}.Tt", ex.drho_dTt), (f"{el.to_node}.P", ex.drho_dP)]
+        for key, d in terms:
             out[key] = out.get(key, 0.0) + c_rho * float(d)
         for k, d in enumerate(ex.drho_dY):
             if d != 0.0:
@@ -1300,6 +1536,7 @@ class _HoleCdChain:
             "Cd_inlet_crossflow_beyond_8pct": beyond,
             "Cd_inlet_crossflow_degraded": degraded,
             "Cd_inlet_crossflow_ignored": float(self.inlet_crossflow_ignored),
+            **self.supply_drive_diagnostics(state_in, state_out, flows),
             "Cd_exit_crossflow_model": exit_model,
             "Cd_exit_crossflow_applied": float(exit_applied),
             "Cd_exit_crossflow_ratio": ratio,
@@ -1324,6 +1561,41 @@ class _HoleCdChain:
             **self.jet_crossflow_envelope(state_in, state_out, flows, float(r.cd_hole)),
         }
         return out
+
+    def supply_drive_diagnostics(
+        self,
+        state_in: "NetworkMixtureState",
+        state_out: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+    ) -> dict[str, float | str]:
+        """The supply-drive keys of the group (#1087):
+        Cd_supply_drive_model          the drive in use ("auto" resolved);
+        Cd_supply_drive_applied        1 where it is not the supply node's
+                                       own Pt (a duct-fed hole's rebuilt
+                                       duct total, or a static drive from a
+                                       station that carries its own Pt);
+        Cd_supply_drive_head_fraction  INFORMATION: the share of the full
+                                       drive (duct total less the discharge
+                                       pressure) that is the duct's dynamic
+                                       head, q / (Pt_duct - p_dn): how much
+                                       of the drive the unsourced recovered
+                                       fraction decides (0 "static" and 1
+                                       "total" bound it). 0 when not
+                                       duct-fed; NaN where the duct total
+                                       does not exceed the discharge
+                                       pressure."""
+        pair = self.drive_pair(state_in, state_out, flows)
+        fraction = 0.0
+        if self.duct_fed:
+            q = pair.q_supply if pair is not None else self.station_head(state_in, flows)
+            p_dn = pair.p_dn if pair is not None else float(state_out.Pt)
+            pt_duct = float(state_in.P) + q if self.station_holds_static else float(state_in.Pt)
+            fraction = q / (pt_duct - p_dn) if pt_duct > p_dn else math.nan
+        return {
+            "Cd_supply_drive_model": self.supply_drive,
+            "Cd_supply_drive_applied": float(pair is not None and pair.supply),
+            "Cd_supply_drive_head_fraction": float(fraction),
+        }
 
     def legacy_diagnostics(self, group: dict[str, float | str], keys: tuple[str, ...]) -> dict:
         """The deprecated pre-0.12 names among ``keys`` (each a key of

@@ -530,6 +530,9 @@ try:
         HoleCdInputs,
         HoleCdResult,
         hole_cd_compose,
+        HoleSupplyDrive,
+        HoleSupplyDriveResult,
+        hole_supply_drive,
         discharge_inclination_dzeta,
         discharge_pipe_cd_ratio,
         discharge_pipe_zeta,
@@ -1075,6 +1078,9 @@ except (ModuleNotFoundError, ImportError) as e:
     HoleCdInputs = _core.HoleCdInputs
     HoleCdResult = _core.HoleCdResult
     hole_cd_compose = _core.hole_cd_compose
+    HoleSupplyDrive = _core.HoleSupplyDrive
+    HoleSupplyDriveResult = _core.HoleSupplyDriveResult
+    hole_supply_drive = _core.hole_supply_drive
     discharge_inclination_dzeta = _core.discharge_inclination_dzeta
     discharge_pipe_cd_ratio = _core.discharge_pipe_cd_ratio
     discharge_pipe_zeta = _core.discharge_pipe_zeta
@@ -1847,6 +1853,9 @@ __all__ = [
     "HoleCdInputs",
     "HoleCdResult",
     "hole_cd_compose",
+    "HoleSupplyDrive",
+    "HoleSupplyDriveResult",
+    "hole_supply_drive",
     "discharge_inclination_dzeta",
     "discharge_pipe_cd_ratio",
     "discharge_pipe_zeta",

@@ -3,10 +3,14 @@
 #include <cmath>
 #include <memory>
 #include <tuple>
+#include <vector>
 
+#include "composition.h"
 #include "crossflow_cd.h"
 #include "hole_cd.h"
+#include "humidair.h"
 #include "orifice.h"
+#include "solver_interface.h"
 
 // hole_cd_compose: each term against the kernel it composes (exact equality:
 // the chain must not re-derive anything), and every dCd/d(input) against
@@ -313,5 +317,39 @@ TEST(HoleCdCompose, EveryPartialMatchesCentralDifferences) {
       m.jet = jet;
       expect_partials(m, hole(), state());
     }
+  }
+}
+
+// hole_supply_drive (#1087): Static is the station static; Total adds the
+// momentum-chamber closure's dynamic head, with analytic partials checked
+// against central differences (steps small against the head, #1107).
+TEST(HoleSupplyDrive, StaticIsTheStationStaticAndTotalAddsTheClosuresHead) {
+  using combaero::hole_supply_drive;
+  using combaero::HoleSupplyDrive;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P = 1.2e5, Tt = 450.0, m = 0.35, A = 1.2e-3;
+  for (const bool inc : {false, true}) {
+    const auto s = hole_supply_drive(HoleSupplyDrive::Static, P, Tt, Y, m, A, inc);
+    const auto t = hole_supply_drive(HoleSupplyDrive::Total, P, Tt, Y, m, A, inc);
+    const auto c =
+        combaero::solver::momentum_chamber_residual_and_jacobian(P, 0.0, m, Tt, Y, A, inc);
+    EXPECT_EQ(s.P_drive, P);
+    EXPECT_EQ(s.dP_dP, 1.0);
+    EXPECT_EQ(s.q_dyn, c.q_dyn);
+    EXPECT_GT(t.q_dyn, 0.0);
+    EXPECT_EQ(t.P_drive, P + c.q_dyn);
+    auto f = [&](double P_, double T_, double m_) {
+      return hole_supply_drive(HoleSupplyDrive::Total, P_, T_, Y, m_, A, inc).P_drive;
+    };
+    const double hP = 1e-4 * t.q_dyn, hT = 1e-3, hm = 1e-6 * m;
+    EXPECT_NEAR((f(P + hP, Tt, m) - f(P - hP, Tt, m)) / (2 * hP), t.dP_dP, 1e-7 * std::abs(t.dP_dP));
+    EXPECT_NEAR((f(P, Tt + hT, m) - f(P, Tt - hT, m)) / (2 * hT), t.dP_dTt,
+                1e-6 * std::abs(t.dP_dTt));
+    EXPECT_NEAR((f(P, Tt, m + hm) - f(P, Tt, m - hm)) / (2 * hm), t.dP_dm_dot,
+                1e-7 * std::abs(t.dP_dm_dot));
+    // Even in the flow.
+    const auto r = hole_supply_drive(HoleSupplyDrive::Total, P, Tt, Y, -m, A, inc);
+    EXPECT_EQ(r.P_drive, t.P_drive);
+    EXPECT_EQ(r.dP_dm_dot, -t.dP_dm_dot);
   }
 }

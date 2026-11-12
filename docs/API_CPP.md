@@ -1405,6 +1405,18 @@ struct HoleCdResult {
 HoleCdResult hole_cd_compose(const HoleCdModel& model, const DischargeHoleGeometry& hole,
                              const OrificeGeometry& orifice, const HoleCdInputs& inputs);
 
+// The supply drive of a duct-fed hole (#1087): the pressure its ideal flow is
+// taken from. Static: the station static P (McGreehan & Schotsch's
+// convention). Total: P + q, q the momentum-chamber closure's dynamic head
+// at the mean duct flow m_dot through `area` (the plenum-fed Cd data's
+// reference). Analytic partials of P_drive by P, Tt, m_dot (signed) and Y.
+enum class HoleSupplyDrive { Static, Total };
+struct HoleSupplyDriveResult { double P_drive, q_dyn, dP_dP, dP_dTt, dP_dm_dot;
+                               std::vector<double> dP_dY; };
+HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double Tt,
+                                        const std::vector<double>& Y, double m_dot,
+                                        double area, bool incompressible = false);
+
 // Merge chamber (#471): the main-inlet face from the impulse balance
 //   P_f + m_main^2 R T_f / (P_f A^2) = P + m_out^2/(rho A^2) - J/A
 // with Tt and Tt_main STAGNATION temperatures (#578): the face's static T_f

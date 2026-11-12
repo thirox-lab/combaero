@@ -451,6 +451,18 @@ def test_inlet_crossflow_none_on_a_duct_fed_panel_is_reported() -> None:
         off["Cd_inlet_crossflow_beyond_8pct"] == 0.0 and off["Cd_inlet_crossflow_degraded"] == 0.0
     )
     assert off["Cd"] == pytest.approx(0.807, abs=0.001)
+    # The selectable duct-total drive (#1087): 93 % of this liner's
+    # drive is the duct's dynamic head (Cd_supply_drive_head_fraction), so
+    # the panels bleed more, and U1/Vi (on the station static's jet
+    # velocity, McGreehan-Schotsch's definition, unchanged) rises with the
+    # duct's speed.
+    on = panel(HoleCd(supply_drive="total"))
+    off = panel(HoleCd(inlet_crossflow="none", supply_drive="total"))
+    assert on["Cd_supply_drive_head_fraction"] == pytest.approx(0.934, abs=0.001)
+    assert on["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(3.562, abs=0.001)
+    assert on["Cd"] == pytest.approx(0.382, abs=0.001)
+    assert off["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(10.265, abs=0.001)
+    assert off["Cd"] == pytest.approx(0.801, abs=0.001)
 
 
 @pytest.mark.parametrize(

@@ -6811,6 +6811,27 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "Metzger & Su 1982) that replaces it where it acts. Returns the Cd, its\n"
         "analytic partials by input and each term's value. Internal: the\n"
         "composition point of the network's hole elements (_HoleCdChain).");
+  py::enum_<HoleSupplyDrive>(m, "HoleSupplyDrive",
+                             "The pressure a duct-fed hole's ideal flow is taken from "
+                             "(hole_supply_drive).")
+      .value("Static", HoleSupplyDrive::Static)
+      .value("Total", HoleSupplyDrive::Total);
+  py::class_<HoleSupplyDriveResult>(m, "HoleSupplyDriveResult",
+                                    "A duct-fed hole's drive pressure and its partials.")
+      .def_readonly("P_drive", &HoleSupplyDriveResult::P_drive)
+      .def_readonly("q_dyn", &HoleSupplyDriveResult::q_dyn)
+      .def_readonly("dP_dP", &HoleSupplyDriveResult::dP_dP)
+      .def_readonly("dP_dTt", &HoleSupplyDriveResult::dP_dTt)
+      .def_readonly("dP_dm_dot", &HoleSupplyDriveResult::dP_dm_dot)
+      .def_readonly("dP_dY", &HoleSupplyDriveResult::dP_dY);
+  m.def("hole_supply_drive", &hole_supply_drive, py::arg("drive"), py::arg("P"), py::arg("Tt"),
+        py::arg("Y"), py::arg("m_dot"), py::arg("area"), py::arg("incompressible") = false,
+        "The supply drive of a duct-fed hole (#1087): the pressure its ideal flow\n"
+        "is taken from. Static: the station static P (McGreehan & Schotsch's\n"
+        "convention). Total: the duct's stagnation pressure at the station,\n"
+        "P + q, q the momentum-chamber closure's dynamic head at the mean duct\n"
+        "flow m_dot through `area` (the plenum-fed Cd data's reference). Returns\n"
+        "P_drive, q_dyn and the analytic partials of P_drive by P, Tt, m_dot, Y.");
 
   m.def("solve_orifice_mdot",
         [](const OrificeGeometry &geom, double dP, double rho, double mu,

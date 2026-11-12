@@ -278,16 +278,19 @@ def test_the_jacobian_reads_a_mixed_main_stream() -> None:
     assert _fd_rel_error(s, r) < 1e-6
 
 
-def test_the_jacobian_holds_where_the_term_is_held() -> None:
-    # A normal hole on the suction set (B 1.18 > 1, k_floor 0.23) weakly
-    # INGESTING from a fast chamber: k below the floor, the Cd held (slope
-    # zero), the row exact. (Forward, a hole into a moving chamber needs
-    # Pt_c > Pt_m (#1087), so k >~ Cd^2 here; a set or angle whose floor is
-    # higher -- the pressure set at theta 90, alpha 60: 2.9 -- is held while
-    # blowing too.)
-    s, r = _solve(_net(_plate(angle_deg=90.0, hole_cd=ROWBURY), dp=-0.029))
+@pytest.mark.parametrize(("dp", "blowing"), [(-0.029, True), (-0.045, False)])
+def test_the_jacobian_holds_where_the_term_is_held(dp: float, blowing: bool) -> None:
+    # A normal hole on the suction set (B 1.18 > 1, k_floor 0.23) at a weak
+    # flow from a fast chamber: k below the floor, the Cd held (slope zero),
+    # the row exact. dp -0.029 is inside the #1087 band (chamber static <
+    # coolant < chamber Pt): the hole BLOWS since the drive pair is coolant
+    # total against chamber static, so the floor and the direction switch
+    # meet there and must not fight. dp -0.045 is below the static: it
+    # ingests.
+    s, r = _solve(_net(_plate(angle_deg=90.0, hole_cd=ROWBURY), dp=dp))
     d = r["__element_diag__"]["eff"]
-    assert r["eff.m_dot"] < 0.0 and d["Cd_exit_crossflow_held"] == 1.0
+    assert (r["eff.m_dot"] > 0.0) == blowing and d["Cd_exit_crossflow_held"] == 1.0
+    assert d["is_ingesting"] == float(not blowing)
     assert _fd_rel_error(s, r) < 1e-6
 
 

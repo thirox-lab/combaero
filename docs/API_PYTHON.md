@@ -427,6 +427,14 @@ inp.G_h, inp.rho_h, inp.rho_m_u_m2 = 150.0, rho_h, 2.0e4
 res = cb.hole_cd_compose(model, hole, cb.OrificeGeometry(), inp)
 res.Cd, res.cd_base, res.dCd_dRe, res.dCd_dG_h, res.exit.k_used, res.exit_k_tier
 
+# A duct-fed hole's supply drive (#1087; internal: HoleCd.supply_drive):
+# Total = the duct's stagnation pressure at the station, static P plus the
+# momentum-chamber closure's head at the mean duct flow; Static = P.
+# Analytic dP_dP, dP_dTt, dP_dm_dot (signed), dP_dY.
+d = cb.hole_supply_drive(cb.HoleSupplyDrive.Total, P=1.2e5, Tt=450.0,
+                         Y=list(cb.mole_to_mass(X)), m_dot=0.35, area=1.2e-3)
+d.P_drive, d.q_dyn, d.dP_dP, d.dP_dm_dot
+
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
 # applies between pipes (C_pipe = Cd_wall * R, R -> 1 as beta -> 0)
@@ -2223,7 +2231,9 @@ HoleCd(
     inclination="auto",      # "none" / "idelchik_3_2"
     inlet_crossflow="auto",  # "none" / "mcgreehan_schotsch"
     exit_crossflow="auto",   # "none" / "rowbury_2001" / "rogers_hersh_1976"
-)                            #   / "florschuetz_metzger_su_1982"
+                             #   / "florschuetz_metzger_su_1982"
+    supply_drive="auto",     # "static" / "total" (duct-fed holes, #1087)
+)
 ```
 
 A field left at None or `"auto"` is THAT ELEMENT's default, exactly its
@@ -2236,6 +2246,46 @@ unified:
 | `inclination` `"auto"` | none | Idelchik 3-2 on an inclined IdelchikThick hole | the same, cylindrical holes only | none | none |
 | `inlet_crossflow` `"auto"` | none (U1/Vi = 0) | McGreehan-Schotsch's U1/Vi when duct-fed (`crossflow_segments`) | none | none | none |
 | `exit_crossflow` `"auto"` | none | none (`"rowbury_2001"` opts in) | none (`"rowbury_2001"` opts in) | none | `"rogers_hersh_1976"` |
+| `supply_drive` `"auto"` | `"total"` (the supply node's Pt) | `"static"` when duct-fed (the station static), else `"total"` | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) |
+
+- **The supply drive (#1087, since 0.12.0).** The pressure a hole's ideal
+  flow is taken from: the reference its Cd is defined on. It differs from
+  the supply node's Pt on a DUCT-FED `EffusionPlateElement` only (an
+  `EffusionLiner` panel, or a plate with `crossflow_segments`), whose supply
+  node is a duct station holding the duct's static pressure. `"static"`
+  (`"auto"`, the wiring as before) drives from the station static, McGreehan
+  & Schotsch's own convention (their Eq. 17 inlet-crossflow Cd is defined on
+  it). `"total"` (selectable) drives from the duct's stagnation pressure
+  there, the station static plus the dynamic head of the mean of its two
+  segment flows (C++ `hole_supply_drive`, the momentum-chamber closure): the
+  reference of the plenum-fed Cd data, coolant total to exit static. A
+  fraction of the head in between is not offered (no source gives it);
+  `Cd_supply_drive_head_fraction` reports how much of the drive the choice
+  decides. `"static"` on a hole that is not duct-fed is refused. The
+  direction, the reverse flow, `dP_drive` / `is_ingesting`, the exit
+  density of the Rowbury term and the second-law check read the same drive.
+  With `"total"`, a duct-fed panel's jet momentum into a merge chamber
+  (`injection_momentum`) still takes the station's own pressure: the hook
+  sees no segment flows (a known limitation).
+  - **The default is open, not settled (2026-11-12).** Cross-source, the
+    total drive helps co-aligned 30 deg holes (Gritsch 1998, one lab: bias
+    -33 % -> -8 %, RMS unchanged 43.5 %) and worsens normal holes (pooled RMS
+    17.5 % -> 29.6 %, McGreehan & Schotsch's own Fig. 6 14.5 % -> 48 %). The
+    route to a decided default: Gritsch et al. 2001 (inclination x
+    orientation x supply crossflow; on the sources wanted list), and a check
+    whether the published inlet-crossflow correlations convert to one common
+    drive convention.
+- **A hole into a flowing chamber (#1087, since 0.12.0).** A film,
+  effusion or slot hole discharging into a `MomentumChamberNode` takes its
+  direction from its supply drive against the chamber's STATIC pressure,
+  the pressure its jet discharges against; reversed (ingesting), it draws
+  from that static (none of the chamber's dynamic head is taken as
+  recovered: no source gives the fraction). Before, the direction came from
+  the two nodes' Pt, which reversed a hole that blows wherever
+  `P_static,chamber < Pt_coolant < Pt_chamber`; the flow now passes zero
+  continuously where the coolant meets the static, and `is_ingesting`
+  agrees with its sign. A hole into a plenum, and a plain `OrificeElement`
+  anywhere, are unchanged.
 
 - **Refusals.** `HoleCd` itself refuses an unknown name in any field, a
   non-finite `Cd`, and a `Cd` with a correlation other than `"fixed"`. An
@@ -2291,6 +2341,9 @@ stay where they were.
 | `Cd_inlet_crossflow_U1_over_Vi` | a duct-fed hole's U1/Vi, reported even with the term off (information) | 0 plenum-fed |
 | `Cd_inlet_crossflow_beyond_8pct` / `_degraded` | the Rohde-scored bounds U1/Vi > 0.2 / > 0.35, where the term is on | 0 |
 | `Cd_inlet_crossflow_ignored` | 1 where a supply crossflow is not in the Cd (a channel through a plenum-fed panel's supply node, or `inlet_crossflow="none"` on a duct-fed panel) | 0 |
+| `Cd_supply_drive_model` (text) | `"total"` or `"static"`, `"auto"` resolved | `"total"` (not duct-fed) |
+| `Cd_supply_drive_applied` | 1 where the drive is not the supply node's own Pt (a duct-fed hole's rebuilt duct total) | 0 |
+| `Cd_supply_drive_head_fraction` | the duct's dynamic head over the full drive, q / (Pt_duct - p_exit) (information: the share the unsourced recovered fraction decides); NaN where Pt_duct <= p_exit | 0 not duct-fed |
 | `Cd_exit_crossflow_model` (text) | `"rowbury_2001"`, an impingement row's jet law, or `"none"` | `"none"` |
 | `Cd_exit_crossflow_applied` | 1 where the term changed the Cd here (Rowbury: a mainstream with momentum; a jet law: acting, not capped) | 0 |
 | `Cd_exit_crossflow_ratio` | `Cd / Cd_base` | 1 |

@@ -1,8 +1,12 @@
 #include "hole_cd.h"
 
+#include <cstddef>
 #include <limits>
 #include <memory>
 #include <tuple>
+#include <vector>
+
+#include "solver_interface.h"
 
 // The hole-Cd chain (see hole_cd.h). The operation order mirrors the Python
 // composition it replaced (python/combaero/network/hole_cd.py before this
@@ -128,6 +132,33 @@ HoleCdResult hole_cd_compose(const HoleCdModel& model, const DischargeHoleGeomet
   compose_base(model, hole, orifice, inputs, out);
   compose_exit(model, inputs, out);
   compose_jet(model, inputs, out);
+  return out;
+}
+
+HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double Tt,
+                                        const std::vector<double>& Y, double m_dot, double area,
+                                        bool incompressible) {
+  // The station's dynamic head from the momentum-chamber closure, read as a
+  // residual Pt - Pt_cl(P, Tt, m_dot, Y) at Pt = 0: Pt_cl = P + q, and its
+  // partials are the residual's, negated.
+  const solver::MomentumChamberResult c =
+      solver::momentum_chamber_residual_and_jacobian(P, 0.0, m_dot, Tt, Y, area, incompressible);
+  HoleSupplyDriveResult out;
+  out.q_dyn = c.q_dyn;
+  if (drive == HoleSupplyDrive::Static) {
+    out.P_drive = P;
+    out.dP_dP = 1.0;
+    out.dP_dY.assign(Y.size(), 0.0);
+    return out;
+  }
+  out.P_drive = P + c.q_dyn;
+  out.dP_dP = -c.d_res_dP;
+  out.dP_dTt = -c.d_res_dT;
+  out.dP_dm_dot = -c.d_res_dmdot;
+  out.dP_dY.resize(c.d_res_dY.size());
+  for (std::size_t k = 0; k < c.d_res_dY.size(); ++k) {
+    out.dP_dY[k] = -c.d_res_dY[k];
+  }
   return out;
 }
 

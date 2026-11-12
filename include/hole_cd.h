@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "crossflow_cd.h"
 #include "orifice.h"
 
@@ -118,5 +120,42 @@ struct HoleCdResult {
 // `orifice` by the Metering base. Throws what the kernels throw.
 HoleCdResult hole_cd_compose(const HoleCdModel& model, const DischargeHoleGeometry& hole,
                              const OrificeGeometry& orifice, const HoleCdInputs& inputs);
+
+// The SUPPLY DRIVE of a duct-fed hole (#1087, supply side): the pressure the
+// hole's ideal flow is taken from, the Cd's reference. A duct station holds
+// the duct's STATIC pressure P with its gas moving at the mean flow m_dot
+// through the duct section `area`.
+//   Static  the station static P: the hole recovers none of the duct's
+//           dynamic head. McGreehan & Schotsch's (1988) convention, the one
+//           their Eq. 17 inlet-crossflow Cd is defined on.
+//   Total   the duct's stagnation pressure at the station, P + q: the hole
+//           recovers all of it. The reference the plenum-fed hole Cd data
+//           are taken on (coolant total to exit static), and the audit's
+//           option (a) correction (2026-11-10): from the static, holes
+//           leaning with the supply flow read 33-40 % low and, where the
+//           station static is at or below the exit pressure, reverse
+//           although they blow.
+// q is the momentum-chamber closure's isentropic dynamic head of the station
+// (solver::momentum_chamber_residual_and_jacobian: static T from h(Tt) =
+// h(T) + v^2/2 at G = |m_dot| / area, compressible, or its low-Mach limit),
+// so the station's total is the one a MomentumChamberNode would hold there.
+// A fraction of q in between is not offered: no source gives it (the
+// recovered fraction is reported as a diagnostic instead).
+enum class HoleSupplyDrive { Static, Total };
+
+struct HoleSupplyDriveResult {
+  double P_drive = 0.0;  // the drive pressure [Pa]
+  double q_dyn = 0.0;    // the station's dynamic head Pt - P [Pa], either model
+  // Partials of P_drive by the station's static P, stagnation T, the mean
+  // duct flow (signed: P_drive is even in m_dot) and its mass fractions.
+  double dP_dP = 0.0;
+  double dP_dTt = 0.0;
+  double dP_dm_dot = 0.0;
+  std::vector<double> dP_dY;
+};
+
+HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double Tt,
+                                        const std::vector<double>& Y, double m_dot, double area,
+                                        bool incompressible = false);
 
 }  // namespace combaero
