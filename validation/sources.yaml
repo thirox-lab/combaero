@@ -6789,6 +6789,24 @@ wanted:
     shaped-hole Cd (FilmCoolingElement "shaped" uses the plain-hole Cd on the metering diameter) and no exit-side
     Cd for film or effusion holes. Citation as printed in the 1998 paper''s reference list; paper number unknown.'
   where: 'AIAA Journal (paywalled, AIAA ARC). Citation verified from Rowbury et al. 2001 ref. [21] (held).'
+- citation: 'Gritsch, M., Schulz, A., Wittig, S. (2001). Effect of crossflows on the discharge coefficient of film
+    cooling holes with varying angles of inclination and orientation. ASME J. Turbomach. 123(4), 781-787. DOI
+    10.1115/1.1397306.'
+  checked: true
+  issues:
+  - 1087
+  priority: now
+  question: 'How much of the SUPPLY dynamic head a duct-fed hole recovers, as a function of inclination and of the
+    hole''s orientation to the supply flow -- i.e. whether a duct-fed hole drives from the supply static, the
+    total, or a lean-dependent mix (#1087 supply_drive). Held data (2026-11-12 drive-convention study) give the
+    two ends only: normal holes (Kaddah, Rohde, MS Fig. 6, Hay; 4 labs) and Hay''s 30 deg holes leaning across the
+    supply flow see the static (recovered fraction ~0); 30 deg holes leaning WITH it (Gritsch 1998, held, one
+    lab) see the total (~1). Same rig and Cd definition as Gritsch 1998 (coolant total to exit static, with
+    Ma_c), so it converts exactly to either convention. Whether it covers counter-flow (hole leaning against the
+    supply) is not known. Transcribe the held Rohde 1969 Fig. 11 (45 deg co-aligned, second lab) first.'
+  where: 'ASME Digital Collection (paywalled; bot checks -- open https://doi.org/10.1115/1.1397306 in a browser).
+    Citation and DOI verified from Yan et al. 2026 ref. 13 (held; DOI link) and Andreini et al. 2017 ref. [40]
+    (held; prints issue 4). Not cited by Rowbury et al. 2001 or Gritsch 1998 (both earlier).'
 - citation: Van Niekerk, J. E., Morris, R. M. (2005). (T56 combustor isothermal flow split measurement.) ISABE
     2005.
   checked: false
