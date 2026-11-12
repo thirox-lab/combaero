@@ -5522,19 +5522,34 @@ class OrificeElement(NetworkElement):
 
     def _discharges_to_exit_static(self) -> bool:
         """THE gate of the orifice family's static exit drive (#1087): a
-        restriction that is not closed, not a pass-through, sets no
-        velocity of approach in either direction (beta = beta_reverse = 0,
-        a hole in a wall or a lumped Cd*A) and recovers no pressure in a
-        pipe beyond (#645). An in-pipe metering orifice keeps the Pt-Pt
-        direction its ISO read-back and permanent-loss rows are built on:
-        its approach and recovery pipes set the static state it reads."""
-        return not (
-            self.closed
-            or self._pass_through
-            or self._recovery_fwd
-            or self._recovery_rev
-            or self.beta > 0.0
-            or getattr(self, "beta_reverse", 0.0) > 0.0
+        restriction that is not closed, not a pass-through and recovers no
+        pressure in a pipe beyond (#645). A recovering in-pipe metering
+        orifice keeps the Pt-Pt direction its ISO permanent-loss row is
+        built on (the tap pressure reads both nodes' Pt). A velocity of
+        approach does not exclude: forward the approach static is the
+        pipe's, from Pt_from as before; reversed, the flow draws from the
+        chamber static, which carries no approach head to correct
+        (_approach_along)."""
+        return not (self.closed or self._pass_through or self._recovery_fwd or self._recovery_rev)
+
+    def _approach_along(self, forward: bool) -> tuple[float, float, bool]:
+        """(beta, pipe-Cd ratio, recovers) along the flow (#554, #645). On
+        the reversed leg of a static exit drive (#1087) the source is the
+        discharge chamber's STATIC pressure: the approach pipe's static
+        correction (#651) and E would count its head a second time, so the
+        reversed leg has no velocity of approach there."""
+        if forward:
+            return (
+                float(getattr(self, "beta", 0.0)),
+                float(getattr(self, "_pipe_cd_ratio_fwd", 1.0)),
+                bool(getattr(self, "_recovery_fwd", False)),
+            )
+        if self._hole_cd.exit_static:
+            return 0.0, 1.0, False
+        return (
+            float(getattr(self, "beta_reverse", 0.0)),
+            float(getattr(self, "_pipe_cd_ratio_rev", 1.0)),
+            bool(getattr(self, "_recovery_rev", False)),
         )
 
     def _resolve_orifice_geometry(self, graph: "FlowNetwork") -> None:
@@ -5902,12 +5917,10 @@ class OrificeElement(NetworkElement):
         """
         # The velocity of approach is the upstream pipe's along the flow.
         forward = src_id == self.from_node
-        beta = getattr(self, "beta", 0.0) if forward else getattr(self, "beta_reverse", 0.0)
-        recovers = getattr(self, "_recovery_fwd" if forward else "_recovery_rev", False)
+        # A discharge-hole Cd in its approach pipe (#645): a constant factor
+        # (ratio), so d(m)/d(Cd_wall) = R d(m)/d(C_pipe).
+        beta, ratio, recovers = self._approach_along(forward)
         compressible = self.regime == "compressible"
-        # A discharge-hole Cd in its approach pipe (#645): a constant factor,
-        # so d(m)/d(Cd_wall) = R d(m)/d(C_pipe).
-        ratio = getattr(self, "_pipe_cd_ratio_fwd" if forward else "_pipe_cd_ratio_rev", 1.0)
         cd = cd * ratio
         # Both kernels are exactly linear in Cd (A_eff = Cd E A). A crossflow
         # Cd underflows to exactly 0 where the hole's pressure drop vanishes
@@ -6281,7 +6294,7 @@ class OrificeElement(NetworkElement):
         """Does m_calc read this element's own flow through the approach
         pipe's static state (#651)? With E and a pipe, in either direction."""
         fwd = 0.0 < self.beta < 1.0 and bool(self.upstream_diameter)
-        rev = 0.0 < getattr(self, "beta_reverse", 0.0) < 1.0 and bool(
+        rev = 0.0 < self._approach_along(False)[0] < 1.0 and bool(
             getattr(self, "_reverse_pipe_diameter", None)
         )
         return fwd or rev
@@ -6470,11 +6483,16 @@ class OrificeElement(NetworkElement):
             # (an upstream total) to p_dn, reversed p_dn to p_rev.
             pt_up, p_back = (pair.p_up, pair.p_dn) if forward else (pair.p_dn, pair.p_rev)
         p_ratio_throat = p_back / pt_up if pt_up > 0 else 1.0
-        # The tap and model blocks read the pair as the nodes' Pt.
+        # The tap and model blocks read the pair as the nodes' Pt (p_up here
+        # is drive_pressures' p_rev). Reversed, the kernel discharges against
+        # p_rev, not the from-node's own static: that is the from-node's P
+        # for them too, so dP_tap is the reversed kernel's drive.
         drive_states = (state_in, state_out)
         if pair is not None:
             drive_states = (copy.copy(state_in), copy.copy(state_out))
             drive_states[0].Pt, drive_states[1].Pt = p_up, p_dn
+            if not forward:
+                drive_states[0].P = p_up
         if p_ratio_throat >= 1.0:
             mach_throat = 0.0
         elif p_ratio_throat <= pr_crit:
@@ -6542,9 +6560,7 @@ class OrificeElement(NetworkElement):
         forward = not (state_out.Pt > state_in.Pt)
         up, dn = (state_in, state_out) if forward else (state_out, state_in)
         up_id = self.from_node if forward else self.to_node
-        beta = self.beta if forward else getattr(self, "beta_reverse", 0.0)
-        recovers = self._recovery_fwd if forward else self._recovery_rev
-        ratio = getattr(self, "_pipe_cd_ratio_fwd" if forward else "_pipe_cd_ratio_rev", 1.0)
+        beta, ratio, recovers = self._approach_along(forward)
         c = max(cd * ratio, _JOBSON_CD_MIN)
         p1 = self._approach_static(up, up_id, forward, beta)[0]
         p_down = float(dn.P)
@@ -6590,9 +6606,7 @@ class OrificeElement(NetworkElement):
         """
         forward = not (state_out.Pt > state_in.Pt)
         up, dn = (state_in, state_out) if forward else (state_out, state_in)
-        beta = self.beta if forward else getattr(self, "beta_reverse", 0.0)
-        recovers = self._recovery_fwd if forward else self._recovery_rev
-        ratio = getattr(self, "_pipe_cd_ratio_fwd" if forward else "_pipe_cd_ratio_rev", 1.0)
+        beta, ratio, recovers = self._approach_along(forward)
         out: dict[str, float | str] = {
             "tap": self.tap,
             "pressure_recovery": float(recovers),

@@ -11,9 +11,11 @@ P_to < Pt_from < Pt_to the orifice blows, where the Pt - Pt direction
 reversed it.
 
 Excluded, Pt - Pt exactly as before (OrificeElement._discharges_to_exit_static):
-an in-pipe orifice with a velocity of approach in either direction
-(beta > 0), one that recovers pressure in a pipe beyond (#645), a
-pass-through bore (#788, #1016) and a closed restriction (#1024).
+an in-pipe orifice that recovers pressure in a pipe beyond (ISO permanent
+loss, #645), a pass-through bore (#788, #1016) and a closed restriction
+(#1024). An approach pipe does not exclude: forward its static is the
+pipe's as before; reversed, the flow draws from the chamber static, which
+carries no approach head (_approach_along).
 
 Jacobian checks are central differences with pressure steps sized on the
 local drop (#1107, the shared _fd_jacobian helper).
@@ -231,13 +233,12 @@ def _pipe_net(recover: bool, chamber: bool = True) -> FlowNetwork:
     return g
 
 
-@pytest.mark.parametrize("recover", [True, False])
-def test_an_in_pipe_orifice_keeps_the_pt_pt_drive(recover: bool) -> None:
-    g = _pipe_net(recover)
+def test_a_recovering_in_pipe_orifice_keeps_the_pt_pt_drive() -> None:
+    # ISO's permanent-loss row (#645) reads both nodes' Pt: excluded.
+    g = _pipe_net(recover=True)
     g.resolve_all_topology()
     el = g.elements["orf"]
-    assert el.beta > 0.0
-    assert el._recovery_fwd is recover
+    assert el.beta > 0.0 and el._recovery_fwd is True
     assert el._discharges_to_exit_static() is False
     assert el._hole_cd.exit_static is False
     s = NetworkSolver(g)
@@ -247,40 +248,151 @@ def test_an_in_pipe_orifice_keeps_the_pt_pt_drive(recover: bool) -> None:
     assert el._hole_cd.drive_pair(si, so, None) is None
 
 
-def test_a_reverse_approach_pipe_keeps_the_pt_pt_drive() -> None:
-    # Plenum-fed (beta = 0) but a single pipe beyond: reversed flow
-    # approaches through it (beta_reverse > 0), excluded.
-    g = FlowNetwork()
-    g.add_node(PressureBoundary("cool", Pt=1.2e5, Tt=300.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("out", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
-    g.add_node(MomentumChamberNode("ch", area=7.85e-3))
-    g.add_element(OrificeElement("orf", "cool", "ch", diameter=0.05))
-    g.add_element(ChannelElement("p2", "ch", "out", length=0.5, diameter=0.1))
+def test_an_approach_pipe_alone_does_not_exclude() -> None:
+    # beta > 0 without a recovering pipe beyond: the static exit drive.
+    g = _pipe_net(recover=False)
     g.resolve_all_topology()
     el = g.elements["orf"]
-    assert el.beta == 0.0 and el.beta_reverse > 0.0
-    assert el._hole_cd.exit_static is False
+    assert el.beta > 0.0 and not (el._recovery_fwd or el._recovery_rev)
+    assert el._hole_cd.exit_static is True
 
 
-def test_a_pass_through_and_a_closed_orifice_keep_the_pt_pt_drive() -> None:
-    g = _band_net(OrificeElement("orf", "cool", "ch", area=0.01), dp=-0.01)  # = chamber
-    g.resolve_all_topology()
-    assert g.elements["orf"]._pass_through is True
-    assert g.elements["orf"]._hole_cd.exit_static is False
-    g = _band_net(EffectiveAreaConnectionElement("orf", "cool", "ch", effective_area=0.0), -0.01)
-    g.resolve_all_topology()
-    assert g.elements["orf"].closed is True
-    assert g.elements["orf"]._hole_cd.exit_static is False
+# --- an approach pipe: beta_reverse > 0 (side injection), beta > 0 -----------
 
 
-@pytest.mark.parametrize("make", MAKERS)
-def test_a_still_receiver_is_unchanged(make) -> None:
-    # Into a plenum (P = Pt) there is no drive pair: the original path.
+def _side_net(dp: float, tail_channel: bool, in_pipe: bool = True) -> FlowNetwork:
+    """A side-injection hole into a duct-fed chamber (the reviewer's case):
+    a single channel at the chamber gives the default in_pipe orifice a
+    reverse approach (beta_reverse > 0) unless the outlet is a second
+    channel. The supply at Pt = 5e5 (1 + dp)."""
     g = FlowNetwork()
-    g.add_node(PressureBoundary("cool", Pt=1.3e5, Tt=300.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("ch", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
-    g.add_element(make())
-    g.resolve_all_topology()
-    el = g.elements["orf"]
-    assert el._discharges_to_exit_static() is True
-    assert el._hole_cd.exit_static is False
+    g.add_node(MassFlowBoundary("gas_in", m_dot=2.0, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("cool", Pt=P_GAS * (1.0 + dp), Tt=600.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("ch", main_inlet="duct"))
+    g.add_element(ChannelElement("duct", "gas_in", "ch", length=0.05, diameter=0.1128))
+    if tail_channel:
+        g.add_element(ChannelElement("tail", "ch", "exit", length=0.05, diameter=0.1128))
+    else:
+        g.add_element(LosslessConnectionElement("tail", "ch", "exit"))
+    g.add_element(OrificeElement("orf", "cool", "ch", diameter=4e-3, in_pipe=in_pipe))
+    return g
+
+
+def _band_dp(tail_channel: bool) -> float:
+    """The supply dp at the middle of the chamber's band (P, Pt)."""
+    _, r = _solve(_side_net(-0.01, tail_channel, in_pipe=False))
+    return 0.5 * (r["ch.P"] + r["ch.Pt"]) / P_GAS - 1.0
+
+
+def test_a_side_injection_hole_in_the_band_blows() -> None:
+    # Reviewer's repro: in the band the default (in_pipe) hole blew only
+    # without an approach pipe; it read -8.06e-4 kg/s with one.
+    s, r = _solve(_side_net(-0.01, tail_channel=False))
+    el = s.network.elements["orf"]
+    assert el.beta_reverse > 0.0 and el._hole_cd.exit_static is True
+    assert r["ch.P"] < P_GAS * 0.99 < r["ch.Pt"]
+    assert r["orf.m_dot"] > 0.0
+
+
+@pytest.mark.parametrize("leg", ["band", "reverse"])
+@pytest.mark.parametrize("tail_channel", [False, True])
+def test_the_outcome_does_not_depend_on_the_chambers_outlet(tail_channel: bool, leg: str) -> None:
+    # The outlet element sets beta_reverse (one channel at the chamber) or
+    # not (two). Neither leg reads it: forward there is no approach pipe
+    # (beta = 0), and the reversed leg draws from the chamber static, which
+    # carries no approach head (_approach_along). So in_pipe does not
+    # change the root; inside the band the hole blows, below the static it
+    # ingests.
+    dp = _band_dp(tail_channel)
+    if leg == "reverse":
+        _, r0 = _solve(_side_net(dp, tail_channel, in_pipe=False))
+        dp = (r0["ch.P"] - 0.02 * P_GAS) / P_GAS - 1.0
+    _, r_pipe = _solve(_side_net(dp, tail_channel, in_pipe=True))
+    _, r_wall = _solve(_side_net(dp, tail_channel, in_pipe=False))
+    if leg == "band":
+        assert r_pipe["ch.P"] < P_GAS * (1.0 + dp) < r_pipe["ch.Pt"]
+        assert r_pipe["orf.m_dot"] > 0.0
+    else:
+        assert r_pipe["orf.m_dot"] < 0.0
+    assert r_pipe["orf.m_dot"] == pytest.approx(r_wall["orf.m_dot"], rel=1e-6)
+
+
+def _dead_chamber_net(p_exit: float, in_pipe: bool = True) -> FlowNetwork:
+    """beta_reverse = 0.4: the orifice into a small chamber drained by a
+    single 10 mm pipe, nothing else through it. Reversed (p_exit above the
+    supply), the flow approaches through that pipe."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("cool", Pt=2.0e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=p_exit, Tt=300.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("ch", area=7.85e-5))
+    g.add_element(OrificeElement("orf", "cool", "ch", diameter=4e-3, in_pipe=in_pipe))
+    g.add_element(ChannelElement("p2", "ch", "exit", length=0.05, diameter=0.01))
+    return g
+
+
+@pytest.mark.parametrize("p_exit", [1.5e5, 2.5e5])  # forward, reversed
+def test_the_reversed_leg_reads_no_approach_head(p_exit: float) -> None:
+    # Reversed, the kernel draws from the chamber STATIC: the approach
+    # pipe's static correction (#651) and E on top would count the pipe's
+    # head twice, so beta_reverse must not change the root. Before the
+    # review it did (_approach_along).
+    s, r_pipe = _solve(_dead_chamber_net(p_exit, in_pipe=True))
+    el = s.network.elements["orf"]
+    assert el.beta_reverse == pytest.approx(0.4) and el._hole_cd.exit_static is True
+    _, r_wall = _solve(_dead_chamber_net(p_exit, in_pipe=False))
+    assert (r_pipe["orf.m_dot"] < 0.0) is (p_exit > 2.0e5)
+    assert r_pipe["orf.m_dot"] == pytest.approx(r_wall["orf.m_dot"], rel=1e-9)
+
+
+def _approach_net(dp: float, **orifice_kw) -> FlowNetwork:
+    """beta > 0: a supply pipe into a chamber at the orifice's inlet (in_pipe,
+    beta = 0.4), discharging into the flowing chamber of _band_net."""
+    g = FlowNetwork()
+    g.add_node(MassFlowBoundary("gas_in", m_dot=2.0, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("cool", Pt=P_GAS * (1.0 + dp), Tt=600.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("ch", area=0.01, main_inlet="feed"))
+    g.add_node(MomentumChamberNode("a", area=7.85e-5))
+    g.add_element(LosslessConnectionElement("feed", "gas_in", "ch"))
+    g.add_element(LosslessConnectionElement("tail", "ch", "exit"))
+    g.add_element(ChannelElement("sup", "cool", "a", length=0.05, diameter=0.01))
+    g.add_element(OrificeElement("orf", "a", "ch", diameter=4e-3, **orifice_kw))
+    return g
+
+
+@pytest.mark.parametrize(
+    ("build", "dp", "sign"),
+    [
+        (lambda dp: _side_net(dp, tail_channel=False), -0.01, 1.0),  # beta_reverse > 0: band
+        (lambda dp: _side_net(dp, tail_channel=False), -0.06, -1.0),  # reverse
+        (lambda dp: _side_net(dp, tail_channel=False), 0.02, 1.0),  # forward
+        (lambda dp: _dead_chamber_net(2.0e5 * (1.0 - dp)), -0.25, -1.0),  # beta_rev 0.4
+        (lambda dp: _dead_chamber_net(2.0e5 * (1.0 - dp)), 0.25, 1.0),
+        (_approach_net, -0.01, 1.0),  # beta > 0: band
+        (_approach_net, -0.06, -1.0),  # reverse
+        (_approach_net, 0.02, 1.0),  # forward
+    ],
+)
+def test_the_jacobian_is_analytic_with_an_approach_pipe(build, dp: float, sign: float) -> None:
+    s, r = _solve(build(dp))
+    el = s.network.elements["orf"]
+    assert el._hole_cd.exit_static is True
+    assert el.beta > 0.0 or el.beta_reverse > 0.0
+    assert sign * r["orf.m_dot"] > 0.0
+    x = np.array(r["__x_solution__"])
+    assert _fd_err(s, x) < 1e-5
+
+
+def test_dp_tap_is_the_reversed_kernels_drive() -> None:
+    # Two chambers (the supply pipe's 'a', P < Pt, and the flowing 'ch'),
+    # the orifice reversed: the kernel draws from ch's static and discharges
+    # against a's Pt, so dP_tap = P_ch - Pt_a (a fixed Cd: no tap rescale).
+    # It used to read a's own static, off by a's dynamic head.
+    s, r = _solve(_approach_net(-0.06, Cd=0.7, correlation="fixed"))
+    assert r["orf.m_dot"] < 0.0
+    assert r["a.P"] < r["a.Pt"] < r["ch.P"]
+    d = r["__element_diag__"]["orf"]
+    assert d["dP_tap"] == pytest.approx(r["ch.P"] - r["a.Pt"], rel=1e-12)
+    assert abs(d["dP_tap"] - (r["ch.P"] - r["a.P"])) > 1.0  # not the old reading
+    assert d["beta_flow"] == 0.0  # the reversed leg reads no approach

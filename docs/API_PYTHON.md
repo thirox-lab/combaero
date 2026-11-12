@@ -2193,13 +2193,17 @@ closure: the jet's head is its own, not the receiver's. Since 0.12.0
   supply's `Pt`. Inside the band `P_to < Pt_from < Pt_to` it blows; the flow
   passes zero once, where `Pt_from = P_to`. The forward drive already ran to
   the downstream static.
-- **In-pipe metering orifices are excluded** and keep the `Pt - Pt`
-  direction: an `OrificeElement` with a velocity of approach in either
-  direction (`beta > 0`, a single pipe on the approach side), one that
-  recovers pressure in a pipe beyond (ISO permanent loss, #645), a
-  pass-through bore (#788, #1016) and a closed restriction (#1024). Their ISO
-  read-back and permanent-loss rows are built on the pipes' static states.
-  The one gate is `OrificeElement._discharges_to_exit_static`.
+- **Recovering in-pipe metering orifices are excluded** and keep the
+  `Pt - Pt` direction: an `OrificeElement` that recovers pressure in a pipe
+  beyond (ISO permanent loss, #645; its tap pressure reads both nodes'
+  `Pt`), a pass-through bore (#788, #1016) and a closed restriction (#1024).
+  The one gate is `OrificeElement._discharges_to_exit_static`. An approach
+  pipe alone does not exclude: forward the drive reads the pipe's static as
+  before (#651); reversed, the flow draws from the chamber's static, which
+  carries no approach head, so `beta_reverse` and its pipe Cd are not
+  applied on that leg (`beta_flow` reports 0). The tap and model
+  diagnostics of a reversed jet read the kernel's pair, so `dP_tap` is the
+  chamber static minus the supply `Pt`.
 - **Supply side.** A duct-fed `EffusionPlateElement` (each `EffusionLiner`
   panel) drives from the duct's TOTAL pressure at its station, rebuilt from
   the station static and the mean segment flow, not from the station
