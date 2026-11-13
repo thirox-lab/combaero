@@ -189,17 +189,17 @@ def test_the_total_drive_flows_the_cd_from_the_ducts_total(ms: bool) -> None:
     # (static + the closure's head at the mean of the two segment flows) is
     # the element's Cd; from the static it is not (that is the old wiring,
     # where the same ratio from the STATIC was the Cd).
-    # Bases without the supply-crossflow term: with it, "total" converts
+    # Bases without the supply-crossflow term: with it, the drive converts
     # Eq. 17's static-referenced Cd exactly (the conversion tests), so the
     # flow over the total-drive ideal flow is not the correlation's Cd.
     spec = HoleCd(
         correlation="McGreehanSchotsch" if ms else "IdelchikThick", inlet_crossflow="none"
     )
     a_h = math.pi * D_HOLE**2 / 4.0
-    for drive in ("total", "static"):
+    for drive in ("recovery", "static"):
         # The full recovery (f = 1) is the Cd from the total; the v0.11.1
         # static drive is the Cd from the static.
-        kw = {"supply_recovery": 1.0} if drive == "total" else {"supply_drive": "static"}
+        kw = {"supply_recovery": 1.0} if drive == "recovery" else {"supply_drive": "static"}
         _, r = _solve(_duct_net(dataclass_replace(spec, **kw)))
         d = r["__element_diag__"]["h"]
         P = r["n1.P"]
@@ -208,7 +208,7 @@ def test_the_total_drive_flows_the_cd_from_the_ducts_total(ms: bool) -> None:
         from_total = r["h.m_dot"] / (a_h * _ideal_flux(pt_duct, 290.0, P_ATM))
         from_static = r["h.m_dot"] / (a_h * _ideal_flux(P, 290.0, P_ATM))
         assert d["Cd_supply_drive_model"] == drive
-        if drive == "total":
+        if drive == "recovery":
             assert from_total == pytest.approx(d["Cd"], rel=2e-4)  # the closed form's gamma
             assert d["Cd_supply_drive_applied"] == 1.0
             assert d["dP_drive"] == pytest.approx(pt_duct - P_ATM, rel=1e-9)
@@ -299,7 +299,7 @@ def test_eq_17_on_the_total_drive_is_the_static_referenced_flow() -> None:
     assert r["h.m_dot"] == pytest.approx(cd_s * a_h * _ideal_flux(P1, T1, P_ATM), rel=2e-4)
     pt = _moving_total_P(P1, 290.0, Y_AIR, m_d, A_DUCT).Pt
     assert d["Cd"] == pytest.approx(r["h.m_dot"] / (a_h * _ideal_flux(pt, 290.0, P_ATM)), rel=2e-4)
-    assert d["Cd_supply_drive_model"] == "total" and d["Cd_supply_drive_applied"] == 1.0
+    assert d["Cd_supply_drive_model"] == "recovery" and d["Cd_supply_drive_applied"] == 1.0
     # It passes zero at the station static (f = 0), so the direction, and
     # dP_drive / is_ingesting with it, are taken from there.
     assert d["dP_drive"] == pytest.approx(P1 - P_ATM, rel=1e-12)
@@ -416,7 +416,7 @@ def test_the_group_carries_the_drive_keys_everywhere() -> None:
     _, r = _solve(_chamber_net(_film(), dp=0.03))
     d = r["__element_diag__"]["eff"]
     assert all(k in d for k in HOLE_CD_DIAGNOSTIC_KEYS)
-    assert d["Cd_supply_drive_model"] == "total"
+    assert d["Cd_supply_drive_model"] == "recovery"
     assert d["Cd_supply_drive_applied"] == 0.0 and d["Cd_supply_drive_head_fraction"] == 0.0
     # f does not apply to a hole that is not duct-fed.
     assert d["Cd_supply_recovery_q1"] == 0.0 and d["Cd_supply_recovery_ratio"] == 1.0
@@ -857,11 +857,12 @@ def test_any_base_is_referenced_to_the_partly_recovered_drive(
 
 
 def test_f_zero_is_the_static_referenced_conversion_bit_for_bit() -> None:
-    # McGreehan-Schotsch with f = 0 given and with the default: one model, the
-    # pre-C1 Eq. 17 conversion (hole_static_to_total_cd_ratio is the kernel's
-    # f = 0 case).
-    _, a = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
-    _, b = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch", supply_recovery=0.0)))
+    # A plenum-fed base with f = 0 given and with the default: one model, the
+    # static-referenced conversion (hole_static_to_total_cd_ratio is the
+    # kernel's f = 0 case).
+    off = HoleCd(correlation="IdelchikThick", inlet_crossflow="none")
+    _, a = _solve(_duct_net(off))
+    _, b = _solve(_duct_net(dataclass_replace(off, supply_recovery=0.0)))
     assert a["h.m_dot"] == b["h.m_dot"] and a["n1.P"] == b["n1.P"]
     Y = Y_AIR
     for inc in (False, True):
@@ -928,3 +929,35 @@ def test_the_removed_total_drive_is_refused() -> None:
     # supply_drive="total" never shipped: supply_recovery=1.0 replaces it.
     with pytest.raises(ValueError, match="supply_drive 'total' is not one of"):
         HoleCd(supply_drive="total")
+
+
+@pytest.mark.parametrize("f", [0.0, 0.5, 1.0])
+def test_supply_recovery_is_refused_where_the_correlation_owns_the_crossflow(f: float) -> None:
+    # Review of C1: McGreehan-Schotsch's U1/Vi term models the supply
+    # crossflow on the station static (f = 0 by definition); a recovery on
+    # top rebuilds the unconverted duct-total model and counts the crossflow
+    # twice. Any value is refused, 0.0 included, so the rule is one sentence.
+    with pytest.raises(ValueError, match="already models the supply crossflow"):
+        _duct_net(HoleCd(correlation="McGreehanSchotsch", supply_recovery=f))
+    with pytest.raises(ValueError, match="already models the supply crossflow"):
+        _liner_net(HoleCd(supply_recovery=f))
+    # With the term off the same base is plenum-fed, and f applies.
+    _duct_net(HoleCd(correlation="McGreehanSchotsch", inlet_crossflow="none", supply_recovery=f))
+
+
+@pytest.mark.parametrize("f", [None, 0.5])
+def test_the_incompressible_liner_jacobian_is_analytic(f: float | None) -> None:
+    # Review of C1: the incompressible kernel's sqrt(1 - (1 - f) X) through a
+    # term-off duct-fed liner, every element in the incompressible regime.
+    g = _liner_net(HoleCd(inlet_crossflow="none", supply_recovery=f))
+    for el in g.elements.values():
+        if hasattr(el, "regime"):
+            el.regime = "incompressible"
+    s, r = _solve(g)
+    h = [e for e in g.elements.values() if isinstance(e, EffusionPlateElement)]
+    assert h and all(e.regime == "incompressible" for e in h)
+    d = r["__element_diag__"][h[1].id]
+    assert d["Cd_supply_recovery_fraction"] == (0.0 if f is None else f)
+    assert d["Cd_supply_recovery_ratio"] < 1.0
+    x = np.array(r["__x_solution__"])
+    assert _fd_check(s, x) < 1e-5

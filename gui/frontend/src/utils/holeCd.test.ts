@@ -8,7 +8,9 @@ import {
 	liftLooseHoleCd,
 	preReleaseHoleCdKeys,
 	resolvedCorrelation,
+	showsSupplyRecovery,
 	withCorrelation,
+	withInletCrossflow,
 } from "./holeCd";
 import { migrateNodeData } from "./legacyKeys";
 
@@ -151,6 +153,38 @@ describe("a v0.11.1 file's loose Cd fields are lifted into hole_cd", () => {
 			"IdelchikThick",
 		);
 		expect(changed.supply_recovery).toBe(1.0);
+	});
+
+	it("offers f only on a duct-fed liner with the crossflow term off (review of C1)", () => {
+		expect(showsSupplyRecovery("effusion_liner", {})).toBe(false);
+		expect(
+			showsSupplyRecovery("effusion_liner", { inlet_crossflow: "auto" }),
+		).toBe(false);
+		expect(
+			showsSupplyRecovery("effusion_liner", {
+				inlet_crossflow: "mcgreehan_schotsch",
+			}),
+		).toBe(false);
+		expect(
+			showsSupplyRecovery("effusion_liner", { inlet_crossflow: "none" }),
+		).toBe(true);
+		expect(
+			showsSupplyRecovery("effusion_liner", {
+				inlet_crossflow: "none",
+				supply_drive: "static",
+			}),
+		).toBe(false);
+		for (const t of ["orifice", "effusion_plate", "film_cooling"] as const)
+			expect(showsSupplyRecovery(t, { inlet_crossflow: "none" })).toBe(false);
+	});
+
+	it("drops f when the crossflow term is switched back on", () => {
+		const off = { inlet_crossflow: "none" as const, supply_recovery: 0.5 };
+		expect(withInletCrossflow(off, "none")).toEqual(off);
+		expect(withInletCrossflow(off, "auto")).toEqual({
+			inlet_crossflow: "auto",
+		});
+		expect(withInletCrossflow({}, "none")).toEqual({ inlet_crossflow: "none" });
 	});
 });
 

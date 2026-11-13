@@ -204,18 +204,33 @@ HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1,
     out.d_df = dr_da * dPf_df;
     return out;
   }
-  // Tf = T1 exp(s M), M = ln(Tt1/T1), s = ln(Pf/P1)/L, L = ln(Pt1/P1): the
-  // isentrope through the static and stagnation states (see the header).
-  const double L = std::log(Pt1 / P1);
+  // Tf = T1 exp(s M), M = ln(Tt1/T1), s = ln(Pf/P1)/L = log1p(f x)/log1p(x),
+  // x = q1/P1: the isentrope through the static and stagnation states (see
+  // the header). log1p keeps s exact as q1 -> 0; its x-derivative
+  // ds/dx = (f/(1 + f x) - s/(1 + x))/L cancels to O(x) there, so below
+  // |x| = 1e-5 it is the series f(1-f)(12 - 4x - 16fx + 3x^2 + 6fx^2 +
+  // 18f^2x^2)/24 (truncation O(x^3)), and ds/df = x/((1 + f x) L) likewise
+  // 1 + x/2 - fx - x^2/12 - fx^2/2 + f^2x^2. At f = 0, s and ds/dx are 0
+  // exactly, so the f = 0 ratio and partials are the static-to-total ones
+  // bit for bit.
   const double M = (T1 > 0.0 && Tt1 > 0.0) ? std::log(Tt1 / T1) : 0.0;
-  double s = f;
-  double ds_dP1 = 0.0, ds_dPt1 = 0.0, ds_df = 0.0;
-  if (std::abs(L) >= 1e-12) {
-    s = std::log(Pf / P1) / L;
-    ds_dP1 = (dPf_dP1 / Pf - (1.0 - s) / P1) / L;
-    ds_dPt1 = (dPf_dPt1 / Pf - s / Pt1) / L;
-    ds_df = (dPf_df / Pf) / L;
+  const double x = q1 / P1;
+  const double L = std::log1p(x);
+  const double s = (L != 0.0) ? std::log1p(f * x) / L : f;
+  double ds_dx = 0.0, ds_df = 0.0;
+  if (std::abs(x) < 1e-5) {
+    ds_dx = f * (1.0 - f) *
+            (12.0 - 4.0 * x - 16.0 * f * x + 3.0 * x * x + 6.0 * f * x * x +
+             18.0 * f * f * x * x) /
+            24.0;
+    ds_df = 1.0 + 0.5 * x - f * x - x * x / 12.0 - 0.5 * f * x * x + f * f * x * x;
+  } else {
+    ds_dx = (f / (1.0 + f * x) - s / (1.0 + x)) / L;
+    ds_df = x / ((1.0 + f * x) * L);
   }
+  // x = Pt1/P1 - 1.
+  const double ds_dP1 = ds_dx * (-Pt1 / (P1 * P1));
+  const double ds_dPt1 = ds_dx / P1;
   const double Tf = (s == 1.0) ? Tt1 : T1 * std::exp(s * M);
   const double dTf_dT1 = Tf * (1.0 - s) / T1;
   const double dTf_dTt1 = Tf * s / Tt1;

@@ -297,6 +297,32 @@ export const withCorrelation = (
 	return next;
 };
 
+/** Whether the editor offers the recovered supply-head fraction f
+ *  (HoleCd.supply_recovery): on a duct-fed node type only, with the supply
+ *  crossflow term off (inlet_crossflow "none": a base Cd defined
+ *  plenum-fed) and the drive not the v0.11.1 "static". The library refuses
+ *  f wherever the correlation owns the supply crossflow. */
+export const showsSupplyRecovery = (
+	type: HoleCdNodeType,
+	hc: HoleCdData | null | undefined,
+): boolean =>
+	HOLE_CD_RULES[type].inletCrossflow.length > 0 &&
+	(hc?.inlet_crossflow ?? "auto") === "none" &&
+	hc?.supply_drive !== "static";
+
+/** An inlet-crossflow change: leaving "none" drops a given supply_recovery,
+ *  which the library refuses with the crossflow term on. */
+export const withInletCrossflow = (
+	hc: HoleCdData | null | undefined,
+	inlet: HoleCdInletCrossflow,
+): HoleCdData => {
+	const { supply_recovery, ...rest } = hc ?? {};
+	const next: HoleCdData = { ...rest, inlet_crossflow: inlet };
+	if (inlet === "none" && supply_recovery != null)
+		next.supply_recovery = supply_recovery;
+	return next;
+};
+
 // The node types whose v0.11.1 files carry the Cd choices loose on the node,
 // with the defaults that build read: (correlation, Cd). Only the impingement
 // array had `cd_crossflow`; on any other type it was ignored, and still is.

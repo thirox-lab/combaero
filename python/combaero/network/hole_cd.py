@@ -135,7 +135,8 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #: differs from the supply node's own Pt only on a DUCT-FED hole (a
 #: duct-fed EffusionPlateElement, an EffusionLiner panel), whose supply node
 #: is a duct station holding the duct's static pressure:
-#:   "auto"    the duct's stagnation pressure at the station, the static plus
+#:   "auto"    (reported "recovery") the duct's stagnation pressure at the
+#:             station, the static plus
 #:             the dynamic head of its mean flow (smooth and even through a
 #:             duct-flow reversal), with the base Cd converted exactly from
 #:             P1 + f q1 onto it (C++ hole_supply_recovery_cd_ratio):
@@ -150,11 +151,16 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #:             2026-11-13): held normal-hole Cd data (Kaddah 1964, Rohde TN
 #:             D-5467, McGreehan & Schotsch Fig. 6, Hay, Lampard & Benmansour
 #:             1983; the drive-convention study, within-set RMS 15.8 % static
-#:             vs 32.5 % total) show f ~ 0 for normal holes, and holes leaning across the supply flow give f ~ 0.16.
-#:             McGreehan-Schotsch's Eq. 17 Cd is static-referenced by its
-#:             authors, so f = 0 is their own flow. supply_recovery=1.0 is
-#:             the full recovery of a hole leaning WITH the supply flow
-#:             (Gritsch 1998, one lab, f ~ 1.25). Route to another default:
+#:             vs 32.5 % total) show f ~ 0 for normal holes, and holes
+#:             leaning across the supply flow give f ~ 0.16. f applies to a
+#:             base Cd defined plenum-fed (inlet_crossflow="none"); with
+#:             McGreehan-Schotsch's U1/Vi term on, the correlation owns the
+#:             supply crossflow (its Eq. 17 Cd is static-referenced by its
+#:             authors, f = 0 their own flow) and any supply_recovery is
+#:             refused: a recovery on top counts the crossflow twice. On held
+#:             data (Gritsch 1998, one lab) 30 deg holes leaning WITH the
+#:             supply flow give f ~ 1.25; no default covers them yet.
+#:             Route to another default:
 #:             the lean- and direction-dependent recovery (#1124), sourced
 #:             from Rohde 1969 Fig. 11 and Gritsch, Schulz & Wittig 2001 (J.
 #:             Turbomach. 123(4), 781-787, doi:10.1115/1.1397306; wanted
@@ -166,9 +172,9 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #:             control volume) and exists only to reproduce v0.11.1 liner
 #:             results. Route: removed once #1124 is settled. Refuses a
 #:             supply_recovery.
-#: Every other hole drives from its supply node's Pt, its total already: f
-#: applies only to holes fed by a duct crossflow, and a supply_recovery given
-#: to any other hole is refused.
+#: Every other hole element drives from its supply node's Pt, its total
+#: already: f applies only to holes fed by a duct crossflow, and a
+#: supply_recovery given to any other hole element is refused.
 #: A liner whose duct flow REVERSES at a station (fed from both ends, or
 #: back-pressured) is demoted by the second-law check: booked at the duct
 #: total, the hole stream shows the station's reversed-flow model
@@ -318,15 +324,17 @@ class HoleCd:
         by the second-law check (#1125). See HOLE_CD_SUPPLY_DRIVES.
     supply_recovery : float | None
         The recovered fraction f in [0, 1] of the supply's dynamic head q1 =
-        Pt1 - P1 at a duct-fed hole: the base Cd is referenced to P1 + f q1
-        and converted exactly onto the duct-total drive (C++
+        Pt1 - P1 at a duct-fed hole whose base Cd is defined plenum-fed
+        (inlet_crossflow="none"): the base Cd is referenced to P1 + f q1 and
+        converted exactly onto the duct-total drive (C++
         hole_supply_recovery_cd_ratio). None: 0 at every angle and for every
-        base (the held normal-hole data; McGreehan-Schotsch's Eq. 17 Cd is
-        static-referenced by its authors). 1.0: the full head, the
-        behaviour of a hole leaning with the supply flow (Gritsch 1998).
-        The lean- and direction-dependent recovery is #1124, the route to
-        another default. f applies only to holes fed by a duct crossflow: a
-        value other than None is refused on every other hole.
+        base (the held normal-hole data). Refused, any value, where the
+        correlation owns the supply crossflow (McGreehan-Schotsch with its
+        U1/Vi term on, the liner default: its Eq. 17 Cd is static-referenced,
+        f = 0 by its authors' definition, and a recovery on top counts the
+        crossflow twice), on a hole not fed by a duct crossflow, and with
+        supply_drive="static". The lean- and direction-dependent recovery is
+        #1124, the route to another default.
     """
 
     correlation: str | None = None
@@ -464,11 +472,12 @@ def _resolve_inlet_crossflow(name: str, spec: HoleCd, duct_fed: bool) -> bool:
 
 
 def _resolve_supply_drive(name: str, spec: HoleCd, duct_fed: bool) -> str:
-    """The supply drive a hole is built with ("auto" = "total", see
-    HOLE_CD_SUPPLY_DRIVES), "static"
+    """The supply drive a hole is built with ("auto" resolves to "recovery":
+    the upstream total, the base Cd referenced to P1 + f q1 at a duct-fed
+    hole; see HOLE_CD_SUPPLY_DRIVES), "static"
     refused on a hole that is not duct-fed: its supply node carries its own
     total pressure, so there is no station static to drive from."""
-    drive = "total" if spec.supply_drive == "auto" else spec.supply_drive
+    drive = "recovery" if spec.supply_drive == "auto" else spec.supply_drive
     if drive == "static" and not duct_fed:
         raise ValueError(
             f"{name}: HoleCd(supply_drive='static') is a duct-fed hole's drive from its "
@@ -479,11 +488,19 @@ def _resolve_supply_drive(name: str, spec: HoleCd, duct_fed: bool) -> str:
     return drive
 
 
-def _resolve_supply_recovery(name: str, spec: HoleCd, duct_fed: bool) -> float:
+def _resolve_supply_recovery(
+    name: str, spec: HoleCd, duct_fed: bool, inlet_term: bool = False
+) -> float:
     """The recovered fraction f of the supply head a hole is built with
     (HoleCd.supply_recovery; None = 0, see HOLE_CD_SUPPLY_DRIVES), refused on
-    a hole that is not duct-fed."""
-    if spec.supply_recovery is not None and not duct_fed:
+    a hole that is not duct-fed, and wherever the correlation owns the supply
+    crossflow (``inlet_term``: McGreehan-Schotsch's U1/Vi term on): its
+    static-referenced Cd already models the supply crossflow, and a further
+    recovery would count the crossflow twice (the unconverted duct-total
+    model, which scores worse on every held set)."""
+    if spec.supply_recovery is None:
+        return 0.0
+    if not duct_fed:
         raise ValueError(
             f"{name}: HoleCd(supply_recovery={spec.supply_recovery!r}): the recovered "
             "fraction f applies only to holes fed by a duct crossflow (a duct-fed "
@@ -491,7 +508,15 @@ def _resolve_supply_recovery(name: str, spec: HoleCd, duct_fed: bool) -> float:
             "This hole drives from its supply node's total pressure; leave "
             "supply_recovery at None."
         )
-    return 0.0 if spec.supply_recovery is None else float(spec.supply_recovery)
+    if inlet_term:
+        raise ValueError(
+            f"{name}: HoleCd(supply_recovery={spec.supply_recovery!r}) with "
+            f"correlation={spec.correlation!r} and its supply-crossflow term on: this "
+            "correlation already models the supply crossflow (its Cd is referenced to the "
+            "station static, f = 0). f applies to a base Cd defined plenum-fed: pass "
+            "inlet_crossflow='none', or leave supply_recovery at None."
+        )
+    return float(spec.supply_recovery)
 
 
 @dataclass
@@ -770,7 +795,7 @@ class _HoleCdChain:
         # resolved), whether the supply station holds the duct's static (a
         # PlenumNode station, Pt = P) and whether the hole discharges against
         # its chamber's static pressure.
-        self.supply_drive = "total"
+        self.supply_drive = "recovery"
         # The recovered fraction f of a duct-fed hole's supply head
         # (HoleCd.supply_recovery, None resolved to 0).
         self.supply_recovery = 0.0
@@ -819,7 +844,7 @@ class _HoleCdChain:
         self.duct_fed = bool(duct_fed)
         self.supply_duct = _resolve_inlet_crossflow(name, spec, duct_fed)
         self.supply_drive = _resolve_supply_drive(name, spec, duct_fed)
-        self.supply_recovery = _resolve_supply_recovery(name, spec, duct_fed)
+        self.supply_recovery = _resolve_supply_recovery(name, spec, duct_fed, self.supply_duct)
         return model, exit_model
 
     def configure_plain(self, name: str, spec: HoleCd) -> None:
@@ -989,7 +1014,7 @@ class _HoleCdChain:
         q = 0.0
         p_rev, dp_rev, conv = math.nan, {}, None
         if self.duct_fed and self.station_holds_static:
-            if self.supply_drive == "total":
+            if self.supply_drive == "recovery":
                 r, dp_up = self._station_drive(state_in, flows, cb.HoleSupplyDrive.Total)
                 p_up, q, supply = float(r.P_drive), float(r.q_dyn), True
                 if self.supply_recovery < 1.0:
@@ -1793,7 +1818,10 @@ class _HoleCdChain:
         flows: dict[str, float] | None,
     ) -> dict[str, float | str]:
         """The supply-drive keys of the group (#1087):
-        Cd_supply_drive_model          the drive in use ("auto" resolved);
+        Cd_supply_drive_model          the drive in use: "recovery" (the
+                                       "auto" drive, the upstream total with
+                                       the base Cd referenced to P1 + f q1 at
+                                       a duct-fed hole) or "static";
         Cd_supply_drive_applied        1 where it is not the supply node's
                                        own Pt (a duct-fed hole's rebuilt
                                        duct total, or a static drive from a
@@ -1833,7 +1861,7 @@ class _HoleCdChain:
         q1, f_applied, ratio = 0.0, math.nan, 1.0
         if self.duct_fed:
             q1 = pair.q_supply if pair is not None else self.station_head(state_in, flows)
-            if self.supply_drive == "total":
+            if self.supply_drive == "recovery":
                 f_applied = self.supply_recovery
             if pair is not None and pair.conv is not None and pair.p_rev > pair.p_dn:
                 ratio = float(pair.conv[0])

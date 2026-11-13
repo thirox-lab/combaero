@@ -511,3 +511,32 @@ TEST(HoleSupplyRecoveryCdRatio, EndsAreExactAndPartialsAnalytic) {
   EXPECT_THROW(hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 1.5), std::invalid_argument);
   EXPECT_THROW(hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, -0.1), std::invalid_argument);
 }
+
+// As q1 -> 0 (review of C1): the exponent is a log1p form and ds/dx a series
+// below x = q1/P1 = 1e-5, so the P1 / Pt1 partials stay clean with T1 != Tt1:
+// central differences at q1 = 1e-6 Pa, and no jump across the series switch.
+TEST(HoleSupplyRecoveryCdRatio, VanishingHeadIsClean) {
+  using combaero::hole_supply_recovery_cd_ratio;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P1 = 1.2e5, T1 = 430.0, Tt1 = 450.0, P2 = 1.05e5, f = 0.4;
+  for (double q1 : {1e-6, 1e-3}) {
+    const double Pt1 = P1 + q1;
+    const auto r = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, f);
+    auto g = [&](double a, double c) {
+      return hole_supply_recovery_cd_ratio(a, T1, c, Tt1, P2, Y, f).ratio;
+    };
+    // A 0.01 Pa step (s is analytic through x = 0, so it may cross it): a step
+    // of order q1 itself would be round-off in the ratio.
+    const double h = 1e-2;
+    EXPECT_NEAR((g(P1 + h, Pt1) - g(P1 - h, Pt1)) / (2 * h), r.d_dP1,
+                1e-3 * std::abs(r.d_dP1));
+    EXPECT_NEAR((g(P1, Pt1 + h) - g(P1, Pt1 - h)) / (2 * h), r.d_dPt1,
+                1e-3 * std::abs(r.d_dPt1));
+  }
+  const double x0 = 1e-5;
+  const auto lo = hole_supply_recovery_cd_ratio(P1, T1, P1 * (1 + x0 * (1 - 1e-9)), Tt1, P2, Y, f);
+  const auto hi = hole_supply_recovery_cd_ratio(P1, T1, P1 * (1 + x0 * (1 + 1e-9)), Tt1, P2, Y, f);
+  EXPECT_NEAR(lo.d_dP1, hi.d_dP1, 1e-8 * std::abs(hi.d_dP1));
+  EXPECT_NEAR(lo.d_dPt1, hi.d_dPt1, 1e-8 * std::abs(hi.d_dPt1));
+  EXPECT_NEAR(lo.d_df, hi.d_df, 1e-8 * std::abs(hi.d_df));
+}

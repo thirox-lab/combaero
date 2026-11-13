@@ -2299,8 +2299,8 @@ HoleCd(
     exit_crossflow="auto",   # "none" / "rowbury_2001" / "rogers_hersh_1976"
                              #   / "florschuetz_metzger_su_1982"
     supply_drive="auto",     # the duct total; "static": the v0.11.1 drive (#1087)
-    supply_recovery=None,    # duct-fed holes: recovered fraction f of the
-                             #   supply head, None = 0 (#1124: lean recovery)
+    supply_recovery=None,    # duct-fed, inlet_crossflow="none": recovered
+                             #   fraction f of the supply head, None = 0 (#1124)
 )
 ```
 
@@ -2316,8 +2316,8 @@ the duct total with the recovered fraction f in 0.12.0 (`supply_drive` and
 | `inclination` `"auto"` | none | Idelchik 3-2 on an inclined IdelchikThick hole | the same, cylindrical holes only | none | none |
 | `inlet_crossflow` `"auto"` | none (U1/Vi = 0) | McGreehan-Schotsch's U1/Vi when duct-fed (`crossflow_segments`) | none | none | none |
 | `exit_crossflow` `"auto"` | none | none (`"rowbury_2001"` opts in) | none (`"rowbury_2001"` opts in) | none | `"rogers_hersh_1976"` |
-| `supply_drive` `"auto"` | `"total"` (the supply node's Pt) | `"total"`: duct-fed, the duct's total at the station | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) | `"total"` (the supply node's Pt) |
-| `supply_recovery` None | refused if given | duct-fed: f = 0 at every angle and for every base | refused if given | refused if given | refused if given |
+| `supply_drive` `"auto"` (reported `"recovery"`) | the supply node's Pt | duct-fed: the duct's total at the station, the base Cd referenced to P1 + f q1 | the supply node's Pt | the supply node's Pt | the supply node's Pt |
+| `supply_recovery` None | refused if given | duct-fed with `inlet_crossflow="none"`: f = 0 at every angle and for every base; refused if given with McGreehan-Schotsch's U1/Vi term on | refused if given | refused if given | refused if given |
 
 - **Every hole drives from the upstream TOTAL to the downstream STATIC
   (#1087, since 0.12.0).** The rule (2026-11-12) makes the element own the
@@ -2357,16 +2357,24 @@ the duct total with the recovered fraction f in 0.12.0 (`supply_drive` and
     correction, which grows with the station Mach: +1 to +3 % on the probe
     liners, +3.6 % at a high-Mach single station, up to +5.4 % on 12-station
     liners at high duct Mach (2.5e5 Pa into a 1.2e5 Pa duct exit). The same
-    holds with `inlet_crossflow="none"` (+1.8 % on the 3-segment test
-    liner).
+    holds with `inlet_crossflow="none"`: on the 3-segment test liner
+    (`test_hole_cd_spec.py`) +1.6 % in total panel flow against the static
+    drive, -0.19 / +1.80 / +2.43 % per panel.
+  - **f applies to a base Cd defined plenum-fed (`inlet_crossflow="none"`).**
+    Where the correlation owns the supply crossflow (McGreehan-Schotsch with
+    its U1/Vi term on, the liner default) any `supply_recovery`, 0.0
+    included, is refused: that Cd already models the supply crossflow on the
+    station static, and a recovery on top would count the crossflow twice
+    (the unconverted duct-total model, which scores worse on the Rohde,
+    Kaddah and Hay sets, `validation/sources.yaml`).
   - **`supply_recovery=1.0`** is the plain Cd from the total to the static,
-    the full supply head recovered: the behaviour of a hole leaning WITH the
-    supply flow (Gritsch 1998, one lab). On a 3-segment liner with the term
-    off it bleeds 2.3x the f = 0 flow (-56 % at f = 0 against it, 90 and 30
-    deg alike). It replaces the unreleased `supply_drive="total"`.
-  - **f applies only to holes fed by a duct crossflow.** Every other hole
-    (film, slot, impingement row, plain orifice, connection, a plenum-fed
-    plate) drives from its supply node's Pt and refuses a `supply_recovery`
+    the full supply head recovered. On a 3-segment liner with the term off
+    it bleeds 2.3x the f = 0 flow (-56 % at f = 0 against it, 90 and 30 deg
+    alike). Which holes recover how much is #1124. It replaces the
+    unreleased `supply_drive="total"`.
+  - **f applies only to holes fed by a duct crossflow.** The other hole
+    elements (film, slot, impingement row, plain orifice, a plenum-fed
+    plate) drive from their supply node's Pt and refuse a `supply_recovery`
     other than None.
   - **Route to another default: #1124**, the lean- and direction-dependent
     recovery (Rohde 1969 Fig. 11, Gritsch, Schulz & Wittig 2001).
@@ -2476,7 +2484,7 @@ stay where they were.
 | `Cd_inlet_crossflow_U1_over_Vi` | a duct-fed hole's U1/Vi, reported even with the term off (information) | 0 plenum-fed |
 | `Cd_inlet_crossflow_beyond_8pct` / `_degraded` | the Rohde-scored bounds U1/Vi > 0.2 / > 0.35, where the term is on | 0 |
 | `Cd_inlet_crossflow_ignored` | 1 where a supply crossflow is not in the Cd (a channel through a plenum-fed panel's supply node, or `inlet_crossflow="none"` on a duct-fed panel) | 0 |
-| `Cd_supply_drive_model` (text) | `"total"` or `"static"`, `"auto"` resolved | `"total"` (not duct-fed) |
+| `Cd_supply_drive_model` (text) | `"recovery"` (the `"auto"` drive: the upstream total, at a duct-fed hole with the base Cd referenced to P1 + f q1; f is `Cd_supply_recovery_fraction`) or `"static"` | `"recovery"` (not duct-fed) |
 | `Cd_supply_drive_applied` | 1 where the drive is not the supply node's own Pt: a duct-fed hole's rebuilt duct total, or `"static"` from a station that carries its own Pt (a MomentumChamberNode) | 0 |
 | `Cd_supply_drive_head_fraction` | the duct's dynamic head over the full drive, q / (Pt_duct - p_exit) (information: the share of the drive the Cd model's recovered fraction decides); NaN where Pt_duct <= p_exit | 0 not duct-fed |
 | `Cd_supply_recovery_q1` [Pa] | a duct-fed hole's supply head q1 = Pt1 - P1 at its station | 0 not duct-fed |

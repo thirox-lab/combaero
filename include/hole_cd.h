@@ -185,7 +185,8 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
 // states (not from a gamma) makes both ends exact, Tf = T1 bit for bit at
 // f = 0 (the static-referenced conversion) and Tf = Tt1 at f = 1 (ratio 1),
 // whatever closure produced T1 and Pt1. Where the head vanishes
-// (|ln(Pt1/P1)| < 1e-12) s is taken as f (T1 = Tt1 there to that order).
+// (q1 = 0) s is taken as f; ln(Pt1/P1) and the exponent are log1p forms, and
+// ds/dx a series below x = q1/P1 = 1e-5, so the partials stay clean as q1 -> 0.
 // At f = 1 the shifted side IS (Pt1, Tt1), so the ratio is 1 bit for bit.
 //
 // `incompressible`: the exact ratio of the incompressible kernel (an element
