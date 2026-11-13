@@ -1950,7 +1950,9 @@ mass_in = MassFlowBoundary("mass_in", m_dot=0.1, Tt=400, Y=air)
 # target exit Tt. The flow is a solver unknown; two roots exist (lean, rich).
 # branch="lean" is the default, "rich" for RQL or reformers. A root on the other
 # side of stoichiometric, a target not above the oxidizer's Tt, or a target
-# above the peak is refused with the reason. Reports fuel.m_dot and fuel.phi.
+# above the peak is refused with the reason. Rich too: below the oxidizer's
+# Tt the only root is the fuel as a coolant at very rich phi (~ 40), never
+# returned. Reports fuel.m_dot and fuel.phi.
 # `combustor` names the controlled node, like a probe: the fuel may reach it
 # through any elements (fuel line, premix plenum), as long as all of it does.
 # Air through a pressure boundary: a cold solve first holds the fuel at its

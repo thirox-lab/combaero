@@ -1906,17 +1906,26 @@ class NetworkSolver:
         where: str,
     ) -> str:
         """Why a fuel controller's target is outside its reachable window
-        with this oxidizer (#892): not above the Tt with no injected fuel, or
-        above the stoichiometric peak; "" when it is inside."""
+        with this oxidizer (#892): not above the oxidizer's Tt (what the
+        combustor reaches with no injected fuel), on either branch, or above
+        the stoichiometric peak; "" when it is inside.
+
+        Rich, a target below the oxidizer's Tt but above the fuel's has a
+        root at very rich phi (~ 40 for 700 K with air at 800 K and CH4 at
+        300 K): the fuel as a coolant, not combustion. It is refused by rule,
+        before the solve where the inputs fix the oxidizer and after it at any
+        root, so the outcome never depends on whether Newton finds it (owner
+        decision 2026-11-13: no real-world use)."""
         fid = fnode.id
         if math.isfinite(T_without) and fnode.Tt_target <= T_without:
             T_mix = float(cb.mix([self._as_stream(m, T, Y) for m, T, Y in streams]).T)
             carries = " (the oxidizer carries fuel of its own)" if T_without > T_mix + 1.0 else ""
             return (
                 f"FuelBoundary '{fid}': the target {fnode.Tt_target:.1f} K is not "
-                f"above what the combustor reaches with no injected fuel, "
-                f"{T_without:.1f} K{carries}{where}: no reacting root (it would need fuel as "
-                "a coolant, combustion efficiency ~ 0)."
+                f"above the oxidizer's Tt, what the combustor reaches with no injected fuel, "
+                f"{T_without:.1f} K{carries}{where}: no combustion operating point exists. "
+                "A non-reacting solution with the fuel as a coolant at very rich phi is "
+                "deliberately not returned."
             )
         T_peak = self._fuel_stoich_T(fnode, streams, Y_f)
         if math.isfinite(T_peak) and fnode.Tt_target > T_peak:
@@ -2159,17 +2168,20 @@ class NetworkSolver:
           partial equilibrium is complete combustion when lean);
         - T(r) for every r is at most T_hi, complete combustion WITHOUT the
           phi = 0 / phi = 1 smoothing at stoichiometric (the smoothing burns
-          less, rich fuel only dilutes), so a target above T_hi has no root;
-        - rich, complete combustion is at least the reactants' mixing T, so
-          a target below min(oxidizer Tt, fuel Tt) has no rich root.
+          less, rich fuel only dilutes), so a target above T_hi has no root.
 
-        Not proven, and left to the solve: a rich target below T(0) above
-        that minimum (fuel as a coolant has a root at large phi: phi ~ 25 for
-        798 K with air at 800 K and C3H8 at 300 K), and a rich target for an
-        equilibrium combustor, whose reforming is P-dependent and at very rich
-        phi runs above complete combustion. A root on the other branch is
-        refused after the solve anyway. A margin of _FUEL_PROOF_MARGIN_K keeps
-        targets at the window's ends to the solve."""
+        Refused by rule, not by proof: a rich target below T(0), the
+        oxidizer's Tt, either method. Above the fuel's Tt it has a root at
+        large phi -- the fuel as a coolant (phi ~ 44 for 700 K with air at
+        800 K and CH4 at 300 K) -- which is deliberately not returned
+        (_fuel_window_reason); the same rule rejects such a root after the
+        solve. With the oxidizer fixed, T(0) is known here, so the solve is
+        skipped. Not proven, and left to the solve: a rich target above T_hi
+        for an equilibrium combustor, whose reforming is P-dependent and at
+        very rich phi runs above complete combustion. A root on the other
+        branch is refused after the solve anyway. A margin of
+        _FUEL_PROOF_MARGIN_K keeps targets at the window's ends to the solve
+        (and its rule after it)."""
         streams = self._fuel_fixed_oxidizer(node)
         if streams is None:
             return "", math.nan
@@ -2196,15 +2208,11 @@ class NetworkSolver:
             return "", math.nan
         complete = getattr(self.network.nodes[node.combustor], "method", "complete") == "complete"
         target = float(node.Tt_target)
-        if node.branch == "lean":
-            proven = (
-                target > T_hi + _FUEL_PROOF_MARGIN_K or target < T_without - _FUEL_PROOF_MARGIN_K
-            )
-        else:
-            proven = complete and (
-                target > T_hi + _FUEL_PROOF_MARGIN_K
-                or target < min(float(ox.T), float(node.Tt)) - _FUEL_PROOF_MARGIN_K
-            )
+        # Below the oxidizer's Tt: no lean root (proof), and rich refused by
+        # rule (no fuel-as-coolant root), on either method.
+        proven = target < T_without - _FUEL_PROOF_MARGIN_K or (
+            target > T_hi + _FUEL_PROOF_MARGIN_K and (node.branch == "lean" or complete)
+        )
         if not proven:
             return "", math.nan
         return self._fuel_window_reason(node, streams, Y_f, T_without, ""), T_without
@@ -7780,6 +7788,20 @@ class NetworkSolver:
                         "the target is met only by vanishing flows."
                     )
                     warnings.warn(f"NetworkSolver: {message}", stacklevel=2)
+                elif fnode.branch == "rich" and fnode.Tt_target <= T_without:
+                    # The fuel-as-coolant root: rich, at or below the
+                    # oxidizer's Tt at this root. Refused by rule, as before the
+                    # solve, so the outcome does not depend on Newton finding
+                    # it. The same reason as a refusal before the solve.
+                    success = False
+                    consistent = False
+                    outcome = SolveOutcome.INCONSISTENT
+                    _, Y_f = self._fuel_inflows(fnode, final_x, sol_dict)
+                    message = (
+                        f"FuelBoundary '{fid}': the rich root found (phi {phi:.3g}) is refused. "
+                        + self._fuel_window_reason(fnode, streams, Y_f, T_without, "")
+                    )
+                    warnings.warn(f"NetworkSolver: {message}", stacklevel=2)
             if success and other:
                 success = False
                 consistent = False
@@ -7816,7 +7838,7 @@ class NetworkSolver:
                     )
                 else:
                     reason = self._fuel_window_reason(fnode, streams, Y_f, T_without, where)
-                    if reason:
+                    if reason and reason not in message:
                         message = f"{message} {reason}"
 
         # An effusion plate with no cooling path (#998): no coolant through its

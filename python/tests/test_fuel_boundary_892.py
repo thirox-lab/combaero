@@ -19,6 +19,7 @@ from combaero.network import (
     NetworkSolver,
     PlenumNode,
     PressureBoundary,
+    SolveOutcome,
 )
 from combaero.network.components import ChannelElement, OrificeElement
 
@@ -583,21 +584,49 @@ def test_an_unreachable_target_with_pressure_driven_air_goes_through_the_solve(
     assert "reaches with no injected fuel, 389.2 K" in r["__message__"]
 
 
+NOT_ABOVE_OXIDIZER = "is not above the oxidizer's Tt"
+COOLANT_NOT_RETURNED = "fuel as a coolant at very rich phi is deliberately not returned"
+
+
 @pytest.mark.parametrize("method", ["complete", "equilibrium"])
-def test_a_rich_target_below_the_air_is_not_refused_before_the_solve(
-    monkeypatch: pytest.MonkeyPatch, method: str
+@pytest.mark.parametrize("guess", [None, 0.5])
+def test_a_rich_target_below_the_air_is_refused_before_the_solve(
+    monkeypatch: pytest.MonkeyPatch, method: str, guess: float | None
 ) -> None:
     """Below the air's Tt but above the fuel's, rich: very rich, the fuel
-    cools the burnt gas to the target -- a root at phi ~ 40, beyond the
-    start's phi 10 bracket. Not proven unreachable, so the solve runs; from
-    a start near that root it converges on the rich branch."""
+    cools the gas to the target -- a root at phi 44 (complete) or 39
+    (equilibrium), which a start at m_dot_guess=0.5 converged before. No
+    combustion operating point, so it is refused by rule (owner decision
+    2026-11-13); with the air fixed, before the solve, on either method and
+    whatever the start."""
     calls = _count_searches(monkeypatch)
-    _, r = _solve(_fixed_air(700.0, "rich", method))
-    assert calls[0] >= 1
-    assert not r["__message__"].startswith("Refused before the solve")
     net = _fixed_air(700.0, "rich", method)
-    net.nodes["fuel"].m_dot_guess = 0.5
+    net.nodes["fuel"].m_dot_guess = guess
     _, r = _solve(net)
-    assert r["__success__"], r["__message__"]
-    assert r["fuel.phi"] > 30.0
-    assert r["burner.Tt"] == pytest.approx(700.0, abs=1e-3)
+    assert not r["__success__"]
+    assert calls[0] == 0
+    assert r["__message__"].startswith("Refused before the solve")
+    assert NOT_ABOVE_OXIDIZER in r["__message__"]
+    assert COOLANT_NOT_RETURNED in r["__message__"]
+    assert r["fuel.Tt_without_fuel"] == pytest.approx(800.0, abs=1e-6)
+
+
+def test_a_rich_root_below_the_air_is_refused_after_the_solve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Air through a PressureBoundary, so nothing is proven before the solve:
+    from a start near it, Newton converges on the fuel-as-coolant root (phi
+    ~ 440 at 350 K, air at 389.2 K, fuel at 300 K), and that root is refused
+    with the same reason, so the outcome does not depend on Newton finding
+    it."""
+    calls = _count_searches(monkeypatch)
+    _, r = _solve(_net(350.0, "rich", Tt=300.0, m_dot_guess=0.2))
+    assert calls[0] >= 1
+    assert r["__converged__"]
+    assert not r["__success__"]
+    assert r["__outcome__"] == SolveOutcome.INCONSISTENT
+    assert r["fuel.phi"] > 100.0
+    assert "the rich root found" in r["__message__"]
+    assert NOT_ABOVE_OXIDIZER in r["__message__"]
+    assert COOLANT_NOT_RETURNED in r["__message__"]
+    assert "reaches with no injected fuel, 389.2 K" in r["__message__"]
