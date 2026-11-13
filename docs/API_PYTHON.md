@@ -2175,7 +2175,9 @@ conventions at the node the flow goes into.
   - `CrossflowSegmentElement`: its stations hold the duct static, and an exit
     with no to-station into a node at rest (the node's own `state_at_rest`:
     plenum, combustor, boundary) meets it at static continuity, in both
-    regimes (#1136). Into a `MomentumChamberNode` the exit is
+    regimes (#1136; a burning or mixing combustor's regimes still differ
+    through the entry term's density, #1137). Into a `MomentumChamberNode`
+    the exit is
     total-receiving instead: the duct's exit `Pt` meets the chamber's `Pt`,
     compressible and incompressible alike (the incompressible row carries the
     exit head `m^2/(2 rho A_to^2)`, its low-Mach limit).

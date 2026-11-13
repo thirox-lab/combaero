@@ -12295,7 +12295,9 @@ class CrossflowSegmentElement(ChannelElement):
     * at rest or moving is the exit node's own definition,
       ``state_at_rest`` (``_terminal_at_rest``): a plenum, a combustor, a
       boundary hold Pt = P and are exits at rest; a MomentumChamberNode
-      moves. One predicate for both regimes (#1136): a CombustorNode exit
+      moves. One predicate for both regimes (#1136; regime-consistent for
+      a non-reacting combustor, a burning one waits on #1137): a
+      CombustorNode exit
       was moving to the compressible terminal (head recovered) and at rest
       to the incompressible row, without the reversed reservoir
       acceleration, and the regimes differed by -21 % forward and up to
@@ -12727,7 +12729,17 @@ class CrossflowSegmentElement(ChannelElement):
         guess (``_seed_exit_head``). Three of them asked "a PlenumNode or a
         boundary" and one "a MomentumChamberNode", which left a
         CombustorNode exit moving when compressible and at rest when
-        incompressible."""
+        incompressible.
+
+        Read as every other reader of ``state_at_rest`` reads it (a
+        ChannelElement's duct state at a rest end, #888; the exit-head
+        report): NetworkNode declares it False, so a node class that sets
+        ``is_boundary`` without declaring ``state_at_rest`` is moving here,
+        as it is there. Every shipped boundary declares True.
+
+        Regime consistency holds for a NON-REACTING combustor exit. Into a
+        burning or mixing one the forward entry term still takes the
+        to-node's gas density (#1137)."""
         return node is None or bool(getattr(node, "state_at_rest", False))
 
     def _seed_flow_applies(self) -> bool:
