@@ -4536,7 +4536,9 @@ class FuelBoundary(MassFlowBoundary):
     ``branch`` chooses one -- "lean" (the default) or "rich" (rich-quench-lean
     staging, reformers). The start is on that branch, and a solution found on
     the other side of stoichiometric is refused, never returned. A target
-    below the unfuelled mixture's Tt or above the peak has no root and is
+    above the peak has no root, and one not above the oxidizer's Tt (the
+    unfuelled mixture's) no combustion operating point -- rich, only the fuel
+    as a coolant at very rich phi, which is never returned either; both are
     refused with the reason.
 
     ``combustor`` names the combustor it controls, like a probe names what it
