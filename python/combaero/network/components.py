@@ -12286,13 +12286,14 @@ class CrossflowSegmentElement(ChannelElement):
       head m^2/(2 rho A_to^2) to the end statics (``_chamber_exit_head``),
       the Ma -> 0 limit of the compressible terminal (``_duct_ends``).
       Reversed, the chamber is a moving reservoir at its Pt.
-    * an exit into a CombustorNode (no to-station) is a KNOWN
-      INCONSISTENCY, tracked separately: the combustor holds its gas at
-      rest (Pt = P), but the compressible terminal treats it as moving
-      (exit total = its Pt, the head recovered), while the incompressible
-      row keeps the at-rest static continuity forward and, reversed,
-      leaves out the reservoir acceleration the plenum exit carries. The
-      regimes differ by about -21 % forward and +120 to +180 % reversed.
+    * at rest or moving is the exit node's own definition,
+      ``state_at_rest`` (``_terminal_at_rest``): a plenum, a combustor, a
+      boundary hold Pt = P and are exits at rest; a MomentumChamberNode
+      moves. One predicate for both regimes (#1136): a CombustorNode exit
+      was moving to the compressible terminal (head recovered) and at rest
+      to the incompressible row, without the reversed reservoir
+      acceleration, and the regimes differed by -21 % forward and up to
+      +179 % reversed.
 
     Station nodes must be PlenumNodes (Pt = P): the node pressure is the
     channel's static pressure, which is what a side stream sees.
@@ -12606,14 +12607,14 @@ class CrossflowSegmentElement(ChannelElement):
         elif (
             incompressible and m < 0.0 and (self.from_kappa is not None or self.entry_K is not None)
         ):
-            # Reversed out of an exit node at rest (a plenum, a boundary): the
+            # Reversed out of an exit node at rest (a plenum, a combustor, a
+            # boundary: ``_terminal_at_rest``): the
             # node is a reservoir and the gas accelerates out of it, one
             # dynamic head at the duct's static density, no entry loss. The
             # compressible duct ends take that node's own Pt (``_duct_ends``);
             # without this term the incompressible reversed flow ran ~5x the
             # compressible one.
-            node = getattr(self, "_downstream_node", None)
-            if node is None or isinstance(node, PlenumNode) or node.is_boundary:
+            if self._terminal_at_rest(getattr(self, "_downstream_node", None)):
                 st = _moving_static_T(state_out, m, self.area_to, True)
                 r = cb.channel_entry_drop(-m, state_out.P, st.T, state_out.X, self.area_to, 0.0)
                 terms.append(
@@ -12623,7 +12624,7 @@ class CrossflowSegmentElement(ChannelElement):
             incompressible
             and not to_station
             and (self.from_kappa is not None or self.entry_K is not None)
-            and isinstance(getattr(self, "_downstream_node", None), MomentumChamberNode)
+            and not self._terminal_at_rest(getattr(self, "_downstream_node", None))
         ):
             # An exit into a moving chamber: the duct's exit TOTAL meets the
             # chamber's Pt, the Ma -> 0 limit of ``_duct_ends``' terminal
@@ -12672,8 +12673,8 @@ class CrossflowSegmentElement(ChannelElement):
         """Never on top of the segment's own convention.
 
         Station nodes hold the channel's STATIC pressure, so an exit with no
-        to-station into a node at rest (a plenum, a boundary) already
-        discharges at static continuity: the dynamic head is lost by
+        to-station into a node at rest (a plenum, a combustor, a boundary)
+        already discharges at static continuity: the dynamic head is lost by
         construction. Into a MomentumChamberNode the exit total meets the
         chamber's Pt and the head is carried, not lost (``_duct_ends``,
         ``_chamber_exit_head``). ChannelElement's exit head at a pressure
@@ -12690,7 +12691,24 @@ class CrossflowSegmentElement(ChannelElement):
         if not hasattr(self, "_downstream_node"):
             return True
         to_station = self.to_kappa is not None and getattr(self, "_next", None) is not None
-        return to_station or not isinstance(self._downstream_node, MomentumChamberNode)
+        return to_station or self._terminal_at_rest(self._downstream_node)
+
+    @staticmethod
+    def _terminal_at_rest(node: Any) -> bool:
+        """Whether a terminal node (a segment end with no station) holds its
+        gas at rest: the node's own definition, ``state_at_rest`` (Pt = P).
+        A plenum, a combustor and every boundary are at rest; a
+        MomentumChamberNode carries its moving state (Pt > P). None (no node
+        resolved) is at rest.
+
+        The one predicate every reader of a terminal end asks (#1136): the
+        compressible terminal (``_duct_ends``), the incompressible reversed
+        exit (``exit_in``) and exit head (``exit_head``), and the start
+        guess (``_seed_exit_head``). Three of them asked "a PlenumNode or a
+        boundary" and one "a MomentumChamberNode", which left a
+        CombustorNode exit moving when compressible and at rest when
+        incompressible."""
+        return node is None or bool(getattr(node, "state_at_rest", False))
 
     def _seed_flow_applies(self) -> bool:
         """No: the stations hold static pressures, not the Pt the plain
@@ -12814,9 +12832,10 @@ class CrossflowSegmentElement(ChannelElement):
 
         An end with no station (a reservoir entry, an exit) is a TERMINAL
         node. Where it feeds the segment it is a reservoir: its own Pt. Where
-        the segment discharges into it, a node at rest (a plenum, a boundary:
-        Pt = P) takes the closure of its P, static continuity with the head
-        lost; a moving node (a momentum chamber) takes its Pt, as a
+        the segment discharges into it, a node at rest (``_terminal_at_rest``:
+        a plenum, a combustor, a boundary, Pt = P) takes the closure of its P,
+        static continuity with the head lost; a moving node (a momentum
+        chamber) takes its Pt, as a
         ChannelElement into a chamber. At rest the two meet at m = 0 (C1).
         A reservoir entry's dynamic head is now the outlet closure's, so only
         the loss K_in/(1 + K_in) of ``channel_entry_drop`` is added to the
@@ -12887,8 +12906,7 @@ class CrossflowSegmentElement(ChannelElement):
         def terminal(
             node_id: str, state: NetworkMixtureState, node: Any, feeds: bool, A: float
         ) -> tuple[float, dict[str, float]]:
-            at_rest = node is None or isinstance(node, PlenumNode) or node.is_boundary
-            if feeds or not at_rest:
+            if feeds or not self._terminal_at_rest(node):
                 return float(state.Pt), {f"{node_id}.Pt": 1.0}
             return closure(float(state.P), {f"{node_id}.P": 1.0}, A)
 

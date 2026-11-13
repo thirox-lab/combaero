@@ -2173,16 +2173,12 @@ conventions at the node the flow goes into.
   - `OrificeElement` and its subclasses: film, effusion, slot and impingement
     rows, and the effective-area and Cd connections;
   - `CrossflowSegmentElement`: its stations hold the duct static, and an exit
-    with no to-station into a node at rest (plenum, boundary) meets it at
-    static continuity. Into a `MomentumChamberNode` the exit is
+    with no to-station into a node at rest (the node's own `state_at_rest`:
+    plenum, combustor, boundary) meets it at static continuity, in both
+    regimes (#1136). Into a `MomentumChamberNode` the exit is
     total-receiving instead: the duct's exit `Pt` meets the chamber's `Pt`,
     compressible and incompressible alike (the incompressible row carries the
     exit head `m^2/(2 rho A_to^2)`, its low-Mach limit).
-    An exit into a `CombustorNode` currently follows the moving-chamber rule
-    when compressible (exit `Pt` meets the combustor's `Pt = P`, the head
-    recovered) and the at-rest rule when incompressible (static
-    continuity; reversed, without the reservoir acceleration a plenum
-    exit carries): a known inconsistency, tracked separately.
 - **Total-receiving:** the element matches the downstream `Pt`, so the
   receiving node decides what happens to the head.
   - `ChannelElement`: incompressible and Fanno, ribbed and pin-fin;
@@ -4188,9 +4184,10 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   end with no station is a terminal node. Where it feeds the segment, its own
   Pt is used: a reservoir entry also adds only the loss `K_in/(1 + K_in)` of
   `channel_entry_drop` to the outlet. Where the segment discharges into it, a
-  plenum or boundary takes static continuity, and a momentum chamber takes Pt
-  continuity. An end static below the sonic static P* of the flux is choked:
-  its Pt is continued C1 below Pt*, never on the supersonic branch. Before #802
+  node at rest (`state_at_rest`: a plenum, a combustor, a boundary) takes
+  static continuity, and a momentum chamber takes Pt continuity. An end static
+  below the sonic static P* of the flux is choked: its Pt is continued C1
+  below Pt*, never on the supersonic branch. Before #802
   the node's static P was fed as the duct's P0, a dynamic head low, so exit
   segments choked early: CR-3630 D.2 B(5,4,1) at mc/mj 1.01 runs its exit
   segment at 81% of its true choked flow, not at 99.7% of the false one. The
