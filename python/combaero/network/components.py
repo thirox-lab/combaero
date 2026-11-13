@@ -8959,6 +8959,15 @@ class ImpingementPlateElement(OrificeElement):
         * two plates merging at one node would read each other's jets as
           crossflow.
         """
+        node = graph.nodes.get(self.to_node)
+        if node is not None and not isinstance(node, PlenumNode):
+            return (
+                f"its node {self.to_node!r} is a {type(node).__name__}. The jets "
+                "discharge to the crossflow channel's static pressure (CR-3630 Eq. "
+                "4.1), so the row's node must be a PlenumNode, a station of the "
+                "crossflow chain. A stream is modelled either lumped (a "
+                "MomentumChamberNode) or distributed (the crossflow chain), not both."
+            )
         out = graph.get_downstream_elements(self.to_node)
         if len(out) != 1 or not isinstance(out[0], ImpingementCrossflowElement):
             return (
@@ -12099,6 +12108,40 @@ class CrossflowSegmentElement(ChannelElement):
         self._prev = graph.elements.get(self.prev_seg) if self.prev_seg else None
         self._next = graph.elements.get(self.next_seg) if self.next_seg else None
         self._elements = graph.elements
+        self._station_error = self._station_node_error(graph)
+
+    def _station_node_error(self, graph: "FlowNetwork") -> str | None:
+        """Why a station node of this segment is not a PlenumNode, or None.
+
+        A station (``from_kappa``, or ``to_kappa`` with a next segment) is a
+        node holding the channel's STATIC pressure (Pt = P), the pressure a
+        side stream joining or leaving there sees. A MomentumChamberNode
+        holds its own moving state (P, Pt) and lumps the stream's momentum
+        into one control volume: the same stream modelled twice, lumped and
+        distributed. An exit with no to-station into a chamber is a terminal
+        node, not a station (``_duct_ends``), and stays allowed.
+        """
+        stations = []
+        if self.from_kappa is not None:
+            stations.append(self.from_node)
+        if self.to_kappa is not None and self._next is not None:
+            stations.append(self.to_node)
+        for nid in stations:
+            node = graph.nodes.get(nid)
+            if node is not None and not isinstance(node, PlenumNode):
+                return (
+                    f"its station node {nid!r} is a {type(node).__name__}. Station nodes "
+                    "must be PlenumNodes holding the channel's static pressure, the "
+                    "pressure a side stream joining there sees. A stream is modelled "
+                    "either lumped (a MomentumChamberNode) or distributed (the crossflow "
+                    "chain), not both: use a PlenumNode at every station of the chain."
+                )
+        return None
+
+    def validate(self) -> None:
+        super().validate()
+        if getattr(self, "_station_error", None):
+            raise ValueError(f"{type(self).__name__} {self.id!r}: {self._station_error}")
 
     def station_report(
         self, state: NetworkMixtureState, m_prev: float, m_self: float
@@ -12134,9 +12177,18 @@ class CrossflowSegmentElement(ChannelElement):
         from its supply to the station's static pressure. 90 deg (impingement
         jets, normal holes) brings none, so such a station is untouched. A
         segment of the chain is not a side stream.
+
+        ``node`` is a PlenumNode (``_station_node_error`` refuses any other
+        station at validate), whose ``_inflows`` are (element id, state).
         """
         J, dJ = 0.0, {}
         elements = getattr(self, "_elements", {})
+        if node is not None and not isinstance(node, PlenumNode):
+            raise TypeError(
+                f"{type(self).__name__} {self.id!r}: station node {node.id!r} is a "
+                f"{type(node).__name__}, not a PlenumNode; the network was not validated "
+                "(see _station_node_error)."
+            )
         for eid, st in getattr(node, "_inflows", ()):
             el = elements.get(eid)
             if el is None or isinstance(el, CrossflowSegmentElement):
