@@ -2600,6 +2600,154 @@ def _moving_total_P(
     )
 
 
+class _StationMovingState(NamedTuple):
+    """A crossflow station's moving state, for reporting: the node's static
+    P, the true Pt and static T of the gas moving at the station's mean flow,
+    its Mach number, and that mean flow (signed)."""
+
+    P: float
+    Pt: float
+    T: float
+    mach: float
+    m_dot: float
+
+
+@dataclass(frozen=True, eq=False)
+class _CrossflowStation:
+    """One station of a crossflow chain: the single description every reader
+    of the station's MOVING state uses (#782 audit, B1).
+
+    A station node is a PlenumNode holding the channel's static pressure at
+    the middle of its station (Pt = P, its own residual, untouched) and
+    carrying T0. Its gas moves at the station's MEAN flow, the mean of the
+    segment flow arriving (``arriving``, None at a closed end: 0) and the one
+    leaving (``leaving``, None at a dead end: 0), through ``area``. The chain
+    registers one per station node at topology (``_register_stations``);
+    a duct-fed hole reads it (or builds its own from its declared
+    ``crossflow_segments``), and the solver reports the station from it.
+
+    The regime is the reader's: each element runs its own closure, so the
+    incompressible flag is an argument (the report takes the chain's)."""
+
+    node: str
+    arriving: Any
+    leaving: Any
+    area: float
+
+    @property
+    def segment_ids(self) -> tuple[str | None, str | None]:
+        """(arriving, leaving) segment ids, None where there is none."""
+        return (
+            self.arriving.id if self.arriving is not None else None,
+            self.leaving.id if self.leaving is not None else None,
+        )
+
+    @property
+    def segments(self) -> list[tuple[Any, str]]:
+        """(element, id) of the segments meeting here, arriving first."""
+        return [(e, e.id) for e in (self.arriving, self.leaving) if e is not None]
+
+    def segment_flows(self, flows: dict[str, float] | None) -> tuple[float, float]:
+        """(m_a, m_b): the arriving and leaving segment flows, 0 at a closed
+        or dead end."""
+        flows = flows or {}
+        a_id, b_id = self.segment_ids
+        m_a = flows.get(a_id, 0.0) if a_id else 0.0
+        m_b = flows.get(b_id, 0.0) if b_id else 0.0
+        return m_a, m_b
+
+    def mean_flow(self, flows: dict[str, float] | None) -> float:
+        """The station's mean flow (signed; every consumer is even in it: the
+        closures read |m| / A and their partials carry the sign, smooth
+        through 0)."""
+        m_a, m_b = self.segment_flows(flows)
+        return 0.5 * (m_a + m_b)
+
+    def add_mean_flow_columns(self, d: dict[str, float], coeff: float) -> None:
+        """Add coeff d(mean flow)/d(unknown) to ``d``: half of each segment's
+        flow at the station, through its own unknowns."""
+        if coeff == 0.0:
+            return
+        for elem, _eid in self.segments:
+            names = elem.unknowns()
+            for local, c in elem.flow_jac_at_node(self.node, list(range(len(names)))).items():
+                d[names[local]] = d.get(names[local], 0.0) + 0.5 * coeff * c
+
+    def static_T(
+        self,
+        state: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+        incompressible: bool = False,
+    ) -> _MovingStaticT:
+        """The static T of the station's gas at its mean flow and its partials
+        (``_moving_static_T``; ``dm`` is d(T)/d(mean flow))."""
+        return _moving_static_T(state, self.mean_flow(flows), self.area, incompressible)
+
+    def supply_drive(
+        self,
+        state: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+        drive: "cb.HoleSupplyDrive",
+        incompressible: bool,
+    ) -> tuple[Any, dict[str, float]]:
+        """C++ hole_supply_drive at the station (its static P, T0 and
+        composition, the mean flow) and P_drive's derivatives by name."""
+        r = cb.hole_supply_drive(
+            drive,
+            float(state.P),
+            float(state.Tt),
+            list(state.Y),
+            self.mean_flow(flows),
+            float(self.area),
+            incompressible,
+        )
+        d: dict[str, float] = {}
+        self.add_mean_flow_columns(d, float(r.dP_dm_dot))
+        for key, v in (
+            (f"{self.node}.P", float(r.dP_dP)),
+            (f"{self.node}.Tt", float(r.dP_dTt)),
+        ):
+            if v != 0.0:
+                d[key] = d.get(key, 0.0) + v
+        for k, v in enumerate(r.dP_dY):
+            if v != 0.0:
+                key = f"{self.node}.Y[{k}]"
+                d[key] = d.get(key, 0.0) + float(v)
+        return r, d
+
+    @property
+    def chain_incompressible(self) -> bool:
+        """The chain's own regime here: the leaving segment's (the arriving
+        one's at a dead end)."""
+        seg = self.leaving if self.leaving is not None else self.arriving
+        return getattr(seg, "regime", None) == "incompressible"
+
+    def moving_state(
+        self,
+        state: "NetworkMixtureState",
+        flows: dict[str, float] | None,
+        incompressible: bool | None = None,
+    ) -> _StationMovingState | None:
+        """The station's moving state (reporting): its static P, and at the
+        mean flow the static T, true Pt and Mach. ``incompressible`` None:
+        the chain's regime. None where the state has none (no area, T or P
+        not positive)."""
+        if incompressible is None:
+            incompressible = self.chain_incompressible
+        A = float(self.area)
+        m = self.mean_flow(flows)
+        st = _moving_static_T(state, m, A, incompressible)
+        T, P, X = float(st.T), float(state.P), state.X
+        if not (A > 0.0 and T > 0.0 and P > 0.0):
+            return None
+        rho = float(cb.density(T, P, X))
+        u = abs(m) / (rho * A)
+        a = float(cb.speed_of_sound(T, X))
+        M = u / a if a > 0.0 else 0.0
+        Pt = P + 0.5 * rho * u * u if incompressible else float(cb.Pt_from_static(P, T, M, X))
+        return _StationMovingState(P, Pt, T, M, m)
+
+
 def _station_node_partials(r: "_StaticChainedDrop", node: str) -> list[tuple[str, float]]:
     """A station term's partials in its node's P, T (T0) and Y, keyed by name."""
     out = [(f"{node}.P", r.d_dP), (f"{node}.Tt", r.d_dT)]
@@ -3510,6 +3658,10 @@ class PlenumNode(NetworkNode):
     """
 
     state_at_rest: bool = True  # Pt = P by definition
+    # The crossflow station this node is, if any (_CrossflowStation): set by
+    # the chain at topology. Reporting and duct-fed holes read the station's
+    # moving state from it; the node's own residual (Pt = P) never does.
+    _crossflow_station: "_CrossflowStation | None" = None
 
     def __init__(self, id: str):
         super().__init__(id)
@@ -3579,6 +3731,9 @@ class PlenumNode(NetworkNode):
     def resolve_topology(self, graph: "FlowNetwork") -> None:
         # Store upstream elements for mixing calculations
         self.upstream_elements = graph.get_upstream_elements(self.id)
+        # A crossflow chain registers its station here in the element pass
+        # (CrossflowSegmentElement._register_stations); nodes resolve first.
+        self._crossflow_station = None
 
 
 class MomentumChamberNode(NetworkNode):
@@ -7016,7 +7171,11 @@ class EffusionPlateElement(OrificeElement):
             if material is not None
             else float(cb.GENERIC_METAL_SOLIDUS)
         )
-        if crossflow_segments is not None and not (crossflow_area and crossflow_area > 0.0):
+        if (
+            crossflow_segments is not None
+            and crossflow_area is not None
+            and not crossflow_area > 0.0
+        ):
             raise ValueError(
                 "EffusionPlateElement: a crossflow-fed panel needs the backside "
                 "duct's crossflow_area"
@@ -7024,10 +7183,13 @@ class EffusionPlateElement(OrificeElement):
         # DUCT-FED (#471): the panel's supply node is a station of a backside
         # duct; crossflow_segments = (arriving, leaving) segment ids there. The
         # duct's mean velocity at the station, over the static-referenced ideal
-        # jet velocity, is McGreehan-Schotsch's U1/Vi.
+        # jet velocity, is McGreehan-Schotsch's U1/Vi. crossflow_area None:
+        # the station's own (the chain's _CrossflowStation), at topology.
         self.crossflow_segments = crossflow_segments
         self.crossflow_area = crossflow_area
         self._xf_elems: list[tuple[NetworkElement, str]] = []
+        self._crossflow_station: _CrossflowStation | None = None
+        self._crossflow_error: str | None = None
         if wall_conductivity <= 0.0:
             raise ValueError("EffusionPlateElement: wall_conductivity must be positive")
         if gas_augmentation <= 0.0:
@@ -7184,15 +7346,53 @@ class EffusionPlateElement(OrificeElement):
         self._hole_cd.inlet_crossflow_ignored = (
             len(through) >= 2 and self.crossflow_segments is None
         ) or (self.crossflow_segments is not None and not self._hole_cd.supply_duct)
-        self._xf_elems = []
-        if self.crossflow_segments is not None:
-            for eid in self.crossflow_segments:
-                if eid is not None:
-                    self._xf_elems.append((graph.elements[eid], eid))
+        self._resolve_crossflow_station(graph)
         # The drive pair (#1087): a duct-fed panel's supply drive, and the
         # static of a flowing chamber it discharges into.
         self._hole_cd.resolve_drive(graph, exit_static=True)
         self._resolve_plate_against_chambers(graph)
+
+    def _resolve_crossflow_station(self, graph: "FlowNetwork") -> None:
+        """A duct-fed panel's supply station (_CrossflowStation), from its
+        declared ``crossflow_segments`` (arriving, leaving) and
+        ``crossflow_area``; an omitted area is the station's own, the one the
+        chain registered on the supply node. Declared values that contradict
+        that station (other segments, an area off by more than 1e-9) are
+        refused at validate: one station has one moving state."""
+        self._xf_elems = []
+        self._crossflow_station = None
+        self._crossflow_error = None
+        if self.crossflow_segments is None:
+            return
+        arriving, leaving = (
+            graph.elements[eid] if eid is not None else None for eid in self.crossflow_segments
+        )
+        node = graph.nodes.get(self.from_node)
+        chain = getattr(node, "_crossflow_station", None)
+        area = self.crossflow_area
+        if chain is not None:
+            if tuple(self.crossflow_segments) != chain.segment_ids:
+                self._crossflow_error = (
+                    f"crossflow_segments {tuple(self.crossflow_segments)!r} are not the "
+                    f"segments of the station at {self.from_node!r} "
+                    f"{chain.segment_ids!r} (arriving, leaving)"
+                )
+            elif area is not None and abs(area / chain.area - 1.0) > 1e-9:
+                self._crossflow_error = (
+                    f"crossflow_area {area:.6g} m^2 is not the area of the station at "
+                    f"{self.from_node!r} ({chain.area:.6g} m^2); omit it to take the "
+                    "station's"
+                )
+            if area is None:
+                area = chain.area
+        if area is None:
+            self._crossflow_error = (
+                "a crossflow-fed panel needs the backside duct's crossflow_area: "
+                f"{self.from_node!r} is no station of a crossflow chain to take it from"
+            )
+            area = math.nan
+        self._crossflow_station = _CrossflowStation(self.from_node, arriving, leaving, area)
+        self._xf_elems = self._crossflow_station.segments
 
     def network_flow_inputs(self) -> list[tuple[str, str]]:
         """The backside segments' flows at this panel's supply station."""
@@ -7211,6 +7411,8 @@ class EffusionPlateElement(OrificeElement):
             )
         if error := self._geometry_error():
             raise ValueError(error)
+        if self._crossflow_error:
+            raise ValueError(f"EffusionPlateElement {self.id!r}: {self._crossflow_error}")
         node = getattr(self, "_discharge_node", None)
         if self.gas_baseline == "flat_plate" and not (
             isinstance(node, MomentumChamberNode) and node.area > 0.0
@@ -12109,6 +12311,35 @@ class CrossflowSegmentElement(ChannelElement):
         self._next = graph.elements.get(self.next_seg) if self.next_seg else None
         self._elements = graph.elements
         self._station_error = self._station_node_error(graph)
+        self._register_stations(graph)
+
+    def _register_stations(self, graph: "FlowNetwork") -> None:
+        """Register this segment's stations on their nodes (_CrossflowStation).
+
+        The FROM station (``from_kappa``): the flow arriving is ``prev_seg``'s
+        (None: a closed end, 0), the one leaving this segment's, through
+        ``area_from``. A TO station (``to_kappa`` with a next segment) whose
+        next segment does not take it as its own from-station: this segment
+        arriving, the next leaving, through ``area_to``. Consistent chains
+        register each station once (its leaving segment); a node that is not
+        a PlenumNode gets none (``_station_node_error`` refuses it)."""
+        if self.from_kappa is not None:
+            node = graph.nodes.get(self.from_node)
+            if isinstance(node, PlenumNode):
+                node._crossflow_station = _CrossflowStation(
+                    self.from_node, self._prev, self, float(self.area_from)
+                )
+        nxt = self._next
+        if (
+            self.to_kappa is not None
+            and nxt is not None
+            and getattr(nxt, "from_kappa", None) is None
+        ):
+            node = graph.nodes.get(self.to_node)
+            if isinstance(node, PlenumNode):
+                node._crossflow_station = _CrossflowStation(
+                    self.to_node, self, nxt, float(self.area_to)
+                )
 
     def _station_node_error(self, graph: "FlowNetwork") -> str | None:
         """Why a station node of this segment is not a PlenumNode, or None.
@@ -12142,30 +12373,6 @@ class CrossflowSegmentElement(ChannelElement):
         super().validate()
         if getattr(self, "_station_error", None):
             raise ValueError(f"{type(self).__name__} {self.id!r}: {self._station_error}")
-
-    def station_report(
-        self, state: NetworkMixtureState, m_prev: float, m_self: float
-    ) -> tuple[str, float, float, float] | None:
-        """The moving state of this segment's FROM station, for reporting
-        (#782 audit): (node id, static T, Pt, Mach). A station node holds the
-        static P at the middle of its station and carries T0; its gas moves at
-        the station's mean flow, the one its half-drops use. None without a
-        from-station."""
-        if self._prev is None or self.from_kappa is None:
-            return None
-        A = float(self.area_from)
-        m = 0.5 * (float(m_prev) + float(m_self))
-        incompressible = self.regime == "incompressible"
-        st = _moving_static_T(state, m, A, incompressible)
-        T, P, X = float(st.T), float(state.P), state.X
-        if not (A > 0.0 and T > 0.0 and P > 0.0):
-            return None
-        rho = float(cb.density(T, P, X))
-        u = abs(m) / (rho * A)
-        a = float(cb.speed_of_sound(T, X))
-        M = u / a if a > 0.0 else 0.0
-        Pt = P + 0.5 * rho * u * u if incompressible else float(cb.Pt_from_static(P, T, M, X))
-        return self.from_node, T, Pt, M
 
     def _station_jets(
         self, node: Any, station: NetworkMixtureState

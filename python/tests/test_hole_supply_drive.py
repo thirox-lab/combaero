@@ -118,10 +118,19 @@ def test_the_drives_partials_are_analytic(incompressible: bool) -> None:
 
 
 def _duct_net(
-    spec: HoleCd, angle: float = 30.0, pt_in: float = 1.30, p_out: float = 1.20, p_gas: float = 1.0
+    spec: HoleCd,
+    angle: float = 30.0,
+    pt_in: float = 1.30,
+    p_out: float = 1.20,
+    p_gas: float = 1.0,
+    crossflow: dict | None = None,
 ):
     """One station of a backside duct (the EffusionLiner wiring: a PlenumNode
-    between two crossflow segments), a single-hole panel into 1 atm."""
+    between two crossflow segments), a single-hole panel into 1 atm.
+    ``crossflow``: the panel's crossflow declaration (default: the liner's,
+    both segments and the duct's area)."""
+    if crossflow is None:
+        crossflow = {"crossflow_segments": ("s0", "s1"), "crossflow_area": A_DUCT}
     g = FlowNetwork()
     g.add_node(PressureBoundary("in", Pt=pt_in * P_ATM, Tt=290.0, Y=Y_AIR))
     g.add_node(PressureBoundary("out", Pt=p_out * P_ATM, Tt=290.0, Y=Y_AIR))
@@ -143,7 +152,7 @@ def _duct_net(
         EffusionPlateElement(
             "h", "n1", "gas", hole_diameter=D_HOLE, wall_thickness=t, pitch_x=0.06,
             pitch_y=0.06, panel_length=0.06, panel_width=0.06, angle_deg=angle,
-            hole_cd=spec, crossflow_segments=("s0", "s1"), crossflow_area=A_DUCT,
+            hole_cd=spec, **crossflow,
         )
     )  # fmt: skip
     return g
@@ -732,3 +741,57 @@ def test_a_proxy_root_refused_by_the_second_law_is_named() -> None:
     assert "proxy root was refused by the second law at ln__s" in msg
     assert "(sigma_norm -" in msg
     assert "#1125" in msg
+
+
+# --- the station's area from the chain (B1) ----------------------------------
+
+
+def _duct_net_declared(**crossflow) -> FlowNetwork:
+    """_duct_net with the panel's crossflow declaration given by the test."""
+    return _duct_net(HoleCd(correlation="McGreehanSchotsch"), crossflow=crossflow)
+
+
+def test_an_omitted_crossflow_area_is_the_stations_own() -> None:
+    """A duct-fed panel on a chain station takes the station's section when
+    crossflow_area is omitted, and flows what the declared area flows (the
+    chain's area is re-derived from a diameter: equal to 1e-12, not bit for
+    bit)."""
+    _, given = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
+    g = _duct_net_declared(crossflow_segments=("s0", "s1"))
+    g.resolve_all_topology()
+    assert g.elements["h"]._crossflow_station.area == g.elements["s1"].area_from
+    _, derived = _solve(g)
+    for key in ("h.m_dot", "s0.m_dot", "n1.P", "n1.Pt", "n1.T"):
+        assert derived[key] == pytest.approx(given[key], rel=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("kw", "match"),
+    [
+        ({"crossflow_segments": ("s1", "s0"), "crossflow_area": A_DUCT}, "not the segments"),
+        ({"crossflow_segments": ("s0", None), "crossflow_area": A_DUCT}, "not the segments"),
+        ({"crossflow_segments": ("s0", "s1"), "crossflow_area": 2.0 * A_DUCT}, "not the area"),
+    ],
+)
+def test_a_declaration_the_station_contradicts_is_refused(kw: dict, match: str) -> None:
+    """One station has one moving state: declared segments or an area the
+    chain's station contradicts are refused at validate."""
+    g = _duct_net_declared(**kw)
+    g.resolve_all_topology()
+    with pytest.raises(ValueError, match=match):
+        g.validate()
+
+
+def test_an_omitted_crossflow_area_needs_a_chain_station() -> None:
+    g = FlowNetwork()
+    g.add_node(PlenumNode("b"))
+    g.add_node(PressureBoundary("gas", Pt=1.0e5, Tt=1500.0, Y=Y_AIR))
+    g.add_element(
+        EffusionPlateElement(
+            "p", "b", "gas", hole_diameter=1e-3, wall_thickness=2e-3, pitch=6e-3,
+            panel_area=0.01, crossflow_segments=(None, None),
+        )
+    )  # fmt: skip
+    g.resolve_all_topology()
+    with pytest.raises(ValueError, match="needs the backside duct's crossflow_area"):
+        g.validate()

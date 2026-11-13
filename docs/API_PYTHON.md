@@ -993,6 +993,11 @@ liner.summarize(res["__element_diag__"])   # bleed, U1/Vi, Cd, P_backside, T_wal
   isentropic jet velocity from the station's STATIC state (C++
   `crossflow_velocity_ratio`). Only `McGreehanSchotsch` has a crossflow term,
   so a duct-fed panel refuses the others.
+  `crossflow_area` may be omitted where the panel's supply node is a station
+  of a `CrossflowSegmentElement` chain: it is then that station's own
+  section. Declared values the station contradicts (other segments, or an
+  area off by more than 1e-9 relative) are refused at validate: one station
+  has one moving state. With no chain station there, the area is required.
 - **What sets U1/Vi** is mainly the duct's own pressure drop against the
   holes' drive, roughly `sqrt(dp_duct/dp_hole)`, not the duct size: a
   pressure-driven duct carries more flow when made bigger. Flags:
@@ -4471,7 +4476,7 @@ keys and `NetworkMixtureState` are the next section.
 | element `T_in`, `T_out` (`result["__element_diag__"][id]`) | stagnation T of the end nodes | **static** T of the end nodes, as `P_in`/`P_out`; `Tt_in`/`Tt_out` unchanged |
 | `"<chamber>.T_static"` | a momentum chamber's static T | `"<chamber>.T"` (the alias was removed in 0.9.0) |
 | junction `port_<i>_T` (`__element_diag__`) | the port's stagnation T | **static** T of the port; the stagnation T is the new `port_<i>_Tt` |
-| a crossflow station's `.T`, `.Pt`, `.mach` | Tt, the static P, 0 | the station's moving state: static T and Mach at the station's mean flow, its true Pt (the node's `.P` is the static P at the middle of the station) |
+| a crossflow station's `.T`, `.Pt`, `.mach` | Tt, the static P, 0 | the station's moving state: static T and Mach at the station's mean flow, its true Pt (the node's `.P` is the static P at the middle of the station). A closed-end station (row 1 of an impingement gap, nothing arriving) moves at half the leaving flow; through 0.11 it reported Tt, its P and 0 |
 | an area `CombustorNode`'s `.T` | Tt | the static T at G = m / area (its `.P` = `.Pt`, a large slow volume) |
 | `NetworkMixtureState.T` | a field, filled with `Tt` | a computed property, the static T |
 

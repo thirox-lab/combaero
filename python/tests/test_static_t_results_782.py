@@ -240,6 +240,33 @@ def test_a_crossflow_station_reports_its_moving_state() -> None:
             assert diag[pl.id]["Pt_out"] == sol[f"{pl.to_node}.P"]
 
 
+def test_a_closed_end_station_reports_its_moving_state() -> None:
+    """Row 1 of an impingement gap is a station with nothing arriving (a
+    closed end): its gas moves at half the leaving segment's flow, the mean
+    its half-drop uses. It reports that moving state like every other
+    station; it reported Tt, its P and Mach 0 before (B1)."""
+    from combaero.network.components import CrossflowSegmentElement
+
+    net, sol = _stress("impingement", 1)
+    diag = sol["__element_diag__"]
+    closed = [
+        e
+        for e in net.elements.values()
+        if isinstance(e, CrossflowSegmentElement) and e.from_kappa is not None and not e.prev_seg
+    ]
+    assert closed
+    for seg in closed:
+        nid = seg.from_node
+        T, Tt, P, Pt, M = (sol[f"{nid}.{k}"] for k in ("T", "Tt", "P", "Pt", "mach"))
+        m = 0.5 * sol[f"{seg.id}.m_dot"]
+        rho = cb.density(T, P, X_AIR)
+        assert pytest.approx(abs(m) / (rho * seg.area_from) / cb.speed_of_sound(T, X_AIR)) == M
+        assert Tt > T and Pt > P and M > 0.0
+        assert cb.s(T, X_AIR, P) == pytest.approx(cb.s(Tt, X_AIR, Pt), rel=1e-9)
+        assert diag[seg.id]["Pt_in"] == Pt
+        assert diag[seg.id]["T_in"] == T
+
+
 def test_an_area_combustor_reports_its_static_T() -> None:
     """A combustor with an area holds Pt = P but its gas moves through the
     area: it reports the duct closure's static T at G = m / area (#782
