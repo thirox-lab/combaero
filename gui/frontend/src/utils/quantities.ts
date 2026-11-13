@@ -335,6 +335,11 @@ export const QUANTITY_CATALOGUE: Record<
 		unit: "—",
 		format: (v) => (v ? "yes" : "no"),
 	},
+	surface_extrapolated_supply_crossflow: {
+		label: "Surface: moving supply",
+		unit: "—",
+		format: (v) => (v ? "yes" : "no"),
+	},
 	Q: { label: "Q", unit: "W", format: (v) => v.toFixed(0) },
 	// State results (accessed via result.state.*). P and T are static, Pt and
 	// Tt total (#773, #782): until 0.7 T held the total temperature. T is Tt

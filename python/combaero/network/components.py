@@ -8956,6 +8956,20 @@ class ImpingementPlateElement(OrificeElement):
     density and the supply-to-channel drop; G_c the approaching crossflow
     over the channel section ``n_holes yn z d^2``.
 
+    A MOVING SUPPLY (C2, #1087). Florschuetz's rows are plenum-fed. A row
+    whose ``from_node`` is a crossflow-chain station (a PlenumNode the
+    chain registers as a station: a supply channel along the jet plate, or
+    another array's gap) is duct-fed: the jets drive from the station's
+    rebuilt duct total, and the composed Cd above (the hole's, then the jet
+    law and its cap, all plenum-fed and so referenced to P1 + f q1, with
+    G_ideal taken from P1 + f q1) is converted onto it, f =
+    ``HoleCd.supply_recovery`` (None = 0; see HOLE_CD_SUPPLY_DRIVES). The
+    gap side is unchanged. ``surface_extrapolated_supply_crossflow`` flags
+    the row outside Florschuetz's plenum-fed envelope wherever the supply
+    moves: no source covers it, so no fidelity set exists and the accuracy
+    is unscored. A row fed by a MomentumChamberNode drives from the
+    chamber's Pt, unconverted, and refuses a ``supply_recovery``.
+
     NOT MODELLED. The temperature sensitivity of the correlation's
     properties (``dh_dT`` is 0, the same documented gap the channel
     impingement path has), the self-heated crossflow's temperature beyond
@@ -9104,6 +9118,10 @@ class ImpingementPlateElement(OrificeElement):
         self._bypass_segment: str | None = None
         self._bypass_node: str | None = None
         self._bypass_outlet: str | None = None
+        # The supply station when the row is fed by a crossflow chain (C2,
+        # resolve_topology): None plenum-fed.
+        self._crossflow_station: _CrossflowStation | None = None
+        self._supply_recovery_error: str | None = None
 
     @property
     def cd_crossflow(self) -> str:
@@ -9146,7 +9164,26 @@ class ImpingementPlateElement(OrificeElement):
         self._bypass_segment = seg.id if seg is not None else None
         self._bypass_node = seg.from_node if seg is not None else None
         self._bypass_outlet = seg.to_node if seg is not None else None
+        self._resolve_supply_station(graph)
         self._resolve_plate_against_chambers(graph)
+
+    def _resolve_supply_station(self, graph: "FlowNetwork") -> None:
+        """The row's supply (C2, #1087): a supply node that is a crossflow
+        station (a PlenumNode carrying the _CrossflowStation its chain
+        registered, a supply channel or another array's gap) makes the row
+        DUCT-FED -- its jets drive from the station's rebuilt duct total
+        with the composed Cd converted from P1 + f q1, f =
+        HoleCd.supply_recovery (None = 0), and the station's segment flows
+        become inputs (network_flow_inputs). Any other supply node keeps
+        the plenum-fed row exactly (_HoleCdChain.configure_jet_row_supply):
+        a plenum, and a MomentumChamberNode, whose Pt is the drive (owner,
+        2026-11-13: chamber-fed holes are outside f)."""
+        node = graph.nodes.get(self.from_node)
+        station = (
+            getattr(node, "_crossflow_station", None) if isinstance(node, PlenumNode) else None
+        )
+        self._crossflow_station = station
+        self._supply_recovery_error = self._hole_cd.configure_jet_row_supply(graph, self.hole_cd)
 
     def _find_bypass(self, graph: "FlowNetwork") -> "ImpingementCrossflowElement | None":
         """The bypass_inlet segment up the crossflow chain, if any."""
@@ -9246,6 +9283,8 @@ class ImpingementPlateElement(OrificeElement):
             )
         if error := self._geometry_error():
             raise ValueError(error)
+        if self._supply_recovery_error:
+            raise ValueError(f"ImpingementPlateElement {self.id!r}: {self._supply_recovery_error}")
 
     def _geometry_error(self) -> str:
         """Why the jet holes cannot be drilled at these pitches (#1024), or "".
@@ -9282,12 +9321,18 @@ class ImpingementPlateElement(OrificeElement):
         return ""
 
     def network_flow_inputs(self) -> list[tuple[str, str]]:
-        """(element id, node id) of every flow ``htc_and_T`` reads besides its
+        """(element id, node id) of every flow the row reads besides its
         own: the crossflow sources, each read at ``to_node``, and the bypass
-        lead-in at its outlet (the bypass share of the crossflow, #467)."""
+        lead-in at its outlet (the bypass share of the crossflow, #467), both
+        for ``htc_and_T`` and the jet law; and a duct-fed row's supply-station
+        segments at ``from_node`` (C2), for its drive pair."""
         out = [(eid, self.to_node) for eid in self._crossflow_sources]
         if self._bypass_segment is not None and self._bypass_segment not in self._crossflow_sources:
             out.append((self._bypass_segment, self._bypass_outlet))
+        if self._crossflow_station is not None:
+            # A duct-fed row's supply station (C2): its segments' flows there,
+            # which the drive pair's duct total and conversion read.
+            out.extend((eid, self.from_node) for _, eid in self._crossflow_station.segments)
         return out
 
     def network_temperature_inputs(self) -> list[str]:
@@ -9378,6 +9423,14 @@ class ImpingementPlateElement(OrificeElement):
         if not base:
             return base
         r = self.htc_and_T(state_in, flows=flows, temperatures=temperatures)
+        # Florschuetz et al. (1981) is plenum-fed: a row fed by a MOVING
+        # supply (a crossflow station with a dynamic head, C2) is outside its
+        # envelope. Information, named by its variable, never a warning or a
+        # refusal: no held or wanted-and-obtained source covers impingement
+        # fed by a moving supply, so there is no better h to offer.
+        moving_supply = self._crossflow_station is not None and (
+            float(base.get("Cd_supply_recovery_q1", 0.0)) > 0.0
+        )
         out = {
             "n_holes": float(self.n_holes),
             # Deprecated since 0.12.0, removed in 0.13.0: Cd_base.
@@ -9388,7 +9441,8 @@ class ImpingementPlateElement(OrificeElement):
             "htc": float(r.h),
             "T_aw": float(r.T_aw),
             "Gc_Gj": float(r.Gc_Gj),
-            "surface_extrapolated": float(r.extrapolated),
+            "surface_extrapolated": float(r.extrapolated or moving_supply),
+            "surface_extrapolated_supply_crossflow": float(moving_supply),
             "eta_r": float(r.eta_r),
             "bypass_fraction": float(r.bypass_fraction),
             "eta_r_extrapolated": float(r.eta_r_extrapolated),

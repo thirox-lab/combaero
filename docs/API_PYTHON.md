@@ -2316,8 +2316,8 @@ the duct total with the recovered fraction f in 0.12.0 (`supply_drive` and
 | `inclination` `"auto"` | none | Idelchik 3-2 on an inclined IdelchikThick hole | the same, cylindrical holes only | none | none |
 | `inlet_crossflow` `"auto"` | none (U1/Vi = 0) | McGreehan-Schotsch's U1/Vi when duct-fed (`crossflow_segments`) | none | none | none |
 | `exit_crossflow` `"auto"` | none | none (`"rowbury_2001"` opts in) | none (`"rowbury_2001"` opts in) | none | `"rogers_hersh_1976"` |
-| `supply_drive` `"auto"` (reported `"recovery"`) | the supply node's Pt | duct-fed: the duct's total at the station, the base Cd referenced to P1 + f q1 | the supply node's Pt | the supply node's Pt | the supply node's Pt |
-| `supply_recovery` None | refused if given | duct-fed with `inlet_crossflow="none"`: f = 0 at every angle and for every base; refused if given with McGreehan-Schotsch's U1/Vi term on | refused if given | refused if given | refused if given |
+| `supply_drive` `"auto"` (reported `"recovery"`) | the supply node's Pt | duct-fed: the duct's total at the station, the base Cd referenced to P1 + f q1 | the supply node's Pt | the supply node's Pt | fed by a crossflow station: the duct's total there, the composed Cd referenced to P1 + f q1; otherwise the supply node's Pt (`"static"` refused) |
+| `supply_recovery` None | refused if given | duct-fed with `inlet_crossflow="none"`: f = 0 at every angle and for every base; refused if given with McGreehan-Schotsch's U1/Vi term on | refused if given | refused if given | fed by a crossflow station: f = 0; refused at validate if given on a row fed by a plenum or a `MomentumChamberNode` |
 
 - **Every hole drives from the upstream TOTAL to the downstream STATIC
   (#1087, since 0.12.0).** The rule (2026-11-12) makes the element own the
@@ -2373,9 +2373,27 @@ the duct total with the recovered fraction f in 0.12.0 (`supply_drive` and
     alike). Which holes recover how much is #1124. It replaces the
     unreleased `supply_drive="total"`.
   - **f applies only to holes fed by a duct crossflow.** The other hole
-    elements (film, slot, impingement row, plain orifice, a plenum-fed
-    plate) drive from their supply node's Pt and refuse a `supply_recovery`
-    other than None.
+    elements (film, slot, plain orifice, a plenum-fed plate) drive from
+    their supply node's Pt and refuse a `supply_recovery` other than None.
+  - **An impingement row fed by a moving supply is duct-fed (C2).** An
+    `ImpingementPlateElement` whose supply node is a crossflow-chain station
+    (a `PlenumNode` registered as a station by its `CrossflowSegmentElement`
+    chain: a supply channel along the jet plate, or another array's gap)
+    drives from the station's duct total. Its composed Cd -- the base, then
+    the jet law and its cap, all defined plenum-fed -- is referenced to
+    P1 + f q1 and converted onto it (f = `supply_recovery`, default 0), and
+    the jet law's G_ideal is taken on the same pair, from P1 + f q1 to the
+    gap static. The gap side (Gc/Gj, Florschuetz h) is unchanged. At f = 0
+    the row flow is the old station-static drive plus the static-temperature
+    correction (+0.12 to +0.32 % per row at supply Mach 0.12-0.15; none in
+    the incompressible regime). The row
+    reports `Cd_inlet_crossflow_ignored` = 1 (no McGreehan-Schotsch U1/Vi on
+    a row) and `surface_extrapolated_supply_crossflow` = 1 wherever the
+    supply moves (see the impingement diagnostics). NO FIDELITY SET exists
+    for this configuration; its accuracy is unscored (wanted in the source
+    register). A row fed by a `MomentumChamberNode` drives from the chamber's
+    Pt, unconverted, and refuses a `supply_recovery` (owner, 2026-11-13:
+    chamber-fed holes are outside f); a row fed by a plenum is unchanged.
   - **Route to another default: #1124**, the lean- and direction-dependent
     recovery (Rohde 1969 Fig. 11, Gritsch, Schulz & Wittig 2001).
   - **`"static"` breaks the Pt-to-static rule.** It is the v0.11.1 drive
@@ -4073,8 +4091,14 @@ are crossflow.
   a `'florschuetz_metzger_su_1982'` plate that stage runs first (#1021): the
   law's root has a narrow basin the cold seed misses.
 - Diagnostics: `n_holes`, `Re_j`, `Gc_Gj`, `Nu`, `St`, `htc`, `T_aw`, `eta_r`,
-  `bypass_fraction`, `eta_r_extrapolated`, `surface_extrapolated`, and
-  `Gc_Gj_closed_form` (Eq. 8) when `row` is given.
+  `bypass_fraction`, `eta_r_extrapolated`, `surface_extrapolated`,
+  `surface_extrapolated_supply_crossflow`, and `Gc_Gj_closed_form` (Eq. 8)
+  when `row` is given. `surface_extrapolated_supply_crossflow` is 1 on a row
+  fed by a MOVING supply (a crossflow station with a dynamic head, see
+  `HoleCd.supply_recovery`): Florschuetz's h is plenum-fed, so the row is
+  outside its envelope. Information, never a warning or a refusal; it is also
+  folded into `surface_extrapolated`. `ImpingementArray` reports it as "any
+  row".
 - `cb.impingement_eta_r(Gc_Gj, xn_d, yn_d, z_d)` returns `eta`,
   `deta_dGc_Gj` and `extrapolated`; the constants are
   `cb.FLORSCHUETZ_SU_1985_ETA_A/R/N`.

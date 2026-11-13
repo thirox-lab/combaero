@@ -161,6 +161,7 @@ UNIT_MAP: dict[str, str] = {
     "Gc_Gj_closed_form": "-",
     "St": "-",
     "surface_extrapolated": "-",
+    "surface_extrapolated_supply_crossflow": "-",  # row fed by a moving supply (C2)
     "material_in_range": "-",
     "dP_momentum": "Pa",
     # --- Effusion plate wall (#471) ---

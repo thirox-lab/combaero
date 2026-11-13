@@ -46,7 +46,6 @@ from combaero.network import (
     FilmCoolingElement,
     FlowNetwork,
     HoleCd,
-    ImpingementPlateElement,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -887,8 +886,11 @@ def test_f_one_takes_the_total_drive_unconverted() -> None:
     assert r["__element_diag__"]["h"]["Cd_supply_recovery_ratio"] == 1.0
 
 
-@pytest.mark.parametrize("make", ["plate", "film", "orifice", "slot", "impingement"])
+@pytest.mark.parametrize("make", ["plate", "film", "orifice", "slot"])
 def test_supply_recovery_is_refused_where_the_hole_is_not_duct_fed(make: str) -> None:
+    # An impingement row is duct-fed by its topology (a crossflow station
+    # as its supply, C2): its refusal is at validate,
+    # test_impingement_moving_supply.py.
     spec = HoleCd(supply_recovery=0.0)
     build = {
         "plate": lambda: EffusionPlateElement(
@@ -903,11 +905,6 @@ def test_supply_recovery_is_refused_where_the_hole_is_not_duct_fed(make: str) ->
         "slot": lambda: SlotFilmElement(
             "e", "a", "b", slot_height=1e-3, span=0.05, lip_thickness=1e-3,
             hole_cd=HoleCd(correlation="IdelchikThick", supply_recovery=1.0),
-        ),
-        "impingement": lambda: ImpingementPlateElement(
-            "e", "a", "b", d_jet=2.54e-3, xn_d=5.0, yn_d=4.0, z_d=1.0, span=0.12,
-            plate_thickness=2.54e-3,
-            hole_cd=HoleCd(correlation="fixed", Cd=0.8, supply_recovery=0.0),
         ),
     }[make]  # fmt: skip
     with pytest.raises(ValueError, match="applies only to holes fed by a duct crossflow"):
