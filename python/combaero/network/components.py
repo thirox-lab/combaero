@@ -5509,6 +5509,64 @@ class OrificeElement(NetworkElement):
         self._pipe_cd_ratio_rev = 1.0
 
     def resolve_topology(self, graph: "FlowNetwork") -> None:
+        self._resolve_orifice_geometry(graph)
+        self._resolve_exit_drive(graph)
+
+    def _resolve_exit_drive(self, graph: "FlowNetwork") -> None:
+        """The drive pair (#1087) of a plain orifice or connection: from the
+        upstream Pt to the static of a MomentumChamberNode it discharges
+        into, as the hole elements; a reversed flow draws from that static
+        and discharges against the from-node's Pt. Only where
+        _discharges_to_exit_static holds; elsewhere Pt to Pt as before."""
+        self._hole_cd.resolve_drive(graph, exit_static=self._discharges_to_exit_static(graph))
+
+    def _discharges_to_exit_static(self, graph: "FlowNetwork") -> bool:
+        """THE gate of the orifice family's static exit drive (#1087): a
+        SIDE JET into a merge chamber, i.e. the to-node is a
+        MomentumChamberNode with ``main_inlet`` declared and this element is
+        not that main inlet, and the restriction is not closed, not a
+        pass-through and recovers no pressure in a pipe beyond (#645).
+        The jet then discharges against the chamber's static, which the
+        main stream sets. Every other configuration -- the orifice as the
+        chamber's main inlet, a chamber without main_inlet, an orifice in
+        line with a pipe, a recovering metering orifice -- keeps the Pt-Pt
+        form exactly. (resolve_drive itself only asks for a
+        MomentumChamberNode: the hole elements pass True unconditionally.)
+        On a side jet's reversed leg the flow draws from the chamber static
+        with no velocity of approach (_approach_along)."""
+        node = graph.nodes.get(self.to_node)
+        merge_side_jet = (
+            isinstance(node, MomentumChamberNode)
+            and node.main_inlet is not None
+            and node.main_inlet != self.id
+        )
+        return merge_side_jet and not (
+            self.closed or self._pass_through or self._recovery_fwd or self._recovery_rev
+        )
+
+    def _approach_along(self, forward: bool) -> tuple[float, float, bool]:
+        """(beta, pipe-Cd ratio, recovers) along the flow (#554, #645). On
+        the reversed leg of a static exit drive (#1087) the source is the
+        discharge chamber's STATIC pressure: the approach pipe's static
+        correction (#651) and E would count its head a second time, so the
+        reversed leg has no velocity of approach there."""
+        if forward:
+            return (
+                float(getattr(self, "beta", 0.0)),
+                float(getattr(self, "_pipe_cd_ratio_fwd", 1.0)),
+                bool(getattr(self, "_recovery_fwd", False)),
+            )
+        if self._hole_cd.exit_static:
+            return 0.0, 1.0, False
+        return (
+            float(getattr(self, "beta_reverse", 0.0)),
+            float(getattr(self, "_pipe_cd_ratio_rev", 1.0)),
+            bool(getattr(self, "_recovery_rev", False)),
+        )
+
+    def _resolve_orifice_geometry(self, graph: "FlowNetwork") -> None:
+        """Pipe discovery, beta, recovery and the Cd geometry (#554, #645,
+        #788, #1016)."""
         self._to_node_obj = graph.nodes.get(self.to_node)
         self._to_side_closed = self._side_is_closed(graph, self.to_node)
         if self.closed:
@@ -5871,12 +5929,10 @@ class OrificeElement(NetworkElement):
         """
         # The velocity of approach is the upstream pipe's along the flow.
         forward = src_id == self.from_node
-        beta = getattr(self, "beta", 0.0) if forward else getattr(self, "beta_reverse", 0.0)
-        recovers = getattr(self, "_recovery_fwd" if forward else "_recovery_rev", False)
+        # A discharge-hole Cd in its approach pipe (#645): a constant factor
+        # (ratio), so d(m)/d(Cd_wall) = R d(m)/d(C_pipe).
+        beta, ratio, recovers = self._approach_along(forward)
         compressible = self.regime == "compressible"
-        # A discharge-hole Cd in its approach pipe (#645): a constant factor,
-        # so d(m)/d(Cd_wall) = R d(m)/d(C_pipe).
-        ratio = getattr(self, "_pipe_cd_ratio_fwd" if forward else "_pipe_cd_ratio_rev", 1.0)
         cd = cd * ratio
         # Both kernels are exactly linear in Cd (A_eff = Cd E A). A crossflow
         # Cd underflows to exactly 0 where the hole's pressure drop vanishes
@@ -6034,8 +6090,9 @@ class OrificeElement(NetworkElement):
         flow there.
 
         A hole whose drive pair is not the two nodes' Pt (#1087,
-        _HoleCdChain.drive_pair: a duct-fed hole's supply drive, a cooling
-        hole into a flowing chamber) runs between that pair instead
+        _HoleCdChain.drive_pair: a duct-fed hole's supply drive, a hole,
+        plain orifice or connection into a flowing chamber, gated by
+        _discharges_to_exit_static) runs between that pair instead
         (_flow_on_drive_pair); every other orifice evaluates as before.
         """
         pair = self._hole_cd.drive_pair(state_in, state_out, flows)
@@ -6249,7 +6306,7 @@ class OrificeElement(NetworkElement):
         """Does m_calc read this element's own flow through the approach
         pipe's static state (#651)? With E and a pipe, in either direction."""
         fwd = 0.0 < self.beta < 1.0 and bool(self.upstream_diameter)
-        rev = 0.0 < getattr(self, "beta_reverse", 0.0) < 1.0 and bool(
+        rev = 0.0 < self._approach_along(False)[0] < 1.0 and bool(
             getattr(self, "_reverse_pipe_diameter", None)
         )
         return fwd or rev
@@ -6438,11 +6495,16 @@ class OrificeElement(NetworkElement):
             # (an upstream total) to p_dn, reversed p_dn to p_rev.
             pt_up, p_back = (pair.p_up, pair.p_dn) if forward else (pair.p_dn, pair.p_rev)
         p_ratio_throat = p_back / pt_up if pt_up > 0 else 1.0
-        # The tap and model blocks read the pair as the nodes' Pt.
+        # The tap and model blocks read the pair as the nodes' Pt (p_up here
+        # is drive_pressures' p_rev). Reversed, the kernel discharges against
+        # p_rev, not the from-node's own static: that is the from-node's P
+        # for them too, so dP_tap is the reversed kernel's drive.
         drive_states = (state_in, state_out)
         if pair is not None:
             drive_states = (copy.copy(state_in), copy.copy(state_out))
             drive_states[0].Pt, drive_states[1].Pt = p_up, p_dn
+            if not forward:
+                drive_states[0].P = p_up
         if p_ratio_throat >= 1.0:
             mach_throat = 0.0
         elif p_ratio_throat <= pr_crit:
@@ -6510,9 +6572,7 @@ class OrificeElement(NetworkElement):
         forward = not (state_out.Pt > state_in.Pt)
         up, dn = (state_in, state_out) if forward else (state_out, state_in)
         up_id = self.from_node if forward else self.to_node
-        beta = self.beta if forward else getattr(self, "beta_reverse", 0.0)
-        recovers = self._recovery_fwd if forward else self._recovery_rev
-        ratio = getattr(self, "_pipe_cd_ratio_fwd" if forward else "_pipe_cd_ratio_rev", 1.0)
+        beta, ratio, recovers = self._approach_along(forward)
         c = max(cd * ratio, _JOBSON_CD_MIN)
         p1 = self._approach_static(up, up_id, forward, beta)[0]
         p_down = float(dn.P)
@@ -6558,9 +6618,7 @@ class OrificeElement(NetworkElement):
         """
         forward = not (state_out.Pt > state_in.Pt)
         up, dn = (state_in, state_out) if forward else (state_out, state_in)
-        beta = self.beta if forward else getattr(self, "beta_reverse", 0.0)
-        recovers = self._recovery_fwd if forward else self._recovery_rev
-        ratio = getattr(self, "_pipe_cd_ratio_fwd" if forward else "_pipe_cd_ratio_rev", 1.0)
+        beta, ratio, recovers = self._approach_along(forward)
         out: dict[str, float | str] = {
             "tap": self.tap,
             "pressure_recovery": float(recovers),
@@ -9185,9 +9243,13 @@ class EffectiveAreaConnectionElement(OrificeElement):
         Unlike OrificeElement, we do not discover upstream/downstream diameters because
         the effective area is user-specified and already accounts for all geometric effects.
         No Beta ratio correction is needed or applied.
+        The drive pair is resolved as OrificeElement's (#1087): into a
+        MomentumChamberNode the flow runs from the upstream Pt to the
+        chamber's static.
         """
-        # Intentionally empty - effective area is pre-computed by user
-        pass
+        # No geometry to discover: the drive pair (#1087) only, the static
+        # of a MomentumChamberNode it discharges into (_discharges_to_exit_static).
+        self._resolve_exit_drive(graph)
 
     def n_equations(self) -> int:
         """Return the number of equations (1: mass flow balance)."""
@@ -9282,9 +9344,13 @@ class DiameterDischargeCoefficientConnectionElement(OrificeElement):
 
         The physical area and discharge coefficient are user-specified and already account
         for all geometric effects. No Beta ratio correction is needed or applied.
+        The drive pair is resolved as OrificeElement's (#1087): into a
+        MomentumChamberNode the flow runs from the upstream Pt to the
+        chamber's static.
         """
-        # Intentionally empty - area and Cd are pre-computed by user
-        pass
+        # No geometry to discover: the drive pair (#1087) only, the static
+        # of a MomentumChamberNode it discharges into (_discharges_to_exit_static).
+        self._resolve_exit_drive(graph)
 
     def n_equations(self) -> int:
         """Return the number of equations (1: mass flow balance)."""

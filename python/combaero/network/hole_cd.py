@@ -788,7 +788,9 @@ class _HoleCdChain:
         duct's static (CrossflowSegmentElement's rule), so its total is
         rebuilt from the station's static state and mean flow; a station
         that is a MomentumChamberNode carries its own Pt. Exit side
-        (``exit_static``, the film, effusion and slot elements): a hole
+        (``exit_static``: the film, effusion and slot elements, and a plain
+        orifice or connection where OrificeElement._discharges_to_exit_static
+        holds -- a side jet into a merge chamber): a hole
         discharging into a MomentumChamberNode takes its direction from the
         chamber's STATIC pressure, the pressure its jet discharges against,
         and a reversed jet draws from that static (#1087: none of the

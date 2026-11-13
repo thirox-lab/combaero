@@ -2185,18 +2185,33 @@ upstream `Pt` to the downstream static, and the hole element owns the energy
 closure: the jet's head is its own, not the receiver's. Since 0.12.0
 ([#1087](https://github.com/thirox-lab/combaero/issues/1087),
 [#1122](https://github.com/thirox-lab/combaero/pull/1122)):
-- **Exit side.** A film, effusion or slot hole into a `MomentumChamberNode`
-  takes its direction from its drive against the chamber's STATIC pressure,
-  and a reversed jet draws from that static. The orifice family's forward
-  drive already ran to the downstream static.
+- **Exit side.** A film, effusion or slot hole into a `MomentumChamberNode`,
+  and a plain `OrificeElement`, `EffectiveAreaConnectionElement` or
+  `DiameterDischargeCoefficientConnectionElement` that is a SIDE JET into a
+  merge chamber (a `MomentumChamberNode` with `main_inlet` declared, the
+  element not being that main inlet), takes its direction from its drive
+  against the chamber's STATIC pressure. A reversed jet draws from that
+  static and discharges against the supply's `Pt`. Inside the band
+  `P_to < Pt_from < Pt_to` it blows; the flow passes zero once, where
+  `Pt_from = P_to`. The forward drive already ran to the downstream static.
+  A side jet's reversed leg applies no velocity of approach (`beta_flow`
+  reports 0): the chamber's through-flow is not an approach to the bore.
+  Its tap and model diagnostics and its second-law control volume read the
+  kernel's pair, so `dP_tap` of a reversed jet is the chamber static minus
+  the supply `Pt`.
+- **Every other plain orifice or connection is unchanged** and keeps the
+  `Pt - Pt` direction exactly: one in line with a pipe, one that is the
+  chamber's `main_inlet`, one into a `MomentumChamberNode` without
+  `main_inlet`, a recovering in-pipe metering orifice (ISO permanent loss,
+  #645), a pass-through bore (#788, #1016) and a closed restriction
+  (#1024). The one gate is `OrificeElement._discharges_to_exit_static`.
 - **Supply side.** A duct-fed `EffusionPlateElement` (each `EffusionLiner`
   panel) drives from the duct's TOTAL pressure at its station, rebuilt from
   the station static and the mean segment flow, not from the station
   static. McGreehan-Schotsch's static-referenced Eq. 17 Cd is converted onto
   that drive exactly. See `HoleCd.supply_drive` below.
-- **Not yet.** The plain `OrificeElement` and the connection elements still
-  take their direction from `Pt - Pt` into a `MomentumChamberNode`; they
-  follow later.
+- **Not yet.** `ImpingementPlateElement` still takes its direction from
+  `Pt - Pt` into a `MomentumChamberNode`; it follows later.
 
 **Known gaps:**
 - How much of the supply head a hole recovers depends on its lean relative to
