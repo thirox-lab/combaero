@@ -12322,24 +12322,39 @@ class CrossflowSegmentElement(ChannelElement):
         next segment does not take it as its own from-station: this segment
         arriving, the next leaving, through ``area_to``. Consistent chains
         register each station once (its leaving segment); a node that is not
-        a PlenumNode gets none (``_station_node_error`` refuses it)."""
-        if self.from_kappa is not None:
-            node = graph.nodes.get(self.from_node)
-            if isinstance(node, PlenumNode):
-                node._crossflow_station = _CrossflowStation(
-                    self.from_node, self._prev, self, float(self.area_from)
+        a PlenumNode gets none (``_station_node_error`` refuses it).
+
+        A node is ONE station: a second registration there with other
+        segments (two segments leaving one node as from-stations, or a
+        from-station beside a to-only one) is refused at validate, naming
+        both, rather than left to whichever registered last."""
+        self._station_conflict: str | None = None
+
+        def register(nid: str, arriving: Any, leaving: Any, area: float) -> None:
+            node = graph.nodes.get(nid)
+            if not isinstance(node, PlenumNode):
+                return
+            new = _CrossflowStation(nid, arriving, leaving, area)
+            old = node._crossflow_station
+            if old is not None and old.segment_ids != new.segment_ids:
+                self._station_conflict = (
+                    f"node {nid!r} is already the station of segments {old.segment_ids!r} "
+                    f"(arriving, leaving); this segment makes it the station of "
+                    f"{new.segment_ids!r}. A node is one station: one segment arrives "
+                    "and one leaves (split a branch through its own node)."
                 )
+                return
+            node._crossflow_station = new
+
+        if self.from_kappa is not None:
+            register(self.from_node, self._prev, self, float(self.area_from))
         nxt = self._next
         if (
             self.to_kappa is not None
             and nxt is not None
             and getattr(nxt, "from_kappa", None) is None
         ):
-            node = graph.nodes.get(self.to_node)
-            if isinstance(node, PlenumNode):
-                node._crossflow_station = _CrossflowStation(
-                    self.to_node, self, nxt, float(self.area_to)
-                )
+            register(self.to_node, self, nxt, float(self.area_to))
 
     def _station_node_error(self, graph: "FlowNetwork") -> str | None:
         """Why a station node of this segment is not a PlenumNode, or None.
@@ -12373,6 +12388,8 @@ class CrossflowSegmentElement(ChannelElement):
         super().validate()
         if getattr(self, "_station_error", None):
             raise ValueError(f"{type(self).__name__} {self.id!r}: {self._station_error}")
+        if getattr(self, "_station_conflict", None):
+            raise ValueError(f"{type(self).__name__} {self.id!r}: {self._station_conflict}")
 
     def _station_jets(
         self, node: Any, station: NetworkMixtureState

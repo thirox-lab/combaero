@@ -172,3 +172,35 @@ def test_chain_exit_into_momentum_chamber_solves(main_inlet: str | None) -> None
     assert r["__success__"], r.get("__message__")
     # The chamber carries the exit's moving state: Pt above P.
     assert r["mc.Pt"] > r["mc.P"]
+
+
+@pytest.mark.parametrize("order", ["ab", "ba"])
+def test_two_from_stations_at_one_node_are_refused(order: str) -> None:
+    """A node is one station (B1): two segments leaving it as from-stations
+    would give it two moving states, the one kept depending on element order.
+    Refused at validate, naming both, whatever the order."""
+    from combaero.network import CrossflowSegmentElement
+
+    kappa = cb.STATION_KAPPA_BLEED_BASSETT
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("in", Pt=1.3e5, Tt=290.0, Y=Y))
+    for n in ("o1", "o2"):
+        g.add_node(PressureBoundary(n, Pt=1.2e5, Tt=290.0, Y=Y))
+    g.add_node(PlenumNode("n1"))
+    g.add_element(
+        CrossflowSegmentElement(
+            "s0", "in", "n1", length=0.03, area=3e-4, entry_K=0.0, to_kappa=kappa, next_seg="a"
+        )
+    )
+    legs = {
+        k: CrossflowSegmentElement(
+            k, "n1", out, length=0.03, area=3e-4, from_kappa=kappa, prev_seg="s0"
+        )
+        for k, out in (("a", "o1"), ("b", "o2"))
+    }
+    for k in order:
+        g.add_element(legs[k])
+    g.resolve_all_topology()
+    with pytest.raises(ValueError, match=r"is already the station of segments") as exc:
+        g.validate()
+    assert "'a'" in str(exc.value) and "'b'" in str(exc.value)
