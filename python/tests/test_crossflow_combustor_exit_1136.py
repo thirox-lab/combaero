@@ -1,0 +1,349 @@
+"""A crossflow chain's exit into a CombustorNode is an exit at rest (#1136).
+
+A CombustorNode declares ``state_at_rest`` (Pt = P), as a plenum and every
+boundary do. The chain asked "a PlenumNode or a boundary" instead, so a
+combustor exit was MOVING to the compressible terminal (the duct's exit total
+met the combustor's Pt = P: the head recovered) and at rest to the
+incompressible row (static continuity forward; reversed, without the
+reservoir acceleration a plenum exit carries). The regimes differed by -21 %
+forward and +179 % reversed at 2 kPa. Now every terminal reader asks the
+node's own definition (``_terminal_at_rest``): a combustor exit is a plenum
+exit in both regimes, for a NON-REACTING combustor. A burning (or mixing)
+one is still regime-inconsistent through the entry term's density (#1137,
+the xfail below).
+
+The probe: a reservoir entry, one bleed station, the exit segment into the
+node, and a channel from the node to the exit.
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+import pytest
+from _fd_jacobian import fd_jacobian, scaled_error
+
+import combaero as cb
+from combaero.network import (
+    ChannelElement,
+    CombustorNode,
+    CrossflowSegmentElement,
+    FlowNetwork,
+    LosslessConnectionElement,
+    MassFlowBoundary,
+    MomentumChamberNode,
+    NetworkMixtureState,
+    NetworkSolver,
+    OrificeElement,
+    PlenumNode,
+    PressureBoundary,
+    WallNode,
+)
+
+Y = list(cb.mole_to_mass(cb.species.dry_air()))
+A_DUCT = 2.0e-4
+BLEED = cb.STATION_KAPPA_BLEED_BASSETT
+P0 = 1.0e5
+
+
+def _pb(name: str, Pt: float) -> PressureBoundary:
+    return PressureBoundary(name, Pt=Pt, Tt=300.0, Y=Y)
+
+
+def _chain(kind: str, regime: str, p_sup: float, p_exit: float) -> FlowNetwork:
+    g = FlowNetwork()
+    g.add_node(_pb("sup", p_sup))
+    g.add_node(_pb("exit", p_exit))
+    g.add_node(_pb("sink", P0))
+    g.add_node(PlenumNode("s1"))
+    # "boundary": the exit segment runs straight into the exit boundary.
+    out = "exit" if kind == "boundary" else "nd"
+    if kind != "boundary":
+        g.add_node(CombustorNode("nd") if kind == "combustor" else PlenumNode("nd"))
+    g.add_element(
+        CrossflowSegmentElement(
+            "s0x",
+            "sup",
+            "s1",
+            length=0.05,
+            area=A_DUCT,
+            entry_K=0.5,
+            to_kappa=BLEED,
+            next_seg="s1x",
+            regime=regime,
+        )
+    )
+    g.add_element(
+        CrossflowSegmentElement(
+            "s1x",
+            "s1",
+            out,
+            length=0.05,
+            area=A_DUCT,
+            from_kappa=BLEED,
+            prev_seg="s0x",
+            regime=regime,
+        )
+    )
+    g.add_element(OrificeElement("bl", "s1", "sink", diameter=0.006, Cd=0.6, correlation="fixed"))
+    if kind != "boundary":
+        D = math.sqrt(4.0 * A_DUCT / math.pi)
+        g.add_element(ChannelElement("tail", "nd", "exit", length=0.05, diameter=D, regime=regime))
+    return g
+
+
+def _ends(dp: float, reversed_: bool) -> tuple[float, float]:
+    return (P0, P0 + dp) if reversed_ else (P0 + dp, P0)
+
+
+def _solve(g: FlowNetwork) -> dict:
+    r = NetworkSolver(g).solve()
+    assert r["__success__"], r.get("__message__")
+    return r
+
+
+CASES = [(dp, rev) for dp in (2000.0, 8000.0) for rev in (False, True)]
+
+
+@pytest.mark.parametrize(("dp", "reversed_"), CASES)
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+def test_combustor_exit_is_a_plenum_exit(dp: float, reversed_: bool, regime: str) -> None:
+    """Both regimes, both directions: the combustor exit solves the plenum
+    exit's flow. On main compressible forward ran 26.7 % above it (the head
+    recovered) and incompressible reversed 2.8x (no reservoir acceleration)."""
+    ps, pe = _ends(dp, reversed_)
+    mc = float(_solve(_chain("combustor", regime, ps, pe))["s1x.m_dot"])
+    mp = float(_solve(_chain("plenum", regime, ps, pe))["s1x.m_dot"])
+    assert (mc < 0.0) == reversed_
+    assert abs(mc - mp) <= 1e-6 * abs(mp), (mc, mp)
+
+
+@pytest.mark.parametrize(("dp", "reversed_"), CASES)
+def test_combustor_exit_regime_gap_is_the_plenum_gap(dp: float, reversed_: bool) -> None:
+    """The regime gap was -21 % forward and +120 to +179 % reversed; it is now
+    the plenum exit's (below 4 % at 8 kPa reversed, exit Mach ~0.3)."""
+    ps, pe = _ends(dp, reversed_)
+    inc = float(_solve(_chain("combustor", "incompressible", ps, pe))["s1x.m_dot"])
+    com = float(_solve(_chain("combustor", "compressible", ps, pe))["s1x.m_dot"])
+    assert abs((inc - com) / com) < 0.04, (inc, com)
+
+
+@pytest.mark.parametrize(
+    ("node", "at_rest"),
+    [
+        (PlenumNode("n"), True),
+        (CombustorNode("n"), True),
+        (PressureBoundary("n", Pt=P0, Tt=300.0), True),
+        (MassFlowBoundary("n", m_dot=0.01, Tt=300.0), True),
+        (WallNode("n"), True),
+        (MomentumChamberNode("n", area=A_DUCT), False),
+        (None, True),
+    ],
+)
+def test_terminal_at_rest_is_the_nodes_own_definition(node: object, at_rest: bool) -> None:
+    assert CrossflowSegmentElement._terminal_at_rest(node) is at_rest
+    if node is not None:
+        assert at_rest is bool(node.state_at_rest)
+
+
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+@pytest.mark.parametrize("m", [0.01, -0.01])
+def test_combustor_exit_terms_and_terminal(regime: str, m: float) -> None:
+    """The momentum terms and the compressible terminal of a combustor exit
+    are a plenum exit's: incompressible reversed carries the reservoir
+    acceleration (``exit_in``) and no exit head; compressible forward the
+    exit end is the closure of the node's static P, not its Pt."""
+    for kind in ("combustor", "plenum"):
+        g = _chain(kind, regime, P0 + 2000.0, P0)
+        for el in g.elements.values():
+            el.resolve_topology(g)
+        seg = g.elements["s1x"]
+        st_in = NetworkMixtureState(1.01e5, 1.01e5, Tt=300.0, m_dot=m, Y=Y)
+        st_out = NetworkMixtureState(1.0e5, 1.0e5, Tt=300.0, m_dot=m, Y=Y)
+        terms = seg._momentum_terms(st_in, st_out, {"s0x": m})
+        kinds = [t[5] for t in terms]
+        assert ("exit_in" in kinds) == (regime == "incompressible" and m < 0.0), (kind, kinds)
+        assert "exit_head" not in kinds
+        _, dst, _, d_out = seg._duct_ends(st_in, st_out, terms)
+        if m > 0.0:
+            # static continuity: the exit end's Pt is the closure of P, above P
+            assert "nd.P" in d_out and "nd.Pt" not in d_out, (kind, d_out)
+            assert dst.Pt > st_out.P
+        else:
+            assert d_out == {"nd.Pt": 1.0}
+
+
+def test_seed_charges_the_head_into_a_combustor() -> None:
+    g = _chain("combustor", "incompressible", P0 + 2000.0, P0)
+    for el in g.elements.values():
+        el.resolve_topology(g)
+    assert g.elements["s1x"]._seed_exit_head() is True
+
+
+def test_combustor_station_is_refused() -> None:
+    """A station node holds the channel's static pressure and its joining
+    streams: a CombustorNode station is refused at validate, as before."""
+    g = _chain("plenum", "compressible", P0 + 2000.0, P0)
+    g.nodes.pop("s1")
+    g.add_node(CombustorNode("s1"))
+    with pytest.raises(ValueError, match="Station nodes must be PlenumNodes"):
+        NetworkSolver(g).solve()
+
+
+def _fresh_jacobian_error(g: FlowNetwork, x: np.ndarray) -> float:
+    # A fresh solver: the residual depends on solver state after a solve (#1142).
+    s = NetworkSolver(g)
+    s._build_x0()
+    J = s._residuals_and_jacobian(x)[1]
+    fd = fd_jacobian(s, x, floor=1e-10)
+    return float(np.max(scaled_error(J, fd, x)))
+
+
+@pytest.mark.parametrize("point", ["root", "perturbed", "zero_flow"])
+@pytest.mark.parametrize("reversed_", [False, True])
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+def test_combustor_exit_jacobian(regime: str, reversed_: bool, point: str) -> None:
+    ps, pe = _ends(2000.0, reversed_)
+    g = _chain("combustor", regime, ps, pe)
+    s = NetworkSolver(g)
+    r = s.solve()
+    assert r["__success__"], r.get("__message__")
+    x = np.array(r["__x_solution__"], dtype=float)
+    if point == "perturbed":
+        x = x * (1.0 + 1e-3 * np.random.default_rng(7).uniform(-1.0, 1.0, x.size))
+    elif point == "zero_flow":
+        x[s.unknown_names.index("s1x.m_dot")] = 0.0
+    assert _fresh_jacobian_error(_chain("combustor", regime, ps, pe), x) < 1e-5
+
+
+@pytest.mark.parametrize(("dp", "reversed_"), CASES)
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+def test_combustor_exit_second_law(dp: float, reversed_: bool, regime: str) -> None:
+    ps, pe = _ends(dp, reversed_)
+    r = _solve(_chain("combustor", regime, ps, pe))
+    assert not r["__second_law_failures__"], r["__second_law__"]
+
+
+@pytest.mark.parametrize("kind", ["plenum", "boundary"])
+def test_reversed_exit_at_rest_gap_is_order_mach_squared(kind: str) -> None:
+    """Reversed out of an exit at rest, the incompressible head takes the
+    duct's static density (its far end's P), not the reservoir's stagnation
+    one. At the reservoir's the gap was +0.96 / +3.76 % (plenum) and +1.04 /
+    +4.08 % (boundary) at 2 / 8 kPa (exit Mach 0.15 / 0.31); it is now
+    +0.17 / +0.62 % and +0.15 / +0.54 %, the moving chamber exit's size."""
+    gaps = []
+    for dp in (2000.0, 8000.0):
+        inc = float(_solve(_chain(kind, "incompressible", P0, P0 + dp))["s1x.m_dot"])
+        com = float(_solve(_chain(kind, "compressible", P0, P0 + dp))["s1x.m_dot"])
+        assert inc < 0.0 and com < 0.0
+        gaps.append((inc - com) / com)
+    assert 0.0 < gaps[0] < 2.5e-3, gaps
+    assert 0.0 < gaps[1] < 8e-3, gaps
+
+
+AIR_HOT = 600.0
+CH4 = list(cb.species.to_mass(cb.species.pure_species("CH4")))
+
+
+def _entry_into(kind: str, regime: str, rev: bool, fuel: float = 0.0) -> FlowNetwork:
+    """air -> one entry_K segment (no station) -> node [+ CH4] -> orifice ->
+    out, at 2 bar and 8 kPa (the review's from-end / hot-exit networks)."""
+    P, dp = 2.0e5, 8000.0
+    pa, po = (P, P + dp) if rev else (P + dp, P)
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("air", Pt=pa, Tt=AIR_HOT, Y=Y))
+    g.add_node(PressureBoundary("out", Pt=po, Tt=AIR_HOT, Y=Y))
+    g.add_node(CombustorNode("c") if kind == "combustor" else PlenumNode("c"))
+    g.add_element(
+        CrossflowSegmentElement("s", "air", "c", length=0.1, area=3e-4, entry_K=0.5, regime=regime)
+    )
+    if fuel > 0.0:
+        g.add_node(MassFlowBoundary("fuel", m_dot=fuel, Tt=300.0, Y=CH4))
+        g.add_element(LosslessConnectionElement("inj", "fuel", "c"))
+    g.add_element(
+        OrificeElement(
+            "o",
+            "c",
+            "out",
+            diameter=0.03,
+            Cd=0.8,
+            correlation="fixed",
+            in_pipe=False,
+            regime=regime,
+        )
+    )
+    return g
+
+
+def _from_end(kind: str, regime: str, rev: bool) -> FlowNetwork:
+    """The node as a reservoir-entry FROM node: in -> orifice -> node ->
+    entry_K segment -> out; reversed, the segment's flow runs into the node."""
+    P, dp = 2.0e5, 8000.0
+    pin, pout = (P, P + dp) if rev else (P + dp, P)
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("in", Pt=pin, Tt=AIR_HOT, Y=Y))
+    g.add_node(PressureBoundary("out", Pt=pout, Tt=AIR_HOT, Y=Y))
+    g.add_node(CombustorNode("c") if kind == "combustor" else PlenumNode("c"))
+    g.add_element(
+        OrificeElement(
+            "o", "in", "c", diameter=0.03, Cd=0.8, correlation="fixed", in_pipe=False, regime=regime
+        )
+    )
+    g.add_element(
+        CrossflowSegmentElement("s", "c", "out", length=0.1, area=3e-4, entry_K=0.5, regime=regime)
+    )
+    return g
+
+
+@pytest.mark.parametrize("rev", [False, True])
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+def test_combustor_as_entry_from_node_is_a_plenum(regime: str, rev: bool) -> None:
+    """The from end too: a CombustorNode reservoir that the reversed flow runs
+    into takes static continuity, as a plenum. On main the compressible
+    reversed flow was -6.61e-2 kg/s (the head recovered), the plenum's
+    -3.49e-2."""
+    mc = float(_solve(_from_end("combustor", regime, rev))["s.m_dot"])
+    mp = float(_solve(_from_end("plenum", regime, rev))["s.m_dot"])
+    assert (mc < 0.0) == rev
+    assert abs(mc - mp) <= 1e-9 * abs(mp), (mc, mp)
+    if rev and regime == "compressible":
+        assert mc == pytest.approx(-3.488e-2, rel=1e-3)
+
+
+def _hot_reservoir(regime: str, dp: float) -> FlowNetwork:
+    """A cold reservoir entry, reversed out of a HOT exit boundary (900 K)."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("res", Pt=P0, Tt=300.0, Y=Y))
+    g.add_node(PressureBoundary("hot", Pt=P0 + dp, Tt=900.0, Y=Y))
+    g.add_element(
+        CrossflowSegmentElement(
+            "s", "res", "hot", length=0.05, area=1e-3, entry_K=0.5, regime=regime
+        )
+    )
+    return g
+
+
+@pytest.mark.parametrize("dp", [1000.0, 4000.0])
+def test_reversed_exit_head_is_the_reservoirs_gas(dp: float) -> None:
+    """Non-isothermal: the reversed head's density is the reservoir gas's
+    (its T0) at the far end's static P. Gap +0.07 / +0.26 %; with the far
+    end's (cold) T it is +69 %."""
+    inc = float(_solve(_hot_reservoir("incompressible", dp))["s.m_dot"])
+    com = float(_solve(_hot_reservoir("compressible", dp))["s.m_dot"])
+    assert inc < 0.0 and com < 0.0
+    assert abs(inc / com - 1.0) < 5e-3, (inc, com)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#1137: the forward entry term takes the to-node's (burnt) gas density "
+    "into a burning combustor; gap -21 to -29 %",
+)
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_burning_combustor_exit_regimes_agree() -> None:
+    """One entry_K segment into a CH4-burning combustor: the regimes should
+    agree to 1 %. They do not until #1137."""
+    inc = float(_solve(_entry_into("combustor", "incompressible", False, 4e-4))["s.m_dot"])
+    com = float(_solve(_entry_into("combustor", "compressible", False, 4e-4))["s.m_dot"])
+    assert abs(inc / com - 1.0) < 1e-2, (inc, com)
