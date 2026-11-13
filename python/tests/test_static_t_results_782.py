@@ -240,6 +240,72 @@ def test_a_crossflow_station_reports_its_moving_state() -> None:
             assert diag[pl.id]["Pt_out"] == sol[f"{pl.to_node}.P"]
 
 
+def test_a_closed_end_station_reports_its_moving_state() -> None:
+    """Row 1 of an impingement gap is a station with nothing arriving (a
+    closed end): its gas moves at half the leaving segment's flow, the mean
+    its half-drop uses. It reports that moving state like every other
+    station; it reported Tt, its P and Mach 0 before (B1)."""
+    from combaero.network.components import CrossflowSegmentElement
+
+    net, sol = _stress("impingement", 1)
+    diag = sol["__element_diag__"]
+    closed = [
+        e
+        for e in net.elements.values()
+        if isinstance(e, CrossflowSegmentElement) and e.from_kappa is not None and not e.prev_seg
+    ]
+    assert closed
+    for seg in closed:
+        nid = seg.from_node
+        T, Tt, P, Pt, M = (sol[f"{nid}.{k}"] for k in ("T", "Tt", "P", "Pt", "mach"))
+        m = 0.5 * sol[f"{seg.id}.m_dot"]
+        rho = cb.density(T, P, X_AIR)
+        assert pytest.approx(abs(m) / (rho * seg.area_from) / cb.speed_of_sound(T, X_AIR)) == M
+        assert Tt > T and Pt > P and M > 0.0
+        assert cb.s(T, X_AIR, P) == pytest.approx(cb.s(Tt, X_AIR, Pt), rel=1e-9)
+        assert diag[seg.id]["Pt_in"] == Pt
+        assert diag[seg.id]["T_in"] == T
+
+
+def test_a_to_only_station_reports_its_moving_state() -> None:
+    """A segment's to-station whose next segment does not take it as a
+    from-station (B1): the station of the arriving and the next segment,
+    reported moving at their mean flow, the state the arriving segment's
+    half-drop and a duct-fed panel there read. It reported Tt, its P and 0
+    before."""
+    from combaero.network import CrossflowSegmentElement, EffusionPlateElement, HoleCd
+
+    kappa = cb.STATION_KAPPA_BLEED_BASSETT
+    g = FlowNetwork()
+    for n, p in (("in", 1.3e5), ("out", 1.2e5), ("gas", 1.0e5)):
+        g.add_node(PressureBoundary(n, Pt=p, Tt=290.0, Y=Y_AIR))
+    from combaero.network import PlenumNode
+
+    g.add_node(PlenumNode("n1"))
+    g.add_element(
+        CrossflowSegmentElement(
+            "s0", "in", "n1", length=0.03, area=3e-4, entry_K=0.0, to_kappa=kappa, next_seg="s1"
+        )
+    )
+    g.add_element(CrossflowSegmentElement("s1", "n1", "out", length=0.03, area=3e-4))
+    g.add_element(
+        EffusionPlateElement(
+            "h", "n1", "gas", hole_diameter=1e-3, wall_thickness=3e-3, pitch_x=0.06,
+            pitch_y=0.06, panel_length=0.06, panel_width=0.06, angle_deg=30.0,
+            hole_cd=HoleCd(correlation="McGreehanSchotsch"), crossflow_segments=("s0", "s1"),
+        )
+    )  # fmt: skip
+    sol = NetworkSolver(g).solve(timeout=60.0)
+    assert sol["__success__"]
+    T, Tt, P, Pt, M = (sol[f"n1.{k}"] for k in ("T", "Tt", "P", "Pt", "mach"))
+    m = 0.5 * (sol["s0.m_dot"] + sol["s1.m_dot"])
+    rho = cb.density(T, P, X_AIR)
+    assert pytest.approx(abs(m) / (rho * 3e-4) / cb.speed_of_sound(T, X_AIR), rel=1e-9) == M
+    assert M > 0.1 and Tt > T and Pt > P
+    assert cb.s(T, X_AIR, P) == pytest.approx(cb.s(Tt, X_AIR, Pt), rel=1e-9)
+    assert sol["__element_diag__"]["s0"]["Pt_out"] == Pt
+
+
 def test_an_area_combustor_reports_its_static_T() -> None:
     """A combustor with an area holds Pt = P but its gas moves through the
     area: it reports the duct closure's static T at G = m / area (#782

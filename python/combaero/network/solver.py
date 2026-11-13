@@ -54,7 +54,7 @@ def _station_ends(diag: dict[str, Any], element: Any, station_pt: dict[str, tupl
     and the total pressure ratio follow. Only the chain's own segments: a
     plate's or hole's jets discharge into the station's STATIC pressure and
     do not recover the crossflow's head, so their drop stays the drop to P."""
-    if getattr(element, "station_report", None) is None:
+    if not isinstance(element, CrossflowSegmentElement):
         return
     ends = (
         ("Pt_in", getattr(element, "from_node", None)),
@@ -4298,24 +4298,24 @@ class NetworkSolver:
         ``_report_state``; returns the stations' (Pt, Mach). Reporting only."""
         self._report_T: dict[str, float] = {}
         station_pt: dict[str, tuple[float, float]] = {}
-        for eid, el in self.network.elements.items():
-            report = getattr(el, "station_report", None)
-            prev = getattr(el, "_prev", None)
-            if report is None or prev is None:
+        for nid, node in self.network.nodes.items():
+            # The station the chain registered on the node (_CrossflowStation),
+            # a closed-end station (row 1 of an impingement gap) included.
+            station = getattr(node, "_crossflow_station", None)
+            if station is None:
                 continue
-            node = self.network.nodes[el.from_node]
+            flows = {
+                sid: float(sol.get(f"{sid}.m_dot", 0.0))
+                for sid in station.segment_ids
+                if sid is not None
+            }
             try:
-                r = report(
-                    self._get_node_state(node, x),
-                    float(sol.get(f"{prev.id}.m_dot", 0.0)),
-                    float(sol.get(f"{eid}.m_dot", 0.0)),
-                )
+                r = station.moving_state(self._get_node_state(node, x), flows)
             except (ValueError, RuntimeError):
                 r = None
             if r is not None:
-                nid, T_s, Pt_s, M_s = r
-                self._report_T[nid] = T_s
-                station_pt[nid] = (Pt_s, M_s)
+                self._report_T[nid] = r.T
+                station_pt[nid] = (r.Pt, r.mach)
         for nid, node in self.network.nodes.items():
             static_T = getattr(node, "static_T", None)
             if static_T is None or nid in self._report_T:

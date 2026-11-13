@@ -815,63 +815,12 @@ class _HoleCdChain:
     ) -> tuple[Any, dict[str, float]]:
         """C++ hole_supply_drive at a duct-fed hole's station (its static P,
         T0 and composition, the mean of the arriving and leaving segment
-        flows, as U1/Vi reads them) and P_drive's derivatives by name."""
+        flows, as U1/Vi reads them) and P_drive's derivatives by name: the
+        station's own (_CrossflowStation.supply_drive)."""
         el = self._el
-        flows = flows or {}
-        prev_id, next_id = el.crossflow_segments
-        m_a = flows.get(prev_id, 0.0) if prev_id else 0.0
-        m_b = flows.get(next_id, 0.0) if next_id else 0.0
-        r = cb.hole_supply_drive(
-            drive,
-            float(state_in.P),
-            float(state_in.Tt),
-            list(state_in.Y),
-            0.5 * (m_a + m_b),
-            float(el.crossflow_area),
-            el.regime == "incompressible",
+        return el._crossflow_station.supply_drive(
+            state_in, flows, drive, el.regime == "incompressible"
         )
-        d: dict[str, float] = {}
-        coeff_m = 0.5 * float(r.dP_dm_dot)
-        if coeff_m != 0.0:
-            for elem, _eid in el._xf_elems:
-                names = elem.unknowns()
-                for local, c in elem.flow_jac_at_node(
-                    el.from_node, list(range(len(names)))
-                ).items():
-                    d[names[local]] = d.get(names[local], 0.0) + coeff_m * c
-        for key, v in (
-            (f"{el.from_node}.P", float(r.dP_dP)),
-            (f"{el.from_node}.Tt", float(r.dP_dTt)),
-        ):
-            if v != 0.0:
-                d[key] = d.get(key, 0.0) + v
-        for k, v in enumerate(r.dP_dY):
-            if v != 0.0:
-                key = f"{el.from_node}.Y[{k}]"
-                d[key] = d.get(key, 0.0) + float(v)
-        return r, d
-
-    def _station_mean_flow(self, flows: dict[str, float] | None) -> float:
-        """The mean of a duct-fed hole's arriving and leaving segment flows
-        at its station (signed; every consumer is even in it: the closure
-        reads |m| / A and its partials carry the sign, smooth through 0)."""
-        el = self._el
-        flows = flows or {}
-        prev_id, next_id = el.crossflow_segments
-        m_a = flows.get(prev_id, 0.0) if prev_id else 0.0
-        m_b = flows.get(next_id, 0.0) if next_id else 0.0
-        return 0.5 * (m_a + m_b)
-
-    def _add_mean_flow_columns(self, d: dict[str, float], coeff: float) -> None:
-        """Add coeff d(mean station flow)/d(unknown) to ``d``: half of each
-        segment's flow at the station, through its own unknowns."""
-        if coeff == 0.0:
-            return
-        el = self._el
-        for elem, _eid in el._xf_elems:
-            names = elem.unknowns()
-            for local, c in elem.flow_jac_at_node(el.from_node, list(range(len(names)))).items():
-                d[names[local]] = d.get(names[local], 0.0) + 0.5 * coeff * c
 
     def _static_to_total_conversion(
         self,
@@ -893,9 +842,8 @@ class _HoleCdChain:
         solver's incompressible proxy included) the ratio is that kernel's
         exact sqrt(1 - X), X = q1/(Pt1 - p2), which no temperature enters:
         the forward kernel and its conversion are one model."""
-        from .components import _moving_static_T
-
         el = self._el
+        station = el._crossflow_station
         incompressible = el.regime == "incompressible"
         d: dict[str, float] = {}
 
@@ -909,7 +857,7 @@ class _HoleCdChain:
         if incompressible:
             T1 = float(state_in.Tt)
         elif self.station_holds_static:
-            st = _moving_static_T(state_in, self._station_mean_flow(flows), el.crossflow_area)
+            st = station.static_T(state_in, flows)
             T1 = st.T
             t1_terms[f"{el.from_node}.P"] = st.dP
             t1_terms[f"{el.from_node}.Tt"] = st.dT0
@@ -933,7 +881,7 @@ class _HoleCdChain:
         add(f"{el.from_node}.Tt", float(c.d_dTt1))
         for key, v in t1_terms.items():
             add(key, dT1 * v)
-        self._add_mean_flow_columns(d, dT1 * mean_flow_dT1)
+        station.add_mean_flow_columns(d, dT1 * mean_flow_dT1)
         for key, v in dpt1.items():
             add(key, float(c.d_dPt1) * v)
         add(f"{el.to_node}.P", float(c.d_dP2))
@@ -1376,27 +1324,19 @@ class _HoleCdChain:
         """
         if not (self.supply_duct or (measure and self.duct_fed)):
             return 0.0, {}
-        from .components import _moving_static_T
-
         el = self._el
-        flows = flows or {}
-        prev_id, next_id = el.crossflow_segments
-        m_a = flows.get(prev_id, 0.0) if prev_id else 0.0
-        m_b = flows.get(next_id, 0.0) if next_id else 0.0
+        station = el._crossflow_station
+        prev_id = station.segment_ids[0]
+        m_a, m_b = station.segment_flows(flows)
         # The duct's STATIC state at the station (#782): its node carries T0,
         # and the station's gas moves at the same mean flow U1 is built from.
-        st = _moving_static_T(
-            state_in,
-            0.5 * (m_a + m_b),
-            el.crossflow_area,
-            el.regime == "incompressible",
-        )
+        st = station.static_T(state_in, flows, el.regime == "incompressible")
         r = cb.crossflow_velocity_ratio(
-            m_a, m_b, state_in.P, st.T, state_in.X, state_out.P, el.crossflow_area
+            m_a, m_b, state_in.P, st.T, state_in.X, state_out.P, station.area
         )
         d_dm_T = 0.5 * r.d_dT * st.dm
         d: dict[str, float] = {}
-        for elem, eid in el._xf_elems:
+        for elem, eid in station.segments:
             coeff_m = (r.d_dm_a if eid == prev_id else r.d_dm_b) + d_dm_T
             names = elem.unknowns()
             for local, c in elem.flow_jac_at_node(el.from_node, list(range(len(names)))).items():
