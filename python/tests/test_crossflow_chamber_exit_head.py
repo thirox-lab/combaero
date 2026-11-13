@@ -257,10 +257,18 @@ def _hot_merge(regime: str, p_sup: float, p_exit: float, T_hot: float = 900.0) -
 def test_hot_merge_chamber_behind_an_entry_regimes_agree(dp: float) -> None:
     """Behind a reservoir entry the exit head is taken at the entry term's
     density, so (1 + K) q - q cancels to the entry loss K q the compressible
-    duct ends carry. At the carried gas's density instead the gap was -7.9 %
-    (main: -25.5 %); it is now ~0.02 %, below the station chain's 0.09 %."""
+    duct ends carry. Both take the carried gas's, the supply's (#1137): the
+    gap is then the one-gas chain's O(Ma^2) gap (side stream at the supply's
+    300 K), +0.059 / +0.145 % against +0.067 / +0.181 % at 2 / 8 kPa.
+
+    With only the exit head on the carried gas it was -7.9 %. With both on
+    the chamber's mixed gas (#1139) the gap drifted with the side stream's
+    T (+0.18, +0.09, +0.02, -0.11 % at 300, 600, 900, 1500 K, 8 kPa): its
+    0.02 % at 900 K was a crossing, not agreement."""
     g = _gap(lambda r: _hot_merge(r, 1.0e5 + dp, 1.0e5), "s1x")
-    assert abs(g) < 1e-3, g
+    same = _gap(lambda r: _hot_merge(r, 1.0e5 + dp, 1.0e5, T_hot=300.0), "s1x")
+    assert abs(g) < 2e-3, g
+    assert abs(g - same) < 0.25 * abs(same) + 1e-5, (g, same)
 
 
 @pytest.mark.parametrize("perturb", [0.0, 1e-3])

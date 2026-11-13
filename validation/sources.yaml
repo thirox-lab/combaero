@@ -3147,17 +3147,22 @@ documents:
     only lam l/Dh grows (a gentle fall); reported as Cd_extrapolated_l_d since 2026-11-10 (hole-Cd audit
     stage 4), not as a blanket out-of-range. Default-on since 2026-11-10 for CYLINDRICAL holes on
     IdelchikThick (HoleCd(inclination="auto"); hole-Cd audit stage 1, user-approved); off for shaped holes, which it
-    moves away from Gritsch 1998 with no shape term to offset it.'
+    moves away from Gritsch 1998 with no shape term to offset it. Eq. 1-64/1-66 (PDF p. 38, printed 30):
+    a coefficient is referred to the dynamic head gamma_op w_op^2 / 2g of the fluid in its section at that
+    fluid''s operating density; an entrance coefficient (diagram 3-1) therefore applies at the duct stream''s
+    density, which fixed the crossflow reservoir-entry density to the carried (reservoir) gas (#1137). A
+    convention check, no data scored.'
   read_for: [area change closures (#731/#733/#736), wall orifice Cd (#409), orifice in-pipe loss (#645/#654),
     'junction joining alpha (#197, #283-#285)', ideal tee split loss (#517), 'hole-inclination Cd term (diagram
-      3-2 in Eq. 4-20)']
-  issues: [197, 271, 272, 282, 283, 284, 285, 409, 410, 517, 645, 654, 731, 733, 736]
+      3-2 in Eq. 4-20)', 'reference density of an entrance coefficient (Eq. 1-64/1-66, #1137)']
+  issues: [197, 271, 272, 282, 283, 284, 285, 409, 410, 517, 645, 654, 731, 733, 736, 1137]
   records: [validation/junction/data/idelchik1966/, validation/cooling/extractions/idelchik_1966_wall_orifice.md,
     validation/cooling/hole_cd_inclination_runner.py,
     validation/area_change/extractions/idelchik_1966_area_change.md, validation/area_change/extractions/idelchik_1966_contraction.md,
     validation/area_change/data/]
   code: ['include/area_change.h: diagrams 4-1, 3-7, 3-9, 3-10, 5-2', 'include/orifice.h: DischargeCdCorrelation::Idelchik1966*',
-    'include/ideal_junction.h: Eq 7-6', 'include/orifice.h: orifice::idelchik::inclination_* (diagram 3-2)']
+    'include/ideal_junction.h: Eq 7-6', 'include/orifice.h: orifice::idelchik::inclination_* (diagram 3-2)',
+    'python/combaero/network/components.py: CrossflowSegmentElement entry term density (Eq. 1-66)']
   notes: Filed under junction/ for historical reasons but covers the whole handbook. Diagrams 4-9..4-16
     (conduit-to-conduit and in-pipe orifices) not implemented; diagram 4-11 tau left.
 - file: sources/junction/momentum cv implementation guide.pdf

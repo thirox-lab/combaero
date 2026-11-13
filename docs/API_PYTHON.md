@@ -2177,9 +2177,7 @@ conventions at the node the flow goes into.
   - `CrossflowSegmentElement`: its stations hold the duct static, and an exit
     with no to-station into a node at rest (the node's own `state_at_rest`:
     plenum, combustor, boundary) meets it at static continuity, in both
-    regimes (#1136; a burning or mixing combustor's regimes still differ
-    through the entry term's density, #1137). Into a `MomentumChamberNode`
-    the exit is
+    regimes (#1136). Into a `MomentumChamberNode` the exit is
     total-receiving instead: the duct's exit `Pt` meets the chamber's `Pt`,
     compressible and incompressible alike (the incompressible row carries the
     exit head `m^2/(2 rho A_to^2)`, its low-Mach limit).
@@ -4178,8 +4176,13 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   `entry_K` makes `from_node` a reservoir; a segment into a plenum with no
   `to_kappa` dumps its dynamic head (static continuity). A reversed flow
   through an `entry_K` end is such an exit too: the entry term applies to
-  inflow only. Reversed out of an exit at rest, the node is a reservoir: the
-  gas accelerates out of it, one dynamic head. Incompressible, the head is
+  inflow only. The entry term's density is the reservoir's gas (its T0 and
+  composition) at the duct's static P at the to-end, never the to-node's own
+  gas: into a merge chamber or a burning combustor that gas is mixed or
+  burnt, and the regimes differed by -21 to -37 % into a CH4 flame and
+  -5 % into a plenum taking a 900 K stream (#1137). Reversed out of an exit
+  at rest, the node is a reservoir: the gas accelerates out of it, one
+  dynamic head. Incompressible, the head is
   taken at the duct's static density (the gas's T0 at its far end's P), as
   the forward entry takes it at its station, so a K = 0 segment's two
   directions are mirror images (#1136; at the reservoir's own P the
