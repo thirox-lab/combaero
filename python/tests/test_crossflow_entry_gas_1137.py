@@ -24,6 +24,9 @@ import math
 import numpy as np
 import pytest
 from _fd_jacobian import fd_jacobian, scaled_error
+from test_impingement_bypass import _array as _array_bypass
+from test_impingement_bypass import _pb as _pb_bypass
+from test_impingement_bypass import _set_regime
 
 import combaero as cb
 from combaero.network import (
@@ -48,34 +51,93 @@ K_IN = 0.5
 P0 = 1.0e5
 
 
-def _merge(
-    regime: str,
-    dp: float,
-    node: str = "plenum",
-    T_hot: float = 900.0,
-    rev: bool = False,
-    fed: bool = False,
-    fuel: float = 0.0,
-) -> FlowNetwork:
-    """A 300 K supply through one entry segment (no station) into ``node``
-    ('plenum', 'chamber' or 'combustor'), which also takes a hot side stream
-    (or CH4 that burns), then a channel to the exit. ``fed``: the reservoir is
-    a PlenumNode fed through an orifice, so its state is the solver's."""
-    p_sup, p_exit = (P0, P0 + dp) if rev else (P0 + dp, P0)
-    g = FlowNetwork()
+def _reservoir(g: FlowNetwork, kind: str, p_sup: float, regime: str) -> str:
+    """The entry segment's reservoir, by ``kind``, and its id.
+
+    * 'boundary': the 300 K supply itself (fixed T0 and Y);
+    * 'fed': a PlenumNode fed through an orifice from it (one stream);
+    * 'mix': a PlenumNode mixing 300 K and 700 K streams: its T0 is relayed
+      from the two flows;
+    * 'chain': the exit plenum of an upstream crossflow chain with a 700 K
+      jet joining at its station;
+    * 'mcres': a MomentumChamberNode taking a 300 K main and a 700 K side
+      stream.
+
+    Dry air throughout: only T0 is relayed. A reservoir whose COMPOSITION is
+    relayed (a wet or burning one) still lacks the d/dY of the entry density
+    (#1146)."""
     g.add_node(PressureBoundary("sup", Pt=p_sup, Tt=300.0, Y=Y))
-    g.add_node(PressureBoundary("exit", Pt=p_exit, Tt=300.0, Y=Y))
-    res = "sup"
-    if fed:
-        res = "res"
+    if kind == "boundary":
+        return "sup"
+    D = math.sqrt(4.0 * A_DUCT / math.pi)
+    if kind != "fed":
+        g.add_node(PressureBoundary("warm", Pt=p_sup, Tt=700.0, Y=Y))
+    if kind in ("fed", "mix"):
         g.add_node(PlenumNode("res"))
         g.add_element(
             OrificeElement(
                 "o", "sup", "res", diameter=0.03, Cd=0.8, correlation="fixed", in_pipe=False
             )
         )
+        if kind == "mix":
+            g.add_element(
+                OrificeElement(
+                    "w", "warm", "res", diameter=0.012, Cd=0.7, correlation="fixed", in_pipe=False
+                )
+            )
+    elif kind == "chain":
+        g.add_node(PlenumNode("st"))
+        g.add_node(PlenumNode("res"))
+        g.add_element(
+            CrossflowSegmentElement(
+                "u0", "sup", "st", length=0.05, area=A_DUCT, entry_K=0.5, to_kappa=0.0,
+                next_seg="u1", regime=regime,
+            )
+        )  # fmt: skip
+        g.add_element(
+            CrossflowSegmentElement(
+                "u1", "st", "res", length=0.05, area=A_DUCT, from_kappa=0.0, prev_seg="u0",
+                regime=regime,
+            )
+        )  # fmt: skip
+        g.add_element(
+            OrificeElement("w", "warm", "st", diameter=0.006, Cd=0.7, correlation="fixed")
+        )
+    elif kind == "mcres":
+        g.add_node(MomentumChamberNode("res", area=4.0 * A_DUCT, regime=regime, main_inlet="c"))
+        g.add_element(
+            ChannelElement("c", "sup", "res", length=0.05, diameter=2.0 * D, regime=regime)
+        )
+        g.add_element(
+            OrificeElement("w", "warm", "res", diameter=0.012, Cd=0.7, correlation="fixed")
+        )
+    else:
+        raise ValueError(kind)
+    return "res"
+
+
+def _merge(
+    regime: str,
+    dp: float,
+    node: str = "plenum",
+    T_hot: float = 900.0,
+    rev: bool = False,
+    reservoir: str = "boundary",
+    fuel: float = 0.0,
+) -> FlowNetwork:
+    """A reservoir (``_reservoir``) through one entry segment (no station) into
+    ``node``, then a channel to the exit. ``node``: 'plenum', 'chamber' (a
+    merge chamber, the segment its main inlet) or 'combustor', each also
+    taking a hot side stream (or CH4 that burns); 'chamber1': a single-stream
+    MomentumChamberNode."""
+    p_sup, p_exit = (P0, P0 + dp) if rev else (P0 + dp, P0)
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("exit", Pt=p_exit, Tt=300.0, Y=Y))
+    res = _reservoir(g, reservoir, p_sup, regime)
     if node == "chamber":
         g.add_node(MomentumChamberNode("mc", area=A_DUCT, regime=regime, main_inlet="s1x"))
+    elif node == "chamber1":
+        g.add_node(MomentumChamberNode("mc", area=A_DUCT, regime=regime))
     elif node == "combustor":
         g.add_node(CombustorNode("mc"))
     else:
@@ -88,7 +150,7 @@ def _merge(
     if fuel > 0.0:
         g.add_node(MassFlowBoundary("fuel", m_dot=fuel, Tt=300.0, Y=CH4))
         g.add_element(LosslessConnectionElement("inj", "fuel", "mc"))
-    else:
+    elif node != "chamber1":
         g.add_node(PressureBoundary("hot", Pt=p_sup, Tt=T_hot, Y=Y))
         g.add_element(OrificeElement("h", "hot", "mc", diameter=0.008, Cd=0.6, correlation="fixed"))
     D = math.sqrt(4.0 * A_DUCT / math.pi)
@@ -111,7 +173,7 @@ def _gap(build) -> float:
 
 
 def _segment(regime: str, node: str) -> CrossflowSegmentElement:
-    g = _merge(regime, 2000.0, node, fed=True)
+    g = _merge(regime, 2000.0, node, reservoir="fed")
     for el in g.elements.values():
         el.resolve_topology(g)
     return g.elements["s1x"]
@@ -190,38 +252,58 @@ def test_hot_merge_compressible_flow_takes_the_carried_gas(node: str) -> None:
     assert m > old * 1.02
 
 
-def _fd_error(build, x: np.ndarray) -> float:
+def _segment_row_fd_error(build, x: np.ndarray) -> float:
+    """Scaled FD error (J_ij |x_j|) of the segment's own row, fresh solver."""
     s = NetworkSolver(build())
     s._build_x0()
     J = s._residuals_and_jacobian(x)[1]
     fd = fd_jacobian(s, x, floor=1e-10)
-    return float(np.max(scaled_error(J, fd, x)))
+    rows = [i for i, (label, _k) in enumerate(s._row_kinds(x)) if label.endswith("'s1x'")]
+    return float(scaled_error(J, fd, x)[rows[0]])
 
 
+# (reservoir, to-node). Each reservoir but 'fed' has its T0 relayed from the
+# flows, so the entry term's T0 partial is a column of its own: put on the
+# to-node, the FD check of the row fails (mutation-tested). Left out:
+# * a merge chamber ('chamber') behind a relayed reservoir: a pre-existing
+#   merge-face Jacobian defect puts 5e-4 to 2e-3 on this row, the same before
+#   and after #1137 (filed separately); behind the fixed-T 'fed' reservoir the
+#   row is exact;
+# * a reservoir whose COMPOSITION moves with the flows (a burning combustor
+#   feeding the segment): the entry term and the chamber exit head have no
+#   d/dY of it, 8e-4 incompressible and 3e-4 compressible (#1146);
+# * reversed incompressible into a burning combustor: the reversed exit term
+#   reads the burnt gas without its d/dY, 7e-4 (#1146).
 JAC_CASES = [
-    ("plenum", False, 0.0),
-    ("plenum", True, 0.0),
-    ("chamber", False, 0.0),
-    ("chamber", True, 0.0),
-    # Burning, forward only: reversed, the exit_in term reads the burnt gas
-    # without a composition partial (#1146).
-    ("combustor", False, 2e-4),
+    ("fed", "plenum"),
+    ("fed", "chamber"),
+    ("fed", "combustor"),
+    ("mix", "plenum"),
+    ("mix", "chamber1"),
+    ("mix", "combustor"),
+    ("chain", "plenum"),
+    ("chain", "combustor"),
+    ("mcres", "plenum"),
+    ("mcres", "chamber1"),
 ]
 
 
 @pytest.mark.parametrize("point", ["root", "perturbed", "m+", "m-"])
-@pytest.mark.parametrize(("node", "rev", "fuel"), JAC_CASES)
+@pytest.mark.parametrize("rev", [False, True])
+@pytest.mark.parametrize(("res", "node"), JAC_CASES)
 @pytest.mark.parametrize("regime", ["incompressible", "compressible"])
 @pytest.mark.filterwarnings("ignore::UserWarning")
-def test_entry_gas_jacobian(regime: str, node: str, rev: bool, fuel: float, point: str) -> None:
-    """Fresh solvers (#1142), the reservoir a solved PlenumNode so its gas's
-    partials are columns of their own: the entry term's T0 partial lands on
-    the reservoir, not on the mixed node. At the root, perturbed, and either
-    side of m = 0."""
+def test_entry_gas_jacobian(regime: str, res: str, node: str, rev: bool, point: str) -> None:
+    """Fresh solvers (#1142), the segment's row to 1e-7 scaled: at the root,
+    perturbed, and either side of m = 0, forward and reversed. Measured at
+    <= 1.8e-8."""
+    if node == "combustor" and rev and regime == "incompressible":
+        pytest.skip("the reversed exit term lacks the burnt gas's d/dY (#1146)")
+    fuel = 2e-4 if node == "combustor" else 0.0
     dp = 8000.0 if node == "combustor" else 2000.0
 
     def build() -> FlowNetwork:
-        return _merge(regime, dp, node, rev=rev, fed=True, fuel=fuel)
+        return _merge(regime, dp, node, rev=rev, reservoir=res, fuel=fuel)
 
     s = NetworkSolver(build())
     r = s.solve()
@@ -231,7 +313,44 @@ def test_entry_gas_jacobian(regime: str, node: str, rev: bool, fuel: float, poin
         x = x * (1.0 + 1e-3 * np.random.default_rng(7).uniform(-1.0, 1.0, x.size))
     elif point in ("m+", "m-"):
         x[s.unknown_names.index("s1x.m_dot")] = 1e-7 if point == "m+" else -1e-7
-    assert _fd_error(build, x) < 1e-5
+    assert _segment_row_fd_error(build, x) < 1e-7
+
+
+def _hot_bypass(regime: str, T_bypass: float, scale: float, entry_K: float) -> FlowNetwork:
+    """A pressure-fed bypass at ``T_bypass`` into a 5-row ImpingementArray whose
+    jets are 300 K: the bypass enters the first station plenum, where the jets
+    join, so that station's gas is mixed. ``scale`` scales both drives."""
+    g = FlowNetwork()
+    g.add_node(_pb_bypass("supply", 1.0e5 + 3000.0 * scale))
+    g.add_node(_pb_bypass("exit", 1.0e5))
+    g.add_node(_pb_bypass("bsrc", 1.0e5 + 2000.0 * scale, T_bypass))
+    g.add_node(PlenumNode("byp"))
+    g.add_element(ChannelElement("feed", "bsrc", "byp", length=0.1, diameter=0.02))
+    _array_bypass(n_rows=5, bypass_entry_K=entry_K).add_to(g, "supply", "exit", bypass="byp")
+    return _set_regime(g, regime)
+
+
+def _bypass_gap(T_bypass: float, scale: float, entry_K: float) -> float:
+    f = {
+        r: float(_solve(_hot_bypass(r, T_bypass, scale, entry_K))["feed.m_dot"])
+        for r in ("incompressible", "compressible")
+    }
+    return f["incompressible"] / f["compressible"] - 1.0
+
+
+@pytest.mark.parametrize("entry_K", [0.0, 0.5])
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_hot_bypass_gap_is_the_cold_bypass_gap(entry_K: float) -> None:
+    """A 420 / 700 K bypass into stations where 300 K jets join: the regime gap
+    is the cold bypass's and falls as Ma^2 (x4.4 for a quarter of the drive).
+    With the station's mixed gas in the entry term it drifted with the bypass
+    temperature (entry_K 0: -1.27 % cold, -0.53 % at 420 K, +0.25 % at
+    700 K; at a quarter of the drive -0.29 % cold and +1.27 % at 700 K)."""
+    cold = _bypass_gap(300.0, 1.0, entry_K)
+    for T in (420.0, 700.0):
+        assert abs(_bypass_gap(T, 1.0, entry_K) - cold) < 0.1 * abs(cold), T
+    ratio = _bypass_gap(700.0, 1.0, entry_K) / _bypass_gap(700.0, 0.25, entry_K)
+    assert 3.5 < ratio < 5.5, ratio
 
 
 @pytest.mark.parametrize("node", ["plenum", "chamber", "combustor"])

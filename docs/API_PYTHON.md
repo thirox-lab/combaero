@@ -4176,14 +4176,15 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   `entry_K` makes `from_node` a reservoir; a segment into a plenum with no
   `to_kappa` dumps its dynamic head (static continuity). A reversed flow
   through an `entry_K` end is such an exit too: the entry term applies to
-  inflow only. The entry term's density is the reservoir's gas (its T0 and
-  composition) at the duct's static P at the to-end, never the to-node's own
-  gas: into a merge chamber or a burning combustor that gas is mixed or
-  burnt, and the regimes differed by -21 to -37 % into a CH4 flame and
-  -5 % into a plenum taking a 900 K stream (#1137). Reversed out of an exit
-  at rest, the node is a reservoir: the gas accelerates out of it, one
-  dynamic head. Incompressible, the head is
-  taken at the duct's static density (the gas's T0 at its far end's P), as
+  inflow only. The entry term's density is the gas the duct carries, the
+  reservoir's (its T0 and composition), at the duct's static P at the
+  to-end, never the to-node's own gas, which a merge chamber, a mixing
+  station or a burning combustor holds mixed or burnt (#1137; the numbers
+  are in its changelog entry and `test_crossflow_entry_gas_1137.py`). The
+  term has no partial in the reservoir's composition yet (#1146). Reversed
+  out of an exit at rest, the node is a reservoir: the gas accelerates out
+  of it, one dynamic head. Incompressible, the head is taken at the duct's
+  static density (the gas's T0 at its far end's P), as
   the forward entry takes it at its station, so a K = 0 segment's two
   directions are mirror images (#1136; at the reservoir's own P the
   reversed regime gap was +3.8 % at exit Mach 0.31, now +0.62 %).

@@ -12608,7 +12608,9 @@ class CrossflowSegmentElement(ChannelElement):
             # chamber's or a combustor's mixed or burnt one, which charged the
             # entry 23 % low into a 388 K merge and the flow 19 % low into a
             # flame. Reversed the term is 0 with zero partials (C1 at m = 0),
-            # so the gas never switches.
+            # so the gas never switches. channel_entry_drop has no partial in
+            # the composition, so a reservoir whose Y moves with the flows (a
+            # burning combustor feeding the segment) lacks d/dY here (#1146).
             m_b = flows.get(self._next.id, m) if to_station else m
             gas = _entry_gas(state_in, state_out)
             st = _moving_static_T(gas, 0.5 * (m + m_b), self.area_to, incompressible)
