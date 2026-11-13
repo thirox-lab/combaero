@@ -2210,8 +2210,15 @@ closure: the jet's head is its own, not the receiver's. Since 0.12.0
   the station static and the mean segment flow, not from the station
   static. McGreehan-Schotsch's static-referenced Eq. 17 Cd is converted onto
   that drive exactly. See `HoleCd.supply_drive` below.
-- **Not yet.** `ImpingementPlateElement` still takes its direction from
-  `Pt - Pt` into a `MomentumChamberNode`; it follows later.
+- **`ImpingementPlateElement` already drives Pt to static.** Its node is a
+  station of the crossflow chain, a `PlenumNode` holding the channel's static
+  pressure, so its jets run from the supply `Pt` to the channel static
+  (Florschuetz CR-3630 Eq. 4.1, plenum `P0` to channel static); the band
+  above does not exist for it. A `MomentumChamberNode` as a crossflow station
+  (a plate's node, a segment's from-station, a to-station with a next
+  segment) is refused at validate: a stream is modelled lumped or
+  distributed, not both. A chain's exit segment into a chamber is a terminal
+  node and stays allowed.
 
 **Known gaps:**
 - How much of the supply head a hole recovers depends on its lean relative to
