@@ -54,7 +54,10 @@ def _chain(kind: str, regime: str, p_sup: float, p_exit: float) -> FlowNetwork:
     g.add_node(_pb("exit", p_exit))
     g.add_node(_pb("sink", P0))
     g.add_node(PlenumNode("s1"))
-    g.add_node(CombustorNode("nd") if kind == "combustor" else PlenumNode("nd"))
+    # "boundary": the exit segment runs straight into the exit boundary.
+    out = "exit" if kind == "boundary" else "nd"
+    if kind != "boundary":
+        g.add_node(CombustorNode("nd") if kind == "combustor" else PlenumNode("nd"))
     g.add_element(
         CrossflowSegmentElement(
             "s0x",
@@ -72,7 +75,7 @@ def _chain(kind: str, regime: str, p_sup: float, p_exit: float) -> FlowNetwork:
         CrossflowSegmentElement(
             "s1x",
             "s1",
-            "nd",
+            out,
             length=0.05,
             area=A_DUCT,
             from_kappa=BLEED,
@@ -81,8 +84,9 @@ def _chain(kind: str, regime: str, p_sup: float, p_exit: float) -> FlowNetwork:
         )
     )
     g.add_element(OrificeElement("bl", "s1", "sink", diameter=0.006, Cd=0.6, correlation="fixed"))
-    D = math.sqrt(4.0 * A_DUCT / math.pi)
-    g.add_element(ChannelElement("tail", "nd", "exit", length=0.05, diameter=D, regime=regime))
+    if kind != "boundary":
+        D = math.sqrt(4.0 * A_DUCT / math.pi)
+        g.add_element(ChannelElement("tail", "nd", "exit", length=0.05, diameter=D, regime=regime))
     return g
 
 
@@ -216,3 +220,20 @@ def test_combustor_exit_second_law(dp: float, reversed_: bool, regime: str) -> N
     ps, pe = _ends(dp, reversed_)
     r = _solve(_chain("combustor", regime, ps, pe))
     assert not r["__second_law_failures__"], r["__second_law__"]
+
+
+@pytest.mark.parametrize("kind", ["plenum", "boundary"])
+def test_reversed_exit_at_rest_gap_is_order_mach_squared(kind: str) -> None:
+    """Reversed out of an exit at rest, the incompressible head takes the
+    duct's static density (its far end's P), not the reservoir's stagnation
+    one. At the reservoir's the gap was +0.96 / +3.76 % (plenum) and +1.04 /
+    +4.08 % (boundary) at 2 / 8 kPa (exit Mach 0.15 / 0.31); it is now
+    +0.17 / +0.62 % and +0.15 / +0.54 %, the moving chamber exit's size."""
+    gaps = []
+    for dp in (2000.0, 8000.0):
+        inc = float(_solve(_chain(kind, "incompressible", P0, P0 + dp))["s1x.m_dot"])
+        com = float(_solve(_chain(kind, "compressible", P0, P0 + dp))["s1x.m_dot"])
+        assert inc < 0.0 and com < 0.0
+        gaps.append((inc - com) / com)
+    assert 0.0 < gaps[0] < 2.5e-3, gaps
+    assert 0.0 < gaps[1] < 8e-3, gaps

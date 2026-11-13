@@ -232,20 +232,23 @@ def test_the_entry_loss_applies_to_inflow_only(regime: str) -> None:
     # Reversed, the plenum boundary at rest is the reservoir: its gas pays the
     # same acceleration (#802). Before, the reversed flow paid only friction
     # and ran ~5x the forward one. With K = 0 the two directions are mirror
-    # images; incompressible takes rho at the other node's P (1 %).
-    assert abs(rev[0]) == pytest.approx(fwd[0], rel=1e-2)
+    # images, in both regimes: the incompressible head takes rho at the
+    # duct's far-end static P either way (#1136; at the reservoir's own P it
+    # was 0.49 % off the mirror).
+    assert abs(rev[0]) == pytest.approx(fwd[0], rel=1e-12)
 
 
 def test_reversed_out_of_an_exit_the_regimes_agree() -> None:
     """Low Mach, the compressible duct ends and the incompressible momentum
     terms charge the same head where the gas leaves an exit node at rest. Before
     the incompressible reversed flow paid friction only, ~5x the compressible
-    one; now they agree to 0.5 % (forward: 0.04 %), the difference being
-    where each takes the density."""
+    one. They agreed to 0.53 % with the head at the reservoir's (stagnation)
+    density, and agree to 0.04 % with it at the duct's far-end static one
+    (#1136), the forward entry's 0.04 %."""
     inc = _entry_segment(0.5, 1.0e5, 1.01e5, "incompressible")
     com = _entry_segment(0.5, 1.0e5, 1.01e5, "compressible")
     assert inc < 0.0
-    assert com == pytest.approx(inc, rel=1e-2)
+    assert com == pytest.approx(inc, rel=1e-3)
 
 
 def test_the_reversed_exit_inflow_jacobian_matches_finite_differences() -> None:

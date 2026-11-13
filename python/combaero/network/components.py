@@ -2781,16 +2781,20 @@ class _ReservoirExitInflow:
     """Incompressible acceleration out of a segment's exit node at rest when
     the flow reverses: ``channel_entry_drop`` evaluated at -m (K_in = 0), as
     a momentum term of this segment's signed m. The static P at the duct end
-    is the node's P less the head, so the term is a negative drop."""
+    is the node's P less the head, so the term is a negative drop.
+
+    The kernel's density is taken at ``p_node``'s static P (the duct's far
+    end, see ``_momentum_terms``), so its P partial is that node's
+    (``extra``); its T0 partial is the term's node's, the gas's."""
 
     __slots__ = ("dP", "d_dm_a", "d_dm_b", "d_dP", "d_dT", "d_dY", "extra")
 
-    def __init__(self, r: Any) -> None:
-        self.extra: dict[str, float] = {}
+    def __init__(self, r: Any, p_node: str) -> None:
+        self.extra: dict[str, float] = {f"{p_node}.P": -float(r.d_dP)}
         self.dP = -float(r.dP)
         self.d_dm_a = float(r.d_dm_a)  # d(-q(-m))/dm = q'(-m)
         self.d_dm_b = 0.0
-        self.d_dP = -float(r.d_dP)
+        self.d_dP = 0.0
         self.d_dT = -float(r.d_dT)
         self.d_dY: dict[int, float] = {}
 
@@ -12279,7 +12283,9 @@ class CrossflowSegmentElement(ChannelElement):
       couples Pt to the plenum's Pt (= P, at rest) and recovers the head
       (see "Drive conventions" in docs/API_PYTHON.md). Reversed, that node
       at rest is a reservoir: the gas accelerates out of it (one dynamic head,
-      no loss; compressible, the duct end takes its Pt).
+      no loss; compressible, the duct end takes its Pt; incompressible, the
+      head is at the duct's static density, its far end's P, the mirror of
+      the forward entry).
     * an exit into a MomentumChamberNode (no to-station) carries the head:
       the duct's exit TOTAL meets the chamber's Pt, in both regimes, as a
       ChannelElement into a chamber. Incompressible, the row adds the exit
@@ -12608,17 +12614,31 @@ class CrossflowSegmentElement(ChannelElement):
             incompressible and m < 0.0 and (self.from_kappa is not None or self.entry_K is not None)
         ):
             # Reversed out of an exit node at rest (a plenum, a combustor, a
-            # boundary: ``_terminal_at_rest``): the
-            # node is a reservoir and the gas accelerates out of it, one
-            # dynamic head at the duct's static density, no entry loss. The
-            # compressible duct ends take that node's own Pt (``_duct_ends``);
-            # without this term the incompressible reversed flow ran ~5x the
-            # compressible one.
+            # boundary: ``_terminal_at_rest``): the node is a reservoir and
+            # the gas accelerates out of it, one dynamic head, no entry loss.
+            # The compressible duct ends take that node's own Pt
+            # (``_duct_ends``); without this term the incompressible reversed
+            # flow ran ~5x the compressible one.
+            #
+            # The head's density is the DUCT's static one, not the
+            # reservoir's: the gas's T0 at the static P of the duct's far end
+            # (the from-node), the mirror of the forward entry, which takes
+            # its station's static P. At the reservoir's own P (= its Pt) the
+            # density was a stagnation one, O(dP / (gamma P)) too dense: the
+            # reversed regime gap was +3.8 % at 8 kPa (exit Mach 0.31), 5x
+            # the moving chamber exit's +0.73 %, and is +0.62 % (#1136).
             if self._terminal_at_rest(getattr(self, "_downstream_node", None)):
                 st = _moving_static_T(state_out, m, self.area_to, True)
-                r = cb.channel_entry_drop(-m, state_out.P, st.T, state_out.X, self.area_to, 0.0)
+                r = cb.channel_entry_drop(-m, state_in.P, st.T, state_out.X, self.area_to, 0.0)
                 terms.append(
-                    (_ReservoirExitInflow(r), self.to_node, "a", self.to_node, None, "exit_in")
+                    (
+                        _ReservoirExitInflow(r, self.from_node),
+                        self.to_node,
+                        "a",
+                        self.to_node,
+                        None,
+                        "exit_in",
+                    )
                 )
         if (
             incompressible

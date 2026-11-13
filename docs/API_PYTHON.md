@@ -4174,7 +4174,12 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   `entry_K` makes `from_node` a reservoir; a segment into a plenum with no
   `to_kappa` dumps its dynamic head (static continuity). A reversed flow
   through an `entry_K` end is such an exit too: the entry term applies to
-  inflow only.
+  inflow only. Reversed out of an exit at rest, the node is a reservoir: the
+  gas accelerates out of it, one dynamic head. Incompressible, the head is
+  taken at the duct's static density (the gas's T0 at its far end's P), as
+  the forward entry takes it at its station, so a K = 0 segment's two
+  directions are mirror images (#1136; at the reservoir's own P the
+  reversed regime gap was +3.8 % at exit Mach 0.31, now +0.62 %).
 - **Compressible: the Fanno duct runs between the duct's own end states
   (#802).** A station node holds a STATIC pressure, so it is not the duct's
   stagnation pressure. The duct's inlet static is `P_from` less half the
