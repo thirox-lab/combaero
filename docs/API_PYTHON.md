@@ -2162,6 +2162,11 @@ conventions at the node the flow goes into.
     total-receiving instead: the duct's exit `Pt` meets the chamber's `Pt`,
     compressible and incompressible alike (the incompressible row carries the
     exit head `m^2/(2 rho A_to^2)`, its low-Mach limit).
+    An exit into a `CombustorNode` currently follows the moving-chamber rule
+    when compressible (exit `Pt` meets the combustor's `Pt = P`, the head
+    recovered) and the at-rest rule when incompressible (static
+    continuity; reversed, without the reservoir acceleration a plenum
+    exit carries): a known inconsistency, tracked separately.
 - **Total-receiving:** the element matches the downstream `Pt`, so the
   receiving node decides what happens to the head.
   - `ChannelElement`: incompressible and Fanno, ribbed and pin-fin;

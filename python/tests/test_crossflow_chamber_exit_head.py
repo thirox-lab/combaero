@@ -229,3 +229,98 @@ def test_only_a_chamber_exit_carries_the_head(kind: str, m: float) -> None:
         kinds = [t[5] for t in seg._momentum_terms(st, st, {})]
         expected = kind == "chamber" and regime == "incompressible"
         assert ("exit_head" in kinds) == expected, kinds
+
+
+def _hot_merge(regime: str, p_sup: float, p_exit: float, T_hot: float = 900.0) -> FlowNetwork:
+    """One entry segment (no station) into a merge chamber that also takes a
+    hot side stream: the chamber's gas (388 K mixed) is not the segment's."""
+    g = FlowNetwork()
+    g.add_node(_pb("sup", p_sup))
+    g.add_node(PressureBoundary("hot", Pt=p_sup, Tt=T_hot, Y=Y))
+    g.add_node(_pb("exit", p_exit))
+    g.add_node(MomentumChamberNode("mc", area=A_DUCT, regime=regime, main_inlet="s1x"))
+    D_duct = math.sqrt(4.0 * A_DUCT / math.pi)
+    g.add_element(
+        CrossflowSegmentElement(
+            "s1x", "sup", "mc", length=0.05, area=A_DUCT, entry_K=0.5, regime=regime
+        )
+    )
+    g.add_element(OrificeElement("h", "hot", "mc", diameter=0.008, Cd=0.6, correlation="fixed"))
+    g.add_element(
+        ChannelElement("tail", "mc", "exit", length=0.05, diameter=1.3 * D_duct, regime=regime)
+    )
+    return g
+
+
+@pytest.mark.parametrize("dp", [500.0, 2000.0, 8000.0])
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_hot_merge_chamber_behind_an_entry_regimes_agree(dp: float) -> None:
+    """Behind a reservoir entry the exit head is taken at the entry term's
+    density, so (1 + K) q - q cancels to the entry loss K q the compressible
+    duct ends carry. At the carried gas's density instead the gap was -7.9 %
+    (main: -25.5 %); it is now ~0.02 %, below the station chain's 0.09 %."""
+    g = _gap(lambda r: _hot_merge(r, 1.0e5 + dp, 1.0e5), "s1x")
+    assert abs(g) < 1e-3, g
+
+
+@pytest.mark.parametrize("perturb", [0.0, 1e-3])
+@pytest.mark.parametrize(("p_sup", "p_exit"), [(1.02e5, 1.0e5), (1.0e5, 1.02e5)])
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_hot_merge_chamber_exit_jacobian(p_sup: float, p_exit: float, perturb: float) -> None:
+    _check_jacobian(_hot_merge("incompressible", p_sup, p_exit), perturb)
+
+
+@pytest.mark.parametrize("kind", ["plenum", "boundary", "chamber", "station"])
+def test_seed_charges_the_head_only_where_the_exit_loses_it(kind: str) -> None:
+    """The start guess charges one exit head wherever the exit loses it, not
+    into a MomentumChamberNode, which takes it with the exit total."""
+    g = _bleed_chain("incompressible", 1.02e5, 1.0e5)
+    if kind != "chamber":
+        g = FlowNetwork()
+        g.add_node(_pb("sup", 1.02e5))
+        g.add_node(PlenumNode("s1"))
+        g.add_node(_pb("out", 1.0e5) if kind == "boundary" else PlenumNode("out"))
+        g.add_element(
+            CrossflowSegmentElement(
+                "s1x",
+                "s1",
+                "out",
+                length=0.05,
+                area=A_DUCT,
+                from_kappa=BLEED,
+                to_kappa=BLEED if kind == "station" else None,
+                next_seg="s2x" if kind == "station" else None,
+            )
+        )
+        if kind == "station":
+            g.add_element(
+                CrossflowSegmentElement(
+                    "s2x", "out", "sup", length=0.05, area=A_DUCT, from_kappa=BLEED, prev_seg="s1x"
+                )
+            )
+    for el in g.elements.values():
+        el.resolve_topology(g)
+    seg = g.elements["s1x"]
+    assert seg._seed_exit_head() == (kind != "chamber")
+
+
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_the_seed_change_moves_no_root(regime: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Seed only: the old start guess (head always charged) and the new one
+    reach the same root to solver tolerance."""
+    builds = [
+        lambda: _bleed_chain(regime, 1.02e5, 1.0e5),
+        lambda: _bleed_chain(regime, 1.0e5, 1.02e5),
+        lambda: _hot_merge(regime, 1.02e5, 1.0e5),
+    ]
+    new = CrossflowSegmentElement._seed_exit_head
+    for build in builds:
+        xs = []
+        for seed in (lambda self: True, new):
+            monkeypatch.setattr(CrossflowSegmentElement, "_seed_exit_head", seed)
+            r = NetworkSolver(build()).solve()
+            assert r["__success__"], r.get("__message__")
+            xs.append(np.array(r["__x_solution__"], dtype=float))
+        rel = np.abs(xs[0] - xs[1]) / np.maximum(np.abs(xs[0]), 1e-12)
+        assert float(np.max(rel)) < 1e-5

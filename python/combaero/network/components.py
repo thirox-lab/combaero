@@ -12026,6 +12026,13 @@ class CrossflowSegmentElement(ChannelElement):
       head m^2/(2 rho A_to^2) to the end statics (``_chamber_exit_head``),
       the Ma -> 0 limit of the compressible terminal (``_duct_ends``).
       Reversed, the chamber is a moving reservoir at its Pt.
+    * an exit into a CombustorNode (no to-station) is a KNOWN
+      INCONSISTENCY, tracked separately: the combustor holds its gas at
+      rest (Pt = P), but the compressible terminal treats it as moving
+      (exit total = its Pt, the head recovered), while the incompressible
+      row keeps the at-rest static continuity forward and, reversed,
+      leaves out the reservoir acceleration the plenum exit carries. The
+      regimes differ by about -21 % forward and +120 to +180 % reversed.
 
     Station nodes must be PlenumNodes (Pt = P): the node pressure is the
     channel's static pressure, which is what a side stream sees.
@@ -12363,13 +12370,19 @@ class CrossflowSegmentElement(ChannelElement):
         momentum term (kind 'exit_head').
 
         C++ ``channel_entry_drop`` at K_in = 0 and |m|: q = m^2 / (2 rho
-        A_to^2), even in m, at the exit section. rho is the incompressible
-        one (T = T0) of the gas the segment carries -- the from-node's for
-        m >= 0, the chamber's reversed, as ``_duct_ends`` reads -- at the
-        chamber's static P, the duct-end static to O(q / P). Its partials:
-        the chamber's P, the carried gas's T0.
+        A_to^2), even in m, at the exit section, at the chamber's static P
+        (the duct-end static to O(q / P)). rho is the incompressible one
+        (T = T0) of the gas the segment carries -- the from-node's for
+        m >= 0, the chamber's reversed, as ``_duct_ends`` reads -- except
+        behind a reservoir entry (``entry_K``): there it is the entry term's,
+        the to-node's (the chamber's) gas, so the two heads cancel to the
+        entry loss K q at one density, as the compressible duct ends carry
+        it (Pt_out + K/(1+K) of the entry drop). A hot merge chamber put
+        (1 + K) q_e - q_h 7.9 % off the compressible flow otherwise. Its
+        partials: the chamber's P, that gas's T0.
         """
-        gas_id, gas = (self.from_node, state_in) if m >= 0.0 else (self.to_node, state_out)
+        carried = m >= 0.0 and self.entry_K is None
+        gas_id, gas = (self.from_node, state_in) if carried else (self.to_node, state_out)
         r = cb.channel_entry_drop(abs(m), state_out.P, float(gas.Tt), gas.X, self.area_to, 0.0)
         return (_ChamberExitHead(r, m, gas_id), self.to_node, "a", self.to_node, None, "exit_head")
 
@@ -12377,16 +12390,25 @@ class CrossflowSegmentElement(ChannelElement):
         """Never on top of the segment's own convention.
 
         Station nodes hold the channel's STATIC pressure, so an exit with no
-        to-station already discharges at static continuity: the dynamic head
-        is lost by construction. ChannelElement's exit head at a pressure
+        to-station into a node at rest (a plenum, a boundary) already
+        discharges at static continuity: the dynamic head is lost by
+        construction. Into a MomentumChamberNode the exit total meets the
+        chamber's Pt and the head is carried, not lost (``_duct_ends``,
+        ``_chamber_exit_head``). ChannelElement's exit head at a pressure
         boundary would charge it a second time (#588).
         """
         return False
 
     def _seed_exit_head(self) -> bool:
-        """Always: static continuity at the stations loses the head by
-        construction (``_exit_head_lost``), so the start guess charges it."""
-        return True
+        """Whether the start guess charges one exit head: wherever the exit
+        loses it by static continuity (``_exit_head_lost``). An exit with no
+        to-station into a MomentumChamberNode carries its head into the
+        chamber, so it is not charged. Before topology is resolved the head
+        is charged, as it always was."""
+        if not hasattr(self, "_downstream_node"):
+            return True
+        to_station = self.to_kappa is not None and getattr(self, "_next", None) is not None
+        return to_station or not isinstance(self._downstream_node, MomentumChamberNode)
 
     def _seed_flow_applies(self) -> bool:
         """No: the stations hold static pressures, not the Pt the plain
@@ -12673,7 +12695,9 @@ class ImpingementCrossflowElement(CrossflowSegmentElement):
 
     The neighbours are found from the chain itself: the crossflow segment
     arriving at ``from_node`` (none at row 1: a closed end) and the one
-    leaving ``to_node`` (none into the exit, where the dynamic head is lost).
+    leaving ``to_node`` (none into the exit: a node at rest loses the dynamic
+    head, a MomentumChamberNode takes it with the exit total, see
+    ``CrossflowSegmentElement``).
     Centred, each node holds its row's mid-merge static pressure: putting the
     whole merge downstream instead over-fed the downstream rows (Gc/Gj at row
     10 of Florschuetz's strongest-crossflow geometry 13% below Eq. 8, against
