@@ -2647,6 +2647,25 @@ class _ReservoirExitInflow:
         self.d_dY: dict[int, float] = {}
 
 
+class _ChamberExitHead:
+    """Incompressible exit head of a segment into a MomentumChamberNode:
+    ``channel_entry_drop`` evaluated at |m| (K_in = 0), as a negative drop of
+    this segment's signed m. The duct-end static is the chamber's Pt less the
+    head, in both directions. Its T0 partial is the carried gas's node's
+    (``extra``), which need not be the chamber."""
+
+    __slots__ = ("dP", "d_dm_a", "d_dm_b", "d_dP", "d_dT", "d_dY", "extra")
+
+    def __init__(self, r: Any, m: float, gas_id: str) -> None:
+        self.dP = -float(r.dP)
+        self.d_dm_a = -float(r.d_dm_a) * (1.0 if m >= 0.0 else -1.0)
+        self.d_dm_b = 0.0
+        self.d_dP = -float(r.d_dP)
+        self.d_dT = 0.0
+        self.d_dY: dict[int, float] = {}
+        self.extra: dict[str, float] = {f"{gas_id}.Tt": -float(r.d_dT)}
+
+
 #: Flow regime every element defaults to when none is given. It is the GUI's
 #: default too (gui/backend/schemas.py SolverSettings.global_regime and the
 #: frontend store), and test_regime_default_sync.py keeps the three equal: a
@@ -12001,6 +12020,12 @@ class CrossflowSegmentElement(ChannelElement):
       (see "Drive conventions" in docs/API_PYTHON.md). Reversed, that node
       at rest is a reservoir: the gas accelerates out of it (one dynamic head,
       no loss; compressible, the duct end takes its Pt).
+    * an exit into a MomentumChamberNode (no to-station) carries the head:
+      the duct's exit TOTAL meets the chamber's Pt, in both regimes, as a
+      ChannelElement into a chamber. Incompressible, the row adds the exit
+      head m^2/(2 rho A_to^2) to the end statics (``_chamber_exit_head``),
+      the Ma -> 0 limit of the compressible terminal (``_duct_ends``).
+      Reversed, the chamber is a moving reservoir at its Pt.
 
     Station nodes must be PlenumNodes (Pt = P): the node pressure is the
     channel's static pressure, which is what a side stream sees.
@@ -12305,6 +12330,21 @@ class CrossflowSegmentElement(ChannelElement):
                 terms.append(
                     (_ReservoirExitInflow(r), self.to_node, "a", self.to_node, None, "exit_in")
                 )
+        if (
+            incompressible
+            and not to_station
+            and (self.from_kappa is not None or self.entry_K is not None)
+            and isinstance(getattr(self, "_downstream_node", None), MomentumChamberNode)
+        ):
+            # An exit into a moving chamber: the duct's exit TOTAL meets the
+            # chamber's Pt, the Ma -> 0 limit of ``_duct_ends``' terminal
+            # (#802). The row's statics then carry the duct's exit head,
+            # q = m^2 / (2 rho A_to^2), in both directions: forward the duct
+            # discharges its head into the chamber, reversed the chamber's
+            # gas leaves at its Pt (a moving reservoir). Without it the exit
+            # static met the chamber's Pt, as into a plenum, and the regimes
+            # differed O(q), not O(Ma^2).
+            terms.append(self._chamber_exit_head(state_in, state_out, m))
         if incompressible and self.from_kappa is not None and self.area_from != self.area_to:
             # Bernoulli between the two end statics (#812): a station's static
             # at the from-end, the to-end's static (station or exit). A
@@ -12315,6 +12355,23 @@ class CrossflowSegmentElement(ChannelElement):
             r = cb.segment_area_change_drop(m, up.P, st.T, up.X, self.area_from, self.area_to)
             terms.append((_StaticChainedDrop(r, st, False), up_id, "a", up_id, None, "area"))
         return terms
+
+    def _chamber_exit_head(
+        self, state_in: NetworkMixtureState, state_out: NetworkMixtureState, m: float
+    ) -> tuple["_ChamberExitHead", str, str, str, None, str]:
+        """The incompressible exit head into a MomentumChamberNode, as a
+        momentum term (kind 'exit_head').
+
+        C++ ``channel_entry_drop`` at K_in = 0 and |m|: q = m^2 / (2 rho
+        A_to^2), even in m, at the exit section. rho is the incompressible
+        one (T = T0) of the gas the segment carries -- the from-node's for
+        m >= 0, the chamber's reversed, as ``_duct_ends`` reads -- at the
+        chamber's static P, the duct-end static to O(q / P). Its partials:
+        the chamber's P, the carried gas's T0.
+        """
+        gas_id, gas = (self.from_node, state_in) if m >= 0.0 else (self.to_node, state_out)
+        r = cb.channel_entry_drop(abs(m), state_out.P, float(gas.Tt), gas.X, self.area_to, 0.0)
+        return (_ChamberExitHead(r, m, gas_id), self.to_node, "a", self.to_node, None, "exit_head")
 
     def _exit_head_lost(self, m_dot: float) -> bool:
         """Never on top of the segment's own convention.
