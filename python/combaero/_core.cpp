@@ -6854,7 +6854,14 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       .def_readonly("d_dTt1", &HoleDriveCdRatio::d_dTt1)
       .def_readonly("d_dP2", &HoleDriveCdRatio::d_dP2)
       .def_readonly("d_df", &HoleDriveCdRatio::d_df)
-      .def_readonly("d_dY", &HoleDriveCdRatio::d_dY);
+      .def_readonly("d_dY", &HoleDriveCdRatio::d_dY)
+      .def_readonly("Pf", &HoleDriveCdRatio::Pf)
+      .def_readonly("Tf", &HoleDriveCdRatio::Tf)
+      .def_readonly("dTf_dP1", &HoleDriveCdRatio::dTf_dP1)
+      .def_readonly("dTf_dT1", &HoleDriveCdRatio::dTf_dT1)
+      .def_readonly("dTf_dPt1", &HoleDriveCdRatio::dTf_dPt1)
+      .def_readonly("dTf_dTt1", &HoleDriveCdRatio::dTf_dTt1)
+      .def_readonly("dTf_df", &HoleDriveCdRatio::dTf_df);
   m.def("hole_supply_recovery_cd_ratio", &hole_supply_recovery_cd_ratio, py::arg("P1"),
         py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"), py::arg("f"),
         py::arg("incompressible") = false,
@@ -6865,7 +6872,9 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "network's compressible nozzle kernel; Tf the isentropic T at Pf on the\n"
         "isentrope through (P1, T1) and (Pt1, Tt1). f = 0: the static-referenced\n"
         "conversion; f = 1: ratio 1. incompressible: sqrt((Pf - P2)/(Pt1 - P2)).\n"
-        "0 where Pf <= P2. Analytic partials by P1, T1, Pt1, Tt1, P2, f and Y.");
+        "0 where Pf <= P2. Analytic partials by P1, T1, Pt1, Tt1, P2, f and Y.\n"
+        "Also returns the plenum-fed-equivalent state (Pf, Tf) and Tf's partials\n"
+        "by P1, T1, Pt1, Tt1 and f (set even where the ratio is 0).");
   m.def("hole_static_to_total_cd_ratio", &hole_static_to_total_cd_ratio, py::arg("P1"),
         py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"),
         py::arg("incompressible") = false,

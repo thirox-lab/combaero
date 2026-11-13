@@ -26,6 +26,10 @@ near the 1 Pa flow-drive floor (``FANNO_FLOW_DRIVE_FLOOR``) curve on the Pa
 scale between unknowns 70 Pa apart: a crossflow segment's static-pressure
 column reads 5e-2 at 0.07 Pa and 1e-5 at 0.007 Pa, falling as the step
 squared (test_liner_film_695; its tests carry their own tolerance).
+The cap uses the gaps between PRESSURE UNKNOWNS, which are not the true drive
+of a duct-fed hole with a recovered fraction f > 0 (it runs from P1 + f q1,
+a derived pressure): a flag within ~1 Pa of that hole's zero flow is a step
+artefact; refining the step converges as h^2 (to 1e-6 on the C2 rows).
 
 The other columns keep a plain central difference at ``max(rel |x_j|,
 floor)``. Callers pass ``rel`` per column where the residual's round-off

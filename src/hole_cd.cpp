@@ -186,24 +186,6 @@ HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1,
   const double dPf_dP1 = 1.0 - f;
   const double dPf_dPt1 = f;
   const double dPf_df = q1;
-  if (!(Pf > P2) || !(Pt1 > P2)) {
-    return out;
-  }
-  if (incompressible) {
-    // r = sqrt(a / b), a = Pf - P2, b = Pt1 - P2: one density on both sides,
-    // so the ratio of the two ideal flows is the ratio of their pressure
-    // drops' square roots.
-    const double a = Pf - P2;
-    const double b = Pt1 - P2;
-    const double r = std::sqrt(a / b);
-    const double dr_da = 0.5 * r / a;
-    out.ratio = r;
-    out.d_dP1 = dr_da * dPf_dP1;
-    out.d_dPt1 = dr_da * dPf_dPt1 + (-0.5 * r / b);
-    out.d_dP2 = 0.5 * r * (1.0 / b - 1.0 / a);
-    out.d_df = dr_da * dPf_df;
-    return out;
-  }
   // Tf = T1 exp(s M), M = ln(Tt1/T1), s = ln(Pf/P1)/L = log1p(f x)/log1p(x),
   // x = q1/P1: the isentrope through the static and stagnation states (see
   // the header). log1p keeps s exact as q1 -> 0; its x-derivative
@@ -237,6 +219,31 @@ HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1,
   const double dTf_dP1 = Tf * M * ds_dP1;
   const double dTf_dPt1 = Tf * M * ds_dPt1;
   const double dTf_df = Tf * M * ds_df;
+  out.Pf = Pf;
+  out.Tf = Tf;
+  out.dTf_dP1 = dTf_dP1;
+  out.dTf_dT1 = dTf_dT1;
+  out.dTf_dPt1 = dTf_dPt1;
+  out.dTf_dTt1 = dTf_dTt1;
+  out.dTf_df = dTf_df;
+  if (!(Pf > P2) || !(Pt1 > P2)) {
+    return out;
+  }
+  if (incompressible) {
+    // r = sqrt(a / b), a = Pf - P2, b = Pt1 - P2: one density on both sides,
+    // so the ratio of the two ideal flows is the ratio of their pressure
+    // drops' square roots.
+    const double a = Pf - P2;
+    const double b = Pt1 - P2;
+    const double r = std::sqrt(a / b);
+    const double dr_da = 0.5 * r / a;
+    out.ratio = r;
+    out.d_dP1 = dr_da * dPf_dP1;
+    out.d_dPt1 = dr_da * dPf_dPt1 + (-0.5 * r / b);
+    out.d_dP2 = 0.5 * r * (1.0 / b - 1.0 / a);
+    out.d_df = dr_da * dPf_df;
+    return out;
+  }
   // Each side's ideal flow from rest at its own (pressure, temperature):
   // beta 0, so the kernel expands from (P_total_up, Tt_up) as given.
   const solver::OrificeResult sr =

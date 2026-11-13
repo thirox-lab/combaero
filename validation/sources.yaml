@@ -6989,3 +6989,25 @@ wanted:
   question: 'Plain single-skin effusion against lateral trenches and 90 deg hole turns, total cooling
     effectiveness in a reacting flow on the same rig: a second reacting eta_overall set for the plain plate.'
   where: ASME Digital Collection (paywalled).
+# Impingement fed by a MOVING supply (added 2026-11-13, C2 of #1087): an
+# ImpingementPlateElement whose supply node is a crossflow-chain station is
+# duct-fed since C2 (drive from the duct total, Cd referenced to P1 + f q1,
+# f = 0). Florschuetz 1981 / CR-3630 / CR-3936 are plenum-fed only, and no
+# held document measures impingement rows fed by a supply channel.
+- citation: 'Not yet identified (search target): an impingement-array study whose jet plate is fed by a
+    moving supply -- a coolant channel running along the jet plate (channel-fed impingement, double-wall or
+    integrally cast cooling), with measured row-by-row jet flow (or discharge coefficients) and target heat
+    transfer against the supply channel''s velocity or dynamic head. Search leads: supply-side (inlet)
+    crossflow impingement, coolant feed channel impingement, double-wall cooling flow distribution.'
+  checked: false
+  issues: [1087, 1124]
+  priority: later
+  question: 'Settles two things the plenum-fed sources cannot: (1) the recovered fraction f of the supply
+    channel''s dynamic head at a normal impingement hole -- the shipped default f = 0 (static-referenced Cd,
+    converted onto the duct total) rests on effusion/liner normal-hole data, not on impingement plates --
+    so a FIDELITY or ACCURACY set for the row flow split of a channel-fed array; (2) whether Florschuetz''s
+    plenum-fed h (Gc/Gj from the gap) still holds when the jets leave a moving supply, i.e. whether
+    surface_extrapolated_supply_crossflow can be cleared, or needs a supply-velocity term. Until then a
+    channel-fed row has no fidelity set and its accuracy is unscored.'
+  where: 'ASME J. Turbomach., J. Eng. Gas Turbines Power, Int. J. Heat Mass Transfer (journal search; nothing
+    found in the held register under impingement/supply/channel, 2026-11-13).'

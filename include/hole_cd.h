@@ -207,6 +207,19 @@ struct HoleDriveCdRatio {
   double d_dP2 = 0.0;   // [1/Pa]
   double d_df = 0.0;    // [-] by the recovered fraction f
   std::vector<double> d_dY;  // by mass fraction (the same Y on both sides)
+  // The plenum-fed-equivalent state the base Cd is referenced to (C2): Pf =
+  // P1 + f q1 [Pa] and Tf [K], the isentropic T at Pf through (P1, T1) and
+  // (Pt1, Tt1) (Tf = T1 at f = 0, Tt1 at f = 1; T1 itself, the caller's
+  // Tt1 in the incompressible regime, wherever M = ln(Tt1/T1) = 0). Set
+  // whatever the ratio's own early returns, so a jet law can take its ideal
+  // density there. Partials of Tf by P1, T1, Pt1, Tt1 and f.
+  double Pf = 0.0;
+  double Tf = 0.0;
+  double dTf_dP1 = 0.0;   // [K/Pa]
+  double dTf_dT1 = 0.0;   // [-]
+  double dTf_dPt1 = 0.0;  // [K/Pa]
+  double dTf_dTt1 = 0.0;  // [-]
+  double dTf_df = 0.0;    // [K]
 };
 
 HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1, double Tt1,

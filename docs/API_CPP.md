@@ -1444,9 +1444,12 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
 // bit, f = 1 is ratio 1). incompressible: sqrt((Pf - P2)/(Pt1 - P2)) (T1,
 // Tt1 and Y do not enter). 0 where Pf <= P2; f outside [0, 1] throws.
 // Analytic partials, d/df included. hole_static_to_total_cd_ratio is its
-// f = 0 case.
+// f = 0 case. Pf, Tf: the plenum-fed-equivalent state the base Cd is
+// referenced to (Tf = T1 at f = 0), with Tf's partials, set even where the
+// ratio is 0: an impingement row's jet law takes its ideal density there (C2).
 struct HoleDriveCdRatio { double ratio, d_dP1, d_dT1, d_dPt1, d_dTt1, d_dP2, d_df;
-                          std::vector<double> d_dY; };
+                          std::vector<double> d_dY;
+                          double Pf, Tf, dTf_dP1, dTf_dT1, dTf_dPt1, dTf_dTt1, dTf_df; };
 HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1, double Tt1,
                                                double P2, const std::vector<double>& Y,
                                                double f, bool incompressible = false);

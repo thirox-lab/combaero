@@ -303,6 +303,11 @@ class ImpingementArray:
                 )
             },
             "surface_extrapolated": float(any(p["surface_extrapolated"] for p in plates)),
+            # A row fed by a moving supply is outside Florschuetz's plenum-fed
+            # envelope (C2): information, named by its variable.
+            "surface_extrapolated_supply_crossflow": float(
+                any(p.get("surface_extrapolated_supply_crossflow", 0.0) for p in plates)
+            ),
             "jet_flow_nonuniformity": _max_over_min([p["m_dot"] for p in plates]),
         }
         for key in ("m_dot", "Re_j", "Gc_Gj", "Nu", "htc", "T_aw", "eta_r", "bypass_fraction"):

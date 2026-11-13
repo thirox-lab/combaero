@@ -560,7 +560,8 @@
 			"n_holes",
 			"n_rows",
 			"n_rows_unresolved",
-			"surface_extrapolated"
+			"surface_extrapolated",
+			"surface_extrapolated_supply_crossflow"
 		],
 		"lossless_connection": [
 			"P_in",
@@ -1406,6 +1407,7 @@
 		"station_psi_beyond_bassett": "-",
 		"station_psi_min": "-",
 		"surface_extrapolated": "-",
+		"surface_extrapolated_supply_crossflow": "-",
 		"theta": "-",
 		"turbulence_intensity": "-",
 		"u": "J/kg",
