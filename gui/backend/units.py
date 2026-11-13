@@ -129,6 +129,9 @@ UNIT_MAP: dict[str, str] = {
     "Cd_inlet_crossflow_ignored": "-",
     "Cd_supply_drive_applied": "-",  # 1 where a duct-fed hole drives from its duct total (#1087)
     "Cd_supply_drive_head_fraction": "-",  # duct head over the full drive (info), 0 not duct-fed
+    "Cd_supply_recovery_q1": "Pa",  # a duct-fed hole's supply head Pt1 - P1, 0 not duct-fed
+    "Cd_supply_recovery_fraction": "-",  # recovered fraction f applied (lean recovery: #1124)
+    "Cd_supply_recovery_ratio": "-",  # Cd_T / Cd_base from P1 + f q1 onto the total, 1 when none
     "Cd_exit_crossflow_applied": "-",
     "Cd_exit_crossflow_ratio": "-",  # Cd / Cd_base, 1 when off
     "Cd_exit_crossflow_rho_u2": "Pa",  # mainstream momentum flux rho_m u_m^2
@@ -578,6 +581,7 @@ INPUT_UNIT_MAP: dict[str, str] = {
     "m_ref": "kg/s",
     # Dimensionless: coefficients, ratios, multipliers, counts and flags
     "Cd": "-",
+    "supply_recovery": "-",  # HoleCd: recovered fraction f of a duct-fed hole's supply head
     "Cv": "-",  # orifice: Jobson velocity coefficient
     "C_D": "-",
     "xi": "-",

@@ -142,15 +142,15 @@ describe("a v0.11.1 file's loose Cd fields are lifted into hole_cd", () => {
 		});
 	});
 
-	it("carries supply_drive through the migration untouched (#1087)", () => {
+	it("carries supply_drive and supply_recovery through untouched (#1087)", () => {
 		const d = { n_segments: 3, hole_cd: { supply_drive: "static" as const } };
 		expect(migrateNodeData(d, "effusion_liner")).toEqual(d);
 		const changed = withCorrelation(
 			"effusion_liner",
-			{ supply_drive: "total" },
+			{ supply_recovery: 1.0 },
 			"IdelchikThick",
 		);
-		expect(changed.supply_drive).toBe("total");
+		expect(changed.supply_recovery).toBe(1.0);
 	});
 });
 

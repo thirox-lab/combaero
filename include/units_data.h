@@ -545,6 +545,8 @@ inline constexpr Entry function_units[] = {
     {"HoleDriveCdRatio::d_dPt1", "1/Pa", "1/Pa"},
     {"HoleDriveCdRatio::d_dTt1", "1/K", "1/K"},
     {"HoleDriveCdRatio::d_dP2", "1/Pa", "1/Pa"},
+    {"HoleDriveCdRatio::d_df", "-", "-"},
+    {"hole_supply_recovery_cd_ratio", "P1: Pa, T1: K, Pt1: Pa, Tt1: K, P2: Pa, Y: -, f: -, incompressible: -", "HoleDriveCdRatio"},
     {"HoleDriveCdRatio::d_dY", "-", "-"},
     {"ROGERS_HERSH_1976_CAP_BAND", "-", "-"},
     {"FLORSCHUETZ_METZGER_SU_1982_CAP_BAND", "-", "-"},

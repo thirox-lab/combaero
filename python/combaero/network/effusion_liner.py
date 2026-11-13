@@ -8,7 +8,9 @@ past the holes, the gas past their exits.
 ``EffusionLiner`` is the configuration, not a network element. It adds N
 stations along the duct, each a ``PlenumNode`` (Pt = P: the node pressure is
 the duct's static pressure; a panel drives from the duct's TOTAL there, the
-static plus its mean flow's head, HoleCd.supply_drive, #1087), joined by
+static plus its mean flow's head, HoleCd.supply_drive, with its Cd
+referenced to the static plus f of that head, HoleCd.supply_recovery,
+default f = 0, #1087), joined by
 ``CrossflowSegmentElement`` s, and one ``EffusionPlateElement`` panel per
 station into the gas node::
 

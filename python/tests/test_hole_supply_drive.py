@@ -6,12 +6,14 @@ Supply side. Every hole drives from the upstream TOTAL to the downstream
 static (the owner's rule, 2026-11-12); its Cd model owns how much supply
 head it recovers. A duct-fed EffusionPlateElement's supply node is a duct
 station holding the duct's STATIC pressure, so ``supply_drive="auto"``
-("total") rebuilds the duct's stagnation pressure there (C++
-hole_supply_drive, the momentum-chamber closure). McGreehan & Schotsch's
-static-referenced Eq. 17 Cd is converted onto it exactly (C++
-hole_static_to_total_cd_ratio, f = 0: the flow is the static-referenced
-model's own, at the station's static temperature); a base without the term
-recovers the whole head (f = 1). "static" is the pre-0.12 drive.
+rebuilds the duct's stagnation pressure there (C++ hole_supply_drive, the
+momentum-chamber closure). Every base Cd is referenced to the partly
+recovered drive P1 + f q1 (``HoleCd.supply_recovery``, default f = 0 at every
+angle and for every base) and converted onto it exactly (C++
+hole_supply_recovery_cd_ratio): at f = 0 the flow is the static-referenced
+model's own, at the station's static temperature (McGreehan & Schotsch's
+Eq. 17 is static-referenced by its authors); supply_recovery=1.0 recovers the
+whole head. "static" is the v0.11.1 drive.
 Design record: docs/archive/hole_drive_convention.md.
 
 Exit side. A film, effusion or slot hole into a MomentumChamberNode takes its
@@ -44,6 +46,7 @@ from combaero.network import (
     FilmCoolingElement,
     FlowNetwork,
     HoleCd,
+    ImpingementPlateElement,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -194,7 +197,10 @@ def test_the_total_drive_flows_the_cd_from_the_ducts_total(ms: bool) -> None:
     )
     a_h = math.pi * D_HOLE**2 / 4.0
     for drive in ("total", "static"):
-        _, r = _solve(_duct_net(dataclass_replace(spec, supply_drive=drive)))
+        # The full recovery (f = 1) is the Cd from the total; the v0.11.1
+        # static drive is the Cd from the static.
+        kw = {"supply_recovery": 1.0} if drive == "total" else {"supply_drive": "static"}
+        _, r = _solve(_duct_net(dataclass_replace(spec, **kw)))
         d = r["__element_diag__"]["h"]
         P = r["n1.P"]
         m_d = 0.5 * (r["s0.m_dot"] + r["s1.m_dot"])
@@ -225,12 +231,13 @@ def test_a_hole_whose_station_static_is_below_the_exit_blows() -> None:
     # The supply-side band: station static < exit pressure < duct total. The
     # hole leans with the duct flow and blows (Gritsch 1998, Ma_c 0.6 at low
     # PR); from the static drive it reverses.
-    spec = HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_drive="total")
+    spec = HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_recovery=1.0)
     _, r = _solve(_duct_net(spec, pt_in=1.10, p_out=0.90))
     d = r["__element_diag__"]["h"]
     assert r["n1.P"] < P_ATM  # the station static is below the exit
     assert r["h.m_dot"] > 0.0 and d["is_ingesting"] == 0.0 and d["dP_drive"] > 0.0
-    _, r = _solve(_duct_net(dataclass_replace(spec, supply_drive="static"), pt_in=1.10, p_out=0.90))
+    static = dataclass_replace(spec, supply_recovery=None, supply_drive="static")
+    _, r = _solve(_duct_net(static, pt_in=1.10, p_out=0.90))
     assert r["n1.P"] < P_ATM and r["h.m_dot"] < 0.0
     assert r["__element_diag__"]["h"]["is_ingesting"] == 1.0
 
@@ -388,7 +395,11 @@ def test_the_drive_is_smooth_through_a_duct_flow_reversal() -> None:
         x[i_a] = mean + 0.5 * x0[i_h]
         x[i_b] = mean - 0.5 * x0[i_h]
         assert _fd_check(s, x, rows=[i_h]) < 1e-5, mean
-    for spec in (HoleCd(correlation="IdelchikThick", inlet_crossflow="none"),):
+    for spec in (
+        HoleCd(correlation="IdelchikThick", inlet_crossflow="none"),  # f = 0
+        HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_recovery=0.5),
+        HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_recovery=1.0),
+    ):
         s2, r2 = _solve(_duct_net(spec))
         x = np.array(r2["__x_solution__"])
         x[i_a], x[i_b] = 0.5 * x[i_h], -0.5 * x[i_h]
@@ -407,6 +418,9 @@ def test_the_group_carries_the_drive_keys_everywhere() -> None:
     assert all(k in d for k in HOLE_CD_DIAGNOSTIC_KEYS)
     assert d["Cd_supply_drive_model"] == "total"
     assert d["Cd_supply_drive_applied"] == 0.0 and d["Cd_supply_drive_head_fraction"] == 0.0
+    # f does not apply to a hole that is not duct-fed.
+    assert d["Cd_supply_recovery_q1"] == 0.0 and d["Cd_supply_recovery_ratio"] == 1.0
+    assert math.isnan(d["Cd_supply_recovery_fraction"])
 
 
 # --- the exit side: a hole into a flowing chamber (#1087) --------------------
@@ -537,7 +551,8 @@ def test_second_law_holds_inside_the_band_and_on_a_liner() -> None:
     for chamber in (False, True):
         for spec in (
             HoleCd(),  # the default: Eq. 17 converted onto the duct total
-            HoleCd(inlet_crossflow="none"),  # f = 1
+            HoleCd(inlet_crossflow="none", supply_recovery=1.0),  # f = 1
+            HoleCd(inlet_crossflow="none"),  # f = 0, the default
             HoleCd(supply_drive="static"),
         ):
             _, r = _solve(_liner_net(spec, chamber=chamber))
@@ -582,11 +597,15 @@ def _fd_check(s: NetworkSolver, x: np.ndarray, rows: list[int] | None = None) ->
 
 
 @pytest.mark.parametrize("chamber", [False, True])
-@pytest.mark.parametrize("variant", ["default", "term_off", "static"])
+@pytest.mark.parametrize(
+    "variant", ["default", "term_off", "term_off_f0", "term_off_half", "static"]
+)
 def test_the_liner_jacobian_is_analytic(variant: str, chamber: bool) -> None:
     spec = {
         "default": HoleCd(),
-        "term_off": HoleCd(inlet_crossflow="none"),
+        "term_off": HoleCd(inlet_crossflow="none", supply_recovery=1.0),
+        "term_off_f0": HoleCd(inlet_crossflow="none"),
+        "term_off_half": HoleCd(inlet_crossflow="none", supply_recovery=0.5),
         "static": HoleCd(supply_drive="static"),
     }[variant]
     s, r = _solve(_liner_net(spec, chamber=chamber))
@@ -627,7 +646,7 @@ def test_a_duct_fed_hole_that_ingests_has_an_analytic_jacobian() -> None:
     # row only: the segment rows' d/d(hole flow) of an INGESTING inclined
     # panel has the wrong sign before this change too (the joining jet's
     # momentum at the station, #813 path; reproduced on the static drive).
-    spec = HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_drive="total")
+    spec = HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_recovery=1.0)
     s, r = _solve(_duct_net(spec, pt_in=1.30, p_out=1.20, p_gas=1.32))
     d = r["__element_diag__"]["h"]
     assert r["h.m_dot"] < 0.0 and d["is_ingesting"] == 1.0
@@ -795,3 +814,117 @@ def test_an_omitted_crossflow_area_needs_a_chain_station() -> None:
     g.resolve_all_topology()
     with pytest.raises(ValueError, match="needs the backside duct's crossflow_area"):
         g.validate()
+
+
+# --- the recovered fraction f (HoleCd.supply_recovery, owner 2026-11-13) ----
+
+
+@pytest.mark.parametrize("f", [None, 0.0, 0.4, 1.0])
+@pytest.mark.parametrize("angle", [90.0, 30.0])
+def test_any_base_is_referenced_to_the_partly_recovered_drive(
+    f: float | None, angle: float
+) -> None:
+    # A base without the supply-crossflow term on the duct-total drive: the
+    # flow is the base Cd times the ideal flow from P1 + f q1 at the
+    # isentropic T there; f = None is 0 at every angle. Independent closed
+    # form (_ideal_flux), not the kernel.
+    spec = HoleCd(correlation="IdelchikThick", inlet_crossflow="none", supply_recovery=f)
+    s, r = _solve(_duct_net(spec, angle=angle))
+    d = r["__element_diag__"]["h"]
+    el = s.network.elements["h"]
+    x = np.array(r["__x_solution__"])
+    si = s._get_node_state(s.network.nodes["n1"], x)
+    so = s._get_node_state(s.network.nodes["gas"], x)
+    si.m_dot = so.m_dot = r["h.m_dot"]
+    cd_b = el._effective_Cd(si, so, s._network_flows(el, x))
+    m_d = 0.5 * (r["s0.m_dot"] + r["s1.m_dot"])
+    T1 = _moving_static_T(si, m_d, A_DUCT).T
+    P1 = r["n1.P"]
+    pt = _moving_total_P(P1, 290.0, Y_AIR, m_d, A_DUCT).Pt
+    fv = 0.0 if f is None else f
+    pf = P1 + fv * (pt - P1)
+    Tf = T1 * (290.0 / T1) ** (math.log(pf / P1) / math.log(pt / P1))
+    a_h = math.pi * D_HOLE**2 / 4.0
+    assert r["h.m_dot"] == pytest.approx(cd_b * a_h * _ideal_flux(pf, Tf, P_ATM), rel=2e-4)
+    assert d["Cd_supply_recovery_fraction"] == fv
+    assert d["Cd_supply_recovery_q1"] == pytest.approx(pt - P1, rel=1e-9)
+    assert d["Cd_supply_recovery_ratio"] == pytest.approx(
+        _ideal_flux(pf, Tf, P_ATM) / _ideal_flux(pt, 290.0, P_ATM), rel=2e-4
+    )
+    # It passes zero at P1 + f q1: dP_drive is taken from there.
+    assert d["dP_drive"] == pytest.approx(pf - P_ATM, rel=1e-9)
+    assert _fd_check(s, x) < 1e-5
+
+
+def test_f_zero_is_the_static_referenced_conversion_bit_for_bit() -> None:
+    # McGreehan-Schotsch with f = 0 given and with the default: one model, the
+    # pre-C1 Eq. 17 conversion (hole_static_to_total_cd_ratio is the kernel's
+    # f = 0 case).
+    _, a = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch")))
+    _, b = _solve(_duct_net(HoleCd(correlation="McGreehanSchotsch", supply_recovery=0.0)))
+    assert a["h.m_dot"] == b["h.m_dot"] and a["n1.P"] == b["n1.P"]
+    Y = Y_AIR
+    for inc in (False, True):
+        k0 = cb.hole_supply_recovery_cd_ratio(1.2e5, 430.0, 1.32e5, 450.0, 1.05e5, Y, 0.0, inc)
+        ks = cb.hole_static_to_total_cd_ratio(1.2e5, 430.0, 1.32e5, 450.0, 1.05e5, Y, inc)
+        assert (k0.ratio, k0.d_dP1, k0.d_dT1, k0.d_dPt1, k0.d_dTt1, k0.d_dP2) == (
+            ks.ratio, ks.d_dP1, ks.d_dT1, ks.d_dPt1, ks.d_dTt1, ks.d_dP2,
+        )  # fmt: skip
+
+
+def test_f_one_takes_the_total_drive_unconverted() -> None:
+    # supply_recovery=1.0: no conversion at all, the Cd from the duct total
+    # (the drive pair carries no conv and passes zero at the duct total).
+    s, r = _solve(_duct_net(HoleCd(correlation="IdelchikThick", inlet_crossflow="none",
+                                   supply_recovery=1.0)))  # fmt: skip
+    el = s.network.elements["h"]
+    x = np.array(r["__x_solution__"])
+    si = s._get_node_state(s.network.nodes["n1"], x)
+    so = s._get_node_state(s.network.nodes["gas"], x)
+    pair = el._hole_cd.drive_pair(si, so, s._network_flows(el, x))
+    assert pair.conv is None and pair.p_rev == pair.p_up
+    assert r["__element_diag__"]["h"]["Cd_supply_recovery_ratio"] == 1.0
+
+
+@pytest.mark.parametrize("make", ["plate", "film", "orifice", "slot", "impingement"])
+def test_supply_recovery_is_refused_where_the_hole_is_not_duct_fed(make: str) -> None:
+    spec = HoleCd(supply_recovery=0.0)
+    build = {
+        "plate": lambda: EffusionPlateElement(
+            "e", "a", "b", hole_diameter=1e-3, wall_thickness=2e-3, pitch=6e-3, panel_area=0.01,
+            hole_cd=spec,
+        ),
+        "film": lambda: FilmCoolingElement(
+            "e", "a", "b", hole_diameter=1e-3, holes_per_row=10, lateral_pitch=3e-3,
+            wall_thickness=3e-3, hole_cd=spec,
+        ),
+        "orifice": lambda: OrificeElement("e", "a", "b", diameter=0.01, hole_cd=spec),
+        "slot": lambda: SlotFilmElement(
+            "e", "a", "b", slot_height=1e-3, span=0.05, lip_thickness=1e-3,
+            hole_cd=HoleCd(correlation="IdelchikThick", supply_recovery=1.0),
+        ),
+        "impingement": lambda: ImpingementPlateElement(
+            "e", "a", "b", d_jet=2.54e-3, xn_d=5.0, yn_d=4.0, z_d=1.0, span=0.12,
+            plate_thickness=2.54e-3,
+            hole_cd=HoleCd(correlation="fixed", Cd=0.8, supply_recovery=0.0),
+        ),
+    }[make]  # fmt: skip
+    with pytest.raises(ValueError, match="applies only to holes fed by a duct crossflow"):
+        build()
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.5, math.nan, math.inf])
+def test_a_supply_recovery_outside_zero_one_is_refused(bad: float) -> None:
+    with pytest.raises(ValueError, match="supply_recovery"):
+        HoleCd(supply_recovery=bad)
+
+
+def test_supply_recovery_with_the_static_drive_is_refused() -> None:
+    with pytest.raises(ValueError, match="supply_drive='static'"):
+        HoleCd(supply_drive="static", supply_recovery=0.0)
+
+
+def test_the_removed_total_drive_is_refused() -> None:
+    # supply_drive="total" never shipped: supply_recovery=1.0 replaces it.
+    with pytest.raises(ValueError, match="supply_drive 'total' is not one of"):
+        HoleCd(supply_drive="total")

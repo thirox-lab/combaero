@@ -185,6 +185,28 @@ const HoleCdEditor: React.FC<HoleCdEditorProps> = ({
 					)}
 				</div>
 			)}
+			{rules.inletCrossflow.length > 0 && hc.supply_drive !== "static" && (
+				<div className="flex flex-col gap-1">
+					<label htmlFor={`${id}_supply_recovery`} className={labelCls}>
+						Supply Head Recovered (f)
+					</label>
+					<NumericInput
+						id={`${id}_supply_recovery`}
+						value={hc.supply_recovery ?? null}
+						onChange={(val) => set({ supply_recovery: val })}
+						onClear={() => set({ supply_recovery: null })}
+						className="p-1.5 h-8 text-sm border rounded bg-white"
+						placeholder="0 (default)"
+						min={0}
+						max={1}
+					/>
+					<div className="text-[9px] text-gray-400">
+						The share of the duct's dynamic head the holes recover: 0 for normal
+						holes (held data), 1 for holes leaning with the duct flow. A
+						lean-dependent recovery is #1124.
+					</div>
+				</div>
+			)}
 			{rules.exitCrossflow.length > 0 && (
 				<div className="flex flex-col gap-1">
 					<label htmlFor={`${id}_exit_crossflow`} className={labelCls}>

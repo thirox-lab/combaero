@@ -1432,16 +1432,24 @@ struct HoleSupplyDriveResult { double P_drive, q_dyn, dP_dP, dP_dTt, dP_dm_dot;
 HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double Tt,
                                         const std::vector<double>& Y, double m_dot,
                                         double area, bool incompressible = false);
-// A static-referenced hole Cd onto the total drive (the rule: holes run from
-// the upstream total to the downstream static): Cd_T / Cd_S =
-// m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2), both ideal flows from
-// orifice_compressible_residuals_and_jacobian (Cd 1, beta 0); (P1, T1) the
-// supply's static state. incompressible: the incompressible kernel's exact
-// ratio sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2) (an element in the
-// incompressible regime, the solver's incompressible proxy included; T1, Tt1
-// and Y do not enter). 0 where P1 <= P2. Analytic partials.
-struct HoleDriveCdRatio { double ratio, d_dP1, d_dT1, d_dPt1, d_dTt1, d_dP2;
+// The supply-head recovery conversion (HoleCd.supply_recovery): a hole Cd
+// referenced to the partly recovered drive Pf = P1 + f q1 (q1 = Pt1 - P1, f
+// in [0, 1] the recovered fraction of the supply head) onto the total drive
+// (the rule: holes run from the upstream total to the downstream static):
+// Cd_T / Cd_base = m_id(Pf, Tf -> P2) / m_id(Pt1, Tt1 -> P2), both ideal
+// flows from orifice_compressible_residuals_and_jacobian (Cd 1, beta 0);
+// (P1, T1) the supply's static state, Tf = T1 (Tt1/T1)^s, s = ln(Pf/P1) /
+// ln(Pt1/P1), the isentropic T at Pf through the static and stagnation
+// states (both ends exact: f = 0 is the static-referenced conversion bit for
+// bit, f = 1 is ratio 1). incompressible: sqrt((Pf - P2)/(Pt1 - P2)) (T1,
+// Tt1 and Y do not enter). 0 where Pf <= P2; f outside [0, 1] throws.
+// Analytic partials, d/df included. hole_static_to_total_cd_ratio is its
+// f = 0 case.
+struct HoleDriveCdRatio { double ratio, d_dP1, d_dT1, d_dPt1, d_dTt1, d_dP2, d_df;
                           std::vector<double> d_dY; };
+HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y,
+                                               double f, bool incompressible = false);
 HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
                                                double P2, const std::vector<double>& Y,
                                                bool incompressible = false);

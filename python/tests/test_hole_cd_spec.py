@@ -463,10 +463,23 @@ def test_inlet_crossflow_none_on_a_duct_fed_panel_is_reported() -> None:
     assert on_t["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(2.089, abs=0.001)
     assert on_t["Cd"] == pytest.approx(0.240, abs=0.001)
     assert on_t["m_dot"] / on["m_dot"] - 1.0 == pytest.approx(0.016, abs=0.002)
-    # Without the term: the plain Cd total -> static, the full head recovered
-    # (f = 1, the co-aligned behaviour): this panel bleeds 2.3x the static
+    # Without the term, the default f = 0 (owner, 2026-11-13; the held
+    # normal-hole data): the plain Cd referenced to the station static and
+    # converted onto the total exactly, so again the static drive's flow up to
+    # the static-temperature correction (+1.8 % here).
+    assert off_t["Cd_supply_recovery_fraction"] == 0.0
+    assert off_t["Cd_supply_drive_head_fraction"] == pytest.approx(0.864, abs=0.001)
+    assert off_t["Cd_supply_recovery_q1"] == pytest.approx(28406.0, rel=1e-3)
+    assert off_t["Cd_supply_recovery_ratio"] == pytest.approx(0.386, abs=0.001)
+    assert off_t["Cd"] == pytest.approx(0.312, abs=0.001)
+    assert off_t["m_dot"] / off["m_dot"] - 1.0 == pytest.approx(0.018, abs=0.002)
+    # supply_recovery=1.0: the plain Cd total -> static, the full head
+    # recovered (the co-aligned behaviour): this panel bleeds 2.3x the static
     # drive's, and the reported U1/Vi (on the station static's jet velocity,
     # McGreehan-Schotsch's definition) rises with the duct's speed.
+    off_t = panel(HoleCd(inlet_crossflow="none", supply_recovery=1.0))
+    assert off_t["Cd_supply_recovery_fraction"] == 1.0
+    assert off_t["Cd_supply_recovery_ratio"] == 1.0
     assert off_t["Cd_supply_drive_head_fraction"] == pytest.approx(0.991, abs=0.001)
     assert off_t["Cd_inlet_crossflow_U1_over_Vi"] == pytest.approx(10.265, abs=0.001)
     assert off_t["Cd"] == pytest.approx(0.801, abs=0.001)
