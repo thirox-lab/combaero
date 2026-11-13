@@ -452,6 +452,10 @@ ci = cb.hole_static_to_total_cd_ratio(1.2e5, 430.0, 1.32e5, 450.0, 1.05e5,
 cf = cb.hole_supply_recovery_cd_ratio(1.2e5, 430.0, 1.32e5, 450.0, 1.05e5,
                                       list(cb.mole_to_mass(X)), f=0.5)
 cf.ratio, cf.d_df
+# The state the base Cd is referenced to, (Pf, Tf), and Tf's partials
+# (dTf_dP1, dTf_dT1, dTf_dPt1, dTf_dTt1, dTf_df): the jet law of a
+# station-fed impingement row takes its ideal density there.
+cf.Pf, cf.Tf, cf.dTf_dP1
 
 # The same hole as an orifice in a straight pipe (Idelchik 4-13..4-16):
 # permanent loss on the pipe velocity head, and the Cd factor the network
@@ -2378,12 +2382,14 @@ the duct total with the recovered fraction f in 0.12.0 (`supply_drive` and
   - **An impingement row fed by a moving supply is duct-fed (C2).** An
     `ImpingementPlateElement` whose supply node is a crossflow-chain station
     (a `PlenumNode` registered as a station by its `CrossflowSegmentElement`
-    chain: a supply channel along the jet plate, or another array's gap)
+    chain: a supply channel along the jet plate)
     drives from the station's duct total. Its composed Cd -- the base, then
     the jet law and its cap, all defined plenum-fed -- is referenced to
     P1 + f q1 and converted onto it (f = `supply_recovery`, default 0), and
     the jet law's G_ideal is taken on the same pair, from P1 + f q1 to the
-    gap static. The gap side (Gc/Gj, Florschuetz h) is unchanged. At f = 0
+    gap static, with its density at the kernel's own referenced state
+    (P1 + f q1, Tf), Tf the isentropic temperature there (the station's
+    static T at f = 0). The gap side (Gc/Gj, Florschuetz h) is unchanged. At f = 0
     the row flow is the old station-static drive plus the static-temperature
     correction (+0.12 to +0.32 % per row at supply Mach 0.12-0.15; none in
     the incompressible regime). The row

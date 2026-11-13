@@ -181,7 +181,7 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
 #:             supply_recovery.
 #: An ImpingementPlateElement whose supply node is a crossflow-chain
 #: station (a PlenumNode carrying a _CrossflowStation: a supply channel of
-#: CrossflowSegmentElements, or another array's gap) is duct-fed in the same
+#: CrossflowSegmentElements along the jet plate) is duct-fed in the same
 #: way (C2, #1087): "auto" drive, the composed Cd (jet law included) taken
 #: as referenced to P1 + f q1 and converted, f = 0 by default. No held or
 #: wanted source covers impingement fed by a moving supply: no fidelity set
@@ -582,6 +582,11 @@ class _DrivePair:
     p_rev: float = math.nan
     dp_rev: dict[str, float] = field(default_factory=dict)
     conv: tuple[float, dict[str, float]] | None = None
+    # With ``conv``: the temperature of the plenum-fed-equivalent state the
+    # base Cd is referenced to, Tf at p_rev = P1 + f q1 (C++
+    # hole_supply_recovery_cd_ratio; T1 at f = 0), and its derivatives by
+    # name. An impingement row's jet law takes its ideal density there (C2).
+    t_ref: tuple[float, dict[str, float]] | None = None
 
     def __post_init__(self) -> None:
         if math.isnan(self.p_rev):
@@ -709,7 +714,14 @@ def _resolve_jet_row(name: str, spec: HoleCd, xn_d: float, yn_d: float, z_d: flo
     static drive is a liner reproduction and no impingement row's."""
     _refuse_choice(name, "inclination", spec.inclination, ("auto", "none"))
     _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto",) + _CD_CROSSFLOW_LAWS)
-    _resolve_inlet_crossflow(name, spec, False)
+    if spec.inlet_crossflow == "mcgreehan_schotsch":
+        raise ValueError(
+            f"{name}: HoleCd(inlet_crossflow='mcgreehan_schotsch') does not apply to an "
+            "impingement row: its crossflow law (exit_crossflow) owns the gap crossflow, and a "
+            "row fed by a crossflow station takes the supply's dynamic head through the "
+            "recovered fraction f (supply_recovery) on a plenum-fed Cd. Use "
+            "inlet_crossflow='auto' or 'none'."
+        )
     if spec.supply_drive == "static":
         raise ValueError(
             f"{name}: HoleCd(supply_drive='static') reproduces the v0.11.1 effusion-liner "
@@ -763,6 +775,8 @@ class _JetContext:
     # pressure rho is taken at. None: plenum-fed, the nodes' own columns.
     d_dP: dict[str, float] | None = None
     d_prho: dict[str, float] | None = None
+    # ... and d(T_rho)/d(name), the temperature rho is taken at.
+    d_trho: dict[str, float] | None = None
 
 
 @dataclass
@@ -922,10 +936,12 @@ class _HoleCdChain:
                 "not duct-fed and takes no recovered fraction (owner, 2026-11-13). Leave "
                 "supply_recovery at None."
             )
+        kind = type(graph.nodes.get(el.from_node)).__name__
         return (
             f"HoleCd(supply_recovery={f!r}): the recovered fraction applies to a row fed "
-            f"by a crossflow-chain station, and {el.from_node!r} is none (a plenum: the "
-            "jets drive from its Pt). Leave supply_recovery at None."
+            f"by a crossflow-chain station, and its supply {el.from_node!r} is a {kind} "
+            "that no chain registers as a station (the jets drive from its Pt). Leave "
+            "supply_recovery at None."
         )
 
     # --- the drive pair (#1087) ---------------------------------------------
@@ -978,7 +994,7 @@ class _HoleCdChain:
         flows: dict[str, float] | None,
         pt1: float,
         dpt1: dict[str, float],
-    ) -> tuple[float, dict[str, float]]:
+    ) -> tuple[tuple[float, dict[str, float]], tuple[float, dict[str, float]]]:
         """Cd_T / Cd_base of a base Cd referenced to the partly recovered
         drive p1 + f q1 (f = supply_recovery) on the duct-total drive, and
         its derivatives by name: C++ hole_supply_recovery_cd_ratio at the
@@ -1038,7 +1054,25 @@ class _HoleCdChain:
         add(f"{el.to_node}.P", float(c.d_dP2))
         for k, v in enumerate(c.d_dY):
             add(f"{el.from_node}.Y[{k}]", float(v))
-        return float(c.ratio), d
+        # The referenced state's temperature Tf and its derivatives by name
+        # (the kernel's own; T1 = Tt incompressibly, so Tf = Tt there).
+        dtf: dict[str, float] = {}
+
+        def add_t(key: str, v: float) -> None:
+            if v != 0.0:
+                dtf[key] = dtf.get(key, 0.0) + v
+
+        tT1 = float(c.dTf_dT1)
+        add_t(f"{el.from_node}.P", float(c.dTf_dP1))
+        add_t(f"{el.from_node}.Tt", float(c.dTf_dTt1))
+        if incompressible:
+            add_t(f"{el.from_node}.Tt", tT1)
+        for key, v in t1_terms.items():
+            add_t(key, tT1 * v)
+        station.add_mean_flow_columns(dtf, tT1 * mean_flow_dT1)
+        for key, v in dpt1.items():
+            add_t(key, float(c.dTf_dPt1) * v)
+        return (float(c.ratio), d), (float(c.Tf), dtf)
 
     def _chamber_static_T(self, state_in: "NetworkMixtureState", terms: dict[str, float]) -> float:
         """A MomentumChamberNode station's static T (its own closure at its
@@ -1083,7 +1117,7 @@ class _HoleCdChain:
         supply = False
         p_up, dp_up = float(state_in.Pt), {f"{el.from_node}.Pt": 1.0}
         q = 0.0
-        p_rev, dp_rev, conv = math.nan, {}, None
+        p_rev, dp_rev, conv, t_ref = math.nan, {}, None, None
         if self.duct_fed and self.station_holds_static:
             if self.supply_drive == "recovery":
                 r, dp_up = self._station_drive(state_in, flows, cb.HoleSupplyDrive.Total)
@@ -1094,7 +1128,7 @@ class _HoleCdChain:
                     # McGreehan-Schotsch's static-referenced Eq. 17 and the
                     # held normal-hole data): converted exactly onto the
                     # total drive, the flow passes zero at p1 + f q1.
-                    conv = self._recovery_conversion(state_in, state_out, flows, p_up, dp_up)
+                    conv, t_ref = self._recovery_conversion(state_in, state_out, flows, p_up, dp_up)
                     p_rev, dp_rev = self._recovered_drive(state_in, p_up, dp_up)
             else:
                 # The static drive reads the station as the hole always did
@@ -1109,7 +1143,7 @@ class _HoleCdChain:
             if self.supply_drive == "static":
                 p_up, dp_up, supply = float(state_in.P), {f"{el.from_node}.P": 1.0}, True
             elif self.supply_recovery < 1.0 and self.station_node is not None:
-                conv = self._recovery_conversion(state_in, state_out, flows, p_up, dp_up)
+                conv, t_ref = self._recovery_conversion(state_in, state_out, flows, p_up, dp_up)
                 p_rev, dp_rev = self._recovered_drive(state_in, p_up, dp_up)
         if not (supply or self.exit_static or conv is not None):
             return None
@@ -1118,7 +1152,7 @@ class _HoleCdChain:
         else:
             p_dn, dp_dn = float(state_out.Pt), {f"{el.to_node}.Pt": 1.0}
         return _DrivePair(
-            p_up, dp_up, p_dn, dp_dn, supply, self.exit_static, q, p_rev, dp_rev, conv
+            p_up, dp_up, p_dn, dp_dn, supply, self.exit_static, q, p_rev, dp_rev, conv, t_ref
         )
 
     def _recovered_drive(
@@ -1363,8 +1397,13 @@ class _HoleCdChain:
         (its supply a crossflow station, C2) takes the drive pair the flow
         kernel runs on: forward from p_rev = P1 + f q1 (the reference its
         composed Cd is defined at; the station static at the default f = 0)
-        to the channel static, rho at the supply's Tt and p_rev; reversed
-        from the channel's Pt (p_dn, the reverse kernel's source) to p_rev.
+        to the channel static, rho at the kernel's plenum-fed-equivalent
+        state (p_rev, Tf): Tf the isentropic T at p_rev through the station's
+        static and stagnation states (C++ hole_supply_recovery_cd_ratio; the
+        station's static T at f = 0, Tt where f = 1 and no conversion
+        applies), so the law, its cap and the conversion read one state;
+        reversed from the channel's Pt (p_dn, the reverse kernel's source)
+        to p_rev, rho at the channel's (Tt, P).
         The direction is the sign of p_rev - P_channel, the plenum-fed rule
         with p_rev in the supply's place. The conversion onto the duct total
         then multiplies the law's Cd (term 4 of the module docstring)."""
@@ -1376,7 +1415,8 @@ class _HoleCdChain:
             up, down = (state_in, state_out) if forward else (state_out, state_in)
             dP = float(up.Pt) - float(down.P)
             p_rho = float(up.P)
-            d_dP = d_prho = None
+            T_rho = float(up.Tt)
+            d_dP = d_prho = d_trho = None
         else:
             P2 = float(state_out.P)
             forward = pair.p_rev >= P2
@@ -1386,13 +1426,18 @@ class _HoleCdChain:
                 d_dP = dict(pair.dp_rev)
                 d_dP[f"{el.to_node}.P"] = d_dP.get(f"{el.to_node}.P", 0.0) - 1.0
                 p_rho, d_prho = pair.p_rev, dict(pair.dp_rev)
+                if pair.t_ref is not None:
+                    T_rho, d_trho = pair.t_ref[0], dict(pair.t_ref[1])
+                else:
+                    T_rho, d_trho = float(up.Tt), {f"{el.from_node}.Tt": 1.0}
             else:
                 dP = pair.p_dn - pair.p_rev
                 d_dP = dict(pair.dp_dn)
                 for k, v in pair.dp_rev.items():
                     d_dP[k] = d_dP.get(k, 0.0) - v
                 p_rho, d_prho = P2, {f"{el.to_node}.P": 1.0}
-        rho, drho_dT, drho_dP = _solver_tools.density_and_jacobians(float(up.Tt), p_rho, list(up.X))
+                T_rho, d_trho = float(up.Tt), {f"{el.to_node}.Tt": 1.0}
+        rho, drho_dT, drho_dP = _solver_tools.density_and_jacobians(T_rho, p_rho, list(up.X))
         G_i = math.sqrt(2.0 * rho * dP) if dP > 0.0 else 0.0
         return _JetContext(
             up=up,
@@ -1407,6 +1452,7 @@ class _HoleCdChain:
             forward=forward,
             d_dP=d_dP,
             d_prho=d_prho,
+            d_trho=d_trho,
         )
 
     # --- the partials by unknown name -----------------------------------------
@@ -1751,7 +1797,8 @@ class _HoleCdChain:
             # pair's own derivatives (the station's segment flows, P, Tt, Y).
             for name, v in jc.d_dP.items():
                 add(name, dcd_dGi * dGi_ddP * v)
-            add(f"{up_id}.Tt", dcd_dGi * dGi_drho * jc.drho_dT)
+            for name, v in (jc.d_trho or {}).items():
+                add(name, dcd_dGi * dGi_drho * jc.drho_dT * v)
             for name, v in (jc.d_prho or {}).items():
                 add(name, dcd_dGi * dGi_drho * jc.drho_dP * v)
         # rho = P MW / (R_u T) through the composition (#964): at fixed (T, P)

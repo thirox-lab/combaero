@@ -187,7 +187,7 @@ def test_the_spec_refuses_what_no_element_can_build(kw: dict, match: str) -> Non
          "plenum-fed"),
         (_film, HoleCd(correlation="McGreehanSchotsch", inlet_crossflow="mcgreehan_schotsch"),
          "plenum-fed"),
-        (_row, HoleCd(inlet_crossflow="mcgreehan_schotsch"), "plenum-fed"),
+        (_row, HoleCd(inlet_crossflow="mcgreehan_schotsch"), "does not apply to an impingement row"),
         (lambda hole_cd: _plate(hole_cd=hole_cd, crossflow_segments=(None, None),
                                 crossflow_area=1e-3),
          HoleCd(inlet_crossflow="mcgreehan_schotsch"), "does not compose"),

@@ -72,11 +72,14 @@ def _channel_net(
     regime: str = "compressible",
     area: float = 1e-3,
     p_sink: float = 1.02e5,
+    bypass_P: float | None = None,
 ) -> FlowNetwork:
     """N rows fed by a supply channel (CrossflowSegmentElement chain) that
     runs along the jet plate from ``src`` to ``sink``; their gap drains to
     ``exit``. A small ``area`` with the sink above the stations feeds the
-    channel from both ends."""
+    channel from both ends. ``bypass_P``: an initial (bypass) crossflow
+    into the gap ahead of row 1 from a boundary at that pressure, strong
+    enough for Rogers & Hersh's law to act (below its cap)."""
     net = FlowNetwork()
     net.add_node(_pb("src", 1.03e5))
     net.add_node(_pb("sink", p_sink))
@@ -104,6 +107,14 @@ def _channel_net(
         )  # fmt: skip
         net.add_element(_row(i, f"s{i}", spec))
     _gap(net, regime)
+    if bypass_P is not None:
+        net.add_node(_pb("byp", bypass_P))
+        net.add_element(
+            ImpingementCrossflowElement(
+                "x0", "byp", "c1", length=dx, height=Z_D * D, span=SPAN, regime=regime,
+                bypass_inlet=True,
+            )
+        )  # fmt: skip
     for e in net.elements.values():
         if hasattr(e, "regime"):
             e.regime = regime
@@ -203,6 +214,67 @@ def test_the_drive_is_the_stations_duct_total() -> None:
     assert {"s1x", "s2x"} <= set(flows)
 
 
+@pytest.mark.parametrize("f", [None, 0.5])
+def test_rogers_hersh_reads_the_kernels_referenced_state(f: float | None) -> None:
+    # A bypass crossflow makes Rogers & Hersh's law act (below its cap) on
+    # every row. Its G_ideal is the ideal jet at the conversion kernel's own
+    # referenced state (Pf = P1 + f q1, Tf) to the gap static: at f = 0 the
+    # station's static P and static T, not the supply node's (Pt, Tt).
+    spec = None if f is None else HoleCd(supply_recovery=f)
+    s, r = _solve(_channel_net(spec, bypass_P=1.03e5))
+    assert r["__success__"]
+    x = np.array(r["__x_solution__"])
+    acts = [
+        i for i in range(1, N + 1) if r["__element_diag__"][f"p{i}"]["Cd_exit_crossflow_applied"]
+    ]
+    # Every row at f = 0, row 1 at f = 0.5 (the law caps downstream there).
+    assert acts == ([1, 2, 3] if f is None else [1])
+    for i in acts:
+        el = s.network.elements[f"p{i}"]
+        si = s._get_node_state(s.network.nodes[f"s{i}"], x)
+        so = s._get_node_state(s.network.nodes[f"c{i}"], x)
+        flows = s._network_flows(el, x)
+        pair = el._hole_cd.drive_pair(si, so, flows)
+        T1 = el._crossflow_station.static_T(si, flows).T
+        c = cb.hole_supply_recovery_cd_ratio(
+            float(si.P), T1, pair.p_up, float(si.Tt), float(so.P), list(si.Y), f or 0.0
+        )
+        assert c.Pf == pytest.approx(pair.p_rev, rel=1e-14)
+        if f is None:
+            assert c.Pf == float(si.P) and c.Tf == T1
+        rho = float(cb.density(c.Tf, c.Pf, list(si.X)))
+        G = math.sqrt(2.0 * rho * (c.Pf - float(so.P)))
+        jc = el._hole_cd._jet_drive(si, so, flows)
+        assert jc.forward and jc.G_i == pytest.approx(G, rel=1e-12)
+        # Not the plenum frame (the node's Pt and Tt).
+        rho_pl = float(cb.density(float(si.Tt), float(si.Pt), list(si.X)))
+        G_pl = math.sqrt(2.0 * rho_pl * (float(si.Pt) - float(so.P)))
+        assert abs(jc.G_i / G_pl - 1.0) > 1e-4
+
+
+def test_the_referenced_temperature_has_analytic_partials() -> None:
+    Y = list(Y_AIR)
+    args = {"P1": 1.2e5, "T1": 430.0, "Pt1": 1.32e5, "Tt1": 450.0, "P2": 1.05e5}
+    for f in (0.0, 0.3, 1.0):
+        c = cb.hole_supply_recovery_cd_ratio(**args, Y=Y, f=f)
+        for key, dname in (("P1", "dTf_dP1"), ("T1", "dTf_dT1"), ("Pt1", "dTf_dPt1"),
+                           ("Tt1", "dTf_dTt1")):  # fmt: skip
+            h = 1e-6 * args[key]
+            up = cb.hole_supply_recovery_cd_ratio(**{**args, key: args[key] + h}, Y=Y, f=f)
+            dn = cb.hole_supply_recovery_cd_ratio(**{**args, key: args[key] - h}, Y=Y, f=f)
+            fd = (up.Tf - dn.Tf) / (2.0 * h)
+            assert getattr(c, dname) == pytest.approx(fd, rel=1e-6, abs=1e-12)
+        if 0.0 < f < 1.0:
+            up = cb.hole_supply_recovery_cd_ratio(**args, Y=Y, f=f + 1e-6)
+            dn = cb.hole_supply_recovery_cd_ratio(**args, Y=Y, f=f - 1e-6)
+            assert c.dTf_df == pytest.approx((up.Tf - dn.Tf) / 2e-6, rel=1e-6)
+    assert cb.hole_supply_recovery_cd_ratio(**args, Y=Y, f=0.0).Tf == 430.0
+    assert cb.hole_supply_recovery_cd_ratio(**args, Y=Y, f=1.0).Tf == 450.0
+    # Set where the ratio is 0 (Pf at or below P2) too.
+    low = cb.hole_supply_recovery_cd_ratio(**{**args, "P2": 1.25e5}, Y=Y, f=0.0)
+    assert low.ratio == 0.0 and low.Tf == 430.0
+
+
 def test_f_one_takes_the_duct_total_unconverted() -> None:
     _, r0 = _solve(_channel_net())
     _, r1 = _solve(_channel_net(HoleCd(supply_recovery=1.0)))
@@ -220,7 +292,7 @@ def test_a_plenum_fed_row_is_unchanged_and_refuses_f() -> None:
     assert d["Cd_supply_recovery_q1"] == 0.0
     assert math.isnan(d["Cd_supply_recovery_fraction"])
     assert d["surface_extrapolated_supply_crossflow"] == 0.0
-    with pytest.raises(ValueError, match="crossflow-chain station"):
+    with pytest.raises(ValueError, match="is a PressureBoundary that no chain registers"):
         _solve(_plenum_net(HoleCd(supply_recovery=0.0)))
 
 
@@ -262,6 +334,19 @@ def test_the_static_drive_is_refused_on_a_row() -> None:
 )
 def test_the_rows_jacobian_is_analytic(regime: str, spec: HoleCd | None) -> None:
     s, r = _solve(_channel_net(spec, regime))
+    x = np.array(r["__x_solution__"])
+    assert _fd_rows(s, x) < 1e-5
+    assert _fd_rows(s, _perturbed(s, x, 5)) < 1e-5
+
+
+@pytest.mark.parametrize("regime", ["compressible", "incompressible"])
+@pytest.mark.parametrize("f", [None, 0.5])
+def test_the_jacobian_is_analytic_where_rogers_hersh_acts(regime: str, f: float | None) -> None:
+    # G_ideal through the drive pair and the referenced (Pf, Tf): the jet
+    # law's slope reaches the station's P, Tt, Y and segment flows.
+    spec = None if f is None else HoleCd(supply_recovery=f)
+    s, r = _solve(_channel_net(spec, regime, bypass_P=1.03e5))
+    assert r["__element_diag__"]["p1"]["Cd_exit_crossflow_applied"] == 1.0
     x = np.array(r["__x_solution__"])
     assert _fd_rows(s, x) < 1e-5
     assert _fd_rows(s, _perturbed(s, x, 5)) < 1e-5

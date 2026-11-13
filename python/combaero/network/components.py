@@ -8958,11 +8958,13 @@ class ImpingementPlateElement(OrificeElement):
 
     A MOVING SUPPLY (C2, #1087). Florschuetz's rows are plenum-fed. A row
     whose ``from_node`` is a crossflow-chain station (a PlenumNode the
-    chain registers as a station: a supply channel along the jet plate, or
-    another array's gap) is duct-fed: the jets drive from the station's
+    chain registers as a station: a supply channel of
+    CrossflowSegmentElements along the jet plate) is duct-fed: the jets
+    drive from the station's
     rebuilt duct total, and the composed Cd above (the hole's, then the jet
     law and its cap, all plenum-fed and so referenced to P1 + f q1, with
-    G_ideal taken from P1 + f q1) is converted onto it, f =
+    G_ideal taken at the kernel's state there, (P1 + f q1, Tf)) is
+    converted onto it, f =
     ``HoleCd.supply_recovery`` (None = 0; see HOLE_CD_SUPPLY_DRIVES). The
     gap side is unchanged. ``surface_extrapolated_supply_crossflow`` flags
     the row outside Florschuetz's plenum-fed envelope wherever the supply
@@ -9170,7 +9172,7 @@ class ImpingementPlateElement(OrificeElement):
     def _resolve_supply_station(self, graph: "FlowNetwork") -> None:
         """The row's supply (C2, #1087): a supply node that is a crossflow
         station (a PlenumNode carrying the _CrossflowStation its chain
-        registered, a supply channel or another array's gap) makes the row
+        registered: a supply channel along the jet plate) makes the row
         DUCT-FED -- its jets drive from the station's rebuilt duct total
         with the composed Cd converted from P1 + f q1, f =
         HoleCd.supply_recovery (None = 0), and the station's segment flows
