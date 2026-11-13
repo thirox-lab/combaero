@@ -159,27 +159,45 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
                                         const std::vector<double>& Y, double m_dot, double area,
                                         bool incompressible = false);
 
-// The exact conversion of a STATIC-referenced hole Cd onto the TOTAL drive
+// The SUPPLY-HEAD RECOVERY conversion of a hole Cd onto the TOTAL drive
 // (owner's rule, 2026-11-12: a hole drives from the upstream total to the
-// downstream static, and its Cd model owns how much supply dynamic head is
-// recovered). One measured flow, two ideal flows:
-//   Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2),
+// downstream static, and its Cd model owns how much of the supply's dynamic
+// head q1 = Pt1 - P1 it recovers; owner's decision, 2026-11-13: the
+// recovered fraction f, HoleCd.supply_recovery). The hole's base Cd is taken
+// as referenced to the partly recovered drive Pf = P1 + f q1, so one
+// measured flow has two ideal flows:
+//   Cd_T / Cd_base = m_id(Pf, Tf -> P2) / m_id(Pt1, Tt1 -> P2),
 // both from the element's own compressible nozzle kernel
 // (solver::orifice_compressible_residuals_and_jacobian, Cd 1, beta 0), so
-// Cd_T m_id(Pt1, Tt1 -> P2) is Cd_S m_id(P1, T1 -> P2) to round-off: the
-// static-referenced model's own flow. (P1, T1) is the supply station's
-// STATIC state (McGreehan & Schotsch 1988, p. 215: "static pressures and
-// temperature"), (Pt1, Tt1) its stagnation state. Incompressibly the ratio
-// is sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2); the compressible ratio depends
-// on the supply Mach as well (docs/archive/hole_drive_convention.md).
+// Cd_T m_id(Pt1, Tt1 -> P2) is Cd_base m_id(Pf, Tf -> P2) to round-off.
+// f = 0: the static-referenced Cd (McGreehan & Schotsch 1988, p. 215:
+// "static pressures and temperature"), the hole recovers none of the head;
+// f = 1: the total-referenced Cd, all of it (ratio 1). (P1, T1) is the
+// supply station's STATIC state, (Pt1, Tt1) its stagnation state.
+//
+// Tf, the temperature of the f-shifted side: the isentropic T at Pf on the
+// isentrope through the static and stagnation states,
+//   Tf = T1 (Tt1/T1)^s,   s = ln(Pf/P1) / ln(Pt1/P1),
+// i.e. T ~ P^k with the exponent k = ln(Tt1/T1)/ln(Pt1/P1) the two states
+// themselves give. Reason: a partial recovery of the supply head is a partial
+// isentropic deceleration, which takes the gas from its static state towards
+// its stagnation state along one isentrope; taking the exponent from the two
+// states (not from a gamma) makes both ends exact, Tf = T1 bit for bit at
+// f = 0 (the static-referenced conversion) and Tf = Tt1 at f = 1 (ratio 1),
+// whatever closure produced T1 and Pt1. Where the head vanishes
+// (q1 = 0) s is taken as f; ln(Pt1/P1) and the exponent are log1p forms, and
+// ds/dx a series below x = q1/P1 = 1e-5, so the partials stay clean as q1 -> 0.
+// At f = 1 the shifted side IS (Pt1, Tt1), so the ratio is 1 bit for bit.
+//
 // `incompressible`: the exact ratio of the incompressible kernel (an element
 // in the incompressible regime, the solver's incompressible proxy included),
 // whose ideal flows are A sqrt(2 rho dp) at one density:
-//   Cd_T / Cd_S = sqrt(1 - X),  X = (Pt1 - P1)/(Pt1 - P2),
-// i.e. sqrt((P1 - P2)/(Pt1 - P2)); T1, Tt1 and Y do not enter (their
-// partials are 0). The compressible ratio tends to it at low supply Mach.
-// ratio = 0 (and every partial 0) where P1 <= P2: the static-referenced Cd
-// gives no forward flow there, or where m_id(Pt1, Tt1 -> P2) = 0.
+//   Cd_T / Cd_base = sqrt((Pf - P2)/(Pt1 - P2)) = sqrt(1 - (1 - f) X),
+// X = q1/(Pt1 - P2); T1, Tt1 and Y do not enter (their partials are 0). The
+// compressible ratio tends to it at low supply Mach.
+// ratio = 0 (and every partial 0) where Pf <= P2: the Cd gives no forward
+// flow there, or where m_id(Pt1, Tt1 -> P2) = 0. f outside [0, 1] throws.
+// Design record: docs/archive/hole_drive_convention.md.
 struct HoleDriveCdRatio {
   double ratio = 0.0;
   double d_dP1 = 0.0;   // [1/Pa]
@@ -187,9 +205,18 @@ struct HoleDriveCdRatio {
   double d_dPt1 = 0.0;  // [1/Pa]
   double d_dTt1 = 0.0;  // [1/K]
   double d_dP2 = 0.0;   // [1/Pa]
+  double d_df = 0.0;    // [-] by the recovered fraction f
   std::vector<double> d_dY;  // by mass fraction (the same Y on both sides)
 };
 
+HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y, double f,
+                                               bool incompressible = false);
+
+// The f = 0 case of hole_supply_recovery_cd_ratio: a STATIC-referenced Cd
+// (McGreehan & Schotsch's Eq. 17) onto the total drive exactly,
+//   Cd_T / Cd_S = m_id(P1, T1 -> P2) / m_id(Pt1, Tt1 -> P2),
+// incompressibly sqrt(1 - X), X = (Pt1 - P1)/(Pt1 - P2).
 HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
                                                double P2, const std::vector<double>& Y,
                                                bool incompressible = false);

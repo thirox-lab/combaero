@@ -20,8 +20,9 @@ A hole's Cd composes, in this order:
 THE DRIVE (owner, 2026-11-12): every hole runs from the upstream TOTAL to
 the downstream STATIC, so the element owns the energy balance; how much of
 a supply's dynamic head the hole recovers is its Cd model's business
-(HOLE_CD_SUPPLY_DRIVES, _DrivePair). A static-referenced correlation
-(McGreehan-Schotsch's Eq. 17) is converted onto that drive exactly.
+(HOLE_CD_SUPPLY_DRIVES, _DrivePair): at a duct-fed hole the base Cd is
+referenced to the partly recovered drive P1 + f q1 (HoleCd.supply_recovery,
+default f = 0) and converted onto the total drive exactly.
 
 HoleCd is the family's public spec: the model choices (correlation, fixed
 Cd, and each term's model) travel as one frozen object, ``hole_cd=HoleCd(...)``
@@ -121,62 +122,68 @@ HOLE_CD_EXIT_CROSSFLOW_MODELS = (
     "rogers_hersh_1976",
     "florschuetz_metzger_su_1982",
 )
-#: HoleCd.supply_drive: the pressure a hole's ideal flow (the Cd's reference)
-#: is taken from (#1087, supply side; C++ hole_supply_drive). Design record:
+#: HoleCd.supply_drive and HoleCd.supply_recovery: the pressure a hole's
+#: ideal flow (the Cd's reference) is taken from (#1087, supply side; C++
+#: hole_supply_drive, hole_supply_recovery_cd_ratio). Design record:
 #: docs/archive/hole_drive_convention.md.
 #:
 #: THE RULE (owner, 2026-11-12): orifices and losses run from the upstream
 #: TOTAL to the downstream STATIC, so they own the energy balance; a hole's
-#: Cd model owns how much of the supply's dynamic head the hole recovers
-#: (the recovered fraction f: 0 sees the static, 1 the total). The drive
-#: differs from the supply node's own Pt only on a DUCT-FED hole, whose
-#: supply node is a duct station holding the duct's static pressure:
-#:   "total"   ("auto") the duct's stagnation pressure at the station, the
-#:             static plus the dynamic head of its mean flow (smooth and
-#:             even through a duct-flow reversal).
-#:             - With McGreehan & Schotsch's Eq. 17 term (the EffusionLiner
-#:               default): their Cd is defined on the station STATIC (p. 215:
-#:               static pressure and temperature), so it is converted exactly
-#:               onto the total drive (C++ hole_static_to_total_cd_ratio):
-#:               Cd_T = Cd_S m_id(p1, T1 -> p2) / m_id(Pt1, Tt1 -> p2),
-#:               compressible, T1 the station's static temperature. That is
-#:               the authors' own flow (f = 0): the hole passes zero at the
-#:               station static, and the flow is the pre-0.12 one up to the
-#:               static-temperature correction, which grows with the station
-#:               Mach (+1 to +3 % on the probe liners, +3.6 % at a high-Mach
-#:               single station, up to +5.4 % on 12-station liners at
-#:               high duct Mach). At a MomentumChamberNode station p1, T1
-#:               are the chamber's static P and T. In the incompressible
-#:               regime (the solver's incompressible proxy included) the
-#:               ratio is that kernel's exact sqrt(1 - X), X = q1/(Pt1 - p2).
-#:             - Without an inlet term (inlet_crossflow="none"): the plain
-#:               Cd from the total to the static, i.e. the full supply head
-#:               recovered (f = 1), the behaviour of a hole leaning WITH the
-#:               supply flow (Gritsch 1998). On a liner with the term off
-#:               this bleeds +70 to +250 % more (from +4 % at a low duct
-#:               Mach) than the pre-0.12 static drive did, and a reversed
-#:               jet discharges against the duct total.
-#:   "static"  the pre-0.12 drive: the station static p1 with the node's
-#:             TOTAL temperature. It BREAKS the Pt-to-static rule (it books
-#:             the duct head outside the hole's control volume) and exists
-#:             only to reproduce v0.11.1 liner results. Route: removed once
-#:             the lean/recovery term (#1124) is settled by Gritsch 2001 or
-#:             Rohde data.
-#: Every other hole drives from its supply node's Pt, its total already.
-#: Held data (cross-source) give f ~ 0 for normal holes and holes leaning
-#: across the supply flow, f ~ 1 for 30 deg holes leaning with it (one lab):
-#: Eq. 17 misses co-aligned holes and a term-off base misses normal ones. The
-#: lean- and direction-dependent recovery is a Cd-model term to come (#1124),
-#: sourced from Rohde 1969 Fig. 11 and Gritsch, Schulz & Wittig 2001 (J.
-#: Turbomach. 123(4), 781-787, doi:10.1115/1.1397306; wanted entry in #1120).
+#: Cd model owns how much of the supply's dynamic head q1 = Pt1 - P1 the hole
+#: recovers, the recovered fraction f (HoleCd.supply_recovery): its base Cd
+#: is referenced to P1 + f q1, 0 sees the static, 1 the total. The drive
+#: differs from the supply node's own Pt only on a DUCT-FED hole (a
+#: duct-fed EffusionPlateElement, an EffusionLiner panel), whose supply node
+#: is a duct station holding the duct's static pressure:
+#:   "auto"    (reported "recovery") the duct's stagnation pressure at the
+#:             station, the static plus
+#:             the dynamic head of its mean flow (smooth and even through a
+#:             duct-flow reversal), with the base Cd converted exactly from
+#:             P1 + f q1 onto it (C++ hole_supply_recovery_cd_ratio):
+#:             Cd_T = Cd_base m_id(P1 + f q1, Tf -> p2) / m_id(Pt1, Tt1 -> p2),
+#:             compressible, T1 the station's static temperature and Tf the
+#:             isentropic T at P1 + f q1. The hole passes zero at P1 + f q1.
+#:             At a MomentumChamberNode station P1, T1 are the chamber's
+#:             static P and T. In the incompressible regime (the solver's
+#:             incompressible proxy included) the ratio is that kernel's exact
+#:             sqrt(1 - (1 - f) X), X = q1/(Pt1 - p2).
+#:             f DEFAULTS TO 0 at every angle and for every base (owner,
+#:             2026-11-13): held normal-hole Cd data (Kaddah 1964, Rohde TN
+#:             D-5467, McGreehan & Schotsch Fig. 6, Hay, Lampard & Benmansour
+#:             1983; the drive-convention study, within-set RMS 15.8 % static
+#:             vs 32.5 % total) show f ~ 0 for normal holes, and holes
+#:             leaning across the supply flow give f ~ 0.16. f applies to a
+#:             base Cd defined plenum-fed (inlet_crossflow="none"); with
+#:             McGreehan-Schotsch's U1/Vi term on, the correlation owns the
+#:             supply crossflow (its Eq. 17 Cd is static-referenced by its
+#:             authors, f = 0 their own flow) and any supply_recovery is
+#:             refused: a recovery on top counts the crossflow twice. On held
+#:             data (Gritsch 1998, one lab) 30 deg holes leaning WITH the
+#:             supply flow give f ~ 1.25; no default covers them yet.
+#:             Route to another default:
+#:             the lean- and direction-dependent recovery (#1124), sourced
+#:             from Rohde 1969 Fig. 11 and Gritsch, Schulz & Wittig 2001 (J.
+#:             Turbomach. 123(4), 781-787, doi:10.1115/1.1397306; wanted
+#:             entry in #1120).
+#:   "static"  the v0.11.1 drive, exactly: the station static p1 with the
+#:             node's TOTAL temperature, the base Cd unconverted (f = 0 up to
+#:             the static-temperature correction, +1 to +5 %). It BREAKS the
+#:             Pt-to-static rule (it books the duct head outside the hole's
+#:             control volume) and exists only to reproduce v0.11.1 liner
+#:             results. Route: removed once #1124 is settled. Refuses a
+#:             supply_recovery.
+#: Every other hole element drives from its supply node's Pt, its total
+#: already: f applies only to holes fed by a duct crossflow, and a
+#: supply_recovery given to any other hole element is refused.
 #: A liner whose duct flow REVERSES at a station (fed from both ends, or
 #: back-pressured) is demoted by the second-law check: booked at the duct
 #: total, the hole stream shows the station's reversed-flow model
 #: manufacturing total pressure (#1125). The solver's failure message names
 #: a warm-start proxy root refused for it (NetworkSolver, #1125).
 #: Cd_supply_drive_head_fraction reports how much of the drive the supply
-#: head is.
-HOLE_CD_SUPPLY_DRIVES = ("auto", "static", "total")
+#: head is; Cd_supply_recovery_q1 / _fraction / _ratio the head, the f
+#: applied and the conversion Cd_T / Cd_base.
+HOLE_CD_SUPPLY_DRIVES = ("auto", "static")
 #: Deprecation of the per-element hole-Cd keywords (HoleCd replaces them).
 HOLE_CD_KWARGS_DEPRECATED_IN = "0.12.0"
 HOLE_CD_KWARGS_REMOVED_IN = "0.13.0"
@@ -204,6 +211,9 @@ HOLE_CD_DIAGNOSTIC_KEYS = (
     "Cd_supply_drive_model",
     "Cd_supply_drive_applied",
     "Cd_supply_drive_head_fraction",
+    "Cd_supply_recovery_q1",
+    "Cd_supply_recovery_fraction",
+    "Cd_supply_recovery_ratio",
     "Cd_exit_crossflow_model",
     "Cd_exit_crossflow_applied",
     "Cd_exit_crossflow_ratio",
@@ -259,7 +269,8 @@ class HoleCd:
     EffusionLiner and ImpingementArray builders. A field left at None or
     "auto" is THAT ELEMENT's default, which differs per element (see each
     field); every default is the element's behaviour before the spec except
-    a duct-fed panel's supply_drive, the duct total since 0.12.0.
+    a duct-fed panel's drive, the duct total with supply_recovery's f since
+    0.12.0.
 
     Attributes
     ----------
@@ -299,19 +310,31 @@ class HoleCd:
     supply_drive : str
         The pressure the hole's ideal flow is taken from, one of
         HOLE_CD_SUPPLY_DRIVES. It matters on a duct-fed EffusionPlateElement
-        only, whose supply node is a duct station holding the duct's static:
-        "auto" / "total" drive from the duct's stagnation pressure there
-        (static plus the dynamic head of its mean flow): every hole runs
-        from the upstream total to the downstream static, and
-        McGreehan-Schotsch's static-referenced Eq. 17 Cd is converted onto
-        it exactly. "static" is the pre-0.12 drive (station static, node
-        total temperature); it BREAKS the Pt-to-static rule and exists only
-        to reproduce v0.11.1 liner results, to be removed once the
-        lean/recovery term (#1124) is settled by Gritsch 2001 or Rohde
-        data. Every other hole drives from its supply node's Pt, its total
-        already ("static" is refused there). A duct-flow reversal at a
-        station is refused by the second-law check (#1125). See
-        HOLE_CD_SUPPLY_DRIVES.
+        only, whose supply node is a duct station holding the duct's static.
+        "auto": the duct's stagnation pressure there (static plus the
+        dynamic head of its mean flow): every hole runs from the upstream
+        total to the downstream static, its base Cd converted onto it from
+        the partly recovered drive (supply_recovery). "static" is the
+        v0.11.1 drive exactly (station static, node total temperature); it
+        BREAKS the Pt-to-static rule and exists only to reproduce v0.11.1
+        liner results, to be removed once the lean/recovery term (#1124) is
+        settled by Gritsch 2001 or Rohde data. "static" is refused on every
+        other hole, which drives from its supply node's Pt, and together
+        with a supply_recovery. A duct-flow reversal at a station is refused
+        by the second-law check (#1125). See HOLE_CD_SUPPLY_DRIVES.
+    supply_recovery : float | None
+        The recovered fraction f in [0, 1] of the supply's dynamic head q1 =
+        Pt1 - P1 at a duct-fed hole whose base Cd is defined plenum-fed
+        (inlet_crossflow="none"): the base Cd is referenced to P1 + f q1 and
+        converted exactly onto the duct-total drive (C++
+        hole_supply_recovery_cd_ratio). None: 0 at every angle and for every
+        base (the held normal-hole data). Refused, any value, where the
+        correlation owns the supply crossflow (McGreehan-Schotsch with its
+        U1/Vi term on, the liner default: its Eq. 17 Cd is static-referenced,
+        f = 0 by its authors' definition, and a recovery on top counts the
+        crossflow twice), on a hole not fed by a duct crossflow, and with
+        supply_drive="static". The lean- and direction-dependent recovery is
+        #1124, the route to another default.
     """
 
     correlation: str | None = None
@@ -320,6 +343,7 @@ class HoleCd:
     inlet_crossflow: str = "auto"
     exit_crossflow: str = "auto"
     supply_drive: str = "auto"
+    supply_recovery: float | None = None
 
     def __post_init__(self) -> None:
         if self.correlation is not None and self.correlation not in HOLE_CD_CORRELATIONS:
@@ -346,6 +370,20 @@ class HoleCd:
             value = getattr(self, name)
             if value not in allowed:
                 raise ValueError(f"HoleCd: {name} {value!r} is not one of {list(allowed)}.")
+        f = self.supply_recovery
+        if f is not None:
+            if isinstance(f, bool) or not isinstance(f, (int, float)):
+                raise ValueError(f"HoleCd: supply_recovery={f!r} must be a number in [0, 1].")
+            if not (math.isfinite(f) and 0.0 <= f <= 1.0):
+                raise ValueError(
+                    f"HoleCd: supply_recovery={f!r} is the recovered fraction of the supply's "
+                    "dynamic head and must lie in [0, 1]."
+                )
+            if self.supply_drive == "static":
+                raise ValueError(
+                    "HoleCd: supply_recovery with supply_drive='static'. The static drive is the "
+                    "v0.11.1 wiring, which takes no recovered fraction; drop one of them."
+                )
 
 
 #: Each deprecated per-element keyword's HoleCd field.
@@ -434,11 +472,12 @@ def _resolve_inlet_crossflow(name: str, spec: HoleCd, duct_fed: bool) -> bool:
 
 
 def _resolve_supply_drive(name: str, spec: HoleCd, duct_fed: bool) -> str:
-    """The supply drive a hole is built with ("auto" = "total", see
-    HOLE_CD_SUPPLY_DRIVES), "static"
+    """The supply drive a hole is built with ("auto" resolves to "recovery":
+    the upstream total, the base Cd referenced to P1 + f q1 at a duct-fed
+    hole; see HOLE_CD_SUPPLY_DRIVES), "static"
     refused on a hole that is not duct-fed: its supply node carries its own
     total pressure, so there is no station static to drive from."""
-    drive = "total" if spec.supply_drive == "auto" else spec.supply_drive
+    drive = "recovery" if spec.supply_drive == "auto" else spec.supply_drive
     if drive == "static" and not duct_fed:
         raise ValueError(
             f"{name}: HoleCd(supply_drive='static') is a duct-fed hole's drive from its "
@@ -447,6 +486,37 @@ def _resolve_supply_drive(name: str, spec: HoleCd, duct_fed: bool) -> str:
             "crossflow_segments."
         )
     return drive
+
+
+def _resolve_supply_recovery(
+    name: str, spec: HoleCd, duct_fed: bool, inlet_term: bool = False
+) -> float:
+    """The recovered fraction f of the supply head a hole is built with
+    (HoleCd.supply_recovery; None = 0, see HOLE_CD_SUPPLY_DRIVES), refused on
+    a hole that is not duct-fed, and wherever the correlation owns the supply
+    crossflow (``inlet_term``: McGreehan-Schotsch's U1/Vi term on): its
+    static-referenced Cd already models the supply crossflow, and a further
+    recovery would count the crossflow twice (the unconverted duct-total
+    model, which scores worse on every held set)."""
+    if spec.supply_recovery is None:
+        return 0.0
+    if not duct_fed:
+        raise ValueError(
+            f"{name}: HoleCd(supply_recovery={spec.supply_recovery!r}): the recovered "
+            "fraction f applies only to holes fed by a duct crossflow (a duct-fed "
+            "EffusionPlateElement naming its crossflow_segments, an EffusionLiner panel). "
+            "This hole drives from its supply node's total pressure; leave "
+            "supply_recovery at None."
+        )
+    if inlet_term:
+        raise ValueError(
+            f"{name}: HoleCd(supply_recovery={spec.supply_recovery!r}) with "
+            f"correlation={spec.correlation!r} and its supply-crossflow term on: this "
+            "correlation already models the supply crossflow (its Cd is referenced to the "
+            "station static, f = 0). f applies to a base Cd defined plenum-fed: pass "
+            "inlet_crossflow='none', or leave supply_recovery at None."
+        )
+    return float(spec.supply_recovery)
 
 
 @dataclass
@@ -463,12 +533,14 @@ class _DrivePair:
 
     ``p_rev`` is where the hole's flow passes zero: the direction is the
     sign of ``p_rev - p_dn``, and a reversed jet discharges against p_rev.
-    It is p_up, except where the Cd model recovers none of the supply head:
-    McGreehan-Schotsch's static-referenced Eq. 17 Cd, carried onto the total
-    drive by ``conv`` (C++ hole_static_to_total_cd_ratio, Cd_T = Cd_S
-    m_id(p1, T1 -> p2) / m_id(Pt1, Tt1 -> p2)), whose forward flow vanishes
-    at the station STATIC p1: there p_rev = p1. Either way the forward and
-    reverse forms vanish together and the flow passes zero continuously.
+    It is p_up, except where the Cd model recovers less than the whole
+    supply head (HoleCd.supply_recovery f < 1, the default f = 0): the base
+    Cd is referenced to p1 + f q1 and carried onto the total drive by
+    ``conv`` (C++ hole_supply_recovery_cd_ratio, Cd_T = Cd_base
+    m_id(p1 + f q1, Tf -> p2) / m_id(Pt1, Tt1 -> p2)), whose forward flow
+    vanishes at p1 + f q1: there p_rev = p1 + f q1. Either way the forward
+    and reverse forms vanish together and the flow passes zero
+    continuously.
     ``conv`` = (ratio, its derivatives by name), applied to the forward form
     only (a reversed jet's Cd is the correlation's own: the source covers
     outflow); None where no conversion applies.
@@ -616,6 +688,7 @@ def _resolve_jet_row(name: str, spec: HoleCd, xn_d: float, yn_d: float, z_d: flo
     _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto",) + _CD_CROSSFLOW_LAWS)
     _resolve_inlet_crossflow(name, spec, False)
     _resolve_supply_drive(name, spec, False)
+    _resolve_supply_recovery(name, spec, False)
     law = "rogers_hersh_1976" if spec.exit_crossflow == "auto" else spec.exit_crossflow
     _check_jet_crossflow_law(name, law, xn_d, yn_d, z_d)
     return law
@@ -722,7 +795,10 @@ class _HoleCdChain:
         # resolved), whether the supply station holds the duct's static (a
         # PlenumNode station, Pt = P) and whether the hole discharges against
         # its chamber's static pressure.
-        self.supply_drive = "total"
+        self.supply_drive = "recovery"
+        # The recovered fraction f of a duct-fed hole's supply head
+        # (HoleCd.supply_recovery, None resolved to 0).
+        self.supply_recovery = 0.0
         self.station_holds_static = False
         self.station_node: Any = None
         self.exit_static = False
@@ -768,6 +844,7 @@ class _HoleCdChain:
         self.duct_fed = bool(duct_fed)
         self.supply_duct = _resolve_inlet_crossflow(name, spec, duct_fed)
         self.supply_drive = _resolve_supply_drive(name, spec, duct_fed)
+        self.supply_recovery = _resolve_supply_recovery(name, spec, duct_fed, self.supply_duct)
         return model, exit_model
 
     def configure_plain(self, name: str, spec: HoleCd) -> None:
@@ -778,6 +855,7 @@ class _HoleCdChain:
         _refuse_choice(name, "exit_crossflow", spec.exit_crossflow, ("auto", "none"))
         self.supply_duct = _resolve_inlet_crossflow(name, spec, False)
         self.supply_drive = _resolve_supply_drive(name, spec, False)
+        _resolve_supply_recovery(name, spec, False)
 
     # --- the drive pair (#1087) ---------------------------------------------
 
@@ -822,7 +900,7 @@ class _HoleCdChain:
             state_in, flows, drive, el.regime == "incompressible"
         )
 
-    def _static_to_total_conversion(
+    def _recovery_conversion(
         self,
         state_in: "NetworkMixtureState",
         state_out: "NetworkMixtureState",
@@ -830,18 +908,19 @@ class _HoleCdChain:
         pt1: float,
         dpt1: dict[str, float],
     ) -> tuple[float, dict[str, float]]:
-        """Cd_T / Cd_S of McGreehan-Schotsch's static-referenced Eq. 17 Cd on
-        the duct-total drive, and its derivatives by name: C++
-        hole_static_to_total_cd_ratio at the station's STATIC state, its
-        total (pt1, the node's T0) and the discharge static p2.
+        """Cd_T / Cd_base of a base Cd referenced to the partly recovered
+        drive p1 + f q1 (f = supply_recovery) on the duct-total drive, and
+        its derivatives by name: C++ hole_supply_recovery_cd_ratio at the
+        station's STATIC state, its total (pt1, the node's T0) and the
+        discharge static p2.
 
         The station's static state: at a PlenumNode station, p1 its P and T1
         the static T of the duct's mean flow (as U1/Vi reads it); at a
         MomentumChamberNode station, the chamber's own static P and static T
         (its closure at its through-flow). In the incompressible regime (the
         solver's incompressible proxy included) the ratio is that kernel's
-        exact sqrt(1 - X), X = q1/(Pt1 - p2), which no temperature enters:
-        the forward kernel and its conversion are one model."""
+        exact sqrt(1 - (1 - f) X), X = q1/(Pt1 - p2), which no temperature
+        enters: the forward kernel and its conversion are one model."""
         el = self._el
         station = el._crossflow_station
         incompressible = el.regime == "incompressible"
@@ -867,13 +946,14 @@ class _HoleCdChain:
             mean_flow_dT1 = st.dm
         else:
             T1 = self._chamber_static_T(state_in, t1_terms)
-        c = cb.hole_static_to_total_cd_ratio(
+        c = cb.hole_supply_recovery_cd_ratio(
             float(state_in.P),
             T1,
             pt1,
             float(state_in.Tt),
             float(state_out.P),
             list(state_in.Y),
+            self.supply_recovery,
             incompressible,
         )
         dT1 = float(c.d_dT1)
@@ -934,30 +1014,32 @@ class _HoleCdChain:
         q = 0.0
         p_rev, dp_rev, conv = math.nan, {}, None
         if self.duct_fed and self.station_holds_static:
-            if self.supply_drive == "total":
+            if self.supply_drive == "recovery":
                 r, dp_up = self._station_drive(state_in, flows, cb.HoleSupplyDrive.Total)
                 p_up, q, supply = float(r.P_drive), float(r.q_dyn), True
-                if self.supply_duct:
-                    # McGreehan-Schotsch's Eq. 17 Cd is static-referenced:
-                    # converted exactly onto the total drive, it recovers
-                    # none of the duct head, so the flow passes zero at the
-                    # station static.
-                    conv = self._static_to_total_conversion(state_in, state_out, flows, p_up, dp_up)
-                    p_rev, dp_rev = float(state_in.P), {f"{el.from_node}.P": 1.0}
+                if self.supply_recovery < 1.0:
+                    # The base Cd is referenced to p1 + f q1 (f < 1 recovers
+                    # less than the whole duct head; the default f = 0 is
+                    # McGreehan-Schotsch's static-referenced Eq. 17 and the
+                    # held normal-hole data): converted exactly onto the
+                    # total drive, the flow passes zero at p1 + f q1.
+                    conv = self._recovery_conversion(state_in, state_out, flows, p_up, dp_up)
+                    p_rev, dp_rev = self._recovered_drive(state_in, p_up, dp_up)
             else:
                 # The static drive reads the station as the hole always did
                 # (its Pt, = P at a PlenumNode root); q for the diagnostics.
                 q = self.station_head(state_in, flows)
         elif self.duct_fed:
             # A station carrying its own Pt (a MomentumChamberNode): the drive
-            # is that Pt already, and Eq. 17 is converted onto it as at a
-            # PlenumNode station, from the chamber's static P and static T.
+            # is that Pt already, and the base Cd is converted onto it from
+            # p1 + f q1 as at a PlenumNode station, from the chamber's static
+            # P and static T.
             q = float(state_in.Pt) - float(state_in.P)
             if self.supply_drive == "static":
                 p_up, dp_up, supply = float(state_in.P), {f"{el.from_node}.P": 1.0}, True
-            elif self.supply_duct and self.station_node is not None:
-                conv = self._static_to_total_conversion(state_in, state_out, flows, p_up, dp_up)
-                p_rev, dp_rev = float(state_in.P), {f"{el.from_node}.P": 1.0}
+            elif self.supply_recovery < 1.0 and self.station_node is not None:
+                conv = self._recovery_conversion(state_in, state_out, flows, p_up, dp_up)
+                p_rev, dp_rev = self._recovered_drive(state_in, p_up, dp_up)
         if not (supply or self.exit_static or conv is not None):
             return None
         if self.exit_static:
@@ -967,6 +1049,24 @@ class _HoleCdChain:
         return _DrivePair(
             p_up, dp_up, p_dn, dp_dn, supply, self.exit_static, q, p_rev, dp_rev, conv
         )
+
+    def _recovered_drive(
+        self, state_in: "NetworkMixtureState", p_up: float, dp_up: dict[str, float]
+    ) -> tuple[float, dict[str, float]]:
+        """p1 + f q1 = (1 - f) p1 + f Pt1 (Pt1 = p_up, the duct total) and its
+        derivatives by name: where a base Cd referenced to it passes zero.
+        At f = 0 exactly the station static, {P: 1.0}, so the reverse form
+        is the original one."""
+        el = self._el
+        f = self.supply_recovery
+        key = f"{el.from_node}.P"
+        p1 = float(state_in.P)
+        if f == 0.0:
+            return p1, {key: 1.0}
+        d: dict[str, float] = {key: 1.0 - f}
+        for k, v in dp_up.items():
+            d[k] = d.get(k, 0.0) + f * v
+        return p1 + f * (p_up - p1), d
 
     def station_head(
         self, state_in: "NetworkMixtureState", flows: dict[str, float] | None
@@ -1640,9 +1740,9 @@ class _HoleCdChain:
         el = self._el
         r, ctx = self._evaluate(state_in, state_out, flows, jet=True)
         nan = math.nan
-        # On the element's total drive (#1087): a static-referenced Eq. 17 Cd
-        # converted exactly while the hole blows (the reversed jet takes the
-        # correlation's own Cd).
+        # On the element's total drive (#1087): the base Cd, referenced to
+        # p1 + f q1 (HoleCd.supply_recovery), converted exactly while the
+        # hole blows (the reversed jet takes the correlation's own Cd).
         drive_ratio = 1.0
         pair = self.drive_pair(state_in, state_out, flows) if self.duct_fed else None
         if pair is not None and pair.conv is not None and pair.p_rev > pair.p_dn:
@@ -1718,7 +1818,10 @@ class _HoleCdChain:
         flows: dict[str, float] | None,
     ) -> dict[str, float | str]:
         """The supply-drive keys of the group (#1087):
-        Cd_supply_drive_model          the drive in use ("auto" resolved);
+        Cd_supply_drive_model          the drive in use: "recovery" (the
+                                       "auto" drive, the upstream total with
+                                       the base Cd referenced to P1 + f q1 at
+                                       a duct-fed hole) or "static";
         Cd_supply_drive_applied        1 where it is not the supply node's
                                        own Pt (a duct-fed hole's rebuilt
                                        duct total, or a static drive from a
@@ -1732,7 +1835,22 @@ class _HoleCdChain:
                                        recovered fraction decides. 0 when not
                                        duct-fed; NaN where the duct total
                                        does not exceed the discharge
-                                       pressure."""
+                                       pressure;
+        Cd_supply_recovery_q1          the supply's dynamic head q1 = Pt1 -
+                                       P1 at a duct-fed hole's station [Pa]
+                                       (0 when not duct-fed);
+        Cd_supply_recovery_fraction    the recovered fraction f applied
+                                       (HoleCd.supply_recovery, default 0;
+                                       the lean- and direction-dependent
+                                       recovery is #1124). NaN where f does
+                                       not apply: a hole not duct-fed, or the
+                                       v0.11.1 static drive;
+        Cd_supply_recovery_ratio       the conversion Cd_T / Cd_base from
+                                       P1 + f q1 onto the total drive while
+                                       the hole blows (1 where none applies:
+                                       f = 1, not duct-fed, the static drive,
+                                       or a reversed jet, which takes the
+                                       correlation's own Cd)."""
         pair = self.drive_pair(state_in, state_out, flows)
         fraction = 0.0
         if self.duct_fed:
@@ -1740,10 +1858,20 @@ class _HoleCdChain:
             p_dn = pair.p_dn if pair is not None else float(state_out.Pt)
             pt_duct = float(state_in.P) + q if self.station_holds_static else float(state_in.Pt)
             fraction = q / (pt_duct - p_dn) if pt_duct > p_dn else math.nan
+        q1, f_applied, ratio = 0.0, math.nan, 1.0
+        if self.duct_fed:
+            q1 = pair.q_supply if pair is not None else self.station_head(state_in, flows)
+            if self.supply_drive == "recovery":
+                f_applied = self.supply_recovery
+            if pair is not None and pair.conv is not None and pair.p_rev > pair.p_dn:
+                ratio = float(pair.conv[0])
         return {
             "Cd_supply_drive_model": self.supply_drive,
             "Cd_supply_drive_applied": float(pair is not None and pair.supply),
             "Cd_supply_drive_head_fraction": float(fraction),
+            "Cd_supply_recovery_q1": float(q1),
+            "Cd_supply_recovery_fraction": float(f_applied),
+            "Cd_supply_recovery_ratio": ratio,
         }
 
     def legacy_diagnostics(self, group: dict[str, float | str], keys: tuple[str, ...]) -> dict:

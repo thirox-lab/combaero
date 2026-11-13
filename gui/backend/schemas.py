@@ -385,10 +385,14 @@ class HoleCdData(BaseModel):
     exit_crossflow: Literal[
         "auto", "none", "rowbury_2001", "rogers_hersh_1976", "florschuetz_metzger_su_1982"
     ] = "auto"
-    # The duct-fed hole's drive (#1087): "auto" = "total", every hole from the
-    # upstream total to the downstream static; "static" the pre-0.12 drive. A
-    # pass-through field: no Inspector select yet (#1124).
-    supply_drive: Literal["auto", "static", "total"] = "auto"
+    # The duct-fed hole's drive (#1087): "auto", every hole from the upstream
+    # total to the downstream static; "static" the v0.11.1 drive, removed once
+    # #1124 is settled. A pass-through field: no Inspector select yet (#1124).
+    supply_drive: Literal["auto", "static"] = "auto"
+    # The recovered fraction f in [0, 1] of a duct-fed hole's supply head
+    # (None = 0, the held normal-hole data; 1 = the full head). HoleCd refuses
+    # it on a hole that is not duct-fed and with supply_drive "static".
+    supply_recovery: float | None = None
 
     @model_validator(mode="before")
     @classmethod

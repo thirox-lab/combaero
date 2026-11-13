@@ -537,6 +537,7 @@ try:
         hole_supply_drive,
         HoleDriveCdRatio,
         hole_static_to_total_cd_ratio,
+        hole_supply_recovery_cd_ratio,
         discharge_inclination_dzeta,
         discharge_pipe_cd_ratio,
         discharge_pipe_zeta,
@@ -1087,6 +1088,7 @@ except (ModuleNotFoundError, ImportError) as e:
     hole_supply_drive = _core.hole_supply_drive
     HoleDriveCdRatio = _core.HoleDriveCdRatio
     hole_static_to_total_cd_ratio = _core.hole_static_to_total_cd_ratio
+    hole_supply_recovery_cd_ratio = _core.hole_supply_recovery_cd_ratio
     discharge_inclination_dzeta = _core.discharge_inclination_dzeta
     discharge_pipe_cd_ratio = _core.discharge_pipe_cd_ratio
     discharge_pipe_zeta = _core.discharge_pipe_zeta
@@ -1866,6 +1868,7 @@ __all__ = [
     "hole_supply_drive",
     "HoleDriveCdRatio",
     "hole_static_to_total_cd_ratio",
+    "hole_supply_recovery_cd_ratio",
     "discharge_inclination_dzeta",
     "discharge_pipe_cd_ratio",
     "discharge_pipe_zeta",

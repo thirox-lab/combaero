@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <tuple>
 #include <vector>
 
@@ -444,4 +446,97 @@ TEST(HoleStaticToTotalCdRatio, IncompressibleIsSqrtOneMinusX) {
   const auto lo_c = hole_static_to_total_cd_ratio(1.2e5, Tt1, 1.2e5 + 50.0, Tt1, 1.0e5, Y);
   const auto lo_i = hole_static_to_total_cd_ratio(1.2e5, Tt1, 1.2e5 + 50.0, Tt1, 1.0e5, Y, true);
   EXPECT_NEAR(lo_c.ratio, lo_i.ratio, 1e-4);
+}
+
+// The supply-head recovery conversion (HoleCd.supply_recovery): Cd_T /
+// Cd_base = m_id(Pf, Tf -> P2) / m_id(Pt1, Tt1 -> P2), Pf = P1 + f q1, Tf the
+// isentropic T at Pf through the static and stagnation states. f = 0 is the
+// static-to-total conversion bit for bit, f = 1 is ratio 1 bit for bit, and
+// every partial (d/df included) matches central differences (at f = 1
+// those but d/df vanish, d/dPt1 and d/dTt1 to round-off).
+TEST(HoleSupplyRecoveryCdRatio, EndsAreExactAndPartialsAnalytic) {
+  using combaero::hole_supply_recovery_cd_ratio;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P1 = 1.2e5, T1 = 430.0, Pt1 = 1.32e5, Tt1 = 450.0, P2 = 1.05e5;
+  for (bool inc : {false, true}) {
+    const auto r0 = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 0.0, inc);
+    const auto s = combaero::solver::orifice_compressible_residuals_and_jacobian(
+        0.0, P1, P1, T1, Y, P2, 1.0, 1.0, 0.0);
+    const auto t = combaero::solver::orifice_compressible_residuals_and_jacobian(
+        0.0, Pt1, Pt1, Tt1, Y, P2, 1.0, 1.0, 0.0);
+    if (!inc) {
+      EXPECT_EQ(r0.ratio, s.m_dot_calc / t.m_dot_calc);
+      EXPECT_EQ(r0.d_dP1, s.d_mdot_dP_total_up / t.m_dot_calc);
+      EXPECT_EQ(r0.d_dT1, s.d_mdot_dTt_up / t.m_dot_calc);
+    } else {
+      EXPECT_EQ(r0.ratio, std::sqrt((P1 - P2) / (Pt1 - P2)));
+    }
+    const auto r1 = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 1.0, inc);
+    EXPECT_EQ(r1.ratio, 1.0);
+    EXPECT_EQ(r1.d_dP1, 0.0);
+    EXPECT_EQ(r1.d_dT1, 0.0);
+    // Analytically zero; the two ideal-flow partials cancel to round-off.
+    EXPECT_NEAR(r1.d_dPt1, 0.0, 1e-15);
+    EXPECT_NEAR(r1.d_dTt1, 0.0, 1e-15);
+    EXPECT_EQ(r1.d_dP2, 0.0);
+    for (double fv : {0.0, 0.3, 0.7, 1.0}) {
+      const auto r = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, fv, inc);
+      auto g = [&](double a, double b, double c, double d, double e, double ff) {
+        return hole_supply_recovery_cd_ratio(a, b, c, d, e, Y, ff, inc).ratio;
+      };
+      const double hp = 1.0, ht = 1e-3, hf = 1e-6;
+      const double fl = std::max(0.0, fv - hf), fh = std::min(1.0, fv + hf);
+      EXPECT_NEAR((g(P1 + hp, T1, Pt1, Tt1, P2, fv) - g(P1 - hp, T1, Pt1, Tt1, P2, fv)) / (2 * hp),
+                  r.d_dP1, 1e-6 * std::abs(r.d_dP1) + 1e-12);
+      EXPECT_NEAR((g(P1, T1 + ht, Pt1, Tt1, P2, fv) - g(P1, T1 - ht, Pt1, Tt1, P2, fv)) / (2 * ht),
+                  r.d_dT1, 1e-6 * std::abs(r.d_dT1) + 1e-12);
+      EXPECT_NEAR((g(P1, T1, Pt1 + hp, Tt1, P2, fv) - g(P1, T1, Pt1 - hp, Tt1, P2, fv)) / (2 * hp),
+                  r.d_dPt1, 1e-6 * std::abs(r.d_dPt1) + 1e-12);
+      EXPECT_NEAR((g(P1, T1, Pt1, Tt1 + ht, P2, fv) - g(P1, T1, Pt1, Tt1 - ht, P2, fv)) / (2 * ht),
+                  r.d_dTt1, 1e-6 * std::abs(r.d_dTt1) + 1e-12);
+      EXPECT_NEAR((g(P1, T1, Pt1, Tt1, P2 + hp, fv) - g(P1, T1, Pt1, Tt1, P2 - hp, fv)) / (2 * hp),
+                  r.d_dP2, 1e-6 * std::abs(r.d_dP2) + 1e-12);
+      EXPECT_NEAR((g(P1, T1, Pt1, Tt1, P2, fh) - g(P1, T1, Pt1, Tt1, P2, fl)) / (fh - fl), r.d_df,
+                  1e-5 * std::abs(r.d_df) + 1e-9);
+    }
+  }
+  // Monotone in f: more recovered head, a smaller conversion.
+  const double a = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 0.2).ratio;
+  const double b = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 0.8).ratio;
+  EXPECT_LT(a, b);
+  EXPECT_LT(b, 1.0);
+  // Forward flow vanishes at Pf <= P2 (here the station static is below P2).
+  EXPECT_EQ(hole_supply_recovery_cd_ratio(1.0e5, T1, Pt1, Tt1, P2, Y, 0.1).ratio, 0.0);
+  EXPECT_GT(hole_supply_recovery_cd_ratio(1.0e5, T1, Pt1, Tt1, P2, Y, 0.9).ratio, 0.0);
+  EXPECT_THROW(hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 1.5), std::invalid_argument);
+  EXPECT_THROW(hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, -0.1), std::invalid_argument);
+}
+
+// As q1 -> 0 (review of C1): the exponent is a log1p form and ds/dx a series
+// below x = q1/P1 = 1e-5, so the P1 / Pt1 partials stay clean with T1 != Tt1:
+// central differences at q1 = 1e-6 Pa, and no jump across the series switch.
+TEST(HoleSupplyRecoveryCdRatio, VanishingHeadIsClean) {
+  using combaero::hole_supply_recovery_cd_ratio;
+  const std::vector<double> Y = combaero::mole_to_mass(combaero::dry_air());
+  const double P1 = 1.2e5, T1 = 430.0, Tt1 = 450.0, P2 = 1.05e5, f = 0.4;
+  for (double q1 : {1e-6, 1e-3}) {
+    const double Pt1 = P1 + q1;
+    const auto r = hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, f);
+    auto g = [&](double a, double c) {
+      return hole_supply_recovery_cd_ratio(a, T1, c, Tt1, P2, Y, f).ratio;
+    };
+    // A 0.01 Pa step (s is analytic through x = 0, so it may cross it): a step
+    // of order q1 itself would be round-off in the ratio.
+    const double h = 1e-2;
+    EXPECT_NEAR((g(P1 + h, Pt1) - g(P1 - h, Pt1)) / (2 * h), r.d_dP1,
+                1e-3 * std::abs(r.d_dP1));
+    EXPECT_NEAR((g(P1, Pt1 + h) - g(P1, Pt1 - h)) / (2 * h), r.d_dPt1,
+                1e-3 * std::abs(r.d_dPt1));
+  }
+  const double x0 = 1e-5;
+  const auto lo = hole_supply_recovery_cd_ratio(P1, T1, P1 * (1 + x0 * (1 - 1e-9)), Tt1, P2, Y, f);
+  const auto hi = hole_supply_recovery_cd_ratio(P1, T1, P1 * (1 + x0 * (1 + 1e-9)), Tt1, P2, Y, f);
+  EXPECT_NEAR(lo.d_dP1, hi.d_dP1, 1e-8 * std::abs(hi.d_dP1));
+  EXPECT_NEAR(lo.d_dPt1, hi.d_dPt1, 1e-8 * std::abs(hi.d_dPt1));
+  EXPECT_NEAR(lo.d_df, hi.d_df, 1e-8 * std::abs(hi.d_df));
 }

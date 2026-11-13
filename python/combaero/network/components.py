@@ -7019,8 +7019,10 @@ class EffusionPlateElement(OrificeElement):
     The keywords ``correlation`` and ``Cd`` are deprecated since 0.12.0
     (removed in 0.13.0); ``inlet_crossflow='none'`` holds U1/Vi at 0 on a
     duct-fed panel (no term) and lifts the refusal of a correlation without
-    the crossflow term. ``exit_crossflow_region`` and ``exit_crossflow_orientation_deg`` are
-    the hole's geometry and stay here.
+    the crossflow term. A duct-fed panel drives from the duct total, its base
+    Cd referenced to P1 + f q1 (``supply_recovery``, default f = 0; #1124 is
+    the lean recovery). ``exit_crossflow_region`` and
+    ``exit_crossflow_orientation_deg`` are the hole's geometry and stay here.
 
     THERMAL, INTERNAL SIDE. `internal_heat_transfer()` gives the coolant-side
     coefficient from Andrews 86-GT-225: the hole APPROACH flow over the

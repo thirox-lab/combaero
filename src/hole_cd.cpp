@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -168,48 +170,103 @@ HoleSupplyDriveResult hole_supply_drive(HoleSupplyDrive drive, double P, double 
   return out;
 }
 
-HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
-                                               double P2, const std::vector<double>& Y,
+HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y, double f,
                                                bool incompressible) {
+  if (!(f >= 0.0 && f <= 1.0)) {
+    throw std::invalid_argument("hole_supply_recovery_cd_ratio: the recovered fraction f = " +
+                                std::to_string(f) + " must lie in [0, 1]");
+  }
   HoleDriveCdRatio out;
   out.d_dY.assign(Y.size(), 0.0);
-  if (!(P1 > P2) || !(Pt1 > P2)) {
+  // The partly recovered drive and its partials: Pf = P1 + f q1.
+  const double q1 = Pt1 - P1;
+  // f = 1 takes Pt1 itself, so both ends are exact (ratio 1 bit for bit).
+  const double Pf = (f == 1.0) ? Pt1 : P1 + f * q1;
+  const double dPf_dP1 = 1.0 - f;
+  const double dPf_dPt1 = f;
+  const double dPf_df = q1;
+  if (!(Pf > P2) || !(Pt1 > P2)) {
     return out;
   }
   if (incompressible) {
-    // r = sqrt(a / b), a = P1 - P2, b = Pt1 - P2: one density on both
-    // sides, so the ratio of the two ideal flows is the ratio of their
-    // pressure drops' square roots.
-    const double a = P1 - P2;
+    // r = sqrt(a / b), a = Pf - P2, b = Pt1 - P2: one density on both sides,
+    // so the ratio of the two ideal flows is the ratio of their pressure
+    // drops' square roots.
+    const double a = Pf - P2;
     const double b = Pt1 - P2;
     const double r = std::sqrt(a / b);
+    const double dr_da = 0.5 * r / a;
     out.ratio = r;
-    out.d_dP1 = 0.5 * r / a;
-    out.d_dPt1 = -0.5 * r / b;
+    out.d_dP1 = dr_da * dPf_dP1;
+    out.d_dPt1 = dr_da * dPf_dPt1 + (-0.5 * r / b);
     out.d_dP2 = 0.5 * r * (1.0 / b - 1.0 / a);
+    out.d_df = dr_da * dPf_df;
     return out;
   }
+  // Tf = T1 exp(s M), M = ln(Tt1/T1), s = ln(Pf/P1)/L = log1p(f x)/log1p(x),
+  // x = q1/P1: the isentrope through the static and stagnation states (see
+  // the header). log1p keeps s exact as q1 -> 0; its x-derivative
+  // ds/dx = (f/(1 + f x) - s/(1 + x))/L cancels to O(x) there, so below
+  // |x| = 1e-5 it is the series f(1-f)(12 - 4x - 16fx + 3x^2 + 6fx^2 +
+  // 18f^2x^2)/24 (truncation O(x^3)), and ds/df = x/((1 + f x) L) likewise
+  // 1 + x/2 - fx - x^2/12 - fx^2/2 + f^2x^2. At f = 0, s and ds/dx are 0
+  // exactly, so the f = 0 ratio and partials are the static-to-total ones
+  // bit for bit.
+  const double M = (T1 > 0.0 && Tt1 > 0.0) ? std::log(Tt1 / T1) : 0.0;
+  const double x = q1 / P1;
+  const double L = std::log1p(x);
+  const double s = (L != 0.0) ? std::log1p(f * x) / L : f;
+  double ds_dx = 0.0, ds_df = 0.0;
+  if (std::abs(x) < 1e-5) {
+    ds_dx = f * (1.0 - f) *
+            (12.0 - 4.0 * x - 16.0 * f * x + 3.0 * x * x + 6.0 * f * x * x +
+             18.0 * f * f * x * x) /
+            24.0;
+    ds_df = 1.0 + 0.5 * x - f * x - x * x / 12.0 - 0.5 * f * x * x + f * f * x * x;
+  } else {
+    ds_dx = (f / (1.0 + f * x) - s / (1.0 + x)) / L;
+    ds_df = x / ((1.0 + f * x) * L);
+  }
+  // x = Pt1/P1 - 1.
+  const double ds_dP1 = ds_dx * (-Pt1 / (P1 * P1));
+  const double ds_dPt1 = ds_dx / P1;
+  const double Tf = (s == 1.0) ? Tt1 : T1 * std::exp(s * M);
+  const double dTf_dT1 = Tf * (1.0 - s) / T1;
+  const double dTf_dTt1 = Tf * s / Tt1;
+  const double dTf_dP1 = Tf * M * ds_dP1;
+  const double dTf_dPt1 = Tf * M * ds_dPt1;
+  const double dTf_df = Tf * M * ds_df;
   // Each side's ideal flow from rest at its own (pressure, temperature):
   // beta 0, so the kernel expands from (P_total_up, Tt_up) as given.
-  const solver::OrificeResult s =
-      solver::orifice_compressible_residuals_and_jacobian(0.0, P1, P1, T1, Y, P2, 1.0, 1.0, 0.0);
+  const solver::OrificeResult sr =
+      solver::orifice_compressible_residuals_and_jacobian(0.0, Pf, Pf, Tf, Y, P2, 1.0, 1.0, 0.0);
   const solver::OrificeResult t =
       solver::orifice_compressible_residuals_and_jacobian(0.0, Pt1, Pt1, Tt1, Y, P2, 1.0, 1.0, 0.0);
   if (!(t.m_dot_calc > 0.0)) {
     return out;
   }
-  const double r = s.m_dot_calc / t.m_dot_calc;
+  const double r = sr.m_dot_calc / t.m_dot_calc;
   const double inv = 1.0 / t.m_dot_calc;
+  const double gP = sr.d_mdot_dP_total_up;
+  const double gT = sr.d_mdot_dTt_up;
   out.ratio = r;
-  out.d_dP1 = s.d_mdot_dP_total_up * inv;
-  out.d_dT1 = s.d_mdot_dTt_up * inv;
-  out.d_dPt1 = -r * t.d_mdot_dP_total_up * inv;
-  out.d_dTt1 = -r * t.d_mdot_dTt_up * inv;
-  out.d_dP2 = (s.d_mdot_dP_static_down - r * t.d_mdot_dP_static_down) * inv;
-  for (std::size_t k = 0; k < Y.size() && k < s.d_mdot_dY_up.size(); ++k) {
-    out.d_dY[k] = (s.d_mdot_dY_up[k] - r * t.d_mdot_dY_up[k]) * inv;
+  out.d_dP1 = (gP * dPf_dP1 + gT * dTf_dP1) * inv;
+  out.d_dT1 = gT * dTf_dT1 * inv;
+  out.d_dPt1 = (gP * dPf_dPt1 + gT * dTf_dPt1) * inv - r * t.d_mdot_dP_total_up * inv;
+  out.d_dTt1 = gT * dTf_dTt1 * inv - r * t.d_mdot_dTt_up * inv;
+  out.d_dP2 = (sr.d_mdot_dP_static_down - r * t.d_mdot_dP_static_down) * inv;
+  out.d_df = (gP * dPf_df + gT * dTf_df) * inv;
+  for (std::size_t k = 0; k < Y.size() && k < sr.d_mdot_dY_up.size(); ++k) {
+    out.d_dY[k] = (sr.d_mdot_dY_up[k] - r * t.d_mdot_dY_up[k]) * inv;
   }
   return out;
+}
+
+HoleDriveCdRatio hole_static_to_total_cd_ratio(double P1, double T1, double Pt1, double Tt1,
+                                               double P2, const std::vector<double>& Y,
+                                               bool incompressible) {
+  return hole_supply_recovery_cd_ratio(P1, T1, Pt1, Tt1, P2, Y, 0.0, incompressible);
 }
 
 }  // namespace combaero

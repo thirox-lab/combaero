@@ -6853,7 +6853,19 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       .def_readonly("d_dPt1", &HoleDriveCdRatio::d_dPt1)
       .def_readonly("d_dTt1", &HoleDriveCdRatio::d_dTt1)
       .def_readonly("d_dP2", &HoleDriveCdRatio::d_dP2)
+      .def_readonly("d_df", &HoleDriveCdRatio::d_df)
       .def_readonly("d_dY", &HoleDriveCdRatio::d_dY);
+  m.def("hole_supply_recovery_cd_ratio", &hole_supply_recovery_cd_ratio, py::arg("P1"),
+        py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"), py::arg("f"),
+        py::arg("incompressible") = false,
+        "A hole Cd referenced to the partly recovered supply drive Pf = P1 + f q1\n"
+        "(q1 = Pt1 - P1, f the recovered fraction of the supply head in [0, 1],\n"
+        "HoleCd.supply_recovery) onto the total drive: Cd_T / Cd_base =\n"
+        "m_id(Pf, Tf -> P2) / m_id(Pt1, Tt1 -> P2), both ideal flows from the\n"
+        "network's compressible nozzle kernel; Tf the isentropic T at Pf on the\n"
+        "isentrope through (P1, T1) and (Pt1, Tt1). f = 0: the static-referenced\n"
+        "conversion; f = 1: ratio 1. incompressible: sqrt((Pf - P2)/(Pt1 - P2)).\n"
+        "0 where Pf <= P2. Analytic partials by P1, T1, Pt1, Tt1, P2, f and Y.");
   m.def("hole_static_to_total_cd_ratio", &hole_static_to_total_cd_ratio, py::arg("P1"),
         py::arg("T1"), py::arg("Pt1"), py::arg("Tt1"), py::arg("P2"), py::arg("Y"),
         py::arg("incompressible") = false,

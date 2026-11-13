@@ -9,7 +9,9 @@ import {
 	inletCrossflowLabel,
 	resolvedCorrelation,
 	resolvedExitCrossflow,
+	showsSupplyRecovery,
 	withCorrelation,
+	withInletCrossflow,
 } from "../utils/holeCd";
 import type {
 	HoleCdCorrelation,
@@ -158,9 +160,9 @@ const HoleCdEditor: React.FC<HoleCdEditorProps> = ({
 						className={selectCls}
 						value={inlet}
 						onChange={(e) =>
-							set({
-								inlet_crossflow: e.target.value as HoleCdInletCrossflow,
-							})
+							onChange(
+								withInletCrossflow(hc, e.target.value as HoleCdInletCrossflow),
+							)
 						}
 					>
 						{rules.inletCrossflow.map((v) => (
@@ -183,6 +185,28 @@ const HoleCdEditor: React.FC<HoleCdEditorProps> = ({
 							take the duct as a plenum.
 						</p>
 					)}
+				</div>
+			)}
+			{showsSupplyRecovery(type, hc) && (
+				<div className="flex flex-col gap-1">
+					<label htmlFor={`${id}_supply_recovery`} className={labelCls}>
+						Supply Head Recovered (f)
+					</label>
+					<NumericInput
+						id={`${id}_supply_recovery`}
+						value={hc.supply_recovery ?? null}
+						onChange={(val) => set({ supply_recovery: val })}
+						onClear={() => set({ supply_recovery: null })}
+						className="p-1.5 h-8 text-sm border rounded bg-white"
+						placeholder="0 (default)"
+						min={0}
+						max={1}
+					/>
+					<div className="text-[9px] text-gray-400">
+						The share of the duct's dynamic head the plenum-fed Cd is referenced
+						to: 0 (default) the station static, as normal holes behave (held
+						data). Which holes recover more is #1124.
+					</div>
 				</div>
 			)}
 			{rules.exitCrossflow.length > 0 && (

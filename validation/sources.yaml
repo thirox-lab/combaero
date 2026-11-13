@@ -3609,7 +3609,7 @@ documents:
     liner-envelope crossflow rows; NREC Eq. 97 with Cd_inf 0.625 +8.0 / 8.8 deg. Used 2026-11-11 (#1087 supply
     side, cross-source ACCURACY): the 43 clean circular duct-fed rows (normal thin holes) under
     McGreehanSchotsch + Eq. 17: station-static drive -10.4/16.5 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +3.4/13.8 %; with the inlet
-    term off under the total drive +20.8/55.6 % (McGreehanSchotsch), +27.3/60.9 % (IdelchikThick).'
+    term off under the total drive +20.8/55.6 % (McGreehanSchotsch), +27.3/60.9 % (IdelchikThick). Used 2026-11-13 (C1, HoleCd.supply_recovery): one of the four normal-hole labs behind the default f = 0 (recovered supply head) at every angle and for every base (drive-convention study, docs/archive/hole_drive_convention.md); not re-scored at f = 0 with the inlet term off (no network runner).'
   read_for: ['#807 thin-wall liner-hole Cd under supply crossflow (cross-source accuracy for McGreehan-Schotsch
       Eq. 17)', 'primary of Lefebvre & Ballal Eq. 4.15 / Fig. 4.2', '#813 jet deflection angle vs Report 1373
       Eq. 9 (jets carrying V_A)']
@@ -4738,7 +4738,7 @@ documents:
     excluded as overplotted), 90 deg cells unchanged bit for bit. Used 2026-11-11 (#1087 supply side,
     cross-source ACCURACY): 16 duct-fed Minf 0 points, 90 deg normal holes, McGreehanSchotsch + Eq. 17:
     station-static drive -3.8/7.6 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +7.1/12.1 %; 30 deg holes are scored only with a
-    mainstream (no exit term: co-aligned -6.0/16.3 u4 -> +6.1/20.3, perpendicular +11.7/14.2 u2 -> +26.4/30.9).'
+    mainstream (no exit term: co-aligned -6.0/16.3 u4 -> +6.1/20.3, perpendicular +11.7/14.2 u2 -> +26.4/30.9). Used 2026-11-13 (C1, HoleCd.supply_recovery): the 90 deg sets are one of the four normal-hole labs behind the default f = 0; its 30 deg cross-leaning holes give f ~ 0.16, its co-aligned ones are #1124''s question.'
   read_for: ['#813 duct-fed hole Cd reference pressure and coolant-side crossflow', '#800/#818 cross-source check
       of the exit-side grazing Cd', '#807 L/D effect (none usable)', 'hole-inclination Cd term, 30/90 deg
       ratio', 'Rowbury 2001 exit-crossflow term, cross-source accuracy']
@@ -4833,7 +4833,7 @@ documents:
   verdict: 'Cross-source accuracy set for the McGreehan-Schotsch crossflow and corner-radius terms (Fig. 10
     digitised); also supplies validity statements. No correlation to implement. Used 2026-11-11 (#1087 supply
     side, cross-source ACCURACY but inside MS''s Fig. 4 fitting compilation): Fig. 10''s 30 points under
-    McGreehanSchotsch + Eq. 17: station-static drive +17.9/22.8 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +30.3/41.5 %.'
+    McGreehanSchotsch + Eq. 17: station-static drive +17.9/22.8 %, duct-total drive (Eq. 17 unconverted, a different model, not a convention test; combaero converts it exactly since #1122, which reproduces the static row up to the static-temperature correction) +30.3/41.5 %. Used 2026-11-13 (C1, HoleCd.supply_recovery): one of the four normal-hole labs behind the default f = 0 (drive-convention study); Fig. 11 (45 deg co-aligned) is the route to a lean-dependent f (#1124).'
   read_for: ['#375 jet-plate Cd crossflow validity', McGreehan-Schotsch U1/Vi term accuracy]
   issues: [333, 339, 375, 381, 382, 388, 389, 433, 1087]
   records: [validation/cooling/data/rohde1969/, validation/cooling/data/mcgreehan_schotsch1988/fig6_rohde_td0p51.csv,
