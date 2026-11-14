@@ -157,9 +157,20 @@ class FlowNetwork:
         # the element pass) only sees it on the next pass, so one call used to
         # leave a built solver with a different model than solve(), which
         # resolves several times.
+        self._resolve_to_fixed_point()
+
+    def _resolve_to_fixed_point(self, refusals: dict[str, str] | None = None) -> None:
+        """Resolve passes until the components' scalar attributes settle.
+
+        The one composition point for geometry inheritance: the solver and the
+        GUI's resolve preview both run it. ``refusals``: when given, an item
+        whose resolve_topology raises ValueError is recorded there by id (and
+        dropped again once it resolves) instead of stopping the pass, so a
+        partly-specified network still resolves everything else.
+        """
         sig = self._resolved_signature()
         for _ in range(RESOLVE_MAX_PASSES):
-            self._resolve_pass()
+            self._resolve_pass(refusals)
             new = self._resolved_signature()
             if new == sig:
                 return
@@ -169,16 +180,27 @@ class FlowNetwork:
             f"{RESOLVE_MAX_PASSES} passes; a component's resolve_topology is not convergent."
         )
 
-    def _resolve_pass(self) -> None:
+    def _resolve_pass(self, refusals: dict[str, str] | None = None) -> None:
         for node in self.nodes.values():
-            node.resolve_topology(self)
+            self._resolve_item(node, refusals)
         for element in self.elements.values():
-            element.resolve_topology(self)
+            self._resolve_item(element, refusals)
         # Second pass: elements that inherit from other elements (e.g. TeeJunction.F_C from a
         # channel whose D was itself inherited) get a second chance after the first pass resolved
         # all direct values.
         for element in self.elements.values():
-            element.resolve_topology(self)
+            self._resolve_item(element, refusals)
+
+    def _resolve_item(self, item: Any, refusals: dict[str, str] | None) -> None:
+        if refusals is None:
+            item.resolve_topology(self)
+            return
+        try:
+            item.resolve_topology(self)
+        except ValueError as exc:
+            refusals[item.id] = str(exc)
+        else:
+            refusals.pop(item.id, None)
 
     def _resolved_signature(self) -> list[tuple[str, tuple[tuple[str, Any], ...]]]:
         """Every node's and element's scalar attributes: what resolve_topology

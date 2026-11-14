@@ -17,13 +17,15 @@ chamber's area from a loss element's, a GUI junction's from a defaulted
 channel) settles only on a later pass, so one pass still left a built solver
 with another model than ``solve()``, which resolves several times.
 
-Mutation-tested: no resolve in ``_build_x0`` (or none on a solver's first
-call): 39 of 91 cases fail; the resolve after the unknowns are gathered: the
-13 start cases fail; a single resolve pass (no fixed point): 8 fail (the 4
-loss-chain and the GUI-chain identity cases, the fixed-point case, and the
-C3X and random-30 idempotency cases);
-the inferred-area round trip restored in the chamber and combustor nodes:
-the C3X idempotency case fails.
+Mutation-tested (97 cases): no resolve in ``_build_x0`` (or none on a
+solver's first call): 39 fail; the resolve after the unknowns are gathered:
+the 13 start cases fail; a single resolve pass (no fixed point): 8 fail (the
+4 loss-chain and the GUI-chain identity cases, the fixed-point case, the C3X
+and random-30 idempotency cases); the inferred-area round trip restored: the
+C3X and random-30 idempotency and the 2 area-after-resolve cases fail; the
+derived Dh kept even after the user changes it: the 2 Dh-after-resolve
+cases fail; the GUI resolve preview back to one pass: both preview cases
+fail.
 """
 
 from __future__ import annotations
@@ -256,11 +258,51 @@ IDEMPOTENCY_NETS = {
 }
 
 
+def _deep(o, depth: int = 0, seen: frozenset = frozenset()):  # noqa: ANN001, ANN202
+    """A comparable deep copy of a component's state: scalars by repr (NaN
+    equals itself), arrays by bytes, other components by id, cycles cut."""
+    if o is None or isinstance(o, (bool, int, str)):
+        return o
+    if isinstance(o, float):
+        return repr(o)
+    if isinstance(o, np.ndarray):
+        return ("nd", o.shape, np.ascontiguousarray(o).tobytes())
+    if isinstance(o, (np.floating, np.integer)):
+        return repr(o.item())
+    if depth > 6:
+        return "<deep>"
+    if isinstance(o, (list, tuple)):
+        return [type(o).__name__] + [_deep(x, depth + 1, seen) for x in o]
+    if isinstance(o, (set, frozenset)):
+        return ["set"] + sorted(repr(_deep(x, depth + 1, seen)) for x in o)
+    if isinstance(o, dict):
+        return {repr(k): _deep(v, depth + 1, seen) for k, v in o.items()}
+    if isinstance(o, FlowNetwork):
+        return "<net>"
+    d = getattr(o, "__dict__", None)
+    if d is None:
+        return repr(o) if not callable(o) else "<callable>"
+    if depth > 0 and getattr(o, "id", None) is not None:
+        return f"<ref {type(o).__name__} {o.id}>"
+    if id(o) in seen:
+        return "<cycle>"
+    return {k: _deep(v, depth + 1, seen | {id(o)}) for k, v in d.items()}
+
+
+def _deep_snapshot(g: FlowNetwork) -> dict:
+    return {
+        f"{kind}:{cid}": _deep(comp)
+        for kind, comps in (("node", g.nodes), ("elem", g.elements))
+        for cid, comp in comps.items()
+    }
+
+
 @pytest.mark.parametrize("name", sorted(IDEMPOTENCY_NETS))
 @pytest.mark.filterwarnings("ignore::UserWarning")
 def test_a_second_resolve_changes_nothing(name: str) -> None:
-    """Resolving a resolved network leaves every scalar attribute of every
-    node and element as it was, and an area a node inferred is the inferred
+    """Resolving a resolved network leaves the state of every node and
+    element as it was (a deep snapshot, not just the scalars the fixed point
+    compares), and an area a node inferred is the inferred
     area itself: the area -> Dh -> area round trip used to move it by an ulp
     on every resolve after the first (the C3X burner's 0.1 m^2 reported as
     0.09999999999999998 on some solves and 0.1 on others)."""
@@ -268,14 +310,82 @@ def test_a_second_resolve_changes_nothing(name: str) -> None:
 
     g = IDEMPOTENCY_NETS[name]()
     g.resolve_all_topology()
-    once = g._resolved_signature()
+    once = _deep_snapshot(g)
     g.resolve_all_topology()
-    assert g._resolved_signature() == once
+    assert _deep_snapshot(g) == once
     for nid, node in g.nodes.items():
-        if not getattr(node, "_Dh_from_area", False):
+        if getattr(node, "_Dh_derived", None) is None or node.Dh != node._Dh_derived:
             continue
         area, source = _infer_flow_area(g, [nid])
         if source == node._area_source:
             assert node.area == area, nid
     if name == "c3x_gui":
         assert g.nodes["burner"].area == 0.1
+
+
+def _inferring_node_network(kind: str) -> FlowNetwork:
+    """A chamber or combustor that infers its area from the channel after it
+    (no channel feeds it): its Dh is derived from that area."""
+    from combaero.network.components import ConstantFractionLoss, PressureLossElement
+
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("in", Pt=2.0e5, Tt=300.0))
+    g.add_node(PressureBoundary("out", Pt=1.9e5, Tt=300.0))
+    g.add_node(PlenumNode("p"))
+    g.add_node(MomentumChamberNode("m") if kind == "chamber" else CombustorNode("m"))
+    g.add_element(ChannelElement("c1", "in", "p", length=0.2, diameter=0.01))
+    g.add_element(PressureLossElement("pl", "p", "m", correlation=ConstantFractionLoss(xi=0.05)))
+    g.add_element(ChannelElement("c2", "m", "out", length=0.2, diameter=0.05))
+    return g
+
+
+@pytest.mark.parametrize("kind", ["chamber", "combustor"])
+def test_a_dh_set_after_a_resolve_sets_the_area(kind: str) -> None:
+    """The inferred area stands only while Dh is still the one derived from
+    it: a Dh the user sets after a resolve sets the area on the next."""
+    g = _inferring_node_network(kind)
+    g.resolve_all_topology()
+    m = g.nodes["m"]
+    assert m.area == np.pi * 0.05**2 / 4.0
+    m.Dh = 0.02
+    g.resolve_all_topology()
+    assert m.area == pytest.approx(np.pi * 0.02**2 / 4.0, rel=1e-15)
+
+
+@pytest.mark.parametrize("kind", ["chamber", "combustor"])
+def test_an_area_set_after_a_resolve_stands(kind: str) -> None:
+    """An area attribute set after a resolve, with the derived Dh untouched,
+    stands on the next resolve (the area is the primary quantity here; it is
+    no longer derived back from the stale Dh)."""
+    g = _inferring_node_network(kind)
+    g.resolve_all_topology()
+    m = g.nodes["m"]
+    m.area = 0.003
+    g.resolve_all_topology()
+    assert m.area == 0.003
+
+
+@pytest.mark.parametrize("name", ["gui_channel_chain", "c3x_gui"])
+@pytest.mark.filterwarnings("ignore::UserWarning")
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_the_resolve_preview_reports_the_geometry_a_solve_uses(name: str) -> None:
+    """The GUI's resolve preview runs the same fixed point: every element's and
+    node's geometry and source are the solved network's. On the junction chain
+    one node pass reported the junction at 0.1 m^2 "default" while the solve
+    used 7.854e-3 m^2 from the defaulted channel."""
+    from gui.backend.resolve_preview import _extract, resolve_preview
+
+    build = {"gui_channel_chain": lambda: _gui_channel_chain("incompressible", False)}.get(
+        name, _c3x_gui_network
+    )
+    preview = resolve_preview(build())
+    solved = NetworkSolver(build())
+    solved.solve()
+    net = solved.network
+    assert set(preview) == set(net.nodes) | set(net.elements)
+    for item_id, item in {**net.nodes, **net.elements}.items():
+        assert preview[item_id].fields == _extract(item), item_id
+    if name == "gui_channel_chain":
+        jct = preview["__junction__chan__chan2"].fields
+        assert jct["area"].value == pytest.approx(np.pi * 0.1**2 / 4.0, rel=1e-15)
+        assert jct["area"].source != "default"

@@ -204,29 +204,17 @@ def _f(obj: Any, name: str) -> float | None:
 def resolve_preview(net: FlowNetwork) -> dict[str, ItemResolution]:
     """Resolve ``net``'s geometry inheritance and report it per item.
 
-    Runs the same two element passes as ``resolve_all_topology`` but catches each
-    item's refusal (``ValueError``) instead of stopping at the first, so a
-    partially-specified network still yields a full report. Keys are element and
-    node ids (including the builder's synthetic ids; the caller maps them to
-    canvas nodes).
+    Runs the solver's own resolve (``FlowNetwork._resolve_to_fixed_point``,
+    the passes ``resolve_all_topology`` repeats until the geometry settles)
+    but catches each item's refusal (``ValueError``) instead of stopping at
+    the first, so a partially-specified network still yields a full report.
+    The geometry it reports is the one a solve uses: a node that inherits
+    from an element whose own geometry is inherited settles only on a later
+    pass (#1148). Keys are element and node ids (including the builder's
+    synthetic ids; the caller maps them to canvas nodes).
     """
     refusals: dict[str, str] = {}
-
-    for node in net.nodes.values():
-        try:
-            node.resolve_topology(net)
-        except ValueError as exc:  # a geometry-bearing node that cannot size
-            refusals[node.id] = str(exc)
-
-    # Two passes, mirroring resolve_all_topology; an element may inherit from
-    # another whose own value resolves only on the first pass.
-    for _pass in range(2):
-        for eid, element in net.elements.items():
-            try:
-                element.resolve_topology(net)
-                refusals.pop(eid, None)
-            except ValueError as exc:
-                refusals[eid] = str(exc)
+    net._resolve_to_fixed_point(refusals)
 
     report: dict[str, ItemResolution] = {}
     for item_id, item in {**net.nodes, **net.elements}.items():
