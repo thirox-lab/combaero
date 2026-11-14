@@ -9,8 +9,8 @@ reservoir acceleration a plenum exit carries). The regimes differed by -21 %
 forward and +179 % reversed at 2 kPa. Now every terminal reader asks the
 node's own definition (``_terminal_at_rest``): a combustor exit is a plenum
 exit in both regimes, for a NON-REACTING combustor. A burning (or mixing)
-one is still regime-inconsistent through the entry term's density (#1137,
-the xfail below).
+one is regime-consistent too since the entry term takes the reservoir's gas
+(#1137, the last test).
 
 The probe: a reservoir entry, one bleed station, the exit segment into the
 node, and a channel from the node to the exit.
@@ -246,17 +246,26 @@ AIR_HOT = 600.0
 CH4 = list(cb.species.to_mass(cb.species.pure_species("CH4")))
 
 
-def _entry_into(kind: str, regime: str, rev: bool, fuel: float = 0.0) -> FlowNetwork:
+def _entry_into(
+    kind: str,
+    regime: str,
+    rev: bool,
+    fuel: float = 0.0,
+    entry_K: float = 0.5,
+    dp: float = 8000.0,
+) -> FlowNetwork:
     """air -> one entry_K segment (no station) -> node [+ CH4] -> orifice ->
-    out, at 2 bar and 8 kPa (the review's from-end / hot-exit networks)."""
-    P, dp = 2.0e5, 8000.0
+    out, at 2 bar and ``dp`` (the review's from-end / hot-exit networks)."""
+    P = 2.0e5
     pa, po = (P, P + dp) if rev else (P + dp, P)
     g = FlowNetwork()
     g.add_node(PressureBoundary("air", Pt=pa, Tt=AIR_HOT, Y=Y))
     g.add_node(PressureBoundary("out", Pt=po, Tt=AIR_HOT, Y=Y))
     g.add_node(CombustorNode("c") if kind == "combustor" else PlenumNode("c"))
     g.add_element(
-        CrossflowSegmentElement("s", "air", "c", length=0.1, area=3e-4, entry_K=0.5, regime=regime)
+        CrossflowSegmentElement(
+            "s", "air", "c", length=0.1, area=3e-4, entry_K=entry_K, regime=regime
+        )
     )
     if fuel > 0.0:
         g.add_node(MassFlowBoundary("fuel", m_dot=fuel, Tt=300.0, Y=CH4))
@@ -335,15 +344,15 @@ def test_reversed_exit_head_is_the_reservoirs_gas(dp: float) -> None:
     assert abs(inc / com - 1.0) < 5e-3, (inc, com)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#1137: the forward entry term takes the to-node's (burnt) gas density "
-    "into a burning combustor; gap -21 to -29 %",
-)
+@pytest.mark.parametrize("dp", [2000.0, 8000.0])
+@pytest.mark.parametrize("entry_K", [0.5, 0.0])
 @pytest.mark.filterwarnings("ignore::UserWarning")
-def test_burning_combustor_exit_regimes_agree() -> None:
-    """One entry_K segment into a CH4-burning combustor: the regimes should
-    agree to 1 %. They do not until #1137."""
-    inc = float(_solve(_entry_into("combustor", "incompressible", False, 4e-4))["s.m_dot"])
-    com = float(_solve(_entry_into("combustor", "compressible", False, 4e-4))["s.m_dot"])
-    assert abs(inc / com - 1.0) < 1e-2, (inc, com)
+def test_burning_combustor_exit_regimes_agree(entry_K: float, dp: float) -> None:
+    """One entry_K segment into a CH4-burning combustor: the regimes agree to
+    O(Ma^2), +0.09 / +0.19 % (entry_K 0.5) and +0.15 / +0.40 % (entry_K 0) at
+    2 / 8 kPa. The entry term took the burnt gas's density (#1137): -29 / -21 %
+    and -37 / -24 %."""
+    args = ("combustor", False, 4e-4, entry_K, dp)
+    inc = float(_solve(_entry_into(args[0], "incompressible", *args[1:]))["s.m_dot"])
+    com = float(_solve(_entry_into(args[0], "compressible", *args[1:]))["s.m_dot"])
+    assert 0.0 < inc / com - 1.0 < 5e-3, (inc, com)

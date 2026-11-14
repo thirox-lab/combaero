@@ -2749,10 +2749,33 @@ class _CrossflowStation:
 
 
 def _station_node_partials(r: "_StaticChainedDrop", node: str) -> list[tuple[str, float]]:
-    """A station term's partials in its node's P, T (T0) and Y, keyed by name."""
-    out = [(f"{node}.P", r.d_dP), (f"{node}.Tt", r.d_dT)]
-    out.extend((f"{node}.Y[{k}]", d) for k, d in r.d_dY.items())
+    """A station term's partials in its node's P and its gas's T (T0) and Y,
+    keyed by name. The gas is the node's own unless the term names another
+    (``gas_node``: a reservoir entry's, #1137)."""
+    gas = getattr(r, "gas_node", None) or node
+    out = [(f"{node}.P", r.d_dP), (f"{gas}.Tt", r.d_dT)]
+    out.extend((f"{gas}.Y[{k}]", d) for k, d in r.d_dY.items())
     return out
+
+
+def _entry_gas(
+    reservoir: NetworkMixtureState, duct_end: NetworkMixtureState
+) -> NetworkMixtureState:
+    """The gas a reservoir entry accelerates, at the duct end's static state:
+    the reservoir's T0 and composition (``Tt``, ``Y``, ``X``) at the duct
+    end's P and Pt (#1137). Where both nodes hold the same gas this is the
+    duct end's state with the reservoir's T0 (equal at a root to solver
+    tolerance)."""
+    gas = NetworkMixtureState(
+        duct_end.P,
+        duct_end.Pt,
+        Tt=reservoir.Tt,
+        m_dot=duct_end.m_dot,
+        Y=reservoir.Y,
+        incompressible=duct_end.incompressible,
+    )
+    gas._X = reservoir.X  # type: ignore[attr-defined]
+    return gas
 
 
 class _StaticChainedDrop:
@@ -2760,11 +2783,16 @@ class _StaticChainedDrop:
     chained onto what that T depends on (#782): the node's T0, its static P,
     its composition, and the flow the static state was taken at -- the mean
     of the station's arriving (a) and leaving (b) flows when ``two_sided``,
-    else the arriving flow alone."""
+    else the arriving flow alone. ``gas_node``: the node whose T0 and
+    composition the gas is, when not the term's own node (a reservoir
+    entry's gas at its duct end's static P, #1137)."""
 
-    __slots__ = ("dP", "d_dm_a", "d_dm_b", "d_dP", "d_dT", "d_dY", "extra")
+    __slots__ = ("dP", "d_dm_a", "d_dm_b", "d_dP", "d_dT", "d_dY", "extra", "gas_node")
 
-    def __init__(self, r: Any, st: _MovingStaticT, two_sided: bool) -> None:
+    def __init__(
+        self, r: Any, st: _MovingStaticT, two_sided: bool, gas_node: str | None = None
+    ) -> None:
+        self.gas_node = gas_node
         #: Partials by unknown name beyond the station's own flows and node
         #: state: the joining jets' axial momentum (#813).
         self.extra: dict[str, float] = {}
@@ -12276,9 +12304,12 @@ class CrossflowSegmentElement(ChannelElement):
     * ``to_kappa`` with ``next_seg``: a station at ``to_node``; the flow
       leaving it is ``next_seg``'s.
     * ``entry_K``: ``from_node`` is a reservoir; the segment carries the
-      entry acceleration ``(1 + K_in) m^2/(2 rho A^2)`` at the duct (to-node)
-      static density instead of a from-station. Reversed, the duct discharges into
-      the reservoir at static continuity, the same as an exit: no term.
+      entry acceleration ``(1 + K_in) m^2/(2 rho A^2)`` instead of a
+      from-station, at the density of the gas it carries: the reservoir's T0
+      and composition at the duct's static P at the to-end (#1137), not the
+      to-node's own (a merge chamber's or a combustor's mixed gas). Reversed,
+      the duct discharges into the reservoir at static continuity, the same
+      as an exit: no term.
     * an exit into a plenum (no to-station) loses the dynamic head: the
       segment's exit static meets the plenum's pressure (static continuity).
       A plain ``ChannelElement`` into the same plenum does the opposite: it
@@ -12297,9 +12328,7 @@ class CrossflowSegmentElement(ChannelElement):
     * at rest or moving is the exit node's own definition,
       ``state_at_rest`` (``_terminal_at_rest``): a plenum, a combustor, a
       boundary hold Pt = P and are exits at rest; a MomentumChamberNode
-      moves. One predicate for both regimes (#1136; regime-consistent for
-      a non-reacting combustor, a burning one waits on #1137): a
-      CombustorNode exit
+      moves. One predicate for both regimes (#1136): a CombustorNode exit
       was moving to the compressible terminal (head recovered) and at rest
       to the incompressible row, without the reversed reservoir
       acceleration, and the regimes differed by -21 % forward and up to
@@ -12573,13 +12602,23 @@ class CrossflowSegmentElement(ChannelElement):
         # moves at this segment's own flow.
         terms = []
         if self.entry_K is not None:
+            # The entry accelerates the RESERVOIR's gas (#1137): the
+            # from-node's T0 and composition, at the duct's static P at the
+            # to-end (the to-node's). The to-node's own gas is a merge
+            # chamber's or a combustor's mixed or burnt one, which charged the
+            # entry 23 % low into a 388 K merge and the flow 19 % low into a
+            # flame. Reversed the term is 0 with zero partials (C1 at m = 0),
+            # so the gas never switches. channel_entry_drop has no partial in
+            # the composition, so a reservoir whose Y moves with the flows (a
+            # burning combustor feeding the segment) lacks d/dY here (#1146).
             m_b = flows.get(self._next.id, m) if to_station else m
-            st = _moving_static_T(state_out, 0.5 * (m + m_b), self.area_to, incompressible)
-            r = cb.channel_entry_drop(m, state_out.P, st.T, state_out.X, self.area_to, self.entry_K)
+            gas = _entry_gas(state_in, state_out)
+            st = _moving_static_T(gas, 0.5 * (m + m_b), self.area_to, incompressible)
+            r = cb.channel_entry_drop(m, gas.P, st.T, gas.X, self.area_to, self.entry_K)
             nb = self._next if to_station else None
             terms.append(
                 (
-                    _StaticChainedDrop(r, st, nb is not None),
+                    _StaticChainedDrop(r, st, nb is not None, gas_node=self.from_node),
                     self.to_node,
                     "a",
                     self.to_node,
@@ -12680,16 +12719,15 @@ class CrossflowSegmentElement(ChannelElement):
         A_to^2), even in m, at the exit section, at the chamber's static P
         (the duct-end static to O(q / P)). rho is the incompressible one
         (T = T0) of the gas the segment carries -- the from-node's for
-        m >= 0, the chamber's reversed, as ``_duct_ends`` reads -- except
-        behind a reservoir entry (``entry_K``): there it is the entry term's,
-        the to-node's (the chamber's) gas, so the two heads cancel to the
-        entry loss K q at one density, as the compressible duct ends carry
-        it (Pt_out + K/(1+K) of the entry drop). A hot merge chamber put
-        (1 + K) q_e - q_h 7.9 % off the compressible flow otherwise. Its
-        partials: the chamber's P, that gas's T0.
+        m >= 0, the chamber's reversed, as ``_duct_ends`` reads. Behind a
+        reservoir entry (``entry_K``) that is the entry term's density too
+        (#1137), so the two heads cancel to the entry loss K q at one
+        density, as the compressible duct ends carry it (Pt_out + K/(1+K) of
+        the entry drop): a hot merge chamber put (1 + K) q_e - q_h 7.9 % off
+        the compressible flow when only one of them took the carried gas.
+        Its partials: the chamber's P, that gas's T0.
         """
-        carried = m >= 0.0 and self.entry_K is None
-        gas_id, gas = (self.from_node, state_in) if carried else (self.to_node, state_out)
+        gas_id, gas = (self.from_node, state_in) if m >= 0.0 else (self.to_node, state_out)
         r = cb.channel_entry_drop(abs(m), state_out.P, float(gas.Tt), gas.X, self.area_to, 0.0)
         return (_ChamberExitHead(r, m, gas_id), self.to_node, "a", self.to_node, None, "exit_head")
 
@@ -12737,11 +12775,7 @@ class CrossflowSegmentElement(ChannelElement):
         ChannelElement's duct state at a rest end, #888; the exit-head
         report): NetworkNode declares it False, so a node class that sets
         ``is_boundary`` without declaring ``state_at_rest`` is moving here,
-        as it is there. Every shipped boundary declares True.
-
-        Regime consistency holds for a NON-REACTING combustor exit. Into a
-        burning or mixing one the forward entry term still takes the
-        to-node's gas density (#1137)."""
+        as it is there. Every shipped boundary declares True."""
         return node is None or bool(getattr(node, "state_at_rest", False))
 
     def _seed_flow_applies(self) -> bool:

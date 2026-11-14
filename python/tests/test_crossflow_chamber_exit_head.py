@@ -252,15 +252,54 @@ def _hot_merge(regime: str, p_sup: float, p_exit: float, T_hot: float = 900.0) -
     return g
 
 
-@pytest.mark.parametrize("dp", [500.0, 2000.0, 8000.0])
+@pytest.mark.parametrize("T_hot", [900.0, 1500.0])
 @pytest.mark.filterwarnings("ignore::UserWarning")
-def test_hot_merge_chamber_behind_an_entry_regimes_agree(dp: float) -> None:
+def test_hot_merge_chamber_behind_an_entry_gap_is_order_mach_squared(T_hot: float) -> None:
     """Behind a reservoir entry the exit head is taken at the entry term's
     density, so (1 + K) q - q cancels to the entry loss K q the compressible
-    duct ends carry. At the carried gas's density instead the gap was -7.9 %
-    (main: -25.5 %); it is now ~0.02 %, below the station chain's 0.09 %."""
-    g = _gap(lambda r: _hot_merge(r, 1.0e5 + dp, 1.0e5), "s1x")
-    assert abs(g) < 1e-3, g
+    duct ends carry; both take the carried gas, the supply's (#1137). The
+    gap that remains is O(Ma^2), from the merge face, and depends on the
+    mixed gas: gap / Ma^2 (the compressible duct exit Mach) is 0.045 / 0.040 /
+    0.026 at 0.5 / 2 / 8 kPa with a 900 K side stream and 0.037 / 0.031 /
+    0.013 with 1500 K.
+
+    With only the exit head on the carried gas it was -7.9 %. With both on
+    the chamber's mixed gas (#1139) the gap drifted with the side stream's T
+    and crossed zero: +0.18, +0.09, +0.02, -0.11 % at 300, 600, 900, 1500 K
+    and 8 kPa, gap / Ma^2 down to 0.0035 at 900 K and negative at 1500 K."""
+    for dp in (500.0, 2000.0, 8000.0):
+        inc = _flow(_hot_merge("incompressible", 1.0e5 + dp, 1.0e5, T_hot), "s1x")
+        r = NetworkSolver(_hot_merge("compressible", 1.0e5 + dp, 1.0e5, T_hot)).solve()
+        assert r["__success__"], r.get("__message__")
+        com, mach = float(r["s1x.m_dot"]), float(r["s1x.M_exit_duct"])
+        k = (inc - com) / com / mach**2
+        assert 0.01 < k < 0.06, (dp, k)
+
+
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+def test_hot_merge_forward_row_ignores_the_chamber_gas(regime: str) -> None:
+    """Forward, the segment's row does not read the merge chamber's gas: its
+    T0 enters neither the entry term nor the exit head (both the carried
+    gas's) nor the duct ends. Element level, the scaled partial in the
+    chamber's T0, |dF/dT0| T0 / (|dF/dm| m), is round-off; on #1139 it was
+    the full entry and head density's."""
+    g = _hot_merge(regime, 1.02e5, 1.0e5)
+    for el in g.elements.values():
+        el.resolve_topology(g)
+    seg = g.elements["s1x"]
+    m = 0.012
+
+    def row(T_out: float, dm: float = 0.0) -> float:
+        si = NetworkMixtureState(1.02e5, 1.02e5, Tt=300.0, m_dot=m + dm, Y=Y)
+        so = NetworkMixtureState(1.0e5, 1.003e5, Tt=T_out, m_dot=m + dm, Y=Y)
+        return float(seg.residuals(si, so, {"s1x": m + dm})[0][0])
+
+    # A secant over 600..1400 K: a central difference over 1 K reads only the
+    # row's round-off.
+    T0, hm = 1000.0, 1e-7
+    d_T = (row(T0 + 400.0) - row(T0 - 400.0)) / 800.0
+    d_m = (row(T0, hm) - row(T0, -hm)) / (2.0 * hm)
+    assert abs(d_T) * T0 <= 1e-10 * abs(d_m) * m, (d_T, d_m)
 
 
 @pytest.mark.parametrize("perturb", [0.0, 1e-3])
