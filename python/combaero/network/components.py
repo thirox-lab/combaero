@@ -12333,6 +12333,9 @@ class CrossflowSegmentElement(ChannelElement):
       to the incompressible row, without the reversed reservoir
       acceleration, and the regimes differed by -21 % forward and up to
       +179 % reversed.
+    * a BARE segment (no station at either end, its neighbours' included, and
+      no ``entry_K``) is a ChannelElement: Pt to Pt, its exit head lost into
+      a PressureBoundary in either direction (``_exit_head_lost``, #1138).
 
     Station nodes must be PlenumNodes (Pt = P): the node pressure is the
     channel's static pressure, which is what a side stream sees.
@@ -12741,8 +12744,36 @@ class CrossflowSegmentElement(ChannelElement):
         chamber's Pt and the head is carried, not lost (``_duct_ends``,
         ``_chamber_exit_head``). ChannelElement's exit head at a pressure
         boundary would charge it a second time (#588).
+
+        A BARE segment (no station at either end, no ``entry_K``) has no
+        convention of its own: ``_duct_ends`` runs it Pt to Pt as a
+        ChannelElement, so its exit follows ChannelElement's, the head lost
+        into a PressureBoundary in either direction (#1138). Opted out with
+        the rest, it never paid that head and flowed 2.9x the channel.
         """
+        if self._is_bare():
+            return ChannelElement._exit_head_lost(self, m_dot)
         return False
+
+    def _is_bare(self) -> bool:
+        """No station at either end and no reservoir entry: a ChannelElement.
+
+        A station a NEIGHBOUR registers counts too: a segment leaving a
+        to-only station (the previous segment's ``to_kappa``, this one with
+        no ``from_kappa``) is fed at the station's static pressure, its head
+        already moving, so its exit keeps #588's opt-out. Charged there, its
+        drive was friction plus a head it never had to make."""
+        if (
+            self.from_kappa is not None
+            or self.entry_K is not None
+            or (self.to_kappa is not None and getattr(self, "_next", None) is not None)
+        ):
+            return False
+        for attr in ("_upstream_node", "_downstream_node"):
+            station = getattr(getattr(self, attr, None), "_crossflow_station", None)
+            if station is not None and self.id in station.segment_ids:
+                return False
+        return True
 
     def _seed_exit_head(self) -> bool:
         """Whether the start guess charges one exit head: wherever the exit
