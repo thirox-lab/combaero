@@ -20,8 +20,9 @@ The probe: two boundaries 2 kPa apart. ``direct``: the element between them;
 ``last``: a channel into the mid node, the element on to ``exit``.
 
 A segment fed straight from a boundary beside a neighbour's station (B1
-reversed, B2 forward) never pays the acceleration head, on main and here:
-that is the feed side, not the exit, and waits on #1150 (strict xfails).
+reversed, B2 forward) never paid the acceleration head: that is the feed
+side, not the exit, fixed by #1150 (one "has a station" predicate, a lossless
+entry from a node at rest).
 """
 
 from __future__ import annotations
@@ -292,41 +293,34 @@ def test_b2_reversed_x_keeps_the_opt_out_by_its_to_node_station(regime: str) -> 
     own to-station (both -1.2840e-2 incompressible, -1.2824e-2
     compressible, as on main). Checking only the from-node took x for bare
     and moved this flow by 27 %. Compressible, the own station's end
-    closure differs by 2e-5 (its half-drop still sets the duct-end static)."""
+    closure differed by 2e-5 while x ran Pt to Pt; since #1150 x's end at
+    the neighbour's station is a station end too, and the two agree to 1e-10."""
     m = _x_flow(_b2(regime, True))
     m_own = _x_flow(_b2(regime, True, own_to_station=True))
-    assert abs(m - m_own) <= 1e-4 * abs(m_own), (m, m_own)
+    assert abs(m - m_own) <= 1e-8 * abs(m_own), (m, m_own)
 
 
-FEED_ASYMMETRY = pytest.mark.xfail(
-    strict=True,
-    reason="#1150: a segment fed straight from a boundary without entry_K beside a "
-    "neighbour's station never pays the acceleration head",
-)
-
-
-@FEED_ASYMMETRY
 @pytest.mark.parametrize("layout", ["b1", "b2"])
 @pytest.mark.parametrize("regime", REGIMES)
 def test_neighbour_station_layout_is_direction_symmetric(layout: str, regime: str) -> None:
     """B1 and B2 are mirror images; each should flow the same either way, as
-    the same chain with x's own station does (to 1e-12). On main and here
-    the boundary-fed leg runs 2.9-3.0x the other (B1 reversed, B2 forward:
-    3.8798e-2 incompressible, 3.7111e-2 compressible, against 1.284e-2)."""
+    the same chain with x's own station does. Before #1150 the
+    boundary-fed leg ran 2.9-3.0x the other (B1 reversed, B2 forward:
+    3.8798e-2 incompressible, 3.7111e-2 compressible, against 1.284e-2);
+    it is now symmetric to 4e-15 incompressible, 1.5e-9 compressible."""
     build = _b1 if layout == "b1" else _b2
     fwd = _x_flow(build(regime, False))
     rev = _x_flow(build(regime, True))
-    assert abs(abs(rev) / fwd - 1.0) < 0.02, (fwd, rev)
+    assert abs(abs(rev) / fwd - 1.0) < 1e-6, (fwd, rev)
 
 
-@FEED_ASYMMETRY
 @pytest.mark.parametrize(("layout", "reversed_"), [("b1", True), ("b2", False)])
 def test_neighbour_station_boundary_fed_leg_agrees_across_regimes(
     layout: str, reversed_: bool
 ) -> None:
-    """The boundary-fed leg's regime gap is +4.5 % (3.8798e-2 against
-    3.7111e-2); every other leg here agrees to 0.2 %."""
+    """The boundary-fed leg's regime gap was +4.5 % (3.8798e-2 against
+    3.7111e-2) before #1150; it is now +0.126 %, as every other leg here."""
     build = _b1 if layout == "b1" else _b2
     inc = _x_flow(build("incompressible", reversed_))
     com = _x_flow(build("compressible", reversed_))
-    assert abs((inc - com) / com) < 0.01, (inc, com)
+    assert abs((inc - com) / com) < 0.005, (inc, com)

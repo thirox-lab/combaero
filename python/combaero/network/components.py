@@ -12315,6 +12315,13 @@ class CrossflowSegmentElement(ChannelElement):
       to-node's own (a merge chamber's or a combustor's mixed gas). Reversed,
       the duct discharges into the reservoir at static continuity, the same
       as an exit: no term.
+    * no ``entry_K`` and no station at ``from_node`` (its own or a
+      neighbour's), fed by a node at rest (``_terminal_at_rest``): a
+      lossless reservoir entry, the same as ``entry_K=0`` (#1150,
+      ``_feed_K``). Incompressible the row carries the entry head; the
+      compressible duct end already takes the node's Pt. Before, the
+      incompressible row never paid that head and ran 3.0x the
+      compressible flow.
     * an exit into a plenum (no to-station) loses the dynamic head: the
       segment's exit static meets the plenum's pressure (static continuity).
       A plain ``ChannelElement`` into the same plenum does the opposite: it
@@ -12341,6 +12348,10 @@ class CrossflowSegmentElement(ChannelElement):
     * a BARE segment (no station at either end, its neighbours' included, and
       no ``entry_K``) is a ChannelElement: Pt to Pt, its exit head lost into
       a PressureBoundary in either direction (``_exit_head_lost``, #1138).
+      Every gate reads the one predicate (``_is_bare``, #1150): a segment
+      whose only station is a neighbour's is stationed to all of them, and
+      its end at that station takes the node's P as the duct static, as an
+      own station with no half-drop of its own.
 
     Station nodes must be PlenumNodes (Pt = P): the node pressure is the
     channel's static pressure, which is what a side stream sees.
@@ -12621,7 +12632,8 @@ class CrossflowSegmentElement(ChannelElement):
         # see the same static state. A duct node with no station downstream
         # moves at this segment's own flow.
         terms = []
-        if self.entry_K is not None:
+        entry_K = self._feed_K(incompressible)
+        if entry_K is not None:
             # The entry accelerates the RESERVOIR's gas (#1137): the
             # from-node's T0 and composition, at the duct's static P at the
             # to-end (the to-node's). The to-node's own gas is a merge
@@ -12634,7 +12646,7 @@ class CrossflowSegmentElement(ChannelElement):
             m_b = flows.get(self._next.id, m) if to_station else m
             gas = _entry_gas(state_in, state_out)
             st = _moving_static_T(gas, 0.5 * (m + m_b), self.area_to, incompressible)
-            r = cb.channel_entry_drop(m, gas.P, st.T, gas.X, self.area_to, self.entry_K)
+            r = cb.channel_entry_drop(m, gas.P, st.T, gas.X, self.area_to, entry_K)
             nb = self._next if to_station else None
             terms.append(
                 (
@@ -12673,9 +12685,7 @@ class CrossflowSegmentElement(ChannelElement):
             t_to = _StaticChainedDrop(r, st, True)
             self._with_jets(t_to, getattr(self, "_downstream_node", None), state_out, self.area_to)
             terms.append((t_to, self.to_node, "a", self.to_node, self._next, "to"))
-        elif (
-            incompressible and m < 0.0 and (self.from_kappa is not None or self.entry_K is not None)
-        ):
+        elif incompressible and m < 0.0 and self._terminal_end("to"):
             # Reversed out of an exit node at rest (a plenum, a combustor, a
             # boundary: ``_terminal_at_rest``): the node is a reservoir and
             # the gas accelerates out of it, one dynamic head, no entry loss.
@@ -12705,8 +12715,7 @@ class CrossflowSegmentElement(ChannelElement):
                 )
         if (
             incompressible
-            and not to_station
-            and (self.from_kappa is not None or self.entry_K is not None)
+            and self._terminal_end("to")
             and not self._terminal_at_rest(getattr(self, "_downstream_node", None))
         ):
             # An exit into a moving chamber: the duct's exit TOTAL meets the
@@ -12718,7 +12727,7 @@ class CrossflowSegmentElement(ChannelElement):
             # static met the chamber's Pt, as into a plenum, and the regimes
             # differed O(q), not O(Ma^2).
             terms.append(self._chamber_exit_head(state_in, state_out, m))
-        if incompressible and self.from_kappa is not None and self.area_from != self.area_to:
+        if incompressible and self._station_end("from") and self.area_from != self.area_to:
             # Bernoulli between the two end statics (#812): a station's static
             # at the from-end, the to-end's static (station or exit). A
             # reservoir entry already accelerates to the to-end's section.
@@ -12775,30 +12784,81 @@ class CrossflowSegmentElement(ChannelElement):
     def _is_bare(self) -> bool:
         """No station at either end and no reservoir entry: a ChannelElement.
 
-        A station a NEIGHBOUR registers counts too: a segment leaving a
-        to-only station (the previous segment's ``to_kappa``, this one with
-        no ``from_kappa``) is fed at the station's static pressure, its head
-        already moving, so its exit keeps #588's opt-out. Charged there, its
-        drive was friction plus a head it never had to make. Either end
-        counts: a segment arriving at a neighbour's from-station (B2) is not
-        bare either.
+        The one "has a station" predicate every gate reads (#1150): the
+        reservoir ends (``_feed_K``, ``exit_in``), the exit head into a
+        chamber (``exit_head``), the area change, the duct ends
+        (``_duct_ends``), the exit head into a boundary (``_exit_head_lost``)
+        and the report. Before #1150 four of them asked only for this
+        segment's own ``from_kappa`` or ``entry_K``, the fifth also for a
+        neighbour's station: a segment with only a neighbour's station was
+        bare to the duct ends and the reservoir ends and stationed to its
+        exit, and B1 reversed / B2 forward ran 3.0x the mirror leg.
 
-        The own-station clauses are not implied by the registration check:
-        the registration is the node's (a non-PlenumNode registers none and
-        is refused at validate), and ``from_kappa`` / a to-term with
-        ``_next`` are what ``_momentum_terms`` and ``_duct_ends`` read, so
-        bare here is bare there by the same three conditions."""
-        if (
-            self.from_kappa is not None
-            or self.entry_K is not None
-            or (self.to_kappa is not None and getattr(self, "_next", None) is not None)
-        ):
-            return False
-        for attr in ("_upstream_node", "_downstream_node"):
-            station = getattr(getattr(self, attr, None), "_crossflow_station", None)
-            if station is not None and self.id in station.segment_ids:
+        A station a NEIGHBOUR registers counts too (``_station_end``): a
+        segment leaving a to-only station (the previous segment's
+        ``to_kappa``, this one with no ``from_kappa``) is fed at the
+        station's static pressure, its head already moving, so its exit
+        keeps #588's opt-out. Charged there, its drive was friction plus a
+        head it never had to make. Either end counts: a segment arriving at
+        a neighbour's from-station (B2) is not bare either."""
+        return not (
+            self.entry_K is not None or self._station_end("from") or self._station_end("to")
+        )
+
+    def _station_end(self, end: str) -> bool:
+        """Whether this segment's ``end`` ("from" or "to") is a station: its
+        own (``from_kappa``; ``to_kappa`` with a next segment) or one a
+        neighbour registers on that node with this segment in it.
+
+        The own clauses are not implied by the registration: the
+        registration is the node's (a non-PlenumNode registers none and is
+        refused at validate), and ``from_kappa`` / a to-term with ``_next``
+        are what ``_momentum_terms`` reads. A from-node this segment enters
+        through ``entry_K`` is a reservoir, not a station, whatever a
+        neighbour registers there: the entry is the segment's own
+        declaration, unchanged by #1150."""
+        if end == "from":
+            if self.from_kappa is not None:
+                return True
+            if self.entry_K is not None:
                 return False
-        return True
+            node = getattr(self, "_upstream_node", None)
+        else:
+            if self.to_kappa is not None and getattr(self, "_next", None) is not None:
+                return True
+            node = getattr(self, "_downstream_node", None)
+        station = getattr(node, "_crossflow_station", None)
+        return station is not None and self.id in station.segment_ids
+
+    def _terminal_end(self, end: str) -> bool:
+        """A stationed segment's end with no station: a reservoir where it
+        feeds the segment, an exit where the segment discharges. A bare
+        segment has no terminal ends: it is a ChannelElement, Pt to Pt."""
+        return not self._is_bare() and not self._station_end(end)
+
+    def _feed_K(self, incompressible: bool) -> float | None:
+        """The from-end's entry loss coefficient, or None for no entry term.
+
+        ``entry_K`` where it is set (both regimes, unchanged). Otherwise a
+        stationed segment's terminal from-end fed by a node at rest
+        (``_terminal_at_rest``: a plenum, a combustor, a boundary) is a
+        reservoir entry with no loss, K = 0 (#1150, owner decision
+        2026-11-14): the gas accelerates out of rest, one dynamic head at
+        the to-end's section, the forward mirror of the reversed
+        ``exit_in``. Incompressible only: the compressible duct ends already
+        take that node's Pt (``_duct_ends``' terminal), so an entry_K = 0
+        there adds K/(1 + K) = 0 of the drop; leaving the term out keeps
+        those rows bit for bit. A moving from-node (a MomentumChamberNode)
+        is not a node at rest and gets no term here."""
+        if self.entry_K is not None:
+            return self.entry_K
+        if (
+            incompressible
+            and self._terminal_end("from")
+            and self._terminal_at_rest(getattr(self, "_upstream_node", None))
+        ):
+            return 0.0
+        return None
 
     def _seed_exit_head(self) -> bool:
         """Whether the start guess charges one exit head: wherever the exit
@@ -12821,8 +12881,8 @@ class CrossflowSegmentElement(ChannelElement):
 
         The one predicate every reader of a terminal end asks (#1136): the
         compressible terminal (``_duct_ends``), the incompressible reversed
-        exit (``exit_in``) and exit head (``exit_head``), and the start
-        guess (``_seed_exit_head``). Three of them asked "a PlenumNode or a
+        exit (``exit_in``), exit head (``exit_head``) and lossless entry
+        (``_feed_K``, #1150), and the start guess (``_seed_exit_head``). Three of them asked "a PlenumNode or a
         boundary" and one "a MomentumChamberNode", which left a
         CombustorNode exit moving when compressible and at rest when
         incompressible.
@@ -12963,8 +13023,11 @@ class CrossflowSegmentElement(ChannelElement):
         ChannelElement into a chamber. At rest the two meet at m = 0 (C1).
         A reservoir entry's dynamic head is now the outlet closure's, so only
         the loss K_in/(1 + K_in) of ``channel_entry_drop`` is added to the
-        outlet. A segment with neither stations nor an entry is a
-        ChannelElement: Pt to Pt, unchanged.
+        outlet. An end at a station a NEIGHBOUR registers (``_station_end``)
+        is a station end: the node's P is the duct static there, in both
+        directions, closed to its moving Pt (#1150). Before, such a segment
+        ran Pt to Pt, so its boundary-fed leg never paid the head. A BARE
+        segment (``_is_bare``) is a ChannelElement: Pt to Pt, unchanged.
 
         An end static below the sonic static P* of the flux is a choked end:
         its Pt is continued below Pt*, never on the supersonic branch (see
@@ -12972,7 +13035,7 @@ class CrossflowSegmentElement(ChannelElement):
         """
         m = float(state_in.m_dot)
         kinds = {t[5]: t for t in terms}
-        if self.from_kappa is None and self.entry_K is None and "to" not in kinds:
+        if self._is_bare():
             return (
                 state_in,
                 state_out,
@@ -13040,6 +13103,10 @@ class CrossflowSegmentElement(ChannelElement):
             for name, v in self._term_partials(t).items():
                 de[name] = de.get(name, 0.0) - v
             Pt_in, d_in = closure(float(state_in.P) - t[0].dP, de, self.area_from)
+        elif self._station_end("from"):
+            # A station a neighbour registers here: the node holds the duct's
+            # static, its gas moving, in both directions (#1150).
+            Pt_in, d_in = closure(float(state_in.P), {f"{self.from_node}.P": 1.0}, self.area_from)
         else:
             Pt_in, d_in = terminal(
                 self.from_node,
@@ -13055,6 +13122,8 @@ class CrossflowSegmentElement(ChannelElement):
             for name, v in self._term_partials(t).items():
                 de[name] = de.get(name, 0.0) + v
             Pt_out, d_out = closure(float(state_out.P) + t[0].dP, de, self.area_to)
+        elif self._station_end("to"):
+            Pt_out, d_out = closure(float(state_out.P), {f"{self.to_node}.P": 1.0}, self.area_to)
         else:
             Pt_out, d_out = terminal(
                 self.to_node,
