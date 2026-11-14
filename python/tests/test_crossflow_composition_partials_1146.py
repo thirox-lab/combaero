@@ -21,7 +21,7 @@ import math
 
 import numpy as np
 import pytest
-from _fd_jacobian import fd_jacobian, scaled_error
+from _fd_jacobian import fd_jacobian, is_pressure
 from test_crossflow_entry_gas_1137 import _merge
 
 import combaero as cb
@@ -281,22 +281,81 @@ def test_jet_momentum_composition_partials_match_fd(Pt: float) -> None:
 # ---- network -----------------------------------------------------------------
 
 
+#: The off-root point's displacement, a fraction of each unknown -- and, for a
+#: pressure, of the network's boundary drive, not of the pressure itself.
+PERTURBATION = 1e-3
+
+
+def _perturbed(s: NetworkSolver, x: np.ndarray) -> np.ndarray:
+    """An off-root point that keeps the network's drops: a flow or a
+    temperature moves by PERTURBATION of itself, a pressure by PERTURBATION
+    of the boundaries' Pt spread (the rule the sweep warm start and the FD
+    step follow, #1054/#1107: small against dp, not against P).
+
+    At PERTURBATION of P a pressure moved by up to 108 Pa against a 68 Pa
+    tail drop: on the reversed 'comb'/'chainmc' network it flipped the tail
+    channel's drive to -1.46 Pa against its -0.0192 kg/s flow, 1.5 Pa from
+    the 1 Pa flow-drive floor, where the row curves on the Pa scale and the
+    FD of its mc.Pt column measures only to its own round-off (1e-8 to
+    1.4e-7 by platform at the capped 0.015 Pa step; see _fd_jacobian)."""
+    pts = [n.Pt for n in s.network.nodes.values() if isinstance(n, PressureBoundary)]
+    drive = max(pts) - min(pts)
+    u = np.random.default_rng(7).uniform(-1.0, 1.0, x.size)
+    out = x * (1.0 + PERTURBATION * u)
+    for j, name in enumerate(s.unknown_names):
+        if is_pressure(name):
+            out[j] = x[j] + PERTURBATION * drive * u[j]
+    return out
+
+
 def _all_rows_fd_error(build, own: str, point: str) -> float:
     """Worst scaled FD error (J_ij |x_j|) over EVERY row, fresh solver at the
-    solved root, perturbed, or with ``own`` at m = +-1e-7."""
+    solved root, perturbed (``_perturbed``), or with ``own`` at m = +-1e-7."""
     s = NetworkSolver(build())
     r = s.solve()
     assert r["__success__"], r.get("__message__")
     x = np.array(r["__x_solution__"], dtype=float)
     if point == "perturbed":
-        x = x * (1.0 + 1e-3 * np.random.default_rng(7).uniform(-1.0, 1.0, x.size))
+        x = _perturbed(s, x)
     elif point in ("m+", "m-"):
         x[s.unknown_names.index(own)] = 1e-7 if point == "m+" else -1e-7
     f = NetworkSolver(build())
     f._build_x0()
     J = f._residuals_and_jacobian(x)[1]
+    J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
     fd = fd_jacobian(f, x, floor=1e-10)
-    return float(np.max(scaled_error(J, fd, x)))
+    # The FD helper caps a pressure column's step at 1 % of its smallest gap
+    # to any other pressure. Off the root, two levels a lossless link holds
+    # equal (a fuel boundary's P and its combustor's Pt) sit a few Pa apart,
+    # and the cap puts the step in round-off: 9.6e-8 on the tail row's mc.Pt
+    # column at a 0.012 Pa step, which agrees to 1.8e-10 at 1 Pa. Each entry
+    # takes the better of that step and the uncapped one, both Richardson:
+    # an analytic error shows at every step in the window, round-off and
+    # truncation do not.
+    err = np.abs(J - fd)
+    fd_wide = _pressure_columns_uncapped(f, x, fd)
+    err = np.minimum(err, np.abs(J - fd_wide))
+    cols = np.maximum(np.abs(x), 1e-12)[None, :]
+    scale = np.maximum(np.max(np.abs(fd * cols), axis=1), 1e-300)
+    return float(np.max(np.max(err * cols, axis=1) / scale))
+
+
+def _pressure_columns_uncapped(s: NetworkSolver, x: np.ndarray, fd: np.ndarray) -> np.ndarray:
+    """``fd`` with each pressure column re-differenced at 1e-6 |P| (the
+    helper's own step before its gap cap), Richardson-extrapolated."""
+    out = fd.copy()
+
+    def central(j: int, h: float) -> np.ndarray:
+        xp, xm = x.copy(), x.copy()
+        xp[j] += h
+        xm[j] -= h
+        return (np.asarray(s._residuals(xp)) - np.asarray(s._residuals(xm))) / (xp[j] - xm[j])
+
+    for j, name in enumerate(s.unknown_names):
+        if is_pressure(name):
+            h = 1e-6 * max(abs(x[j]), 1.0)
+            out[:, j] = (4.0 * central(j, h) - central(j, 2.0 * h)) / 3.0
+    return out
 
 
 NET_CASES = [
