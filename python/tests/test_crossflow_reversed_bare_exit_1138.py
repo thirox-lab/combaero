@@ -1,21 +1,27 @@
 """A bare crossflow segment's exit follows ChannelElement's (#1138).
 
-A ``CrossflowSegmentElement`` with no station at either end and no
-``entry_K`` has no convention of its own: ``_duct_ends`` runs it Pt to Pt, as
-a ``ChannelElement``. Its ``_exit_head_lost`` opted out with every other
-segment (#588, whose reason, station nodes at static continuity, holds only
-for a segment with a station or an entry), so it never paid the exit dynamic
-head into a PressureBoundary, in either direction, in either regime: it
-flowed 2.9x a ChannelElement between the same nodes (3.72e-2 against
-1.28e-2 kg/s at 2 kPa) and the regime gap was +5.6 % (+8.0 % boundary to
-boundary). It now loses the head where a ChannelElement does: into a
-PressureBoundary, forward or reversed. Into a PlenumNode or a
+A ``CrossflowSegmentElement`` with no station at either end (its neighbours'
+included) and no ``entry_K`` has no convention of its own: ``_duct_ends``
+runs it Pt to Pt, as a ``ChannelElement``. Its ``_exit_head_lost`` opted out
+with every other segment (#588, whose reason, station nodes at static
+continuity, holds only for a segment with a station or an entry), so it
+never paid the exit dynamic head into a PressureBoundary, in either
+direction, in either regime. In the two-element network below (the segment
+and a channel in series, 2 kPa, roughness 0) it passed 3.88e-2 kg/s
+incompressible and 3.66e-2 compressible against the channel's 1.2847e-2
+(3.0x, regime gap +6.0 %); alone between the boundaries 4.83e-2 against
+1.32e-2 (3.7x, +8.0 %). It now loses the head where a ChannelElement does:
+into a PressureBoundary, forward or reversed. Into a PlenumNode or a
 MomentumChamberNode a ChannelElement recovers the head, and so does the bare
 segment, as before.
 
 The probe: two boundaries 2 kPa apart. ``direct``: the element between them;
 ``first``: the element from ``sup`` into a mid node, a channel on to ``exit``;
 ``last``: a channel into the mid node, the element on to ``exit``.
+
+A segment fed straight from a boundary beside a neighbour's station (B1
+reversed, B2 forward) never pays the acceleration head, on main and here:
+that is the feed side, not the exit, and waits on #1150 (strict xfails).
 """
 
 from __future__ import annotations
@@ -154,7 +160,7 @@ def test_bare_segment_jacobian(layout: str, reversed_: bool, regime: str, point:
     """The segment row's analytic Jacobian against central differences in
     scaled variables, at the root, a perturbation and across m = 0 (the head
     m|m| / (2 rho A^2) has a slope |m| / (rho A^2): C1 at m = 0). Measured
-    below 1e-8 everywhere. The boundary-to-boundary network has the flow as
+    up to 1.3e-8 over all rows. The boundary-to-boundary network has the flow as
     its only unknown: at m = 0 exactly its incompressible column is the
     channel's laminar friction slope, which the analytic form reads as 0 on
     main and for a ChannelElement alike, so it is left out."""
@@ -225,3 +231,102 @@ def test_a_segment_leaving_a_to_only_station_still_opts_out(regime: str) -> None
     assert ChannelElement._exit_head_lost(seg, 1.0)
     assert not seg._exit_head_lost(1.0)
     assert NetworkSolver(g).solve()["__success__"]
+
+
+KAPPA = cb.STATION_KAPPA_BLEED_BASSETT
+
+
+def _b1(regime: str, reversed_: bool) -> FlowNetwork:
+    """B1: s0 (entry_K = 0, to_kappa, next x) sup -> n1; x n1 -> exit with no
+    station of its own, leaving the station s0 registers at n1."""
+    p_sup, p_exit = (P0, P0 + DP) if reversed_ else (P0 + DP, P0)
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("sup", Pt=p_sup, Tt=300.0, Y=Y))
+    g.add_node(PressureBoundary("exit", Pt=p_exit, Tt=300.0, Y=Y))
+    g.add_node(PlenumNode("n1"))
+    g.add_element(
+        CrossflowSegmentElement(
+            "s0", "sup", "n1", length=0.05, area=A_DUCT, entry_K=0.0, to_kappa=KAPPA,
+            next_seg="x", regime=regime,
+        )
+    )  # fmt: skip
+    g.add_element(
+        CrossflowSegmentElement("x", "n1", "exit", length=0.05, area=A_DUCT, regime=regime)
+    )
+    return g
+
+
+def _b2(regime: str, reversed_: bool, own_to_station: bool = False) -> FlowNetwork:
+    """B2: x sup -> n1 with no station of its own (``own_to_station``: its
+    own to_kappa, no entry_K); s1 n1 -> exit owns the from-station at n1,
+    x arriving."""
+    p_sup, p_exit = (P0, P0 + DP) if reversed_ else (P0 + DP, P0)
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("sup", Pt=p_sup, Tt=300.0, Y=Y))
+    g.add_node(PressureBoundary("exit", Pt=p_exit, Tt=300.0, Y=Y))
+    g.add_node(PlenumNode("n1"))
+    own = {"to_kappa": KAPPA, "next_seg": "s1"} if own_to_station else {}
+    g.add_element(
+        CrossflowSegmentElement("x", "sup", "n1", length=0.05, area=A_DUCT, regime=regime, **own)
+    )
+    g.add_element(
+        CrossflowSegmentElement(
+            "s1", "n1", "exit", length=0.05, area=A_DUCT, from_kappa=KAPPA, prev_seg="x",
+            regime=regime,
+        )
+    )  # fmt: skip
+    return g
+
+
+def _x_flow(g: FlowNetwork) -> float:
+    r = NetworkSolver(g).solve()
+    assert r["__success__"], r.get("__message__")
+    return float(r["x.m_dot"])
+
+
+@pytest.mark.parametrize("regime", REGIMES)
+def test_b2_reversed_x_keeps_the_opt_out_by_its_to_node_station(regime: str) -> None:
+    """The neighbour check reads BOTH ends: in B2 the station at x's
+    to-node (s1's from-station) makes x not bare, so reversed, discharging
+    into ``sup``, it keeps the opt-out and solves the flow it would with its
+    own to-station (both -1.2840e-2 incompressible, -1.2824e-2
+    compressible, as on main). Checking only the from-node took x for bare
+    and moved this flow by 27 %. Compressible, the own station's end
+    closure differs by 2e-5 (its half-drop still sets the duct-end static)."""
+    m = _x_flow(_b2(regime, True))
+    m_own = _x_flow(_b2(regime, True, own_to_station=True))
+    assert abs(m - m_own) <= 1e-4 * abs(m_own), (m, m_own)
+
+
+FEED_ASYMMETRY = pytest.mark.xfail(
+    strict=True,
+    reason="#1150: a segment fed straight from a boundary without entry_K beside a "
+    "neighbour's station never pays the acceleration head",
+)
+
+
+@FEED_ASYMMETRY
+@pytest.mark.parametrize("layout", ["b1", "b2"])
+@pytest.mark.parametrize("regime", REGIMES)
+def test_neighbour_station_layout_is_direction_symmetric(layout: str, regime: str) -> None:
+    """B1 and B2 are mirror images; each should flow the same either way, as
+    the same chain with x's own station does (to 1e-12). On main and here
+    the boundary-fed leg runs 2.9-3.0x the other (B1 reversed, B2 forward:
+    3.8798e-2 incompressible, 3.7111e-2 compressible, against 1.284e-2)."""
+    build = _b1 if layout == "b1" else _b2
+    fwd = _x_flow(build(regime, False))
+    rev = _x_flow(build(regime, True))
+    assert abs(abs(rev) / fwd - 1.0) < 0.02, (fwd, rev)
+
+
+@FEED_ASYMMETRY
+@pytest.mark.parametrize(("layout", "reversed_"), [("b1", True), ("b2", False)])
+def test_neighbour_station_boundary_fed_leg_agrees_across_regimes(
+    layout: str, reversed_: bool
+) -> None:
+    """The boundary-fed leg's regime gap is +4.5 % (3.8798e-2 against
+    3.7111e-2); every other leg here agrees to 0.2 %."""
+    build = _b1 if layout == "b1" else _b2
+    inc = _x_flow(build("incompressible", reversed_))
+    com = _x_flow(build("compressible", reversed_))
+    assert abs((inc - com) / com) < 0.01, (inc, com)
