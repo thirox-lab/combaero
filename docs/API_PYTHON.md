@@ -2184,7 +2184,15 @@ conventions at the node the flow goes into.
     station at either end, a neighbour's included, no `entry_K`) is a
     `ChannelElement` instead: total-receiving, its head lost only into a
     pressure boundary, forward or reversed, and reported as a channel's
-    (#1138).
+    (#1138). Every one of these gates reads the same "has a station"
+    predicate, a neighbour's station included: a segment's end at a station
+    its neighbour registers takes the node's `P` as the duct static, as at
+    its own (#1150).
+  - On the feed side the mirror holds. A stationed segment fed by a node at
+    rest at an end with no station and no `entry_K` accelerates out of it
+    with no loss, the same as `entry_K=0` (#1150). The compressible duct end
+    takes that node's `Pt`; the incompressible row carries the entry head.
+    A feed from a moving `MomentumChamberNode` is not covered by this rule.
 - **Total-receiving:** the element matches the downstream `Pt`, so the
   receiving node decides what happens to the head.
   - `ChannelElement`: incompressible and Fanno, ribbed and pin-fin;
