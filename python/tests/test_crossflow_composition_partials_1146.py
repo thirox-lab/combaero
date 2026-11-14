@@ -342,3 +342,113 @@ def test_reversed_out_of_a_burning_combustor_jacobian(
         point,
     )
     assert err < 1e-7, err
+
+
+# ---- jets: reversed into a station or a chamber, and choked -------------------
+
+
+def _jet_combustor(g: FlowNetwork, p_air: float, p_sink: float, leak: float = 0.012) -> str:
+    """A CH4-burning CombustorNode 'jc' fed at ``p_air`` with a leak to
+    ``p_sink``: its Pt, T0 and Y are relayed."""
+    g.add_node(PressureBoundary("jc_air", Pt=p_air, Tt=300.0, Y=Y_AIR))
+    g.add_node(CombustorNode("jc"))
+    g.add_node(MassFlowBoundary("jc_fuel", m_dot=2e-4, Tt=300.0, Y=CH4))
+    g.add_node(PressureBoundary("jc_sink", Pt=p_sink, Tt=300.0, Y=Y_AIR))
+    g.add_element(LosslessConnectionElement("jc_inj", "jc_fuel", "jc"))
+    g.add_element(
+        OrificeElement("jc_o", "jc_air", "jc", diameter=0.03, Cd=0.8, correlation="fixed",
+                       in_pipe=False)
+    )  # fmt: skip
+    g.add_element(
+        OrificeElement("jc_leak", "jc", "jc_sink", diameter=leak, Cd=0.7, correlation="fixed",
+                       in_pipe=False)
+    )  # fmt: skip
+    return "jc"
+
+
+def _jet_network(regime: str, kind: str, dp: float = 8000.0) -> FlowNetwork:
+    """A 30 deg jet whose supply's gas is relayed, by ``kind``:
+
+    * 'revjet_station': the chain sup -u0-> st -u1-> exit with the jet
+      declared st -> jc (a burning combustor at higher pressure), so it runs
+      REVERSED and the burnt gas jets into the station (the solver's
+      ``rev_in`` stream: the to-node's state, m = -m_dot);
+    * 'revjet_chamber': a jet declared jc -> mc at a merge chamber (the entry
+      segment its main inlet) whose flow reverses out of the chamber into a
+      lower-pressure combustor. A jet cannot reverse INTO a chamber: a
+      MomentumChamberNode with a second declared outlet is refused;
+    * 'choked': the chain with a forward jet from a plenum mixing air and
+      MIXED at 2.8 bar into the ~1 bar station: choked at the root."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("sup", Pt=P0 + dp, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=P0, Tt=300.0, Y=Y_AIR))
+    D = math.sqrt(4.0 * A_DUCT / math.pi)
+    if kind == "revjet_chamber":
+        g.add_node(MomentumChamberNode("mc", area=4.0 * A_DUCT, regime=regime, main_inlet="s1x"))
+        g.add_element(
+            CrossflowSegmentElement("s1x", "sup", "mc", length=0.05, area=4.0 * A_DUCT,
+                                    entry_K=0.5, regime=regime)
+        )  # fmt: skip
+        g.add_element(
+            ChannelElement("tail", "mc", "exit", length=0.05, diameter=1.3 * D, regime=regime)
+        )
+        jc = _jet_combustor(g, P0 - 0.3 * dp, P0 - 0.6 * dp, leak=0.03)
+        g.add_element(
+            OrificeElement("j", jc, "mc", diameter=0.006, Cd=0.7, correlation="fixed",
+                           injection_angle_deg=30.0)
+        )  # fmt: skip
+        return g
+    g.add_node(PlenumNode("st"))
+    g.add_element(
+        CrossflowSegmentElement("u0", "sup", "st", length=0.05, area=A_DUCT, to_kappa=0.0,
+                                next_seg="u1", regime=regime)
+    )  # fmt: skip
+    g.add_element(
+        CrossflowSegmentElement("u1", "st", "exit", length=0.05, area=A_DUCT, from_kappa=0.0,
+                                prev_seg="u0", regime=regime)
+    )  # fmt: skip
+    if kind == "revjet_station":
+        jc = _jet_combustor(g, P0 + 3.0 * dp, P0)
+        g.add_element(
+            OrificeElement("j", "st", jc, diameter=0.006, Cd=0.7, correlation="fixed",
+                           injection_angle_deg=30.0)
+        )  # fmt: skip
+        return g
+    g.add_node(PressureBoundary("jA", Pt=2.8e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("jM", Pt=2.8e5, Tt=600.0, Y=MIXED))
+    g.add_node(PlenumNode("jet"))
+    for eid, src in (("ja", "jA"), ("jm", "jM")):
+        g.add_element(
+            OrificeElement(eid, src, "jet", diameter=0.01, Cd=0.8, correlation="fixed",
+                           in_pipe=False)
+        )  # fmt: skip
+    g.add_element(
+        OrificeElement("j", "jet", "st", diameter=0.002, Cd=0.7, correlation="fixed",
+                       injection_angle_deg=30.0)
+    )  # fmt: skip
+    return g
+
+
+@pytest.mark.parametrize("point", ["root", "perturbed", "m+", "m-"])
+@pytest.mark.parametrize("kind", ["revjet_station", "revjet_chamber", "choked"])
+@pytest.mark.parametrize("regime", ["incompressible", "compressible"])
+@pytest.mark.filterwarnings("ignore::UserWarning")
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_jet_supply_jacobian(regime: str, kind: str, point: str) -> None:
+    """A jet's momentum keys its partials to the node that supplies its gas.
+    Reversed, that is the declared to-node, the flow is -m_dot and the static
+    P it discharges to is the declared from-node's (main, keyed by the
+    declared ends: 5.3e-2 on the chain's rows). Choked, the sonic branch's
+    d/dY. Every row to 1e-7 scaled; the root is checked to be the case."""
+    own = "s1x.m_dot" if kind == "revjet_chamber" else "u0.m_dot"
+    build = lambda: _jet_network(regime, kind)  # noqa: E731
+    s = NetworkSolver(build())
+    r = s.solve()
+    assert r["__success__"], r.get("__message__")
+    if kind == "choked":
+        jet_P, st_P = float(r["jet.P"]), float(r["st.P"])
+        assert st_P / jet_P < 0.5, (jet_P, st_P)  # well past the ~0.53 sonic ratio
+    else:
+        assert float(r["j.m_dot"]) < 0.0
+    err = _all_rows_fd_error(build, own, point)
+    assert err < 1e-7, err

@@ -6024,17 +6024,29 @@ class OrificeElement(NetworkElement):
         jet = cb.jet_impulse(
             float(state_in.m_dot), state_in.Pt, state_in.Tt, state_chamber.P, state_in.X
         )
-        d = {
-            f"{self.id}.m_dot": jet.dJ_dm * cos_t,
-            f"{self.from_node}.Pt": jet.dJ_dPt * cos_t,
-            f"{self.from_node}.Tt": jet.dJ_dTt * cos_t,
-            f"{self.to_node}.P": jet.dJ_dP * cos_t,
-        }
+        # The stream's supply and sink as the solver relays it (#1146): a
+        # reversed hole (``rev_in``) delivers -m_dot from its to_node into
+        # its from_node, so the jet's gas (Pt, Tt, Y) is the to_node's, the
+        # static P it discharges to the from_node's, and its flow is -m_dot.
+        # Keyed by the declared ends, the reversed jet put its gas on the
+        # station, its P on the supply and its flow with the wrong sign.
+        src = getattr(state_in, "_src_node", None) or self.from_node
+        sink = self.from_node if src == self.to_node else self.to_node
+        flow = getattr(state_in, "_m_dot_jac_names", None) or {f"{self.id}.m_dot": 1.0}
+        d: dict[str, float] = {}
+        for name, coeff in flow.items():
+            d[name] = d.get(name, 0.0) + jet.dJ_dm * cos_t * coeff
+        for key, v in (
+            (f"{src}.Pt", jet.dJ_dPt),
+            (f"{src}.Tt", jet.dJ_dTt),
+            (f"{sink}.P", jet.dJ_dP),
+        ):
+            d[key] = d.get(key, 0.0) + v * cos_t
         # The jet's gas is its supply's: a mixing or burning supply moves
         # its composition with the flows (#1146).
         for k, v in enumerate(jet.dJ_dY):
             if v != 0.0:
-                d[f"{self.from_node}.Y[{k}]"] = float(v) * cos_t
+                d[f"{src}.Y[{k}]"] = float(v) * cos_t
         return jet.J * cos_t, d
 
     def validate(self) -> None:
