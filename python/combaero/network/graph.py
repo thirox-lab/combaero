@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from .components import NetworkElement, NetworkNode, ThermalWall
 
+#: Passes of resolve_all_topology before it refuses a network whose inherited
+#: geometry does not settle (#1148). Each pass is nodes, then elements twice;
+#: the deepest inheritance chain measured needs 3.
+RESOLVE_MAX_PASSES = 8
+
 
 class FlowNetwork:
     """
@@ -147,6 +152,24 @@ class FlowNetwork:
         to extract their needed operational parameters (e.g. Orifice discovering
         upstream pipe diameter).
         """
+        # Repeated to its fixed point (#1148): a node that inherits from an
+        # element (a chamber's area from an element whose own area is set in
+        # the element pass) only sees it on the next pass, so one call used to
+        # leave a built solver with a different model than solve(), which
+        # resolves several times.
+        sig = self._resolved_signature()
+        for _ in range(RESOLVE_MAX_PASSES):
+            self._resolve_pass()
+            new = self._resolved_signature()
+            if new == sig:
+                return
+            sig = new
+        raise RuntimeError(
+            f"FlowNetwork.resolve_all_topology: the inherited geometry still changes after "
+            f"{RESOLVE_MAX_PASSES} passes; a component's resolve_topology is not convergent."
+        )
+
+    def _resolve_pass(self) -> None:
         for node in self.nodes.values():
             node.resolve_topology(self)
         for element in self.elements.values():
@@ -156,6 +179,20 @@ class FlowNetwork:
         # all direct values.
         for element in self.elements.values():
             element.resolve_topology(self)
+
+    def _resolved_signature(self) -> list[tuple[str, tuple[tuple[str, Any], ...]]]:
+        """Every node's and element's scalar attributes: what resolve_topology
+        sets (areas, diameters, their sources), compared between passes."""
+        out = []
+        for comp in (*self.nodes.values(), *self.elements.values()):
+            # repr: a NaN attribute compares equal to itself, so it settles.
+            items = tuple(
+                (k, repr(v))
+                for k, v in vars(comp).items()
+                if v is None or isinstance(v, (bool, int, float, str))
+            )
+            out.append((comp.id, items))
+        return out
 
     def _reachable_from(self, start_id: str, through_closed: bool = True) -> set[str]:
         """BFS over undirected adjacency to find all node IDs reachable from start_id.

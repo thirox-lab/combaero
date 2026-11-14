@@ -3840,6 +3840,9 @@ class MomentumChamberNode(NetworkNode):
         #: Where self.Dh came from; set here (not in resolve) so a second
         #: resolve pass does not relabel an inherited Dh as user-set.
         self._Dh_source = "user" if Dh is not None else ""
+        #: Dh was derived from an area (inferred in resolve_topology, or set
+        #: by an element), not given: the area stands on a later resolve.
+        self._Dh_from_area = False
         self.surface = surface or ConvectiveSurface()
         self.t_hot = t_hot
         self.upstream_elements = []
@@ -4294,10 +4297,16 @@ class MomentumChamberNode(NetworkNode):
                     self.Dh = elem.diameter
                     self._Dh_source = f"channel '{elem.id}'"
                     break
-        # Derive cross-section area from Dh when area was not user-specified
+        # Derive cross-section area from Dh when area was not user-specified.
+        # Not from a Dh that was itself derived from an area (inferred here,
+        # or set by an element): that area stands, the round trip moved it by
+        # an ulp on every further resolve (#1148).
         if self._auto_area and self.Dh is not None:
-            self.area = math.pi * (self.Dh / 2.0) ** 2
-            self._area_source = "derived from Dh" if self._Dh_source == "user" else self._Dh_source
+            if not self._Dh_from_area:
+                self.area = math.pi * (self.Dh / 2.0) ** 2
+                self._area_source = (
+                    "derived from Dh" if self._Dh_source == "user" else self._Dh_source
+                )
         elif self._auto_area:
             # No channel to inherit from: widen the search to any area-bearing
             # neighbour before falling back (issue #262).
@@ -4305,6 +4314,7 @@ class MomentumChamberNode(NetworkNode):
             if area is not None:
                 self.area = area
                 self.Dh = 2.0 * math.sqrt(area / math.pi)
+                self._Dh_from_area = True
                 self._Dh_source = source
                 self._area_source = source
             else:
@@ -4812,6 +4822,9 @@ class CombustorNode(NetworkNode):
         #: Where self.Dh came from; set here (not in resolve) so a second
         #: resolve pass does not relabel an inherited Dh as user-set.
         self._Dh_source = "user" if Dh is not None else ""
+        #: Dh was derived from an area (inferred in resolve_topology, or set
+        #: by an element), not given: the area stands on a later resolve.
+        self._Dh_from_area = False
         self.surface = surface or ConvectiveSurface()
         self.t_hot = t_hot
         self.upstream_elements = []
@@ -5039,10 +5052,16 @@ class CombustorNode(NetworkNode):
                     self.Dh = elem.diameter
                     self._Dh_source = f"channel '{elem.id}'"
                     break
-        # Derive cross-section area from Dh when area was not user-specified
+        # Derive cross-section area from Dh when area was not user-specified.
+        # Not from a Dh that was itself derived from an area (inferred here,
+        # or set by an element): that area stands, the round trip moved it by
+        # an ulp on every further resolve (#1148).
         if self._auto_area and self.Dh is not None:
-            self.area = math.pi * (self.Dh / 2.0) ** 2
-            self._area_source = "derived from Dh" if self._Dh_source == "user" else self._Dh_source
+            if not self._Dh_from_area:
+                self.area = math.pi * (self.Dh / 2.0) ** 2
+                self._area_source = (
+                    "derived from Dh" if self._Dh_source == "user" else self._Dh_source
+                )
         elif self._auto_area:
             # No channel to inherit from: widen the search to any area-bearing
             # neighbour before falling back (issue #262).
@@ -5050,6 +5069,7 @@ class CombustorNode(NetworkNode):
             if area is not None:
                 self.area = area
                 self.Dh = 2.0 * math.sqrt(area / math.pi)
+                self._Dh_from_area = True
                 self._Dh_source = source
                 self._area_source = source
             else:
@@ -14419,6 +14439,7 @@ class MultiPortChamberBase(NetworkElement):
                 area_i = float(self.port_areas[i])
                 port_node.Dh = 2.0 * math.sqrt(area_i / math.pi)
                 port_node.area = area_i
+                port_node._Dh_from_area = True
 
     def diagnostics(
         self,

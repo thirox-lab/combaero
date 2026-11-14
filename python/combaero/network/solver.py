@@ -2376,8 +2376,9 @@ class NetworkSolver:
         # (#1148, #1142): a solver built and evaluated without solve() used
         # to read an unresolved network -- a merge chamber with no inflow
         # elements, its face without the side jets' momentum and without the
-        # main stream's relayed T0 and Y columns. Resolving is idempotent;
-        # solve() keeps its own calls for a network mutated between solves.
+        # main stream's relayed T0 and Y columns. One call reaches the
+        # resolve's fixed point, so a further one changes nothing; solve()
+        # keeps its own calls for a network mutated between solves.
         self.network.resolve_all_topology()
         self.unknown_names = []
         self._unknown_indices = {}
