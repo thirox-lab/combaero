@@ -43,9 +43,12 @@ def test_jacobian_accuracy():
     net.add_node(n1)
     net.add_node(n_out)
 
-    # Elements
+    # Elements. The bore sits in the 0.1 m channel's line (beta 0.5 against
+    # it, its reverse approach pipe); it was 0.112838 m, larger than that
+    # pipe, a geometry a solve refuses and an unresolved fresh solver did not
+    # check (#1148).
     orf = OrificeElement(
-        "orf", from_node="in", to_node="n1", Cd=0.6, diameter=0.112838, correlation="fixed"
+        "orf", from_node="in", to_node="n1", Cd=0.6, diameter=0.05, correlation="fixed"
     )
     channel = ChannelElement(
         "channel", from_node="n1", to_node="out", length=1.0, diameter=0.1, roughness=1e-5

@@ -265,10 +265,9 @@ def _segment_row_fd_error(build, x: np.ndarray) -> float:
 # (reservoir, to-node). Each reservoir but 'fed' has its T0 relayed from the
 # flows, so the entry term's T0 partial is a column of its own: put on the
 # to-node, the FD check of the row fails (mutation-tested). Left out:
-# * a merge chamber ('chamber') behind a relayed reservoir: a pre-existing
-#   merge-face Jacobian defect puts 5e-4 to 2e-3 on this row, the same before
-#   and after #1137 (filed separately); behind the fixed-T 'fed' reservoir the
-#   row is exact;
+# * a merge chamber ('chamber') behind a relayed reservoir: checked in
+#   test_solver_resolves_topology_1148.py (the 5e-4 to 2e-3 seen here was a
+#   fresh solver evaluating an unresolved network, #1148);
 # * a reservoir whose COMPOSITION moves with the flows (a burning combustor
 #   feeding the segment): the entry term and the chamber exit head have no
 #   d/dY of it, 8e-4 incompressible and 3e-4 compressible (#1146);
