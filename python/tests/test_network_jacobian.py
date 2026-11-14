@@ -43,9 +43,18 @@ def test_jacobian_accuracy():
     net.add_node(n1)
     net.add_node(n_out)
 
-    # Elements
+    # Elements. A lumped Cd*A restriction (in_pipe=False): its 0.112838 m bore
+    # (area 0.01 m^2) is larger than the 0.1 m channel behind it, a geometry a
+    # solve refuses as an in-pipe orifice and that an unresolved fresh solver
+    # never checked (#1148).
     orf = OrificeElement(
-        "orf", from_node="in", to_node="n1", Cd=0.6, diameter=0.112838, correlation="fixed"
+        "orf",
+        from_node="in",
+        to_node="n1",
+        Cd=0.6,
+        diameter=0.112838,
+        correlation="fixed",
+        in_pipe=False,
     )
     channel = ChannelElement(
         "channel", from_node="n1", to_node="out", length=1.0, diameter=0.1, roughness=1e-5

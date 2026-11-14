@@ -36,11 +36,16 @@ from combaero.network import (
     LosslessConnectionElement,
     MomentumChamberNode,
     NetworkSolver,
+    OrificeElement,
     PlenumNode,
     PressureBoundary,
     TeeJunctionElement,
 )
-from combaero.network.components import NEIGHBOUR_AREA_RTOL, NetworkMixtureState
+from combaero.network.components import (
+    DEFAULT_CHAMBER_AREA,
+    NEIGHBOUR_AREA_RTOL,
+    NetworkMixtureState,
+)
 from combaero.network.ejector_element import EjectorElement
 from gui.backend.resolve_preview import resolve_preview
 
@@ -336,11 +341,12 @@ def test_a_chamber_at_least_its_pipes_area_does_not_warn(area: float) -> None:
     assert _chamber_warnings(_chamber_net(area)) == []
 
 
-def test_the_default_chamber_area_never_warns() -> None:
-    """A chamber nothing sizes holds DEFAULT_CHAMBER_AREA, a placeholder. Here
-    the pipe into it takes its diameter from an area change upstream only in
-    the element pass, after the chamber found nothing to size from: the
-    0.1 m^2 default is below the pipe's 0.5 m^2, and nothing warns."""
+def test_a_chamber_sized_by_a_pipe_sized_later_does_not_warn() -> None:
+    """The pipe into the chamber takes its diameter from an area change
+    upstream only in the element pass, after the chamber's first look found
+    nothing: one resolve pass left the chamber at the default, the fixed point
+    (what every solve sees, #1148) gives it the pipe's 0.5 m^2. Equal to the
+    pipe, so nothing warns."""
     n = FlowNetwork()
     n.add_node(PressureBoundary("in", Pt=2.0e5, Tt=300.0, Y=Y_AIR))
     n.add_node(PlenumNode("n1"))
@@ -351,8 +357,28 @@ def test_the_default_chamber_area_never_warns() -> None:
     n.add_element(LosslessConnectionElement("l", "mc", "out"))
     assert _chamber_warnings(n) == []
     mc, c = n.nodes["mc"], n.elements["c"]
+    assert mc._area_source == "channel 'c'"
+    assert math.pi * c.diameter**2 / 4.0 == pytest.approx(0.5)
+    assert mc.area == pytest.approx(0.5)
+
+
+def test_the_default_chamber_area_never_warns() -> None:
+    """A chamber nothing sizes holds DEFAULT_CHAMBER_AREA, a placeholder: fed
+    through a lumped restriction (an orifice with in_pipe=False) and left by
+    a lossless connection, it has no neighbouring geometry at the fixed
+    point. The placeholder is not compared with anything, so nothing warns."""
+    n = FlowNetwork()
+    n.add_node(PressureBoundary("in", Pt=2.0e5, Tt=300.0, Y=Y_AIR))
+    n.add_node(MomentumChamberNode("mc"))
+    n.add_node(PressureBoundary("out", Pt=1.9e5, Tt=300.0, Y=Y_AIR))
+    n.add_element(
+        OrificeElement("o", "in", "mc", diameter=0.01, Cd=0.6, correlation="fixed", in_pipe=False)
+    )
+    n.add_element(LosslessConnectionElement("l", "mc", "out"))
+    assert _chamber_warnings(n) == []
+    mc = n.nodes["mc"]
     assert mc._area_source == "default"
-    assert math.pi * c.diameter**2 / 4.0 == pytest.approx(0.5) and mc.area < 0.5
+    assert mc.area == DEFAULT_CHAMBER_AREA
 
 
 def test_the_resolve_preview_carries_the_chamber_warning() -> None:
