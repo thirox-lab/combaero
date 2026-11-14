@@ -332,3 +332,78 @@ def test_jacobian(layout: str, reversed_: bool, regime: str, point: str) -> None
     J = J.toarray() if hasattr(J, "toarray") else np.asarray(J, dtype=float)
     err = float(np.max(scaled_error(J, fd_jacobian(f, x, floor=1e-10), x)))
     assert err < 1e-7, err
+
+
+def _bleed(g: FlowNetwork, node: str) -> FlowNetwork:
+    """A bleed orifice from ``node`` to a sink 1 kPa below ``P0``: a side
+    stream at the station."""
+    if "sink" not in g.nodes:
+        g.add_node(PressureBoundary("sink", Pt=P0 - 1000.0, Tt=300.0, Y=Y))
+    g.add_element(
+        OrificeElement(f"bl_{node}", node, "sink", diameter=0.006, Cd=0.6, correlation="fixed")
+    )
+    return g
+
+
+def _interior(regime: str, reversed_: bool) -> FlowNetwork:
+    """s0 (entry_K = 0, to_kappa, next x) sup -> n1; x n1 -> n2 with no
+    station of its own, both ends its neighbours'; s2 n2 -> exit owns the
+    from-station at n2, x arriving. A bleed at each station."""
+    g = _ends(reversed_)
+    g.add_node(PlenumNode("n2"))
+    g.add_element(_seg("s0", "sup", "n1", regime, entry_K=0.0, to_kappa=KAPPA, next_seg="x"))
+    g.add_element(_seg("x", "n1", "n2", regime))
+    g.add_element(_seg("s2", "n2", "exit", regime, from_kappa=KAPPA, prev_seg="x"))
+    return _bleed(_bleed(g, "n1"), "n2")
+
+
+SIDE_STREAM = {
+    "b1_bleed": (lambda r, v: _bleed(_b1(r, v), "n1"), "s0+x"),
+    "b2_bleed": (lambda r, v: _bleed(_b2(r, v), "n1"), "s1+x"),
+    "interior_bleed": (_interior, "s0+s2+x"),
+}
+
+
+@pytest.mark.parametrize("layout", list(SIDE_STREAM))
+@pytest.mark.parametrize("reversed_", [False, True])
+@pytest.mark.parametrize("regime", REGIMES)
+def test_a_side_stream_at_a_neighbours_station_passes_the_second_law(
+    layout: str, reversed_: bool, regime: str
+) -> None:
+    """A segment that names no neighbour (its only station is the one its
+    neighbour registers) is in that neighbour's chain: the second law's
+    control volume spans both. Before the chains were walked both ways, x
+    was a chain of its own whenever it came first, its control volume
+    booked the station's static P as a Pt, and B2 with a bleed at n1
+    forward was refused (x = 1.331e-2 kg/s, s1 sigma_norm -2.6e-4); the
+    interior chain with bleeds was refused on main too (s2 -2.9e-4)."""
+    build, group = SIDE_STREAM[layout]
+    r, _ = _solve(build(regime, reversed_))
+    sl = r["__second_law__"]
+    assert sl["x"]["verdict"] == "pass", sl["x"]
+    assert sl["x"].get("group") == group, sl["x"]
+
+
+def _hot(regime: str, entry_K: float | None = None) -> FlowNetwork:
+    """The self-stationed x fed from a 900 K boundary; a 300 K side stream
+    joins at n1, so the station's gas (~780 K) is not the reservoir's."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("sup", Pt=P0 + DP, Tt=900.0, Y=Y))
+    g.add_node(PressureBoundary("exit", Pt=P0, Tt=300.0, Y=Y))
+    g.add_node(PressureBoundary("cold", Pt=P0 + 2.0 * DP, Tt=300.0, Y=Y))
+    g.add_node(PlenumNode("n1"))
+    kw = {} if entry_K is None else {"entry_K": entry_K}
+    g.add_element(_seg("x", "sup", "n1", regime, to_kappa=KAPPA, next_seg="s1", **kw))
+    g.add_element(_seg("s1", "n1", "exit", regime, from_kappa=KAPPA, prev_seg="x"))
+    g.add_element(OrificeElement("c", "cold", "n1", diameter=0.006, Cd=0.6, correlation="fixed"))
+    return g
+
+
+def test_the_lossless_entry_accelerates_the_reservoirs_gas() -> None:
+    """The implicit entry is entry_K = 0's, so its head is at the density
+    of the gas it carries, the reservoir's (#1137), not the station's mixed
+    gas: regime gap -0.075 % (5.68978e-3 incompressible, 5.69403e-3
+    compressible). At the station's gas it was +4.6 %."""
+    inc = _x(_hot("incompressible"))
+    com = _x(_hot("compressible"))
+    assert abs((inc - com) / com) < 0.005, (inc, com)

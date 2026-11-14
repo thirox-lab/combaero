@@ -484,6 +484,17 @@ class SecondLawReport:
         segs = {
             eid: e for eid, e in self.net.elements.items() if isinstance(e, CrossflowSegmentElement)
         }
+        # A link is undirected: a segment that names no neighbour (one whose
+        # only station is a neighbour's, #1150) is still in the chain of the
+        # segment that names it. Walking only the links each segment declares
+        # made it a chain of its own, visited first in insertion order, and
+        # its control volume booked the station's static as a Pt: sigma < 0.
+        adj: dict[str, set[str]] = {eid: set() for eid in segs}
+        for eid, e in segs.items():
+            for n in (e.prev_seg, e.next_seg):
+                if n in segs:
+                    adj[eid].add(n)
+                    adj[n].add(eid)
         seen: set[str] = set()
         chains: list[list[str]] = []
         for eid in segs:
@@ -492,11 +503,11 @@ class SecondLawReport:
             chain, todo = [], [eid]
             while todo:
                 cur = todo.pop()
-                if cur in seen or cur not in segs:
+                if cur in seen:
                     continue
                 seen.add(cur)
                 chain.append(cur)
-                todo += [n for n in (segs[cur].prev_seg, segs[cur].next_seg) if n]
+                todo += sorted(adj[cur])
             chains.append(sorted(chain))
         return chains
 
