@@ -60,9 +60,11 @@ class _FrictionOnlySegment(ImpingementCrossflowElement):
     plain ChannelElement would carry the crossflow."""
 
     def resolve_topology(self, graph) -> None:
-        super().resolve_topology(graph)
+        # Before the stations register, so none is registered and the
+        # segment is bare (#1138) from the first topology pass.
         self.from_kappa = None
         self.to_kappa = None
+        super().resolve_topology(graph)
 
 
 def _boundary(name: str, Pt: float) -> PressureBoundary:

@@ -11687,6 +11687,11 @@ class ChannelElement(NetworkElement):
             row[k] = row.get(k, 0.0) - v
         return res, {0: row}
 
+    def _reports_duct_rest_ends(self) -> bool:
+        """Whether the REPORT reads the duct's own state at an end on a node
+        at rest (``_rest_end_states``): ``_rest_end_state_from_duct``."""
+        return self._rest_end_state_from_duct
+
     def _rest_end_states(
         self,
         state_in: NetworkMixtureState,
@@ -11732,7 +11737,7 @@ class ChannelElement(NetworkElement):
         ]
         m = float(state_in.m_dot)
         area = self.area or 0.0
-        if not self._rest_end_state_from_duct or not any(at_rest):
+        if not self._reports_duct_rest_ends() or not any(at_rest):
             return ends
         if area <= 0.0 or m == 0.0:
             return ends
@@ -12333,6 +12338,9 @@ class CrossflowSegmentElement(ChannelElement):
       to the incompressible row, without the reversed reservoir
       acceleration, and the regimes differed by -21 % forward and up to
       +179 % reversed.
+    * a BARE segment (no station at either end, its neighbours' included, and
+      no ``entry_K``) is a ChannelElement: Pt to Pt, its exit head lost into
+      a PressureBoundary in either direction (``_exit_head_lost``, #1138).
 
     Station nodes must be PlenumNodes (Pt = P): the node pressure is the
     channel's static pressure, which is what a side stream sees.
@@ -12367,9 +12375,21 @@ class CrossflowSegmentElement(ChannelElement):
         return ChannelElement.residual_scale_kind.fget(self)
 
     # Its duct runs between its own station states (#802): see ChannelElement.
+    # The flag also gates a ribbed or pin-fin surface's feed state, which is
+    # residual; only the report follows a bare segment (``_reports_duct_rest_ends``).
     _rest_end_state_from_duct = False
-    # Static continuity at its nodes loses the exit head by construction.
-    _receives_total = False
+
+    @property
+    def _receives_total(self) -> bool:
+        """Static continuity at its stations loses the exit head by
+        construction; a bare segment is a ChannelElement, total-receiving
+        (#1138). Read by the report only (``exit_head_recovered``)."""
+        return self._is_bare()
+
+    def _reports_duct_rest_ends(self) -> bool:
+        """A bare segment reports its rest ends as a ChannelElement does
+        (#1138); a stationed one keeps its node states (#802)."""
+        return self._is_bare()
 
     # The channel's area is re-derived from a diameter, which need not give
     # the given area back bit for bit, and a constant segment sets area_to
@@ -12741,8 +12761,44 @@ class CrossflowSegmentElement(ChannelElement):
         chamber's Pt and the head is carried, not lost (``_duct_ends``,
         ``_chamber_exit_head``). ChannelElement's exit head at a pressure
         boundary would charge it a second time (#588).
+
+        A BARE segment (no station at either end, no ``entry_K``) has no
+        convention of its own: ``_duct_ends`` runs it Pt to Pt as a
+        ChannelElement, so its exit follows ChannelElement's, the head lost
+        into a PressureBoundary in either direction (#1138). Opted out with
+        the rest, it never paid that head and flowed 2.9x the channel.
         """
+        if self._is_bare():
+            return ChannelElement._exit_head_lost(self, m_dot)
         return False
+
+    def _is_bare(self) -> bool:
+        """No station at either end and no reservoir entry: a ChannelElement.
+
+        A station a NEIGHBOUR registers counts too: a segment leaving a
+        to-only station (the previous segment's ``to_kappa``, this one with
+        no ``from_kappa``) is fed at the station's static pressure, its head
+        already moving, so its exit keeps #588's opt-out. Charged there, its
+        drive was friction plus a head it never had to make. Either end
+        counts: a segment arriving at a neighbour's from-station (B2) is not
+        bare either.
+
+        The own-station clauses are not implied by the registration check:
+        the registration is the node's (a non-PlenumNode registers none and
+        is refused at validate), and ``from_kappa`` / a to-term with
+        ``_next`` are what ``_momentum_terms`` and ``_duct_ends`` read, so
+        bare here is bare there by the same three conditions."""
+        if (
+            self.from_kappa is not None
+            or self.entry_K is not None
+            or (self.to_kappa is not None and getattr(self, "_next", None) is not None)
+        ):
+            return False
+        for attr in ("_upstream_node", "_downstream_node"):
+            station = getattr(getattr(self, attr, None), "_crossflow_station", None)
+            if station is not None and self.id in station.segment_ids:
+                return False
+        return True
 
     def _seed_exit_head(self) -> bool:
         """Whether the start guess charges one exit head: wherever the exit
