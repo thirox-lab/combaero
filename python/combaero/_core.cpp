@@ -847,7 +847,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("d_dm_a", &combaero::StationHalfDrop::d_dm_a)
       .def_readonly("d_dm_b", &combaero::StationHalfDrop::d_dm_b)
       .def_readonly("d_dP", &combaero::StationHalfDrop::d_dP)
-      .def_readonly("d_dT", &combaero::StationHalfDrop::d_dT);
+      .def_readonly("d_dT", &combaero::StationHalfDrop::d_dT)
+      .def_readonly("d_dY", &combaero::StationHalfDrop::d_dY);
   m.def("station_half_drop", &combaero::station_half_drop, py::arg("m_a"), py::arg("m_b"),
         py::arg("P"), py::arg("T"), py::arg("X"), py::arg("area"), py::arg("kappa"),
         "Half the static-pressure drop over one side-stream station (m_a\n"
@@ -1060,6 +1061,7 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("dJ_dPt", &combaero::JetImpulse::dJ_dPt)
       .def_readonly("dJ_dTt", &combaero::JetImpulse::dJ_dTt)
       .def_readonly("dJ_dP", &combaero::JetImpulse::dJ_dP)
+      .def_readonly("dJ_dY", &combaero::JetImpulse::dJ_dY)
       .def_readonly("choked", &combaero::JetImpulse::choked);
   m.def("jet_impulse", &combaero::jet_impulse, py::arg("m"), py::arg("Pt"),
         py::arg("Tt"), py::arg("P"), py::arg("X"),

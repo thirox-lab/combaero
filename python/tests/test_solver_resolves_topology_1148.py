@@ -212,8 +212,8 @@ def test_merge_face_relays_the_main_streams_t0(
     on a fresh solver to 1e-7 scaled, at the root, perturbed, at m = 0 and
     either side of it, both directions. Measured <= 1.2e-8; unresolved it was
     1.2e-3 to 7.9e-3 forward. A reservoir whose composition moves (burning,
-    wet) still lacks the entry drop's d/dY (#1146), so it is checked above
-    for F and J identity only."""
+    mixing) is checked, every row, in
+    test_crossflow_composition_partials_1146.py."""
 
     def build() -> FlowNetwork:
         return _merge(regime, 2000.0, "chamber", rev=rev, reservoir=res)

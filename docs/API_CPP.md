@@ -1299,7 +1299,8 @@ ImpingementEtaR impingement_eta_r(double Gc_Gj, double xn_d, double yn_d,
 // station at each end, each at its node's density.
 constexpr double STATION_KAPPA_MERGE_NORMAL = 0.0;
 constexpr double STATION_KAPPA_BLEED_BASSETT = 0.75;
-struct StationHalfDrop { double dP, d_dm_a, d_dm_b, d_dP, d_dT; };
+// d_dY: d/d(mass fractions) of the gas at fixed (P, T), one per species (#1146).
+struct StationHalfDrop { double dP, d_dm_a, d_dm_b, d_dP, d_dT; std::vector<double> d_dY; };
 StationHalfDrop station_half_drop(double m_a, double m_b, double P, double T,
                                   const std::vector<double>& X, double area, double kappa);
 // Area change over a segment between two static ends (#812), Bernoulli, even in m:
@@ -1483,7 +1484,8 @@ MergeFaceState chamber_merge_face_state(
 // P (variable cp), or choked: w = u* + (P* - P)/(rho* u*), the sonic point
 // on the isentrope at M = 1. Partials analytic (#816). C1 across choking;
 // Cd does not enter.
-struct JetImpulse { double J, dJ_dm, dJ_dPt, dJ_dTt, dJ_dP; bool choked; };
+// dJ_dY: d/d(mass fractions) of the jet's gas at fixed (Pt, Tt, P), one per species (#1146).
+struct JetImpulse { double J, dJ_dm, dJ_dPt, dJ_dTt, dJ_dP; std::vector<double> dJ_dY; bool choked; };
 JetImpulse jet_impulse(double m, double Pt, double Tt, double P,
                        const std::vector<double>& X);
 ```
