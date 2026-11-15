@@ -105,6 +105,8 @@ def test_the_bleed_station_drops_use_the_static_density() -> None:
     T = _static_T(Tt, P, 0.5 * (m_a + m_b) / A, X_AIR)
     assert Tt / T - 1.0 > 0.05  # the case is a real test
     rho = cb.density(T, P, X_AIR)
+    # Forward flow (m_a, m_b > 0): the arriving stream is m_a (#1178).
+    assert m_a > 0.0 and m_b > 0.0
     half = (m_b * abs(m_b) - m_a * abs(m_a) + kappa * m_a * (m_a - m_b)) / (2.0 * rho * A * A)
     entry = m_a * m_a / (2.0 * rho * A * A)
     d = r["__element_diag__"]

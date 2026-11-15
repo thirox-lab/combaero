@@ -6251,8 +6251,10 @@ class NetworkSolver:
     def _with_proxy_refusal_note(self, message: str) -> str:
         """``message`` with the warm-start proxy roots the second law refused
         (each element and its sigma_norm_high). A duct-fed hole among them
-        points at #1125: booked at the duct total, a station whose duct flow
-        reverses manufactures total pressure."""
+        points at #1125: booked at the duct total, a bleed station's
+        straight-run regain can manufacture total pressure (#1178 removed a
+        reversed-flow excess on top of it, the kappa term following the
+        leaving stream)."""
         refusals = getattr(self, "_proxy_refusals", None) or []
         if not refusals:
             return message
@@ -6274,10 +6276,10 @@ class NetworkSolver:
         note = "; ".join(parts)
         if duct_fed:
             note += (
-                ": a backside duct whose flow reverses at a station, where the "
-                "station's reversed-flow model manufactures total pressure once its "
-                "duct-fed holes are booked at the duct total (known limitation, "
-                "issue #1125)"
+                ": a channel with side-stream stations, where the station model can "
+                "manufacture total pressure once the station's duct-fed holes are "
+                "booked at the duct total (at a bleed station through Bassett's "
+                "straight-run regain; known limitation, issue #1125)"
             )
         return f"{str(message).strip()} [{note}]"
 

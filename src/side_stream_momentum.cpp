@@ -41,11 +41,24 @@ StationHalfDrop station_half_drop(double m_a, double m_b, double P, double T,
   const double k = 0.5 / (rho * area * area);
   // Momentum flux m u = m^2 / (rho A) is positive whichever way the gas
   // moves: m^2, not m|m| (#815; m|m| flipped the drop for reversed flow).
-  const double f = m_b * m_b - m_a * m_a + kappa * m_a * (m_a - m_b);
+  // The side stream's axial velocity follows the ARRIVING flow (#1178):
+  // s = M_in / A_in = max(m_a, 0) - max(-m_b, 0), the mass-weighted mean
+  // signed velocity of the streams arriving along the channel, times rho A
+  // (M_in = max(m_a,0)^2 - max(-m_b,0)^2 and A_in = max(m_a,0) + max(-m_b,0)
+  // share the factor A_in; s = 0 when nothing arrives). Forward s = m_a.
+  // C0 across m_a = 0 and m_b = 0. Exactly at a joint the partials are the
+  // right-sided ones (the flow at +0) for both flows, so a segment flow that
+  // is m_b at one station and m_a at the next reads one side at both.
+  const double s = std::max(m_a, 0.0) - std::max(-m_b, 0.0);
+  const double ds_da = m_a >= 0.0 ? 1.0 : 0.0;
+  const double ds_db = m_b < 0.0 ? 1.0 : 0.0;
+  // Written so that forward flow (s = m_a, ds_da = 1, ds_db = 0) evaluates the
+  // same operations as the m_a form it replaces, bit for bit.
+  const double f = m_b * m_b - m_a * m_a + kappa * s * (m_a - m_b);
   StationHalfDrop out;
   out.dP = f * k;
-  out.d_dm_a = (-2.0 * m_a + kappa * (2.0 * m_a - m_b)) * k;
-  out.d_dm_b = (2.0 * m_b - kappa * m_a) * k;
+  out.d_dm_a = (-2.0 * m_a + kappa * ((s + ds_da * m_a) - ds_da * m_b)) * k;
+  out.d_dm_b = (2.0 * m_b + kappa * (ds_db * (m_a - m_b) - s)) * k;
   const double d_drho = -out.dP / rho;
   out.d_dP = d_drho * drho_dP;
   out.d_dT = d_drho * drho_dT;

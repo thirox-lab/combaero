@@ -318,15 +318,113 @@ TEST(StationHalfDrop, IsMirrorSymmetric) {
   // The momentum flux m u = m^2/(rho A) is positive either way; the m|m|
   // form this replaced gave the SAME sign, a merge in a reversed chain
   // raising the static pressure along the flow.
+  // #1178: with a bleed (kappa != 0) too, the kappa term following the
+  // arriving stream.
   const auto X = air();
   const double P = 1.0e5, T = 300.0, A = 2e-3;
-  for (const auto& [ma, mb] : {std::pair{0.10, 0.13}, std::pair{0.10, 0.07}, std::pair{-0.04, 0.05}}) {
-    const double fwd = combaero::station_half_drop(ma, mb, P, T, X, A, 0.0).dP;
-    const double mir = combaero::station_half_drop(-mb, -ma, P, T, X, A, 0.0).dP;
-    EXPECT_NEAR(mir, -fwd, 1e-12 * std::abs(fwd));
+  for (double kappa : {0.0, combaero::STATION_KAPPA_BLEED_BASSETT, 1.0}) {
+    for (const auto& [ma, mb] : {std::pair{0.10, 0.13}, std::pair{0.10, 0.07},
+                                 std::pair{-0.04, 0.05}, std::pair{0.06, -0.02},
+                                 std::pair{0.0, 0.05}, std::pair{0.05, 0.0}}) {
+      const auto fwd = combaero::station_half_drop(ma, mb, P, T, X, A, kappa);
+      const auto mir = combaero::station_half_drop(-mb, -ma, P, T, X, A, kappa);
+      EXPECT_NEAR(mir.dP, -fwd.dP, 1e-12 * std::abs(fwd.dP)) << kappa << " " << ma << " " << mb;
+      // d(mir)/d(m_a') = d(-dP)/d(-m_b): the partials swap. Not at a joint
+      // (a zero flow), where both take the right-sided slope and the mirror
+      // maps right onto left.
+      if (ma != 0.0 && mb != 0.0) {
+        EXPECT_NEAR(mir.d_dm_a, fwd.d_dm_b, 1e-12 * std::abs(fwd.d_dm_b) + 1e-9);
+        EXPECT_NEAR(mir.d_dm_b, fwd.d_dm_a, 1e-12 * std::abs(fwd.d_dm_a) + 1e-9);
+      }
+    }
+    // A symmetric split (the side stream leaves both ways): no net drop.
+    EXPECT_NEAR(combaero::station_half_drop(-0.05, 0.05, P, T, X, A, kappa).dP, 0.0, 1e-12);
+    // A symmetric MEETING bleed: both streams arrive, none is favoured.
+    EXPECT_NEAR(combaero::station_half_drop(0.05, -0.05, P, T, X, A, kappa).dP, 0.0, 1e-9);
   }
-  // A symmetric split (the side stream leaves both ways): no net drop.
-  EXPECT_NEAR(combaero::station_half_drop(-0.05, 0.05, P, T, X, A, 0.0).dP, 0.0, 1e-12);
+}
+
+// ---- #1178: the kappa term follows the ARRIVING flow ------------------------
+
+TEST(StationHalfDrop, ForwardFlowIsTheMaFormBitForBit) {
+  // Forward (m_a, m_b >= 0) the arriving stream is m_a: the value and both
+  // partials are the pre-#1178 expressions to the last bit.
+  const auto X = air();
+  const double P = 1.3e5, T = 640.0, A = 1.7e-3;
+  const double rho = combaero::density(T, P, X);
+  const double k = 0.5 / (rho * A * A);
+  for (double kappa : {0.0, combaero::STATION_KAPPA_BLEED_BASSETT, 1.0, 0.31}) {
+    for (double ma : {1e-9, 0.0123, 0.4, 2.7}) {
+      for (double q : {0.0, 0.17, 0.5, 0.93, 1.0, 1.4}) {
+        const double mb = q * ma;
+        const auto r = combaero::station_half_drop(ma, mb, P, T, X, A, kappa);
+        EXPECT_EQ(r.dP, (mb * mb - ma * ma + kappa * ma * (ma - mb)) * k);
+        EXPECT_EQ(r.d_dm_a, (-2.0 * ma + kappa * (2.0 * ma - mb)) * k);
+        EXPECT_EQ(r.d_dm_b, (2.0 * mb - kappa * ma) * k);
+      }
+    }
+  }
+}
+
+TEST(StationHalfDrop, KappaTermByArrivingCase) {
+  const auto X = air();
+  const double P = 1.0e5, T = 300.0, A = 2e-3, kappa = 0.75;
+  const double rho = combaero::density(T, P, X);
+  const double k = 0.5 / (rho * A * A);
+  auto term = [&](double ma, double mb) {
+    return combaero::station_half_drop(ma, mb, P, T, X, A, kappa).dP / k - (mb * mb - ma * ma);
+  };
+  // Reversed: m_b arrives.
+  EXPECT_NEAR(term(-0.02, -0.05), kappa * (-0.02 + 0.05) * -0.05, 1e-15);
+  // Meeting: the arriving streams' mass-weighted mean, kappa (m_a^2 - m_b^2).
+  EXPECT_NEAR(term(0.04, -0.01), kappa * (0.04 * 0.04 - 0.01 * 0.01), 1e-15);
+  EXPECT_NEAR(term(0.01, -0.04), kappa * (0.01 * 0.01 - 0.04 * 0.04), 1e-15);
+  // Leaving both ways: nothing arrives, no term.
+  EXPECT_EQ(term(-0.03, 0.02), 0.0);
+  // Before #1178 the reversed term was kappa m_a (m_a - m_b): kappa (m_a -
+  // m_b)^2 more drop than this, i.e. more static rise along the flow.
+  const double old_rev = kappa * -0.02 * (-0.02 + 0.05);
+  EXPECT_NEAR(old_rev - term(-0.02, -0.05), kappa * 0.03 * 0.03, 1e-15);
+}
+
+TEST(StationHalfDrop, ContinuousAcrossEachSignChangeWithOneSidedSlopes) {
+  // C0 at m_a = 0 and at m_b = 0 (the kink is the decision of #1178, smoothed
+  // only if the solver needs it); each side's analytic partial meets a
+  // difference taken on that side.
+  const auto X = air();
+  const double P = 1.05e5, T = 350.0, A = 1.2e-4, kappa = 0.75;
+  auto dP = [&](double a, double b) {
+    return combaero::station_half_drop(a, b, P, T, X, A, kappa).dP;
+  };
+  // h < |x0|: a central difference on one side of the joint (exact for the
+  // quadratic each side is, bar round-off).
+  const double h = 1e-7, e = 1e-11;
+  for (double other : {-4e-3, 3e-3}) {
+    // m_a through zero, m_b = other.
+    EXPECT_NEAR(dP(+e, other), dP(0.0, other), 1e-4);
+    EXPECT_NEAR(dP(-e, other), dP(0.0, other), 1e-4);
+    for (double side : {+1.0, -1.0}) {
+      const double x0 = side * 1e-6;
+      const auto r = combaero::station_half_drop(x0, other, P, T, X, A, kappa);
+      const double fd = (dP(x0 + h, other) - dP(x0 - h, other)) / (2.0 * h);
+      EXPECT_NEAR(r.d_dm_a, fd, 1e-5 * std::abs(fd) + 1e-3) << side << " " << other;
+    }
+    // m_b through zero, m_a = other.
+    EXPECT_NEAR(dP(other, +e), dP(other, 0.0), 1e-4);
+    EXPECT_NEAR(dP(other, -e), dP(other, 0.0), 1e-4);
+    for (double side : {+1.0, -1.0}) {
+      const double x0 = side * 1e-6;
+      const auto r = combaero::station_half_drop(other, x0, P, T, X, A, kappa);
+      const double fd = (dP(other, x0 + h) - dP(other, x0 - h)) / (2.0 * h);
+      EXPECT_NEAR(r.d_dm_b, fd, 1e-5 * std::abs(fd) + 1e-3) << side << " " << other;
+    }
+  }
+  // The slope does jump: by kappa (m_a - m_b) k across m_a = 0 (a bleed
+  // going through m_a = 0 with m_b < 0), so the joint is a kink, not C1.
+  const auto lo = combaero::station_half_drop(-1e-7, -4e-3, P, T, X, A, kappa);
+  const auto hi = combaero::station_half_drop(+1e-7, -4e-3, P, T, X, A, kappa);
+  const double k = 0.5 / (combaero::density(T, P, X) * A * A);
+  EXPECT_NEAR(hi.d_dm_a - lo.d_dm_a, kappa * 4e-3 * k, 1e-3 * kappa * 4e-3 * k);
 }
 
 TEST(StationHalfDrop, DerivativesMatchCentralDifferences) {

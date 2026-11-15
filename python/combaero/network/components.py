@@ -12337,11 +12337,16 @@ class CrossflowSegmentElement(ChannelElement):
 
     A ``ChannelElement`` (friction, stagnation-pressure coupling) plus the
     momentum of side streams joining or leaving at its end nodes. Over one
-    station, ``m_a`` arriving and ``m_b`` leaving along the channel of area
-    A, with the side stream's AXIAL velocity ``kappa * u_a``, momentum gives
-    the static-pressure drop
+    station, ``m_a`` and ``m_b`` the signed flows on its from- and to-side
+    in a channel of area A, with the side stream's AXIAL velocity ``kappa``
+    times the arriving streams' mass-weighted mean velocity (#1178),
+    momentum gives the static-pressure drop
 
-        dP = (m_b^2 - m_a^2 + kappa m_a (m_a - m_b)) / (rho A^2)
+        dP = (m_b^2 - m_a^2 + kappa (m_a - m_b) s) / (rho A^2),
+        s = max(m_a, 0) - max(-m_b, 0)
+
+    (``s = m_a`` forward, ``m_b`` reversed, ``m_a + m_b`` where the flows
+    meet, 0 where nothing arrives; C++ ``station_half_drop``).
 
     * ``kappa = 0``: normal injection (impingement jets). Florschuetz's
       P + G^2/rho = const.

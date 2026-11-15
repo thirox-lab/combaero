@@ -353,8 +353,12 @@ def test_the_jacobian_is_analytic_where_rogers_hersh_acts(regime: str, f: float 
 
 
 def test_the_jacobian_is_analytic_where_the_supply_reverses() -> None:
-    # Fed from both ends: the channel flow reverses between two stations.
-    s, r = _solve(_channel_net(area=1.2e-4))
+    # Fed from both ends: the channel flow reverses between two stations (s2
+    # a meeting station). Since #1178 the 1.2e-4 m^2 duct this used runs
+    # through into the sink (Bassett's regain, no longer added to by the
+    # reversed stations' kappa term following the leaving stream); a sink at
+    # the source's Pt on a 3e-4 m^2 duct splits.
+    s, r = _solve(_channel_net(area=3e-4, p_sink=1.03e5))
     assert r["s3x.m_dot"] < 0.0 < r["s0x.m_dot"]
     x = np.array(r["__x_solution__"])
     assert _fd_rows(s, x) < 1e-5
