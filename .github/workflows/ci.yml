@@ -110,6 +110,7 @@ jobs:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'
               - 'scripts/check_version_sync.py'
+              - 'scripts/biome-hook.sh'
             # Any workflow file: actionlint. A change to publish*.yml or
             # claude*.yml runs only that (it used to run every Python job).
             workflows:
@@ -238,7 +239,8 @@ jobs:
       - name: Set up Biome
         uses: biomejs/setup-biome@v2
         with:
-          version: 2.6.5
+          # No version: read from gui/frontend/pnpm-lock.yaml, which Dependabot bumps.
+          working-dir: gui/frontend
 
       - name: Check frontend style (Biome)
         run: biome check gui/frontend/src

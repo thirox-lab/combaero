@@ -43,9 +43,10 @@ When updating tool versions or Python targets, ensure the following files remain
 5. `.pre-commit-config.yaml`
 6. `Makefile` and the `.sh` scripts in `scripts/`
 
-When updating frontend tool versions, keep these synchronized: `gui/frontend/package.json`, `biome.json`
-(`$schema` version), `.pre-commit-config.yaml` (biome rev and the `@biomejs/biome` pin) and `ci.yml`
-(`setup-biome` version). `scripts/check_version_sync.py` enforces the biome set (CI and pre-commit).
+Biome is pinned once, in `gui/frontend/package.json` (and its lockfile), the only files Dependabot bumps.
+CI's `setup-biome` reads the version from the lockfile, the pre-commit hook runs the installed copy
+(`scripts/biome-hook.sh`; needs `pnpm install` in `gui/frontend`) and `biome.json`'s `$schema` points into
+`node_modules`. `scripts/check_version_sync.py` fails if a second pin comes back (CI and pre-commit).
 
 Releases, Dependabot rounds and dependency floors: see [RELEASING.md](RELEASING.md).
 

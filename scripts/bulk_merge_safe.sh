@@ -21,7 +21,7 @@
 #    without a conflict, yet pnpm's frozen install rejects it (#976 after
 #    #975: "Broken lockfile: no entry for 'eslint@10.13.0'").
 # 4. Gate before queueing: all checks finished, none failed (SKIPPED/NEUTRAL
-#    are fine), and pinned tool versions agree at the PR head
+#    are fine), and Biome is pinned in package.json only at the PR head
 #    (scripts/check_version_sync.py). Queued at exactly that head
 #    (--match-head-commit); the queue picks the merge method (squash).
 # Anything else is reported and skipped; nothing is forced.
