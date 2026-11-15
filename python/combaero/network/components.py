@@ -12743,7 +12743,12 @@ class CrossflowSegmentElement(ChannelElement):
             t_to = _StaticChainedDrop(r, st, True)
             self._with_jets(t_to, getattr(self, "_downstream_node", None), state_out, self.area_to)
             terms.append((t_to, self.to_node, "a", self.to_node, self._next, "to"))
-        elif incompressible and m < 0.0 and self._terminal_end("to"):
+        elif (
+            incompressible
+            and m < 0.0
+            and self._terminal_end("to")
+            and self._terminal_at_rest(getattr(self, "_downstream_node", None))
+        ):
             # Reversed out of an exit node at rest (a plenum, a combustor, a
             # boundary: ``_terminal_at_rest``): the node is a reservoir and
             # the gas accelerates out of it, one dynamic head, no entry loss.
@@ -12758,19 +12763,18 @@ class CrossflowSegmentElement(ChannelElement):
             # density was a stagnation one, O(dP / (gamma P)) too dense: the
             # reversed regime gap was +3.8 % at 8 kPa (exit Mach 0.31), 5x
             # the moving chamber exit's +0.73 %, and is +0.62 % (#1136).
-            if self._terminal_at_rest(getattr(self, "_downstream_node", None)):
-                st = _moving_static_T(state_out, m, self.area_to, True)
-                r = cb.channel_entry_drop(-m, state_in.P, st.T, state_out.X, self.area_to, 0.0)
-                terms.append(
-                    (
-                        _ReservoirExitInflow(r, self.from_node),
-                        self.to_node,
-                        "a",
-                        self.to_node,
-                        None,
-                        "exit_in",
-                    )
+            st = _moving_static_T(state_out, m, self.area_to, True)
+            r = cb.channel_entry_drop(-m, state_in.P, st.T, state_out.X, self.area_to, 0.0)
+            terms.append(
+                (
+                    _ReservoirExitInflow(r, self.from_node),
+                    self.to_node,
+                    "a",
+                    self.to_node,
+                    None,
+                    "exit_in",
                 )
+            )
         if (
             incompressible
             and self._terminal_end("to")
