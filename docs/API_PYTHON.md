@@ -4192,8 +4192,8 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   reservoir's (its T0 and composition), at the duct's static P at the
   to-end, never the to-node's own gas, which a merge chamber, a mixing
   station or a burning combustor holds mixed or burnt (#1137; the numbers
-  are in its changelog entry and `test_crossflow_entry_gas_1137.py`). The
-  term has no partial in the reservoir's composition yet (#1146). Reversed
+  are in its changelog entry and `test_crossflow_entry_gas_1137.py`). Its
+  T0 and composition partials are the reservoir's (#1146). Reversed
   out of an exit at rest, the node is a reservoir: the gas accelerates out
   of it, one dynamic head. Incompressible, the head is taken at the duct's
   static density (the gas's T0 at its far end's P), as

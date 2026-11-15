@@ -61,6 +61,12 @@ struct StationHalfDrop {
   double d_dm_b = 0.0;  // [Pa/(kg/s)]
   double d_dP = 0.0;    // d/d(station static P) [-]
   double d_dT = 0.0;    // d/d(station T) [Pa/K]
+  // d/d(mass fractions Y_k) of the gas at fixed (P, T) [Pa per unit mass
+  // fraction], one entry per species (#1146). The drop is ~ 1/rho, and
+  // rho = P MW / (R_u T), so d/dX_j = -dP W_j / MW, mapped onto the solver's
+  // mass fractions by mole_gradient_to_mass. Zero (all entries) where the
+  // drop is.
+  std::vector<double> d_dY;
 };
 
 StationHalfDrop station_half_drop(double m_a, double m_b, double P, double T,
@@ -155,6 +161,9 @@ struct JetImpulse {
   double J = 0.0;       // [N]
   double dJ_dm = 0.0;   // = w [m/s]
   double dJ_dPt = 0.0, dJ_dTt = 0.0, dJ_dP = 0.0;
+  // d/d(mass fractions Y_k) of the jet's gas at fixed (Pt, Tt, P) [N per
+  // unit mass fraction], one per species, both branches analytic (#1146).
+  std::vector<double> dJ_dY;
   bool choked = false;
 };
 

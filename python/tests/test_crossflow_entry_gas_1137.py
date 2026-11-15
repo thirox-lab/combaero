@@ -64,8 +64,8 @@ def _reservoir(g: FlowNetwork, kind: str, p_sup: float, regime: str) -> str:
       stream.
 
     Dry air throughout: only T0 is relayed. A reservoir whose COMPOSITION is
-    relayed (a wet or burning one) still lacks the d/dY of the entry density
-    (#1146)."""
+    relayed (a burning or mixing one) is checked in
+    test_crossflow_composition_partials_1146.py."""
     g.add_node(PressureBoundary("sup", Pt=p_sup, Tt=300.0, Y=Y))
     if kind == "boundary":
         return "sup"
@@ -269,10 +269,8 @@ def _segment_row_fd_error(build, x: np.ndarray) -> float:
 #   test_solver_resolves_topology_1148.py (the 5e-4 to 2e-3 seen here was a
 #   fresh solver evaluating an unresolved network, #1148);
 # * a reservoir whose COMPOSITION moves with the flows (a burning combustor
-#   feeding the segment): the entry term and the chamber exit head have no
-#   d/dY of it, 8e-4 incompressible and 3e-4 compressible (#1146);
-# * reversed incompressible into a burning combustor: the reversed exit term
-#   reads the burnt gas without its d/dY, 7e-4 (#1146).
+#   or a mixing plenum feeding the segment) and reversed flow out of a
+#   burning combustor, every row: test_crossflow_composition_partials_1146.py.
 JAC_CASES = [
     ("fed", "plenum"),
     ("fed", "chamber"),
@@ -296,8 +294,6 @@ def test_entry_gas_jacobian(regime: str, res: str, node: str, rev: bool, point: 
     """Fresh solvers (#1142), the segment's row to 1e-7 scaled: at the root,
     perturbed, and either side of m = 0, forward and reversed. Measured at
     <= 1.8e-8."""
-    if node == "combustor" and rev and regime == "incompressible":
-        pytest.skip("the reversed exit term lacks the burnt gas's d/dY (#1146)")
     fuel = 2e-4 if node == "combustor" else 0.0
     dp = 8000.0 if node == "combustor" else 2000.0
 

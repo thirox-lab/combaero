@@ -18,6 +18,17 @@ namespace {
 // Floor on the impulse quadratic's discriminant, relative to Pi^2, so a
 // choked face stays finite and differentiable (flagged, not hidden).
 constexpr double MERGE_DISCRIMINANT_FLOOR = 1e-8;
+
+// d(dP)/dY_k of a drop dP ~ 1/rho at fixed (P, T) (#1146): rho = P MW /
+// (R_u T), so d(dP)/dX_j = -dP W_j / MW, mapped onto the mass fractions.
+std::vector<double> inverse_density_drop_dY(double dP, const std::vector<double>& X) {
+  const double MW = mwmix(X);
+  std::vector<double> g(X.size(), 0.0);
+  for (std::size_t j = 0; j < X.size(); ++j) {
+    g[j] = -dP * species_molar_mass(j) / MW;
+  }
+  return mole_gradient_to_mass(X, g);
+}
 }  // namespace
 
 StationHalfDrop station_half_drop(double m_a, double m_b, double P, double T,
@@ -38,6 +49,7 @@ StationHalfDrop station_half_drop(double m_a, double m_b, double P, double T,
   const double d_drho = -out.dP / rho;
   out.d_dP = d_drho * drho_dP;
   out.d_dT = d_drho * drho_dT;
+  out.d_dY = inverse_density_drop_dY(out.dP, X);
   return out;
 }
 
@@ -50,6 +62,7 @@ StationHalfDrop segment_area_change_drop(double m, double P, double T,
   }
   StationHalfDrop out;
   if (area_from == area_to) {
+    out.d_dY.assign(X.size(), 0.0);
     return out;
   }
   auto [rho, drho_dT, drho_dP] = solver::density_and_jacobians(T, P, X);
@@ -59,6 +72,7 @@ StationHalfDrop segment_area_change_drop(double m, double P, double T,
   const double d_drho = -out.dP / rho;
   out.d_dP = d_drho * drho_dP;
   out.d_dT = d_drho * drho_dT;
+  out.d_dY = inverse_density_drop_dY(out.dP, X);
   return out;
 }
 
@@ -79,6 +93,7 @@ StationHalfDrop channel_entry_drop(double m, double P, double T,
   const double d_drho = -out.dP / rho;
   out.d_dP = d_drho * drho_dP;
   out.d_dT = d_drho * drho_dT;
+  out.d_dY = inverse_density_drop_dY(out.dP, X);
   return out;
 }
 
@@ -305,6 +320,9 @@ struct JetW {
   double w = 0.0;
   bool choked = false;
   double dw_dPt = 0.0, dw_dTt = 0.0, dw_dP = 0.0;
+  // d/dX_j at fixed (Pt, Tt, P), on the extension of the mixture properties
+  // linear in X (h, s0, cp molar) with MW = sum X W (#1146). Empty: no jet.
+  std::vector<double> dw_dX;
 };
 
 JetW jet_w(double Pt, double Tt, double P, const std::vector<double>& X) {
@@ -334,6 +352,23 @@ JetW jet_w(double Pt, double Tt, double P, const std::vector<double>& X) {
     out.dw_dTt = (cp_t - Ts * cp_t / Tt) / out.w;
     out.dw_dPt = Ts * R / Pt / out.w;
     out.dw_dP = -Ts * R / P / out.w;
+    // Composition (#1146), molar: the isentrope sum X_j (s0_j(Ts) - s0_j(Tt))
+    // = R_u ln(P / Pt) moves Ts by dTs/dX_j = -(s0_j(Ts) - s0_j(Tt)) Ts / c(Ts);
+    // w^2 / 2 = (H(Tt) - H(Ts)) / MW with H = sum X_j h_j.
+    {
+      const std::size_t n = X.size();
+      const double MW = mwmix(X);
+      const double MWkg = MW / 1000.0;
+      const double c_s = cp(Ts, X);
+      const double half_w2 = 0.5 * out.w * out.w;
+      out.dw_dX.assign(n, 0.0);
+      for (std::size_t j = 0; j < n; ++j) {
+        const double dTs = -(s_species(j, Ts) - s_species(j, Tt)) * Ts / c_s;
+        const double dq = (h_species(j, Tt) - h_species(j, Ts) - c_s * dTs) / MWkg -
+                          half_w2 * species_molar_mass(j) / MW;
+        out.dw_dX[j] = dq / out.w;
+      }
+    }
     return out;
   }
   // Sonic: h(Tt) - h(T*) = a(T*)^2 / 2 fixes T*(Tt); P* = Pt exp(-(s0(Tt) -
@@ -359,6 +394,31 @@ JetW jet_w(double Pt, double Tt, double P, const std::vector<double>& X) {
   out.dw_dP = -K;
   out.dw_dPt = K * P / Pt;  // P* ~ Pt at fixed Tt: d((P* - P) K)/dPt = K P / Pt
   out.dw_dTt = du_dTt + dPs_dTt * K + (P_star - P) * dK_dTt;
+  // Composition (#1146), each step at fixed (Pt, Tt, P): T* from
+  // E = (H(Tt) - H(T*)) / MW - a^2(T*) / 2 = 0, a^2 = gamma R T,
+  // gamma = c / (c - R_u), R = R_u / MW; then ln P*, u*, K as above.
+  {
+    const std::size_t n = X.size();
+    const double MW = mwmix(X);
+    const double MWkg = MW / 1000.0;
+    const double dH = h(Tt, X) - h(T_star, X);  // [J/mol]
+    const double dE_dTs = cp_s + 0.5 * da2_dT;   // -dE/dT*
+    out.dw_dX.assign(n, 0.0);
+    for (std::size_t j = 0; j < n; ++j) {
+      const double Wj = species_molar_mass(j);
+      const double cj = cp_species(j, T_star);
+      const double dgamma = -thermo::R_GAS * cj / ((c - thermo::R_GAS) * (c - thermo::R_GAS));
+      const double da2 = T_star * (dgamma * R - gamma * R * Wj / MW);
+      const double dE = (h_species(j, Tt) - h_species(j, T_star)) / MWkg -
+                        dH / MWkg * Wj / MW - 0.5 * da2;
+      const double dTs = dE / dE_dTs;
+      const double dlnPs =
+          (s_species(j, T_star) - s_species(j, Tt) + c / T_star * dTs) / thermo::R_GAS;
+      const double du = (da2 + da2_dT * dTs) / (2.0 * u_star);
+      const double dlnK = -Wj / MW + dTs / T_star - dlnPs - du / u_star;
+      out.dw_dX[j] = du + P_star * dlnPs * K + (P_star - P) * K * dlnK;
+    }
+  }
   return out;
 }
 }  // namespace
@@ -378,6 +438,14 @@ JetImpulse jet_impulse(double m, double Pt, double Tt, double P,
   out.dJ_dPt = m * base.dw_dPt;
   out.dJ_dTt = m * base.dw_dTt;
   out.dJ_dP = m * base.dw_dP;
+  if (base.dw_dX.empty()) {
+    out.dJ_dY.assign(X.size(), 0.0);
+  } else {
+    out.dJ_dY = mole_gradient_to_mass(X, base.dw_dX);
+    for (double& d : out.dJ_dY) {
+      d *= m;
+    }
+  }
   return out;
 }
 

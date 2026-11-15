@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
+#include "composition.h"
 #include "compressible.h"
 #include "side_stream_momentum.h"
 #include "stagnation.h"
@@ -438,4 +441,113 @@ TEST(SonicStaticState, TheFluxIsSonicThereAndTheDerivativesAreExact) {
     EXPECT_NEAR(s.dP_dG / fdG, 1.0, 1e-7);
   }
   EXPECT_EQ(combaero::sonic_static_state(300.0, 0.0, X).P, 0.0);
+}
+
+// ---- composition partials (#1146) ------------------------------------------
+//
+// Each kernel's d/dY against central differences in the mass fractions, along
+// directions that keep sum Y = 1 (e_k - e_ref): the solver's unknowns. Every
+// species is present, so no step crosses Y = 0 (where s() drops a species).
+
+namespace {
+std::vector<double> mixed_Y() {
+  std::vector<double> X = air();
+  X[combaero::species_index_from_name("CH4")] = 0.03;
+  X[combaero::species_index_from_name("CO2")] = 0.02;
+  X[combaero::species_index_from_name("H2O")] = 0.04;
+  const double n = static_cast<double>(X.size());
+  for (double& x : X) {
+    x = 0.99 * x + 0.01 / n;
+  }
+  double s = 0.0;
+  for (double x : X) {
+    s += x;
+  }
+  for (double& x : X) {
+    x /= s;
+  }
+  return combaero::mole_to_mass(X);
+}
+
+std::vector<double> X_of(std::vector<double> Y) {
+  double s = 0.0;
+  for (double y : Y) {
+    s += y;
+  }
+  for (double& y : Y) {
+    y /= s;
+  }
+  return combaero::mass_to_mole(Y);
+}
+
+// max over k of |analytic - FD| along e_k - e_ref, over the largest |FD|.
+template <class F>
+double dY_error(F value, const std::vector<double>& dY, const std::vector<double>& Y) {
+  const std::size_t ref = combaero::species_index_from_name("N2");
+  const double h = 1e-7;
+  double err = 0.0, scale = 0.0;
+  for (std::size_t k = 0; k < Y.size(); ++k) {
+    if (k == ref) {
+      continue;
+    }
+    std::vector<double> yp = Y, ym = Y;
+    yp[k] += h;
+    yp[ref] -= h;
+    ym[k] -= h;
+    ym[ref] += h;
+    const double fd = (value(X_of(yp)) - value(X_of(ym))) / (2.0 * h);
+    err = std::max(err, std::abs(dY[k] - dY[ref] - fd));
+    scale = std::max(scale, std::abs(fd));
+  }
+  return err / scale;
+}
+}  // namespace
+
+TEST(CompositionPartials, StationDropsMatchCentralDifferences) {
+  const auto Y = mixed_Y();
+  const auto X = X_of(Y);
+  const double P = 1.0e5, T = 600.0, A = 2e-4;
+  for (double m : {0.012, -0.012}) {
+    const auto s = combaero::station_half_drop(0.01, m, P, T, X, A, 0.75);
+    ASSERT_EQ(s.d_dY.size(), X.size());
+    EXPECT_LT(dY_error([&](const std::vector<double>& x) {
+      return combaero::station_half_drop(0.01, m, P, T, x, A, 0.75).dP;
+    }, s.d_dY, Y), 1e-7);
+    const auto a = combaero::segment_area_change_drop(m, P, T, X, A, 1.5 * A);
+    EXPECT_LT(dY_error([&](const std::vector<double>& x) {
+      return combaero::segment_area_change_drop(m, P, T, x, A, 1.5 * A).dP;
+    }, a.d_dY, Y), 1e-7);
+  }
+  const auto e = combaero::channel_entry_drop(0.012, P, T, X, A, 0.5);
+  EXPECT_LT(dY_error([&](const std::vector<double>& x) {
+    return combaero::channel_entry_drop(0.012, P, T, x, A, 0.5).dP;
+  }, e.d_dY, Y), 1e-7);
+  // Zero drops carry zero partials, one per species.
+  for (const auto& z : {combaero::channel_entry_drop(-0.012, P, T, X, A, 0.5),
+                        combaero::segment_area_change_drop(0.012, P, T, X, A, A)}) {
+    ASSERT_EQ(z.d_dY.size(), X.size());
+    for (double d : z.d_dY) {
+      EXPECT_EQ(d, 0.0);
+    }
+  }
+}
+
+TEST(CompositionPartials, JetImpulseMatchesCentralDifferencesOnBothBranches) {
+  const auto Y = mixed_Y();
+  const auto X = X_of(Y);
+  const double m = 0.02, Tt = 700.0, P = 1.0e5;
+  // Unchoked, just past the sonic point, and deep in the choked branch.
+  for (double Pt : {1.2e5, 1.9e5, 3.0e5}) {
+    const auto r = jet_impulse(m, Pt, Tt, P, X);
+    ASSERT_EQ(r.dJ_dY.size(), X.size());
+    EXPECT_LT(dY_error([&](const std::vector<double>& x) {
+      return jet_impulse(m, Pt, Tt, P, x).J;
+    }, r.dJ_dY, Y), 1e-6) << "Pt " << Pt << " choked " << r.choked;
+  }
+  // No outflow: zero partials, one per species.
+  const auto z = jet_impulse(m, 0.9e5, Tt, P, X);
+  ASSERT_EQ(z.dJ_dY.size(), X.size());
+  for (double d : z.dJ_dY) {
+    EXPECT_EQ(d, 0.0);
+  }
 }

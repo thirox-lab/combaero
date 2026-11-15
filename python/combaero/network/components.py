@@ -2778,6 +2778,14 @@ def _entry_gas(
     return gas
 
 
+def _kernel_dY(r: Any) -> dict[int, float]:
+    """A ``StationHalfDrop``'s composition partials at fixed (P, T), by
+    species index (#1146). Before, the kernels had none: a gas whose
+    composition moves with the flows (a burning combustor, a mixing plenum)
+    lacked the density's d/dY in every crossflow term."""
+    return {k: float(d) for k, d in enumerate(r.d_dY) if d != 0.0}
+
+
 class _StaticChainedDrop:
     """A ``StationHalfDrop`` evaluated at a node's moving static T, its partials
     chained onto what that T depends on (#782): the node's T0, its static P,
@@ -2802,7 +2810,11 @@ class _StaticChainedDrop:
         self.d_dm_b = float(r.d_dm_b) + (0.5 * dm if two_sided else 0.0)
         self.d_dP = float(r.d_dP) + float(r.d_dT) * st.dP
         self.d_dT = float(r.d_dT) * st.dT0
-        self.d_dY = {k: float(r.d_dT) * d for k, d in st.dY.items()}
+        # The gas's composition: the kernel's own (its density at fixed P,
+        # T, #1146) plus the static T's.
+        self.d_dY = _kernel_dY(r)
+        for k, d in st.dY.items():
+            self.d_dY[k] = self.d_dY.get(k, 0.0) + float(r.d_dT) * d
 
 
 class _ReservoirExitInflow:
@@ -2813,7 +2825,8 @@ class _ReservoirExitInflow:
 
     The kernel's density is taken at ``p_node``'s static P (the duct's far
     end, see ``_momentum_terms``), so its P partial is that node's
-    (``extra``); its T0 partial is the term's node's, the gas's."""
+    (``extra``); its T0 and composition partials are the term's node's, the
+    gas's (#1146)."""
 
     __slots__ = ("dP", "d_dm_a", "d_dm_b", "d_dP", "d_dT", "d_dY", "extra")
 
@@ -2824,15 +2837,16 @@ class _ReservoirExitInflow:
         self.d_dm_b = 0.0
         self.d_dP = 0.0
         self.d_dT = -float(r.d_dT)
-        self.d_dY: dict[int, float] = {}
+        self.d_dY = {k: -d for k, d in _kernel_dY(r).items()}
 
 
 class _ChamberExitHead:
     """Incompressible exit head of a segment into a MomentumChamberNode:
     ``channel_entry_drop`` evaluated at |m| (K_in = 0), as a negative drop of
     this segment's signed m. The duct-end static is the chamber's Pt less the
-    head, in both directions. Its T0 partial is the carried gas's node's
-    (``extra``), which need not be the chamber."""
+    head, in both directions. Its T0 and composition partials are the
+    carried gas's node's (``extra``), which need not be the chamber
+    (#1146)."""
 
     __slots__ = ("dP", "d_dm_a", "d_dm_b", "d_dP", "d_dT", "d_dY", "extra")
 
@@ -2844,6 +2858,8 @@ class _ChamberExitHead:
         self.d_dT = 0.0
         self.d_dY: dict[int, float] = {}
         self.extra: dict[str, float] = {f"{gas_id}.Tt": -float(r.d_dT)}
+        for k, d in _kernel_dY(r).items():
+            self.extra[f"{gas_id}.Y[{k}]"] = -d
 
 
 #: Flow regime every element defaults to when none is given. It is the GUI's
@@ -6008,12 +6024,30 @@ class OrificeElement(NetworkElement):
         jet = cb.jet_impulse(
             float(state_in.m_dot), state_in.Pt, state_in.Tt, state_chamber.P, state_in.X
         )
-        return jet.J * cos_t, {
-            f"{self.id}.m_dot": jet.dJ_dm * cos_t,
-            f"{self.from_node}.Pt": jet.dJ_dPt * cos_t,
-            f"{self.from_node}.Tt": jet.dJ_dTt * cos_t,
-            f"{self.to_node}.P": jet.dJ_dP * cos_t,
-        }
+        # The stream's supply and sink as the solver relays it (#1146): a
+        # reversed hole (``rev_in``) delivers -m_dot from its to_node into
+        # its from_node, so the jet's gas (Pt, Tt, Y) is the to_node's, the
+        # static P it discharges to the from_node's, and its flow is -m_dot.
+        # Keyed by the declared ends, the reversed jet put its gas on the
+        # station, its P on the supply and its flow with the wrong sign.
+        src = getattr(state_in, "_src_node", None) or self.from_node
+        sink = self.from_node if src == self.to_node else self.to_node
+        flow = getattr(state_in, "_m_dot_jac_names", None) or {f"{self.id}.m_dot": 1.0}
+        d: dict[str, float] = {}
+        for name, coeff in flow.items():
+            d[name] = d.get(name, 0.0) + jet.dJ_dm * cos_t * coeff
+        for key, v in (
+            (f"{src}.Pt", jet.dJ_dPt),
+            (f"{src}.Tt", jet.dJ_dTt),
+            (f"{sink}.P", jet.dJ_dP),
+        ):
+            d[key] = d.get(key, 0.0) + v * cos_t
+        # The jet's gas is its supply's: a mixing or burning supply moves
+        # its composition with the flows (#1146).
+        for k, v in enumerate(jet.dJ_dY):
+            if v != 0.0:
+                d[f"{src}.Y[{k}]"] = float(v) * cos_t
+        return jet.J * cos_t, d
 
     def validate(self) -> None:
         self._hole_cd.validate()
@@ -12664,9 +12698,9 @@ class CrossflowSegmentElement(ChannelElement):
             # chamber's or a combustor's mixed or burnt one, which charged the
             # entry 23 % low into a 388 K merge and the flow 19 % low into a
             # flame. Reversed the term is 0 with zero partials (C1 at m = 0),
-            # so the gas never switches. channel_entry_drop has no partial in
-            # the composition, so a reservoir whose Y moves with the flows (a
-            # burning combustor feeding the segment) lacks d/dY here (#1146).
+            # so the gas never switches. Its composition partial is the
+            # reservoir's too (``gas_node``): a burning combustor or a mixing
+            # plenum feeding the segment moves it with the flows (#1146).
             m_b = flows.get(self._next.id, m) if to_station else m
             gas = _entry_gas(state_in, state_out)
             st = _moving_static_T(gas, 0.5 * (m + m_b), self.area_to, incompressible)
