@@ -32,9 +32,9 @@ twice differs by ~1e-11, the noise in a structurally zero column).
 
 Measured on the fixed points, the solved roots and perturbations, both supply
 directions: compressible <= 7.1e-8, incompressible <= 1e-10. The fixed points
-are the quiet-machine roots of #1157, so the check does not depend on which
-root a loaded machine's solve lands on (under load the reversed case lands on
-another root; #1157).
+are the quiet-machine roots of #1157, and the solved-root test starts its solve
+there: a cold solve on a slow machine hands hybr over to LM on the wall-clock
+stall rule, times out and returns an unconverged iterate (#1177).
 """
 
 from __future__ import annotations
@@ -313,12 +313,16 @@ def test_every_row_meets_fd_through_a_segments_zero_flow(
 
 @pytest.mark.parametrize("supply", ["reversed", "forward"])
 def test_every_row_meets_fd_at_the_solved_root_and_off_it(supply: str) -> None:
-    """Whatever root this machine's solve lands on, and a perturbation of it
-    (30 Pa on pressures, 3 % on flows)."""
+    """The root a solve returns, and a perturbation of it (30 Pa on pressures,
+    3 % on flows). The solve starts at FIXED_X: a cold solve's path depends on
+    the wall clock (its stall handover), and on a slow machine it timed out
+    and returned an unconverged iterate, where the FD check failed (#1177)."""
     s = _fresh(supply, "compressible")
+    solver = _fresh(supply, "compressible")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        r = NetworkSolver(_build(supply, "compressible")).solve()
+        r = solver.solve(x0=_fixed_x(solver, supply))
+    assert r["__converged__"], r.get("__message__")
     x0 = np.array(r["__x_solution__"], dtype=float)
     rng = np.random.default_rng(1157)
     xp = x0.copy()
