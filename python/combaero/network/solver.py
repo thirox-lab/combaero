@@ -3013,6 +3013,16 @@ class NetworkSolver:
     _MAX_PROPAGATION_PASSES = 1000
     # Lagged T (relative), Y (absolute) and wall-node flow (relative).
     _PROPAGATION_SETTLE_TOL = 1e-13
+    # The early stop (_propagation_cannot_settle): the contraction rate is
+    # the geometric mean over a window of passes. It is read only after a
+    # minimum count of compared passes -- trial points of the failing random-30
+    # solve hold at ~0.998 a pass for ~50 passes before contracting at ~0.96
+    # and settling after 638-817 -- and the stop needs the passes it predicts
+    # to exceed the passes left by a margin, three passes in a row.
+    _PROPAGATION_RATE_WINDOW = 8
+    _PROPAGATION_RATE_MIN_PASSES = 100
+    _PROPAGATION_RATE_MARGIN = 2.0
+    _PROPAGATION_RATE_STRIKES = 3
 
     def _two_port_mdot_indices(self) -> dict[str, int]:
         """element id -> index of its own m_dot, for plain 2-port elements
@@ -3259,7 +3269,10 @@ class NetworkSolver:
         relay: dict = {}
         wall_nodes = self._wall_endpoint_nodes()
         change, relay_settled = math.inf, True
-        for _ in range(self._MAX_PROPAGATION_PASSES):
+        history: list[float] = []
+        strikes = 0
+        cap = self._MAX_PROPAGATION_PASSES
+        for n_pass in range(1, cap + 1):
             self._lagged_read = False
             self._relay_borrowed: set[str] = set()
             m_read = {
@@ -3285,13 +3298,20 @@ class NetworkSolver:
             )
             if change < self._PROPAGATION_SETTLE_TOL and relay_settled:
                 return relay
+            # A contraction too slow to settle inside the cap stops early: on
+            # a 62-node vane network (17 ms a pass) a cap run cost 10 s per F.
+            strikes = (
+                strikes + 1 if self._propagation_cannot_settle(history, change, cap - n_pass) else 0
+            )
+            if strikes >= self._PROPAGATION_RATE_STRIKES:
+                break
         # Not settled: this evaluation depends on the one before it (#1162).
         # Reported once per solver, as the penalty residual is.
         if not getattr(self, "_propagation_cap_warned", False):
             self._propagation_cap_warned = True
             warnings.warn(
                 "NetworkSolver: the state propagation around a back-edge did not "
-                f"settle in {self._MAX_PROPAGATION_PASSES} passes (largest lagged "
+                f"settle in {n_pass} passes (largest lagged "
                 f"change {change:.2e}"
                 + ("" if relay_settled else ", sensitivities unsettled")
                 + f"{' at ' + self._eval_where if self._eval_where else ''}); the "
@@ -3300,6 +3320,35 @@ class NetworkSolver:
                 stacklevel=2,
             )
         return relay
+
+    def _propagation_cannot_settle(self, history: list[float], change: float, left: int) -> bool:
+        """Whether the lagged change, contracting at its observed rate, stays
+        above the settle tolerance through the ``left`` passes the cap allows.
+
+        The rate is the geometric mean over the last _PROPAGATION_RATE_WINDOW
+        passes, which also covers a contraction that alternates between two
+        quantities pass by pass (0.024, 34, 0.024, ... on random 37's trial
+        points). True when the passes that rate needs to reach the tolerance
+        exceed _PROPAGATION_RATE_MARGIN times ``left``, or the change does not
+        contract. ``history`` takes this pass's change; inf (a pass with
+        nothing to compare) restarts it."""
+        if not math.isfinite(change):
+            history.clear()
+            return False
+        history.append(change)
+        w = self._PROPAGATION_RATE_WINDOW
+        tol = self._PROPAGATION_SETTLE_TOL
+        # Settled states (only the relay still moving) predict nothing, and
+        # neither does the transient before the asymptotic rate sets in.
+        if len(history) < self._PROPAGATION_RATE_MIN_PASSES or change < tol:
+            return False
+        if not (change > 0.0 and history[-1 - w] > 0.0):
+            return change > tol
+        rate = (change / history[-1 - w]) ** (1.0 / w)
+        if rate >= 1.0 or not tol > 0.0:
+            return True
+        needed = math.log(tol / change) / math.log(rate)
+        return needed > self._PROPAGATION_RATE_MARGIN * left
 
     def _wall_endpoint_nodes(self) -> list[str]:
         """Nodes that are a wall's side: their htc reads the node's
@@ -3324,11 +3373,15 @@ class NetworkSolver:
         state -- is unsettled (inf), and so is a NaN. T alone settled after two
         passes on stress random 37 while a lagged Y still moved by 0.025."""
         worst = 0.0
+        nan = False
 
         def change(d: float) -> None:
             # max() drops a NaN; a NaN state never settles.
-            nonlocal worst
-            worst = d if not d <= worst else worst
+            nonlocal worst, nan
+            if d != d:
+                nan = True
+            elif d > worst:
+                worst = d
 
         pairs = (
             (self._derived_states, self._prev_derived_states),
@@ -3351,17 +3404,19 @@ class NetworkSolver:
             if m is None or m_prev is None:
                 return math.inf
             change(abs(float(m) - float(m_prev)) / max(abs(float(m)), 1e-300))
-        return worst if worst == worst else math.inf
+        return math.inf if nan else worst
 
     def _relay_settled(self, relay: dict, prev: dict, borrowed: set[str], x: np.ndarray) -> bool:
         """Each BORROWED node's relayed T and Pt sensitivities equal what the
         pass used for it (the previous pass's; missing = 0) to 1e-9 -- the
         Jacobian's own accuracy -- relative to the sensitivity, or to the
-        node's own T (Pt) for the change of x_j by |x_j|: a sensitivity that
-        decays to 0 settles at 1e-9 of the state it moves, where a relative
-        test alone held a random-37 Jacobian evaluation to 1000 passes
-        (#1162). The composition sensitivities iterate with the same
-        contraction and are not compared."""
+        node's own T (Pt) for a change of x_j by its column scale
+        (_relay_column_scale): a sensitivity that decays to 0 settles at 1e-9
+        of the state it moves, where a relative test alone held a random-37
+        Jacobian evaluation to 1000 passes (#1162). The composition
+        sensitivities iterate with the same contraction and are not
+        compared."""
+        ref_mdot: list[float] = []
         for nid in borrowed:
             cols = relay.get(nid, {})
             pcols = prev.get(nid, {})
@@ -3373,9 +3428,21 @@ class NetworkSolver:
                     if d <= 1e-9 * max(abs(a), abs(b)):
                         continue
                     ref = self._relay_reference(nid, key, x)
-                    if not d * abs(float(x[idx])) <= 1e-9 * ref:
+                    if not d * self._relay_column_scale(idx, x, ref_mdot) <= 1e-9 * ref:
                         return False
         return True
+
+    def _relay_column_scale(self, idx: int, x: np.ndarray, ref_mdot: list[float]) -> float:
+        """|x_j|, and at least the median flow (``_reference_scales``) on a
+        flow column: a flow at 0 (random 37's e27.m_dot) would otherwise
+        make every sensitivity to it settled. ``ref_mdot`` caches that
+        median for one settle check."""
+        v = abs(float(x[idx]))
+        if not self._is_mdot_unknown(self.unknown_names[idx]):
+            return v
+        if not ref_mdot:
+            ref_mdot.append(self._reference_scales(x)[1])
+        return max(v, ref_mdot[0])
 
     def _relay_reference(self, nid: str, key: str, x: np.ndarray) -> float:
         """The state a relayed sensitivity moves, for _relay_settled's floor:

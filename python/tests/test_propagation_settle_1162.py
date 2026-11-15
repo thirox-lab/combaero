@@ -11,6 +11,7 @@ there is ~0.55 per pass and needs ~82 passes, past the old cap of 50.
 
 from __future__ import annotations
 
+import math
 import sys
 import warnings
 from pathlib import Path
@@ -106,10 +107,10 @@ def _recirculating_combustor() -> FlowNetwork:
     return g
 
 
-def _recirculating_x() -> np.ndarray:
+def _recirculating_x(back: float = 0.18) -> np.ndarray:
     s = _fresh(_recirculating_combustor())
     x = np.array(s._build_x0(), float)
-    flows = {"ea": 0.05, "ef": 0.002, "cp": 0.2, "pc": 0.18, "po": 0.05}
+    flows = {"ea": 0.05, "ef": 0.002, "cp": 0.2, "pc": back, "po": 0.05}
     for eid, m in flows.items():
         x[s.unknown_names.index(f"{eid}.m_dot")] = m
     return x
@@ -136,8 +137,11 @@ def test_two_wall_series_first_evaluation_is_the_fixed_point() -> None:
 
 
 def test_recirculating_combustor_first_evaluation_is_the_fixed_point() -> None:
-    """Was 3.5e-8 at the 50-pass cap."""
-    F1, F2 = _first_and_second(_recirculating_combustor(), _recirculating_x())
+    """Was 3.5e-8 at the 50-pass cap. It settles after ~110 passes, past
+    the early stop's minimum, which must not cut it short (no warning)."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*did not settle", category=RuntimeWarning)
+        F1, F2 = _first_and_second(_recirculating_combustor(), _recirculating_x())
     assert np.max(np.abs(F1 - F2)) < 1e-12
 
 
@@ -149,7 +153,11 @@ def test_random_37_jacobian_matches_fd_at_the_fixed_point() -> None:
     net, _ = FAMILIES["random"](37)
     net.resolve_all_topology()
     s = _fresh(net)
-    _, J = s._residuals_and_jacobian(X_RANDOM_37, compute_jacobian=True)
+    # The relay settles with the states (82 passes): a relative-only settle
+    # test ran this evaluation to the cap, which warns.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*did not settle", category=RuntimeWarning)
+        _, J = s._residuals_and_jacobian(X_RANDOM_37, compute_jacobian=True)
     err = scaled_error(J, fd_jacobian(s, X_RANDOM_37), X_RANDOM_37)
     assert float(np.max(err)) < 1e-6
 
@@ -167,3 +175,37 @@ def test_an_unsettled_propagation_warns_once() -> None:
     hits = [m for m in w if "did not settle" in str(m.message)]
     assert len(hits) == 1
     assert issubclass(hits[0].category, RuntimeWarning)
+
+
+def test_a_contraction_too_slow_for_the_cap_stops_early() -> None:
+    """A lagged change that does not contract (here forced to 1e-6 every
+    pass) cannot reach 1e-13 in the cap. The propagation stops once the
+    measured rate says so, after the 100-pass minimum, and warns, instead of
+    running all 1000 passes: a cap run cost 10 s per F on a 62-node vane
+    network (17 ms a pass)."""
+    s = _fresh(_recirculating_combustor())
+    n = [0]
+    op = s._propagate_pass
+
+    def counted(*a: object, **k: object) -> dict:
+        n[0] += 1
+        return op(*a, **k)
+
+    s._propagate_pass = counted  # type: ignore[method-assign]
+    s._propagation_change = lambda m_read: 1e-6  # type: ignore[method-assign]
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        s._residuals(_recirculating_x())
+    assert 100 < n[0] < 120
+    assert any("did not settle in" in str(m.message) for m in w)
+
+
+def test_a_nan_state_is_never_settled() -> None:
+    """NaN - NaN compares as no change under max(); the stopping test
+    counts it as unsettled."""
+    s = _fresh(_recirculating_combustor())
+    y = [0.0] * s._n_species
+    s._derived_states = {"c": (math.nan, y, None)}
+    s._prev_derived_states = {"c": (math.nan, y, None)}
+    s._film_inf_states, s._prev_film_inf_states = {}, {}
+    assert math.isinf(s._propagation_change({}))
