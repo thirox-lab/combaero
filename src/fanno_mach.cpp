@@ -898,8 +898,9 @@ constexpr double kRayleighZetaStepFrac = 0.02;
 // rounding (~1e-16); at a root with zeta ~1e-15, right at the march's sonic
 // point, every cut step rounded to the same exit pressure and dG/dP_target
 // came out infinite. On a static-pressure exit the fluxes this excludes
-// (within ~1e-10 of the march's sonic flux) span ~2 Pa of drive below the
-// choke, now reported choked: G there is within 3e-7 of Gc either way.
+// (within ~1e-10 of the march's sonic flux) span 0.1-8 Pa of drive below
+// the choke (1e-6 to 5e-6 of it), now reported choked; on a total-pressure
+// exit at most 1e-5 Pa. G there is within 3e-7 of Gc either way.
 constexpr double kRayleighZetaFloor = 1e-10;
 constexpr int kRayleighStepCuts = 8;
 
@@ -1235,7 +1236,10 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // segment), so it rises again toward the choke. Taking the choke whenever
     // the excess was still positive there, or the root nearest the choke,
     // jumped that duct to its sonic flux at a few Pa of drive. Only with no
-    // fall below the choke does the duct choke.
+    // fall below the choke does the duct choke. The scan tests bracket ENDS
+    // only: a fall and rise of the excess inside one ln-2 bracket (a cooled
+    // duct whose needed drive peaks and turns back) is not seen, and such a
+    // duct reads choked here while a warm start finds its first crossing.
     const double top = std::log(Gc) - 1e-12;
     double lo = top - 7.0;
     double f_lo = F(lo);
@@ -1253,8 +1257,9 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // skipped every root above its lower end, ~0.93 Gc (#1161).
     // With the excess still positive there, no subsonic flux matches the
     // drive, and the duct is choked even where the excess at Gc itself reads
-    // negative: a static exit's E(G) is steep enough that the ~3e-7 gap
-    // between the two leaves a band of ~0.1 Pa of drive below the choke.
+    // negative: a static exit's E(G) is steep enough that the gap between
+    // the two (with kRayleighZetaFloor) leaves a band of 0.1-8 Pa of drive
+    // below the choke.
     bool found = false;
     bool past_subsonic = false;
     double hi = lo, f_hi = f_lo;

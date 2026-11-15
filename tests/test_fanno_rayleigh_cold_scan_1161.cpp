@@ -195,3 +195,36 @@ TEST(FannoRayleighColdScan1161, TheChokeEdgeIsSharpWithFiniteDerivatives) {
     }
   }
 }
+
+TEST(FannoRayleighColdScan1161, StaticChokingDriveIsTheMarchsSubsonicEnd) {
+  // A static exit chokes at the drive Pt0 - P_exit(G_s), G_s the largest flux
+  // the march carries with zeta_min above the floor (1e-10). Reference: plain
+  // bisection on the public march, to the last bit of log G. The kernel's
+  // Illinois search must land within 0.1 Pa of it; a looser subsonic-end
+  // tolerance (1e-3 in log G) moved the edge by 72-518 Pa, a floor of 1e-6
+  // by 248-785 Pa. And within 10 Pa below the sonic-exit drive: the floor's
+  // band is ~2 Pa on these ducts.
+  const std::vector<double> X = dry_air();
+  for (const Duct& d : {kIssueStatic, kCooledStatic}) {
+    const double Gc = choked_flux(d);
+    auto march = [&](double logG) {
+      return fanno_rayleigh_march(std::exp(logG), d.Pt0, d.Tt0, d.Tt_exit, X, d.L, d.D, 0.0,
+                                  kModel);
+    };
+    double lo = std::log(0.9 * Gc), hi = std::log(Gc);
+    ASSERT_GT(march(lo).zeta_min, 1e-10);
+    for (int i = 0; i < 200; ++i) {
+      const double mid = 0.5 * (lo + hi);
+      if (mid <= lo || mid >= hi) {
+        break;
+      }
+      (march(mid).zeta_min > 1e-10 ? lo : hi) = mid;
+    }
+    const double ref = d.Pt0 - march(lo).P_exit;
+    const double sonic = d.Pt0 - march(std::log(Gc)).P_exit;
+    const double dc = choking_drive(d);
+    EXPECT_NEAR(dc, ref, 0.1) << "Tt0 " << d.Tt0;
+    EXPECT_LT(dc, sonic) << "Tt0 " << d.Tt0;
+    EXPECT_GT(dc, sonic - 10.0) << "Tt0 " << d.Tt0;
+  }
+}
