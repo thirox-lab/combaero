@@ -73,6 +73,9 @@ jobs:
               - 'CMakeLists.txt'
               - 'ruff.toml'
               - 'pyproject.toml'
+              # The ruff version CI runs is the lock's (a Dependabot bump touches
+              # only uv.lock; #1175's ruff 0.17.4 failed only in the queue).
+              - 'uv.lock'
               - 'scripts/check-source-style.sh'
               - 'scripts/check-python-style.sh'
               - '.github/workflows/ci.yml'
