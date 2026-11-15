@@ -3288,6 +3288,9 @@ class NetworkSolver:
             change = self._propagation_change(m_read)
             self._prev_derived_states = self._derived_states
             self._prev_film_inf_states = self._film_inf_states
+            # A NaN state never settles: stop now rather than run the cap.
+            if change != change:
+                break
             # The relay is at its fixed point when every sensitivity a pass
             # BORROWED from the previous one (read ahead of order, or a node
             # through its own walls) equals what this pass computed for it.
@@ -3370,7 +3373,8 @@ class NetworkSolver:
         node's and film gas's T (relative) and Y (absolute), and the wall
         nodes' ``_total_m_dot`` (relative) as the pass found them (#1162). A
         state present on one side only -- a first pass with no previous
-        state -- is unsettled (inf), and so is a NaN. T alone settled after two
+        state -- is unsettled (inf); a NaN state returns NaN, on which the
+        propagation stops at once (it cannot settle). T alone settled after two
         passes on stress random 37 while a lagged Y still moved by 0.025."""
         worst = 0.0
         nan = False
@@ -3404,7 +3408,7 @@ class NetworkSolver:
             if m is None or m_prev is None:
                 return math.inf
             change(abs(float(m) - float(m_prev)) / max(abs(float(m)), 1e-300))
-        return math.inf if nan else worst
+        return math.nan if nan else worst
 
     def _relay_settled(self, relay: dict, prev: dict, borrowed: set[str], x: np.ndarray) -> bool:
         """Each BORROWED node's relayed T and Pt sensitivities equal what the

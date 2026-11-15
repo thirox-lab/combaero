@@ -11,6 +11,7 @@ there is ~0.55 per pass and needs ~82 passes, past the old cap of 50.
 
 from __future__ import annotations
 
+import contextlib
 import math
 import sys
 import warnings
@@ -202,10 +203,47 @@ def test_a_contraction_too_slow_for_the_cap_stops_early() -> None:
 
 def test_a_nan_state_is_never_settled() -> None:
     """NaN - NaN compares as no change under max(); the stopping test
-    counts it as unsettled."""
+    reports it as NaN (unsettled), not as a settled 0."""
     s = _fresh(_recirculating_combustor())
     y = [0.0] * s._n_species
     s._derived_states = {"c": (math.nan, y, None)}
     s._prev_derived_states = {"c": (math.nan, y, None)}
     s._film_inf_states, s._prev_film_inf_states = {}, {}
-    assert math.isinf(s._propagation_change({}))
+    assert math.isnan(s._propagation_change({}))
+
+
+def test_a_nan_state_stops_the_propagation_at_once() -> None:
+    """The recirculating loop with a plain plenum for the combustor and the
+    exit plenum's T forced to NaN (the #1162 review's reproducer): it ran
+    all 1000 passes (10-20 s an evaluation at the vane example's size). A
+    NaN cannot settle, so the propagation stops within a few passes and
+    warns."""
+    base = _recirculating_combustor()
+    g = FlowNetwork()
+    for nid, node in base.nodes.items():
+        g.add_node(PlenumNode("c") if nid == "c" else node)
+    for e in base.elements.values():
+        g.add_element(e)
+    p = g.nodes["p"]
+    orig = p.compute_derived_state
+    p.compute_derived_state = lambda st: (math.nan, *tuple(orig(st))[1:])  # type: ignore[method-assign]
+    s = _fresh(g)
+    x0, names0 = _recirculating_x(), _fresh(_recirculating_combustor()).unknown_names
+    x = np.array(s._build_x0(), float)
+    for eid in ("ea", "ef", "cp", "pc", "po"):
+        x[s.unknown_names.index(f"{eid}.m_dot")] = x0[names0.index(f"{eid}.m_dot")]
+    n = [0]
+    op = s._propagate_pass
+
+    def counted(*a: object, **k: object) -> dict:
+        n[0] += 1
+        return op(*a, **k)
+
+    s._propagate_pass = counted  # type: ignore[method-assign]
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        # The residual then refuses the NaN state downstream (a kernel raises).
+        with contextlib.suppress(RuntimeError, ValueError, ArithmeticError):
+            s._residuals(x)
+    assert n[0] <= 3
+    assert any("did not settle in" in str(m.message) for m in w)
