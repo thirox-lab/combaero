@@ -243,7 +243,7 @@ jobs:
           working-dir: gui/frontend
 
       - name: Check frontend style (Biome)
-        run: biome check gui/frontend/src
+        run: biome --version && biome check gui/frontend/src
 
   build-and-test:
     name: Build & Test C++ (${{ matrix.os }}, ${{ matrix.build_type }})
