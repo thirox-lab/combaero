@@ -3004,9 +3004,15 @@ class NetworkSolver:
         sol_dict[f"{wid}.material_in_range"] = float(all(layer.in_range for layer in wall.layers))
 
     # Propagation passes per evaluation when a state is read ahead of the
-    # order (wall back-edges, recirculation): enough for the contraction seen
-    # on wall-coupled networks (x1000 per pass), bounded for safety.
-    _MAX_PROPAGATION_PASSES = 50
+    # order (wall back-edges, recirculation). The passes stop when what they
+    # read settles (_propagation_change); the cap is only a safety bound. A
+    # wall back-edge contracts x1000 per pass; a recirculation loop by the
+    # fraction that goes round again: random 37's root needs 82 passes at
+    # ~0.55, and trial points of failing stress solves up to 674 (#1162).
+    # Every evaluation of a converged stress solve settled within 30.
+    _MAX_PROPAGATION_PASSES = 1000
+    # Lagged T (relative), Y (absolute) and wall-node flow (relative).
+    _PROPAGATION_SETTLE_TOL = 1e-13
 
     def _two_port_mdot_indices(self) -> dict[str, int]:
         """element id -> index of its own m_dot, for plain 2-port elements
@@ -3251,25 +3257,22 @@ class NetworkSolver:
             else self._topological_order
         )
         relay: dict = {}
+        wall_nodes = self._wall_endpoint_nodes()
+        change, relay_settled = math.inf, True
         for _ in range(self._MAX_PROPAGATION_PASSES):
             self._lagged_read = False
             self._relay_borrowed: set[str] = set()
+            m_read = {
+                nid: getattr(self.network.nodes[nid], "_total_m_dot", None) for nid in wall_nodes
+            }
             self._derived_states = {}
             self._film_inf_states = {}
             self._T_no_gas: set[str] = set()
             prev_relay = relay
             relay = self._propagate_pass(x, order, reversed_ids, with_relay, prev_relay)
             if not self._lagged_read:
-                break
-            change = 0.0
-            for n, (T, _, _) in self._derived_states.items():
-                prev = self._prev_derived_states.get(n)
-                T_prev = float(prev[0]) if prev is not None else 0.0
-                change = max(change, abs(float(T) - T_prev) / max(abs(float(T)), 1.0))
-            for k, (T, _) in self._film_inf_states.items():
-                prev_f = self._prev_film_inf_states.get(k)
-                T_prev = float(prev_f[0]) if prev_f is not None else 0.0
-                change = max(change, abs(float(T) - T_prev) / max(abs(float(T)), 1.0))
+                return relay
+            change = self._propagation_change(m_read)
             self._prev_derived_states = self._derived_states
             self._prev_film_inf_states = self._film_inf_states
             # The relay is at its fixed point when every sensitivity a pass
@@ -3277,18 +3280,88 @@ class NetworkSolver:
             # through its own walls) equals what this pass computed for it.
             # Junction networks read ahead nearly every evaluation through
             # chains that carry nothing: they settle in the first pass.
-            if change < 1e-13 and (
-                not with_relay or self._relay_settled(relay, prev_relay, self._relay_borrowed)
-            ):
-                break
+            relay_settled = not with_relay or self._relay_settled(
+                relay, prev_relay, self._relay_borrowed, x
+            )
+            if change < self._PROPAGATION_SETTLE_TOL and relay_settled:
+                return relay
+        # Not settled: this evaluation depends on the one before it (#1162).
+        # Reported once per solver, as the penalty residual is.
+        if not getattr(self, "_propagation_cap_warned", False):
+            self._propagation_cap_warned = True
+            warnings.warn(
+                "NetworkSolver: the state propagation around a back-edge did not "
+                f"settle in {self._MAX_PROPAGATION_PASSES} passes (largest lagged "
+                f"change {change:.2e}"
+                + ("" if relay_settled else ", sensitivities unsettled")
+                + f"{' at ' + self._eval_where if self._eval_where else ''}); the "
+                "residual at this point depends on the previous evaluation.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         return relay
 
-    @staticmethod
-    def _relay_settled(relay: dict, prev: dict, borrowed: set[str]) -> bool:
+    def _wall_endpoint_nodes(self) -> list[str]:
+        """Nodes that are a wall's side: their htc reads the node's
+        ``_total_m_dot``, which a pass sets only when it reaches the node, so
+        a wall read ahead of it takes the previous pass's (a lagged read)."""
+        if not (self.network.thermal_coupling_enabled and self.network.walls):
+            return []
+        nodes = self.network.nodes
+        out: list[str] = []
+        for wall in self.network.walls.values():
+            for end in (wall.element_a, wall.element_b):
+                if end in nodes and end not in out:
+                    out.append(end)
+        return out
+
+    def _propagation_change(self, m_read: dict[str, Any]) -> float:
+        """The largest change, over everything a pass reads lagged, between
+        this pass's result and the previous pass's (what this pass read): each
+        node's and film gas's T (relative) and Y (absolute), and the wall
+        nodes' ``_total_m_dot`` (relative) as the pass found them (#1162). A
+        state present on one side only -- a first pass with no previous
+        state -- is unsettled (inf), and so is a NaN. T alone settled after two
+        passes on stress random 37 while a lagged Y still moved by 0.025."""
+        worst = 0.0
+
+        def change(d: float) -> None:
+            # max() drops a NaN; a NaN state never settles.
+            nonlocal worst
+            worst = d if not d <= worst else worst
+
+        pairs = (
+            (self._derived_states, self._prev_derived_states),
+            (self._film_inf_states, self._prev_film_inf_states),
+        )
+        for states, prev_states in pairs:
+            if states.keys() != prev_states.keys():
+                return math.inf
+            for key, state in states.items():
+                T, Y = float(state[0]), state[1]
+                prev = prev_states[key]
+                change(abs(T - float(prev[0])) / max(abs(T), 1.0))
+                if len(Y):
+                    dY = np.asarray(Y, dtype=float) - np.asarray(prev[1], dtype=float)
+                    change(float(np.max(np.abs(dY))))
+        for nid, m_prev in m_read.items():
+            m = getattr(self.network.nodes[nid], "_total_m_dot", None)
+            if m is None and m_prev is None:
+                continue
+            if m is None or m_prev is None:
+                return math.inf
+            change(abs(float(m) - float(m_prev)) / max(abs(float(m)), 1e-300))
+        return worst if worst == worst else math.inf
+
+    def _relay_settled(self, relay: dict, prev: dict, borrowed: set[str], x: np.ndarray) -> bool:
         """Each BORROWED node's relayed T and Pt sensitivities equal what the
         pass used for it (the previous pass's; missing = 0) to 1e-9 -- the
-        Jacobian's own accuracy. The composition sensitivities iterate with
-        the same contraction and are not compared."""
+        Jacobian's own accuracy -- relative to the sensitivity, or to the
+        node's own T (Pt) for the change of x_j by |x_j|: a sensitivity that
+        decays to 0 settles at 1e-9 of the state it moves, where a relative
+        test alone held a random-37 Jacobian evaluation to 1000 passes
+        (#1162). The composition sensitivities iterate with the same
+        contraction and are not compared."""
         for nid in borrowed:
             cols = relay.get(nid, {})
             pcols = prev.get(nid, {})
@@ -3296,9 +3369,26 @@ class NetworkSolver:
                 pkg, ppkg = cols.get(idx, {}), pcols.get(idx, {})
                 for key in ("T", "Pt", "Pt_mix"):
                     a, b = pkg.get(key, 0.0), ppkg.get(key, 0.0)
-                    if abs(a - b) > 1e-9 * max(abs(a), abs(b)):
+                    d = abs(a - b)
+                    if d <= 1e-9 * max(abs(a), abs(b)):
+                        continue
+                    ref = self._relay_reference(nid, key, x)
+                    if not d * abs(float(x[idx])) <= 1e-9 * ref:
                         return False
         return True
+
+    def _relay_reference(self, nid: str, key: str, x: np.ndarray) -> float:
+        """The state a relayed sensitivity moves, for _relay_settled's floor:
+        the node's (or film gas's) T for "T", its Pt for the pressures; 0 (no
+        floor) where it has none."""
+        if key == "T":
+            st = self._derived_states.get(nid) or self._film_inf_states.get(nid)
+            return abs(float(st[0])) if st is not None else 0.0
+        i = self._name_to_index.get(f"{nid}.Pt")
+        if i is not None:
+            return abs(float(x[i]))
+        node = self.network.nodes.get(nid)
+        return abs(float(getattr(node, "Pt", 0.0) or 0.0)) if node is not None else 0.0
 
     def _relay_mix(
         self,
