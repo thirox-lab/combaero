@@ -523,11 +523,13 @@ double psi(double Me, double P, double Pt0, double Tt0, const FlowProblem& pb) {
 // per-species partial with the other mass fractions fixed.
 //
 // Central differences of a smooth function at fixed (G or Me), the largest
-// component of the step 1e-5; one-sided where the central step would take a
+// component of the step 1e-5 (times step_scale, which a caller near a
+// singularity shrinks); one-sided where the central step would take a
 // fraction below zero (a species absent here but carried by an inflow).
 template <class Fn>
 std::vector<double> d_ddir(const std::vector<double>& X,
-                           const std::vector<std::vector<double>>& dirs, Fn&& g) {
+                           const std::vector<std::vector<double>>& dirs, Fn&& g,
+                           double step_scale = 1.0) {
   const std::vector<double> Y = mole_to_mass(X);
   std::vector<double> out(dirs.size(), 0.0);
   auto at = [&](const std::vector<double>& v, double s) {
@@ -557,7 +559,7 @@ std::vector<double> d_ddir(const std::vector<double>& X,
     if (!(vmax > 0.0)) {
       continue;
     }
-    const double h = 1e-5 / vmax;
+    const double h = step_scale * 1e-5 / vmax;
     if (feasible(v, h) && feasible(v, -h)) {
       out[i] = (at(v, h) - at(v, -h)) / (2.0 * h);
     } else if (feasible(v, h)) {
@@ -882,6 +884,25 @@ namespace {
 // drop to rounding (2.7e-5 in G at 1.5 Pa of drive on 2 bar).
 constexpr int kRayleighSteps = 32;
 constexpr double kRayleighGrading = 3.0;
+// Width in log G to which the cold scan locates the largest flux the march
+// carries subsonically (rayleigh_raw_flow, #1161): well inside the ~3e-7 by
+// which the march's own sonic point falls short of the choke relation's flux.
+constexpr double kRayleighSubsonicEndTol = 1e-12;
+// The derivative steps of an unchoked duct move the march's zeta by at most
+// this fraction of itself; a step that moves it further is cut, at most
+// kRayleighStepCuts times (rayleigh_raw_flow, #1161).
+constexpr double kRayleighZetaStepFrac = 0.02;
+// A flux counts as carried subsonically while the march's zeta_min exceeds
+// this (rayleigh_raw_flow, #1161). Above it a derivative step can still move
+// zeta by kRayleighZetaStepFrac of itself (2e-12) well clear of zeta's own
+// rounding (~1e-16); at a root with zeta ~1e-15, right at the march's sonic
+// point, every cut step rounded to the same exit pressure and dG/dP_target
+// came out infinite. On a static-pressure exit the fluxes this excludes
+// (within ~1e-10 of the march's sonic flux) span 0.1-8 Pa of drive below
+// the choke (1e-6 to 5e-6 of it), now reported choked; on a total-pressure
+// exit at most 1e-5 Pa. G there is within 3e-7 of Gc either way.
+constexpr double kRayleighZetaFloor = 1e-10;
+constexpr int kRayleighStepCuts = 8;
 
 struct RayleighDuct {
   double G, Tt0, Tt_exit, L, D, rough, fmult;
@@ -1130,6 +1151,41 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     }
     return rayleigh_exit_pressure(pb.duct(G, pb.Tt0, pb.Tt_exit, &X), m, pb.exit_total) - pb.P;
   };
+  // The largest log G in (lo, hi) the march carries subsonically (zeta_min
+  // above kRayleighZetaFloor), given it does at lo and not at hi: Illinois
+  // regula falsi on zeta_min, to kRayleighSubsonicEndTol in log G. zeta_min
+  // is close to linear in G there (slope ~ -12 to -35 per unit relative
+  // flux), so it converges in a few marches; Illinois keeps the far end from
+  // pinning a plain regula falsi, and a step outside the bracket bisects.
+  // Returns the subsonic end, so the caller's F is the exit-pressure excess.
+  auto subsonic_end = [&](double a, double b) {
+    double za = march_at(std::exp(a)).zeta_min - kRayleighZetaFloor;
+    double zb = march_at(std::exp(b)).zeta_min - kRayleighZetaFloor;
+    int side = 0;
+    for (int it = 0; it < 100 && b - a > kRayleighSubsonicEndTol; ++it) {
+      double c = b - zb * (b - a) / (zb - za);
+      if (!(c > a && c < b)) {
+        c = 0.5 * (a + b);
+      }
+      const double zc = march_at(std::exp(c)).zeta_min - kRayleighZetaFloor;
+      if (zc > 0.0) {
+        a = c;
+        za = zc;
+        if (side == -1) {
+          zb *= 0.5;
+        }
+        side = -1;
+      } else {
+        b = c;
+        zb = zc;
+        if (side == 1) {
+          za *= 0.5;
+        }
+        side = 1;
+      }
+    }
+    return a;
+  };
   const double G_max = fanno_sonic_mass_flux(pb.Pt0, pb.Tt0, X);
   bool choked = false;
   ChokeMode mode = ChokeMode::kExit;
@@ -1158,7 +1214,7 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     }
     // Only a bracket whose upper end is itself unchoked holds a plain root;
     // one that straddles the choke goes the cold way below.
-    if (f_lo > 0.0 && f_hi <= 0.0 && march_at(std::exp(hi)).zeta_min > 0.0) {
+    if (f_lo > 0.0 && f_hi <= 0.0 && march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor) {
       G = std::exp(brent(F, lo, hi, f_lo, f_hi, 1e-13));
       done = true;
     }
@@ -1180,7 +1236,10 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // segment), so it rises again toward the choke. Taking the choke whenever
     // the excess was still positive there, or the root nearest the choke,
     // jumped that duct to its sonic flux at a few Pa of drive. Only with no
-    // fall below the choke does the duct choke.
+    // fall below the choke does the duct choke. The scan tests bracket ENDS
+    // only: a fall and rise of the excess inside one ln-2 bracket (a cooled
+    // duct whose needed drive peaks and turns back) is not seen, and such a
+    // duct reads choked here while a warm start finds its first crossing.
     const double top = std::log(Gc) - 1e-12;
     double lo = top - 7.0;
     double f_lo = F(lo);
@@ -1191,13 +1250,28 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // A fall counts only at a flux the march carries subsonically: at the
     // choke itself the march's own error can read as choked, and F encodes
     // that as negative too (it put Brent onto the choke, reported unchoked).
+    // A bracket whose upper end the march reads as choked is cut back to the
+    // largest flux it still carries subsonically, and the fall is tested
+    // there: the march sonics ~3e-7 below the choke relation's flux, so the
+    // last bracket's end at the choke always reads choked, and breaking there
+    // skipped every root above its lower end, ~0.93 Gc (#1161).
+    // With the excess still positive there, no subsonic flux matches the
+    // drive, and the duct is choked even where the excess at Gc itself reads
+    // negative: a static exit's E(G) is steep enough that the gap between
+    // the two (with kRayleighZetaFloor) leaves a band of 0.1-8 Pa of drive
+    // below the choke.
     bool found = false;
+    bool past_subsonic = false;
     double hi = lo, f_hi = f_lo;
     while (hi < top) {
       lo = hi;
       f_lo = f_hi;
       hi = std::min(top, lo + std::log(2.0));
-      if (!(march_at(std::exp(hi)).zeta_min > 0.0)) {
+      if (!(march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor)) {
+        hi = subsonic_end(lo, hi);
+        f_hi = F(hi);
+        found = f_lo > 0.0 && f_hi <= 0.0;
+        past_subsonic = f_hi > 0.0;
         break;
       }
       f_hi = F(hi);
@@ -1209,7 +1283,7 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     if (found) {
       G = std::exp(brent(F, lo, hi, f_lo, f_hi, 1e-13));
     } else {
-      choked = Fc >= 0.0 || pb.P <= 0.0;
+      choked = Fc >= 0.0 || pb.P <= 0.0 || past_subsonic;
       G = Gc;
     }
   }
@@ -1230,16 +1304,47 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   // enough to make them depend on the warm start (a deferred Jacobian then
   // differed from the eager one). At 1e-4 that is <= 1e-8.
   const double hr = 1e-4;
+  // Near the choke the exit pressure is singular in every argument: the exit
+  // Mach goes as 1 - sqrt(zeta)/2 with zeta = 1 - 2 theta smooth, so a step
+  // that moves zeta by a fair part of itself carries a large truncation error
+  // (4-96% in the derivatives within ~1e-4 G of the choke), and one past the
+  // march's sonic point reads the clamped exit. An unchoked step is cut back
+  // until the march's zeta (smallest, and at the exit) moves by at most
+  // kRayleighZetaStepFrac of itself; where the full step already does, the
+  // derivatives are unchanged (#1161).
+  const double z0_min = m.zeta_min;
+  const double z0_exit = 1.0 - 2.0 * m.theta_exit;
+  double zeta_move = 0.0;
   auto rel = [&](double Gx, double Pt0x, double Tt0x, double Ttex, const std::vector<double>& Xx) {
     const RayleighDuct d = pb.duct(Gx, Tt0x, Ttex, &Xx);
     if (choked) {
       return choke_relation(mode, Gx, Pt0x, d);
     }
-    return rayleigh_exit_pressure(d, march_zeta(d, Pt0x), pb.exit_total);
+    const MarchEnd me = march_zeta(d, Pt0x);
+    if (z0_min > 0.0 && z0_exit > 0.0) {
+      zeta_move = std::max({zeta_move, std::abs(me.zeta_min - z0_min) / z0_min,
+                            std::abs(1.0 - 2.0 * me.theta_exit - z0_exit) / z0_exit});
+    }
+    return rayleigh_exit_pressure(d, me, pb.exit_total);
+  };
+  // estimate(scale): a difference at scale times its full step. Retried at a
+  // smaller scale while its marches moved zeta too far (never when choked).
+  auto step_cut = [&](auto&& estimate) {
+    double scale = 1.0;
+    for (int k = 0;; ++k) {
+      zeta_move = 0.0;
+      auto v = estimate(scale);
+      if (zeta_move <= kRayleighZetaStepFrac || k == kRayleighStepCuts) {
+        return v;
+      }
+      scale *= std::max(0.5 * kRayleighZetaStepFrac / zeta_move, 1e-3);
+    }
   };
   auto cd = [&](auto&& g, double x0) {
-    const double h = hr * std::abs(x0);
-    return (g(x0 + h) - g(x0 - h)) / (2.0 * h);
+    return step_cut([&](double scale) {
+      const double h = scale * hr * std::abs(x0);
+      return (g(x0 + h) - g(x0 - h)) / (2.0 * h);
+    });
   };
   if (choked && mode == ChokeMode::kThroat) {
     // A throat's relation goes as (G* - G)^(2/3) -- infinite slope at the
@@ -1277,9 +1382,17 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   if (pb.dirs->empty()) {
     return out;
   }
-  const auto R_v = d_ddir(X, *pb.dirs, [&](const std::vector<double>& Xk) {
-    return rel(G, pb.Pt0, pb.Tt0, pb.Tt_exit, Xk);
-  });
+  // One direction at a time, so a cut step in one leaves the others alone.
+  std::vector<double> R_v(pb.dirs->size(), 0.0);
+  for (std::size_t i = 0; i < R_v.size(); ++i) {
+    const std::vector<std::vector<double>> dir_i{(*pb.dirs)[i]};
+    R_v[i] = step_cut([&](double scale) {
+      return d_ddir(
+          X, dir_i,
+          [&](const std::vector<double>& Xk) { return rel(G, pb.Pt0, pb.Tt0, pb.Tt_exit, Xk); },
+          scale)[0];
+    });
+  }
   out.dG_ddir.assign(R_v.size(), 0.0);
   for (std::size_t i = 0; i < R_v.size(); ++i) {
     out.dG_ddir[i] = -R_v[i] / R_G;
