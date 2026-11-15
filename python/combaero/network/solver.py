@@ -35,6 +35,7 @@ from .components import (
     PressureLossElement,
     TurbomachineElement,
     WallNode,
+    _applied_heat,
     _is_closed_restriction,
     film_discharge_node,
     film_on_wall_side,
@@ -3915,19 +3916,20 @@ class NetworkSolver:
             if has_walls:
                 wall_contributions = self._evaluate_walls_for_node(nid, up_elems, x)
 
+            # A Tt_target boundary's heat is its unknown's value at x (#792).
+            target_cols = self._target_q_columns.get(nid, ())
+            for eb, i_q in target_cols:
+                eb.Q_solved = float(x[i_q])
+
             # The gas a film's holes discharge into, before their coolant
             # mixes in (#694): the T_inf the film's eta is defined against.
-            # After the node's walls (#1169): it takes their heat at this x.
+            # After the node's walls (#1169) and its target heat (#1181): it
+            # takes both at this x.
             for pid in film_discharges.get(nid, ()):
                 if self._film_unmix(
                     nid, pid, stream_info, wall_contributions, x, relay, up, with_relay
                 ):
                     done.add(f"{FILM_INF_PREFIX}{pid}")
-
-            # A Tt_target boundary's heat is its unknown's value at x (#792).
-            target_cols = self._target_q_columns.get(nid, ())
-            for eb, i_q in target_cols:
-                eb.Q_solved = float(x[i_q])
 
             T, Y, mix_res = node.compute_derived_state(up_states)
             if no_inflow:
@@ -4275,10 +4277,13 @@ class NetworkSolver:
         before the holes cools the gas that reaches them. ``wall_contributions``
         are the node's walls evaluated at this x (``_evaluate_walls_for_node``,
         which sets the wall boundary's Q this mix reads), so T_inf and its
-        relay take that heat at the current x, not the previous pass's. A
-        target-mode boundary's solved heat is not included (its ``Q`` is 0).
-        False (nothing stored) when the holes do not deliver into nid now or
-        nothing else does."""
+        relay take that heat at the current x, not the previous pass's. So is
+        a Tt_target boundary's solved heat (#1181): each boundary enters with
+        the heat it applies (``heat``, its unknown's value at this x in target
+        mode, set before this mix) and the relay takes that unknown's column,
+        dT_inf/dQ of this mix. A fraction applies to these inflows' sensible
+        enthalpy, as at the node. False (nothing stored) when the holes do
+        not deliver into nid now or nothing else does."""
         own = {src.element_id for src in film_sources(self.network.film_provider(pid))}
         others = [st for st in stream_info if st[1] is None or st[1].id not in own]
         if len(others) == len(stream_info) or not others:
@@ -4289,7 +4294,7 @@ class NetworkSolver:
         ebs = getattr(node, "energy_boundaries", [])
         mix = _solver_tools.mixer_from_streams_and_jacobians(
             [cb.MassStream(st.m_dot, st.Tt, st.Pt, st.Y) for st, _, _, _ in others],
-            Q=sum(eb.Q for eb in ebs),
+            Q=_applied_heat(node),
             fraction=sum(eb.fraction for eb in ebs),
         )
         key = f"{FILM_INF_PREFIX}{pid}"
@@ -4297,6 +4302,12 @@ class NetworkSolver:
         if with_relay:
             relay[key] = {}
             self._relay_mix(relay[key], nid, others, mix, wall_contributions, x, relay, up)
+            # The Tt_target heat unknown's column, as at the node (#792).
+            for _eb, i_q in self._target_q_columns.get(nid, ()):
+                pkg = relay[key].setdefault(
+                    i_q, {"T": 0.0, "Y": np.zeros(self._n_species), "Pt_mix": 0.0}
+                )
+                pkg["T"] += float(mix.dTt_mix_dQ)
         return True
 
     def _film_inf(self, provider: Any, obj: Any, x: np.ndarray, lagged: bool) -> Any:
