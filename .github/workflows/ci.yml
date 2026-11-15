@@ -288,7 +288,7 @@ jobs:
 
       - name: Cache googletest
         id: gtest-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.GTEST_DIR }}
           key: googletest-v1.15.2
