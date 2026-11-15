@@ -1,7 +1,8 @@
 """A crossflow station holds for flow in either direction (#815).
 
-Over a station, momentum gives P_a - P_b = (m_b^2 - m_a^2 + kappa m_a
-(m_a - m_b)) / (rho A^2): the momentum flux m u = m^2/(rho A) is positive
+Over a station, momentum gives P_a - P_b = (m_b^2 - m_a^2 + kappa (m_a - m_b)
+s) / (rho A^2), s the arriving streams' mean (m_a forward; #1178 for the
+other signs): the momentum flux m u = m^2/(rho A) is positive
 whichever way the gas moves. ``station_half_drop`` used m|m|, which is the same
 for forward flow and flips the drop's sign for reversed flow: a merge in a
 reversed chain RAISED the static pressure along the flow (a pump), and a

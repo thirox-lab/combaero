@@ -32,8 +32,9 @@ twice differs by ~1e-11, the noise in a structurally zero column).
 
 Measured on the fixed points, the solved roots and perturbations, both supply
 directions: compressible <= 7.1e-8, incompressible <= 1e-10. The fixed points
-are the quiet-machine roots of #1157, and the solved-root test starts its solve
-there: a cold solve on a slow machine hands hybr over to LM on the wall-clock
+are the quiet-machine roots of #1157 (the reversed one a point since #1178,
+which moved that root: ``FIXED_X``, ``ROOT_X``), and the solved-root test
+starts its solve at a root: a cold solve on a slow machine hands hybr over to LM on the wall-clock
 stall rule, times out and returns an unconverged iterate (#1177).
 """
 
@@ -74,14 +75,19 @@ FLOOR_FRACTION = 1.0 / 5.0
 A_SUP = {"reversed": 1.2e-4, "forward": 1e-3}
 
 #: The roots of #1157 on a quiet machine (compressible), by unknown; each
-#: PlenumNode's Pt unknown is its P.
+#: PlenumNode's Pt unknown is its P. The reversed one is a POINT since #1178:
+#: the root of the kappa term that followed the leaving stream, with s3.P
+#: moved +193.43 Pa (from 102632.282588) so that s2x's duct drive is again
+#: 1.06 Pa, the #1157 case (at the old s3.P it is 194 Pa under the
+#: arriving-flow term). Its stations are still reversed (s4, s5) and meeting
+#: (s3).
 FIXED_X = {
     "reversed": {
         "s1.P": 101947.932693,
         "c1.P": 100485.360575,
         "s2.P": 102656.168413,
         "c2.P": 100441.367459,
-        "s3.P": 102632.282588,
+        "s3.P": 102825.716241,
         "c3.P": 100343.062678,
         "s4.P": 101866.733778,
         "c4.P": 100203.861532,
@@ -131,6 +137,48 @@ FIXED_X = {
         "s5x.m_dot": 0.0508012421842,
         "p5.m_dot": 0.00313940333535,
         "x5.m_dot": 0.0133061860479,
+    },
+}
+
+
+#: Where the solved-root test starts, by supply; FIXED_X where absent. Since
+#: #1178 the reversed network's root runs THROUGH into the sink (every supply
+#: segment forward, holes p1 and p3 ingesting a little), supply chain
+#: sigma_norm +5.85e-3: Bassett's regain alone carries the supply past the
+#: sink's Pt. A cold compressible solve does not reach it (no_progress, 60
+#: s), nor does a cold incompressible one with default settings
+#: (no_progress). The incompressible solve converges only with
+#: ``bc_ramp_retry`` (the boundary-condition ramp, 13 solves, 17 s, sigma_norm
+#: +5.71e-3); the compressible solve from that root converges in 0.5 s
+#: (+5.85e-3), giving these values.
+ROOT_X = {
+    "reversed": {
+        "s1.P": 100039.885194,
+        "c1.P": 100040.025328,
+        "s2.P": 100049.568544,
+        "c2.P": 100039.979995,
+        "s3.P": 100038.515709,
+        "c3.P": 100039.945731,
+        "s4.P": 100380.535608,
+        "c4.P": 100037.532083,
+        "s5.P": 101390.595081,
+        "c5.P": 100017.681165,
+        "s0x.m_dot": 0.00987602083034,
+        "s1x.m_dot": 0.00989802492045,
+        "p1.m_dot": -2.20040901056e-05,
+        "x1.m_dot": -2.20040901056e-05,
+        "s2x.m_dot": 0.00967037790952,
+        "p2.m_dot": 0.00022764701093,
+        "x2.m_dot": 0.000205642920824,
+        "s3x.m_dot": 0.00975793491058,
+        "p3.m_dot": -8.75570010587e-05,
+        "x3.m_dot": 0.000118085919766,
+        "s4x.m_dot": 0.00839734815355,
+        "p4.m_dot": 0.00136058675703,
+        "x4.m_dot": 0.00147867267679,
+        "s5x.m_dot": 0.00568039069436,
+        "p5.m_dot": 0.00271695745919,
+        "x5.m_dot": 0.00419563013598,
     },
 }
 
@@ -190,8 +238,8 @@ def _fresh(supply: str, regime: str) -> NetworkSolver:
     return s
 
 
-def _fixed_x(s: NetworkSolver, supply: str) -> np.ndarray:
-    point = FIXED_X[supply]
+def _fixed_x(s: NetworkSolver, supply: str, points: dict | None = None) -> np.ndarray:
+    point = (points or FIXED_X)[supply]
     x = []
     for name in s.unknown_names:
         if name.endswith(".Pt"):
@@ -240,10 +288,16 @@ def _row_steps(s: NetworkSolver, x: np.ndarray) -> np.ndarray:
     return steps
 
 
-def _fd(s: NetworkSolver, x: np.ndarray, J: np.ndarray) -> np.ndarray:
+def _fd(s: NetworkSolver, x: np.ndarray, J: np.ndarray, lift: float = 1.0) -> np.ndarray:
     """Central FD of F at x; pressure columns Richardson-extrapolated, each
-    row at ``fd_steps``' step capped by its own duct (``_row_steps``)."""
+    row at ``fd_steps``' step capped by its own duct (``_row_steps``).
+    ``lift``: a pressure column's step is at least ``lift`` times the
+    round-off floor (1e-8 |P|), so a column pinned there by a nearby pressure
+    level moves off it; every other column keeps its step."""
     h0 = fd_steps(s, x)
+    for j, name in enumerate(s.unknown_names):
+        if is_pressure(name):
+            h0[j] = max(h0[j], lift * 1e-8 * abs(x[j]))
     row_cap = _row_steps(s, x)
 
     def central(j: int, h: float) -> np.ndarray:
@@ -268,12 +322,53 @@ def _fd(s: NetworkSolver, x: np.ndarray, J: np.ndarray) -> np.ndarray:
     return fd
 
 
-def _worst(s: NetworkSolver, x: np.ndarray) -> tuple[float, str]:
+#: Near-zero holes (``_worst(near_zero_holes=True)``). A hole within a pascal
+#: of its zero flow pins the pressure steps of its nodes near the round-off
+#: floor (``fd_steps`` caps a column at 1 % of its smallest pressure gap, here
+#: the hole's own drive), and its own row curves on that scale. At #1178's
+#: reversed root p1 and p3 ingest 2.2e-5 and 8.8e-5 kg/s (s1 - c1 is 0.14 Pa):
+#:
+#: * p3's s3.P entry reads 8.6e-2, 6.0e-4, 5.9e-6, 1.3e-7 central at 1, 0.1,
+#:   0.01, 0.001 Pa (h^2 down to round-off) and 3.3e-7 Richardson at the
+#:   default 0.01 Pa: such a row is held to NEAR_ZERO_HOLE_TOL;
+#: * a column pinned to the round-off floor (1e-8 |P|, 1e-3 Pa here) by a
+#:   nearby level reads round-off that depends on the platform's libm: p2's
+#:   (2.3e-4 kg/s, a 9.6 Pa drive) c2.P column, stepped 1e-3 Pa, reads 7.9e-8
+#:   Richardson on macOS, 2.8e-7 on Linux arm64 (GCC 15) and 5.96e-7 on CI's
+#:   ubuntu-26.04 x86_64, while its central error falls as h^2 (1.4e-3,
+#:   1.4e-5, 1.1e-7 at 1, 0.1, 0.01 Pa, both platforms) to that floor. s0x's
+#:   s1.P column reads 1.7e-7 at 1e-3 Pa and 3.6e-8 at 0.01 Pa. Every row is
+#:   therefore also differenced with each pressure step lifted to at least
+#:   LIFT times the floor (other columns, and steps already above it, keep
+#:   theirs), and keeps the smaller error: p2 reads 6.0e-8 (macOS) and 2.1e-8
+#:   (Linux arm64) lifted. Multiplying EVERY pressure step instead put s2.P
+#:   at 0.95 Pa, on p2's curvature (2.2e-5).
+#:
+#: A wrong analytic entry misses at both steps.
+NEAR_ZERO_HOLE_TOL = 1e-6
+NEAR_ZERO_HOLE_FLOW = 1e-4  # [kg/s]
+LIFT = 10.0
+
+
+def _worst(s: NetworkSolver, x: np.ndarray, near_zero_holes: bool = False) -> tuple[float, str]:
+    """The worst row's scaled error, and its row. ``near_zero_holes``: the
+    smaller of the default and the LIFTed pressure steps' errors, and a hole row
+    with |m| < NEAR_ZERO_HOLE_FLOW held to NEAR_ZERO_HOLE_TOL; the error is
+    then in units of TOL (error * TOL / its bound)."""
     _residuals(s, x)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         J = s._residuals_and_jacobian(x)[1].toarray()
     e = scaled_error(J, _fd(s, x, J), x)
+    if near_zero_holes:
+        e = np.minimum(e, scaled_error(J, _fd(s, x, J, lift=LIFT), x))
+        for i, (owner, _) in enumerate(s._row_kinds(x)):
+            eid = owner.rsplit("'", 2)[1] if "'" in owner else None
+            el = s.network.elements.get(eid) if eid else None
+            if isinstance(el, ImpingementPlateElement):
+                m = float(x[s._unknown_indices[eid][0]])
+                if abs(m) < NEAR_ZERO_HOLE_FLOW:
+                    e[i] *= TOL / NEAR_ZERO_HOLE_TOL
     i = int(np.argmax(e))
     return float(e[i]), str(s._row_kinds(x)[i][0])
 
@@ -314,14 +409,16 @@ def test_every_row_meets_fd_through_a_segments_zero_flow(
 @pytest.mark.parametrize("supply", ["reversed", "forward"])
 def test_every_row_meets_fd_at_the_solved_root_and_off_it(supply: str) -> None:
     """The root a solve returns, and a perturbation of it (30 Pa on pressures,
-    3 % on flows). The solve starts at FIXED_X: a cold solve's path depends on
-    the wall clock (its stall handover), and on a slow machine it timed out
-    and returned an unconverged iterate, where the FD check failed (#1177)."""
+    3 % on flows). The solve starts at ROOT_X (else FIXED_X): a cold solve's
+    path depends on the wall clock (its stall handover), and on a slow machine
+    it timed out and returned an unconverged iterate, where the FD check
+    failed (#1177)."""
     s = _fresh(supply, "compressible")
     solver = _fresh(supply, "compressible")
+    start = ROOT_X if supply in ROOT_X else FIXED_X
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        r = solver.solve(x0=_fixed_x(solver, supply))
+        r = solver.solve(x0=_fixed_x(solver, supply, start))
     assert r["__converged__"], r.get("__message__")
     x0 = np.array(r["__x_solution__"], dtype=float)
     rng = np.random.default_rng(1157)
@@ -332,5 +429,7 @@ def test_every_row_meets_fd_at_the_solved_root_and_off_it(supply: str) -> None:
         else:
             xp[j] *= 1.0 + 0.03 * rng.normal()
     for tag, x in (("root", x0), ("perturbed", xp)):
-        e, row = _worst(s, x)
+        # Only the reversed supply's root has holes near zero flow; the
+        # forward one passes the plain check.
+        e, row = _worst(s, x, near_zero_holes=supply == "reversed")
         assert e <= TOL, f"{supply} {tag}: {row} scaled {e:.2e}"

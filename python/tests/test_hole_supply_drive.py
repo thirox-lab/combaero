@@ -730,14 +730,10 @@ def test_eq_17_at_a_chamber_station_has_an_analytic_jacobian() -> None:
 # --- duct-flow reversal: a refused proxy root is named (review B1, #1125) -----
 
 
-def test_a_proxy_root_refused_by_the_second_law_is_named() -> None:
-    # A 3-segment liner on a 5 mm duct, 1.3e5 into 1.25e5 Pa with the gas
-    # side a flowing chamber: the duct flow reverses past the first station
-    # (+---), and booked at the duct total the station's reversed-flow model
-    # manufactures total pressure (#1125). The solve fails; its message must
-    # say the warm-start proxy root was refused by the second law, name the
-    # element and its sigma_norm and point at #1125, not just "did not
-    # converge".
+def _reversing_liner_net() -> FlowNetwork:
+    """A 3-segment liner on a 5 mm duct, 1.3e5 into 1.25e5 Pa with the gas
+    side a flowing chamber: the duct flow reverses past the third station,
+    so b3 is a meeting station (ln__s2 forward, ln__s3 reversed)."""
     g = FlowNetwork()
     g.add_node(PressureBoundary("cin", Pt=1.3e5, Tt=600.0, Y=Y_AIR))
     g.add_node(PressureBoundary("cout", Pt=1.25e5, Tt=600.0, Y=Y_AIR))
@@ -751,11 +747,38 @@ def test_a_proxy_root_refused_by_the_second_law_is_named() -> None:
         hole_diameter=3.27e-3, wall_thickness=6.3e-3, pitch_x=15.24e-3,
         pitch_y=15.24e-3, angle_deg=30.0,
     ).add_to(g, "cin", "cout", "ch")  # fmt: skip
+    return g
+
+
+def test_a_reversing_liner_duct_solves_and_passes_the_second_law() -> None:
+    # Until #1178 this network failed: the station's kappa term followed the
+    # LEAVING stream in reversed flow, which manufactured total pressure, and
+    # the warm-start proxy root was refused by the second law (#1125). With
+    # the arriving stream it converges, the duct flow still reversing.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        r = NetworkSolver(g).solve(timeout=60)
-    assert not r["__success__"]
-    msg = r["__message__"]
+        r = NetworkSolver(_reversing_liner_net()).solve(timeout=60)
+    assert r["__success__"], r.get("__message__")
+    assert float(r["ln__s0.m_dot"]) > 0.0 > float(r["ln__s3.m_dot"])
+    assert {v["verdict"] for v in r["__second_law__"].values()} == {"pass"}
+
+
+def test_a_proxy_root_refused_by_the_second_law_is_named() -> None:
+    # A solve that fails after a warm-start proxy root was refused by the
+    # second law says so: it names the element and its sigma_norm and points
+    # at #1125, not just "did not converge". The network that reached this
+    # path solves since #1178, so the refusal is recorded directly.
+    s = NetworkSolver(_reversing_liner_net())
+    s._build_x0()
+    s._record_proxy_refusal(
+        "outlet-referenced",
+        {
+            "__success__": False,
+            "__second_law_failures__": ["ln__s1"],
+            "__second_law__": {"ln__s1": {"sigma_norm_high": -1.25e-3}},
+        },
+    )
+    msg = s._with_proxy_refusal_note("The iteration is not making good progress.")
     assert "proxy root was refused by the second law at ln__s" in msg
     assert "(sigma_norm -" in msg
     assert "#1125" in msg

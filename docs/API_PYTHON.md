@@ -4142,9 +4142,16 @@ match), otherwise an entry from that node's total pressure.
 
 `ImpingementCrossflowElement` is one case of `CrossflowSegmentElement`, a
 channel segment whose end nodes are side-stream STATIONS. Over a station, with
-the side stream's axial velocity `kappa * u_arriving`:
+the side stream's axial velocity `kappa * u_arriving` (m_a, m_b the signed
+flows on the station's from- and to-side):
 
-    dP_static = (m_b^2 - m_a^2 + kappa m_a (m_a - m_b)) / (rho A^2)
+    dP_static = (m_b^2 - m_a^2 + kappa (m_a - m_b) (max(m_a, 0) - max(-m_b, 0))) / (rho A^2)
+
+`max(m_a, 0) - max(-m_b, 0)` is the arriving streams' mass-weighted mean
+signed velocity times rho A (#1178): `m_a` forward, `m_b` reversed,
+`m_a + m_b` where the flows meet at the station (outside Bassett's
+dividing-flow data), 0 where nothing arrives. The drop is mirror symmetric
+for every `kappa` and continuous across each sign change (its slope is not).
 
 | `kappa` | station | source |
 |---|---|---|

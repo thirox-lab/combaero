@@ -24,18 +24,42 @@ namespace combaero {
 // ---------------------------------------------------------------
 //
 // A station is a node where a side stream joins (merge) or leaves (bleed) a
-// channel of cross-section A; m_a arrives, m_b leaves along the channel.
-// With the side stream's AXIAL velocity written as u_s = kappa * u_a,
-// momentum over the station gives the static-pressure DROP
+// channel of cross-section A. m_a and m_b are the channel flows on its two
+// sides, signed along the channel's geometric direction (m_a on the a side,
+// flowing towards b when positive); the side stream takes m_a - m_b.
+// With the side stream's AXIAL velocity written as u_s = kappa * u_in,
+// u_in the mass-weighted mean signed velocity of the streams ARRIVING along
+// the channel, momentum over the station gives the static-pressure DROP
 //
-//   dP = (m_b^2 - m_a^2 + kappa m_a (m_a - m_b)) / (rho A^2)
+//   dP = P_a - P_b = (m_b^2 - m_a^2 + kappa (m_a - m_b) M_in / A_in) / (rho A^2)
 //
-// at the station node's own density. The momentum flux m u = m^2/(rho A) is
-// positive whichever way the gas moves, so the form holds for reversed flow
-// and for a station the flow leaves both ways (#815). An m|m| form, used
-// until #815, flipped the sign of the drop for reversed flow: a merge in a
-// reversed chain RAISED the static pressure along the flow, and a split
-// station had no physical root.
+//   A_in = max(m_a, 0) + max(-m_b, 0)       (the arriving mass flow)
+//   M_in = max(m_a, 0)^2 - max(-m_b, 0)^2   (its signed momentum, x rho A)
+//   M_in / A_in = max(m_a, 0) - max(-m_b, 0),  0 when nothing arrives
+//
+// at the station node's own density (#1178). By case:
+//
+//   forward  (m_a, m_b >= 0)   kappa (m_a - m_b) m_a: u_s = kappa u_a, Bassett's
+//   reversed (m_a, m_b <= 0)   kappa (m_a - m_b) m_b: the mirror, m_b arrives
+//   meeting  (m_a > 0 > m_b)   kappa (m_a^2 - m_b^2): the arriving streams'
+//                              mass-weighted mean. Bassett's data are for a
+//                              DIVIDING flow; a meeting bleed is extrapolated
+//   leaving  (m_a < 0 < m_b)   0: nothing arrives (the side stream feeds both)
+//
+// so the drop is mirror symmetric, dP(m_a, m_b) = -dP(-m_b, -m_a), for every
+// kappa, and C0 across every sign change (its slope jumps at m_a = 0 and at
+// m_b = 0 when kappa != 0). Before #1178 the term was kappa m_a (m_a - m_b)
+// for every sign: in reversed flow it followed the LEAVING stream, kappa
+// (m_a - m_b)^2 / (rho A^2) more static rise along the flow. The momentum flux
+// m u = m^2/(rho A) is positive whichever way the gas moves, so the m^2 terms
+// hold for reversed flow and for a station the flow leaves both ways (#815).
+// An m|m| form, used until #815, flipped the sign of the drop for reversed
+// flow: a merge in a reversed chain RAISED the static pressure along the flow,
+// and a split station had no physical root.
+//
+// A side stream that ENTERS (m_a - m_b < 0) at a station built with kappa != 0
+// still carries kappa u_in of axial momentum here, where a normal jet brings
+// none (kappa = 0): an open issue, #1184.
 //
 //   kappa = 0     normal injection (merge): the jets bring no axial momentum.
 //                 Florschuetz's P + G^2/rho = const; the #465 impingement term.

@@ -1291,9 +1291,12 @@ ImpingementEtaR impingement_eta_r(double Gc_Gj, double xn_d, double yn_d,
 // the density of its own static (P, T, X). Derivatives w.r.t. the solver's
 // variables, densities through density_and_jacobians.
 
-// One side-stream station, half at a time (#465, #471). m_a arrives, m_b
-// leaves along the channel; the side stream's axial velocity is kappa*u_a:
-//   dP = (m_b^2 - m_a^2 + kappa m_a (m_a - m_b)) / (rho A^2)   (m^2: any flow direction, #815)
+// One side-stream station, half at a time (#465, #471). m_a, m_b: the signed
+// channel flows on its from- and to-side; the side stream's axial velocity is
+// kappa times the arriving streams' mass-weighted mean velocity (#1178):
+//   dP = (m_b^2 - m_a^2 + kappa (m_a - m_b) s) / (rho A^2),  s = max(m_a,0) - max(-m_b,0)
+// (m^2: any flow direction, #815; s = m_a forward, m_b reversed, m_a + m_b
+// where the flows meet, 0 when nothing arrives; C0 at each sign change)
 // kappa = 0: normal injection (merge, Florschuetz). kappa = 0.75: bleed,
 // Bassett et al. (2001) K2/K5 Eq. 15 exactly. A segment carries half of the
 // station at each end, each at its node's density.

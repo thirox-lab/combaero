@@ -851,10 +851,12 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("d_dY", &combaero::StationHalfDrop::d_dY);
   m.def("station_half_drop", &combaero::station_half_drop, py::arg("m_a"), py::arg("m_b"),
         py::arg("P"), py::arg("T"), py::arg("X"), py::arg("area"), py::arg("kappa"),
-        "Half the static-pressure drop over one side-stream station (m_a\n"
-        "arriving, m_b leaving along a channel of area A), at the station\n"
-        "node's density: (m_b^2 - m_a^2 + kappa m_a (m_a - m_b)) / (2 rho A^2),\n"
-        "any flow direction (#815). kappa = 0: normal injection (merge);\n"
+        "Half the static-pressure drop over one side-stream station (m_a, m_b\n"
+        "the signed flows on its from- and to-side of a channel of area A), at\n"
+        "the station node's density: (m_b^2 - m_a^2 + kappa (m_a - m_b) s)\n"
+        "/ (2 rho A^2), s = max(m_a, 0) - max(-m_b, 0) the arriving streams'\n"
+        "mean (#1178): m_a forward, m_b reversed, m_a + m_b where they meet.\n"
+        "Any flow direction (#815). kappa = 0: normal injection (merge);\n"
         "kappa = 0.75: bleed, Bassett et al. (2001) K2/K5 exactly.");
   m.def("segment_area_change_drop", &combaero::segment_area_change_drop, py::arg("m"),
         py::arg("P"), py::arg("T"), py::arg("X"), py::arg("area_from"), py::arg("area_to"),
