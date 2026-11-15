@@ -25,11 +25,11 @@ repos:
         stages: [pre-commit]
 
       - id: version-sync
-        name: Pinned tool versions agree (biome)
+        name: Biome pinned in package.json only
         entry: uv run scripts/check_version_sync.py
         language: system
         pass_filenames: false
-        files: ^(gui/frontend/package\.json|biome\.json|\.pre-commit-config\.yaml|\.github/workflows/ci\.yml|scripts/check_version_sync\.py)$
+        files: ^(gui/frontend/package\.json|biome\.json|\.pre-commit-config\.yaml|\.github/workflows/ci\.yml|scripts/check_version_sync\.py|scripts/biome-hook\.sh)$
         stages: [pre-commit]
 
       - id: python-style-check
@@ -88,13 +88,14 @@ repos:
         files: \.(py|h|hpp|cpp|cc)$
         stages: [pre-commit]
 
-  - repo: https://github.com/biomejs/pre-commit
-    rev: v0.6.1
+  # Biome runs from gui/frontend/node_modules, so its version is the one
+  # package.json and the lockfile pin -- the only files Dependabot bumps.
+  - repo: local
     hooks:
       - id: biome-check
-        # Node for the hook env: nodeenv 1.10 takes the first entry of
-        # nodejs.org/dist/index.json as "latest", and a prerelease there
-        # (v27.0.0-alpha, 2026-10-29) failed every fresh env build.
-        language_version: lts
-        additional_dependencies: ["@biomejs/biome@2.6.5"]
+        name: biome check
+        entry: scripts/biome-hook.sh check --write --files-ignore-unknown=true --no-errors-on-unmatched
+        language: system
+        types: [text]
         files: ^gui/frontend/
+        require_serial: true
