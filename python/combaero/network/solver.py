@@ -1200,7 +1200,7 @@ class NetworkSolver:
         mach_target = 0.3
         mdot_guess: dict[str, float] = {}
         node_flow: dict[str, float] = {
-            nid: float(getattr(node, "m_dot", 0.0))
+            nid: node._given_m_dot()
             for nid, node in self.network.nodes.items()
             if isinstance(node, MassFlowBoundary)
         }
@@ -1414,7 +1414,7 @@ class NetworkSolver:
                 for end in (common_elem.from_node, common_elem.to_node):
                     node = self.network.nodes.get(end)
                     if isinstance(node, MassFlowBoundary):
-                        m_imposed = abs(float(node.m_dot))
+                        m_imposed = abs(node._given_m_dot())
             prefer = None
             if m_imposed is not None:
                 generic = self._bernoulli_shares(
@@ -1569,7 +1569,7 @@ class NetworkSolver:
             node = net.nodes[nid]
             if isinstance(node, MassFlowBoundary):
                 sink = net.get_upstream_elements(nid) and not net.get_downstream_elements(nid)
-                inj[idx[nid]] += -float(node.m_dot) if sink else float(node.m_dot)
+                inj[idx[nid]] += -node._given_m_dot() if sink else node._given_m_dot()
         a_ix = [idx.get(e.from_node) for e in els]
         b_ix = [idx.get(e.to_node) for e in els]
         a_fix = np.array([fixed.get(e.from_node, 0.0) for e in els])
@@ -2286,6 +2286,8 @@ class NetworkSolver:
         # A FuelBoundary's start (#892), from the other guessed inflows of its
         # combustor; the element that carries the fuel starts at that flow too,
         # or Newton begins with a mass balance decades out.
+        # Its own m_dot is then that start until the first evaluation; the
+        # estimates above never read it (``_given_m_dot``, #1163).
         fuel_start: dict[str, float] = {}
         for nid, node in self.network.nodes.items():
             if isinstance(node, FuelBoundary):
@@ -3254,7 +3256,8 @@ class NetworkSolver:
         d(row)/d(cooling flow) in a two-wall series network (#481).
         """
         # A FuelBoundary's flow is an unknown (#892): every reader of its m_dot
-        # (propagation, mass rows, ledger) sees the current iterate.
+        # (propagation, mass rows, ledger) sees the current iterate. A start
+        # estimate never reads it (``_given_m_dot``, #1163).
         for node in self.network.nodes.values():
             if isinstance(node, FuelBoundary):
                 node.m_dot = math.exp(float(x[self._name_to_index[node.m_dot_unknown]]))
@@ -5909,6 +5912,12 @@ class NetworkSolver:
         that plainly have a driving potential."""
         pressures: list[float] = []
         for node in self.network.nodes.values():
+            # A fuel controller imposes a flow: its unknown is ln(m_dot), a
+            # positive flow by construction. Its m_dot is not read: it is the
+            # last iterate (#1163), 0 on a fresh one without m_dot_guess, and
+            # exp() underflows to 0 below ln m_dot -745.
+            if isinstance(node, FuelBoundary):
+                return False
             if isinstance(node, MassFlowBoundary) and abs(float(node.m_dot)) > 0.0:
                 return False
             if isinstance(node, PressureBoundary):
@@ -6622,44 +6631,49 @@ class NetworkSolver:
                 # request timeout.
                 _ladder_t0 = time.time()
 
-                for lam in lambda_steps:
-                    # Update boundaries
+                # The ramp writes the user's boundaries: restored however it
+                # ends, or a rung that raised left them at a fraction of the
+                # flow for every later start (#1163).
+                try:
+                    for lam in lambda_steps:
+                        # Update boundaries
+                        for nid, target_mdot in targets.items():
+                            self.network.nodes[nid].m_dot = lam * target_mdot
+
+                        # Solve intermediate step.
+                        # Limit maxfev/maxiter for intermediate steps to stay fast.
+                        # This is decremental to convergence: trade speed versus robustness near choking.
+                        step_options = dict(options)
+                        # options already has maxfev/_default_iters set above; honour
+                        # it.  The setdefault here is only reached if the caller
+                        # explicitly zeroed out maxfev/maxiter, which should not happen.
+
+                        rung_timeout = (
+                            None
+                            if timeout is None
+                            else max(timeout - (time.time() - _ladder_t0), 1.0)
+                        )
+                        last_sol = self._solve_impl(
+                            method=method,
+                            timeout=rung_timeout,
+                            options=step_options,
+                            use_jac=use_jac,
+                            x0=current_x0,
+                            init_strategy="default",
+                        )
+
+                        # Update x0 for next step anyway (best guess propagation)
+                        current_x0 = self._last_x
+
+                        if not last_sol["__success__"]:
+                            # If an intermediate step fails badly, we might still
+                            # want to continue if progress was made, but for now
+                            # we stop to avoid compounding errors.
+                            # Note: we still use the failed result as x0 if it's the best we have.
+                            break
+                finally:
                     for nid, target_mdot in targets.items():
-                        self.network.nodes[nid].m_dot = lam * target_mdot
-
-                    # Solve intermediate step.
-                    # Limit maxfev/maxiter for intermediate steps to stay fast.
-                    # This is decremental to convergence: trade speed versus robustness near choking.
-                    step_options = dict(options)
-                    # options already has maxfev/_default_iters set above; honour
-                    # it.  The setdefault here is only reached if the caller
-                    # explicitly zeroed out maxfev/maxiter, which should not happen.
-
-                    rung_timeout = (
-                        None if timeout is None else max(timeout - (time.time() - _ladder_t0), 1.0)
-                    )
-                    last_sol = self._solve_impl(
-                        method=method,
-                        timeout=rung_timeout,
-                        options=step_options,
-                        use_jac=use_jac,
-                        x0=current_x0,
-                        init_strategy="default",
-                    )
-
-                    # Update x0 for next step anyway (best guess propagation)
-                    current_x0 = self._last_x
-
-                    if not last_sol["__success__"]:
-                        # If an intermediate step fails badly, we might still
-                        # want to continue if progress was made, but for now
-                        # we stop to avoid compounding errors.
-                        # Note: we still use the failed result as x0 if it's the best we have.
-                        break
-
-                # Restore original m_dot (lam=1.0 loop already did this if it reached it)
-                for nid, target_mdot in targets.items():
-                    self.network.nodes[nid].m_dot = target_mdot
+                        self.network.nodes[nid].m_dot = target_mdot
 
                 # If homotopy reached lam=1.0 and succeeded, return that solution
                 if last_sol["__success__"]:

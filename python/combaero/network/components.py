@@ -4542,6 +4542,10 @@ class MassFlowBoundary(NetworkNode):
         self.Tt = Tt
         self.Y = Y
 
+    def _given_m_dot(self) -> float:
+        """The flow the user gave [kg/s], for a start estimate: ``m_dot``."""
+        return float(self.m_dot)
+
     def unknowns(self) -> list[str]:
         # Pressure floats to whatever is required to push the defined mass flow
         return [f"{self.id}.P", f"{self.id}.Pt"]
@@ -4639,6 +4643,13 @@ class FuelBoundary(MassFlowBoundary):
         #: ln(m_dot) the flow is held at instead of the target, while the
         #: solver's fuel-fixed stage solves the flows first (None: the target).
         self._frozen_ln_m: float | None = None
+
+    def _given_m_dot(self) -> float:
+        """``m_dot_guess``, 0 without one: what a fresh one holds. ``m_dot``
+        itself holds the solver's current iterate of the unknown, whatever
+        was evaluated last; a start estimate that read it depended on the
+        evaluation history (#1163)."""
+        return 0.0 if self.m_dot_guess is None else float(self.m_dot_guess)
 
     @property
     def m_dot_unknown(self) -> str:
