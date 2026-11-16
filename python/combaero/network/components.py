@@ -13220,7 +13220,13 @@ class CrossflowSegmentElement(ChannelElement):
                 m < 0.0,
                 self.area_to,
             )
-        if "entry" in kinds:
+        # entry_K = 0 adds K/(1 + K) = 0 of the drop: the term is not formed,
+        # so the row is the one with no entry_K, entry for entry (#1150's rule).
+        # Formed, its zero partials were explicit zeros in the Jacobian's
+        # COO list, and the CSR conversion's unstable sort of duplicates then
+        # summed the round-off-zero entries in another order: one ulp apart
+        # on Linux aarch64 (#1188).
+        if "entry" in kinds and self.entry_K:
             t = kinds["entry"]
             share = self.entry_K / (1.0 + self.entry_K)
             Pt_out += share * t[0].dP
