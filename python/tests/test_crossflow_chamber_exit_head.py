@@ -179,7 +179,7 @@ def _check_jacobian(g: FlowNetwork, perturb: float) -> None:
         rng = np.random.default_rng(7)
         x = x * (1.0 + perturb * rng.uniform(-1.0, 1.0, x.size))
     J = s._residuals_and_jacobian(x)[1]
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     assert float(np.max(scaled_error(J, fd, x))) < 1e-5
 
 

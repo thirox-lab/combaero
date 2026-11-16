@@ -128,15 +128,16 @@ def test_the_constant_cd_still_alternates() -> None:
 @pytest.mark.parametrize("law", ["rogers_hersh_1976", "florschuetz_metzger_su_1982"])
 def test_the_jacobian_matches_finite_differences(law: str) -> None:
     """Every row's Cd reads its own drive and the approaching crossflow; at
-    the root and nearby, the analytic Jacobian is the FD one. Step 1e-7: the
-    1e-6 central difference is truncation (it falls 100x for a 10x smaller
-    step). With a constant Cd the same check reads 0.23 at the root: the
+    the root and nearby, the analytic Jacobian is the FD one. A 1e-6 central
+    difference is truncation here (it falls 100x for a 10x smaller step):
+    this test set a 1e-7 step by hand before the helper chose its own per
+    row (``_fd_jacobian``). With a constant Cd the same check reads 0.23 at the root: the
     sqrt(dP) curvature of the near-stagnant rows that the law removes."""
     solver, res, _ = _b541(0.51, law)
     x0 = np.array(res["__x_solution__"], dtype=float)
     for x in (x0, x0 * (1.0 + 0.002 * np.sin(np.arange(len(x0))))):
         J = solver._residuals_and_jacobian(x)[1].toarray()
-        fd = fd_jacobian(solver, x, rel=1e-7, floor=1e-12)
+        fd = fd_jacobian(solver, x)
         cols = np.maximum(np.abs(x), 1e-12)[None, :]
         scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
         assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-5

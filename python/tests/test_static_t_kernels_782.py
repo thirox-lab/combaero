@@ -74,8 +74,7 @@ def _solve(g: FlowNetwork) -> tuple[NetworkSolver, dict]:
 def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
     """RESIDUAL-ROW-SCALING: compare J_ij |x_j| (see _build_residual_scales)."""
     _, J = s._residuals_and_jacobian(x)
-    rel = np.array([1e-5 if n.endswith("m_dot") else 1e-7 for n in s.unknown_names])
-    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)

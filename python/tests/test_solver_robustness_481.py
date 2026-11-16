@@ -50,7 +50,7 @@ def _orifice(eid: str, a: str, b: str, d: float = 0.01, in_pipe: bool = True) ->
 
 def _jac_vs_fd(s: NetworkSolver, x: np.ndarray) -> float:
     _, J = s._residuals_and_jacobian(x)
-    fd = fd_jacobian(s, x, rel=1e-5, floor=1e-7)
+    fd = fd_jacobian(s, x)
     # RESIDUAL-ROW-SCALING (NetworkSolver._build_residual_scales). In scaled
     # variables (J_ij |x_j|): rows mix kg/s and Pa columns, and raw
     # row scaling hides a wrong entry in the small-unit columns.

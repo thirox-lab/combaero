@@ -130,11 +130,11 @@ def test_global_jacobian_matches_finite_differences(correlation: str) -> None:
     x = np.array(r["__x_solution__"], dtype=float)
     _, jac = s._residuals_and_jacobian(x)
     jac = jac.toarray()
-    # Flows step 1e-5, pressures and temperatures 1e-7: a compressible
-    # channel's residual repeats only to ~1e-12 (its Fanno iteration is
-    # warm-started), which a 1e-7 flow step differences into 5e-4 of noise.
-    rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
+    # The helper's default steps: it clears the Fanno warm starts before each
+    # evaluation (this test stepped flows 1e-5 and pressures 1e-7 by hand: a
+    # warm-started iteration repeats only to ~1e-12, which a 1e-7 flow step
+    # differenced into 5e-4 of noise).
+    fd = fd_jacobian(s, x)
     mask = np.abs(fd) > 1e-3
     assert (np.abs(jac - fd)[mask] / np.abs(fd[mask])).max() < 1e-4
 
@@ -236,6 +236,6 @@ def test_a_compressible_liner_balances_the_exact_impulse() -> None:
     assert lhs - rhs == pytest.approx(0.0, abs=1e-6 * (m_out**2 / (rho * A) + abs(S)))
     x = np.array(r["__x_solution__"], dtype=float)
     _, jac = s._residuals_and_jacobian(x)
-    fd = fd_jacobian(s, x, rel=1e-7, floor=1e-10)
+    fd = fd_jacobian(s, x)
     mask = np.abs(fd) > 1e-3
     assert (np.abs(jac.toarray() - fd)[mask] / np.abs(fd[mask])).max() < 1e-3

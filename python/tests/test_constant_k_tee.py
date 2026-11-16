@@ -203,7 +203,7 @@ def test_jacobian_matches_fd(make_net):
     _, jac_analytical = solver._residuals_and_jacobian(x0)
     jac_analytical = jac_analytical.toarray()
 
-    jac_fd = fd_jacobian(solver, x0, rel=1e-7, floor=1e-10)
+    jac_fd = fd_jacobian(solver, x0)
     scale = np.maximum(np.abs(jac_fd), np.abs(jac_analytical)) + 1.0
     max_rel = float(np.max(np.abs(jac_analytical - jac_fd) / scale))
     assert max_rel < 5e-4, f"jacobian mismatch: {max_rel:.3e}"

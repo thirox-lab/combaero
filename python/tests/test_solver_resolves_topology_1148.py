@@ -194,7 +194,7 @@ def _segment_row_fd_error(build, x: np.ndarray) -> float:
     s = NetworkSolver(build())
     s._build_x0()
     J = s._residuals_and_jacobian(x)[1]
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     rows = [i for i, (label, _k) in enumerate(s._row_kinds(x)) if label.endswith("'s1x'")]
     return float(scaled_error(J, fd, x)[rows[0]])
 

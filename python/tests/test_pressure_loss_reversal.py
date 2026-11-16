@@ -93,7 +93,7 @@ def _jacobian_error(g: FlowNetwork, x: np.ndarray) -> float:
     s._residuals(x)  # build the solver's maps
     s._build_x0()  # name the unknowns: the FD step reads which are pressures
     _, jac = s._residuals_and_jacobian(x)
-    fd = fd_jacobian(s, x, rel=1e-7, floor=1e-11)
+    fd = fd_jacobian(s, x)
     scale = np.abs(fd * x).max(axis=1, keepdims=True)
     scale[scale == 0.0] = 1.0
     return float((np.abs(jac.toarray() - fd) * np.abs(x) / scale).max())

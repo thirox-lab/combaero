@@ -217,11 +217,12 @@ def _solve(g: FlowNetwork) -> tuple[NetworkSolver, dict]:
     return s, r
 
 
-def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
-    """RESIDUAL-ROW-SCALING: compare J_ij |x_j|, relative to each row's largest."""
+def _jac_err(s: NetworkSolver, x: np.ndarray, fd: np.ndarray | None = None) -> float:
+    """RESIDUAL-ROW-SCALING: compare J_ij |x_j|, relative to each row's largest.
+    ``fd``: the FD at x, reused where only the analytic Jacobian changes."""
     _, J = s._residuals_and_jacobian(x)
     J = J.toarray()
-    fd = fd_jacobian(s, x)
+    fd = fd_jacobian(s, x) if fd is None else fd
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     a, b = J * cols, fd * cols
     scale = np.maximum(np.abs(b).max(axis=1, keepdims=True), 1e-300)
@@ -305,7 +306,8 @@ def test_the_jacobian_reaches_the_coolant_flow_and_temperature() -> None:
     g = _net(mixed_supply=True)
     s, r = _solve(g)
     x = np.array(r["__x_solution__"])
-    assert _jac_err(s, x) < 1e-5
+    fd = fd_jacobian(s, x)
+    assert _jac_err(s, x, fd) < 1e-5
     assert _jac_err(s, x * (1.0 + 0.03 * np.sin(np.arange(len(x)) + 1.0))) < 1e-5
 
     full = s._relay_film
@@ -326,7 +328,7 @@ def test_the_jacobian_reaches_the_coolant_flow_and_temperature() -> None:
 
     for attr in ("dT_aw_dfilm_mdot", "dT_aw_dT_coolant"):
         s._relay_film = without(attr)
-        assert _jac_err(s, x) > 1e-5, attr
+        assert _jac_err(s, x, fd) > 1e-5, attr
     s._relay_film = full
 
 
@@ -412,9 +414,10 @@ def test_the_panel_film_jacobian_reaches_the_coolant_flow_and_temperature() -> N
     g = _net(mixed_supply=True, panel=PANEL)
     s, r = _solve(g)
     x = np.array(r["__x_solution__"])
-    assert _jac_err(s, x) < 1e-5
+    fd = fd_jacobian(s, x)
+    assert _jac_err(s, x, fd) < 1e-5
     s._relay_film = lambda *a, **k: None
-    assert _jac_err(s, x) > 1e-5
+    assert _jac_err(s, x, fd) > 1e-5
 
 
 def test_a_panel_without_its_length_cannot_cover_a_wall() -> None:
@@ -472,7 +475,8 @@ def test_the_jacobian_reaches_the_undiluted_gas() -> None:
     s, r = _solve(g)
     assert r["w.film_gas_undiluted"] == 1.0
     x = np.array(r["__x_solution__"])
-    assert _jac_err(s, x) < 1e-5
+    fd = fd_jacobian(s, x)
+    assert _jac_err(s, x, fd) < 1e-5
     assert _jac_err(s, x * (1.0 + 0.03 * np.sin(np.arange(len(x)) + 1.0))) < 1e-5
 
     full = s._relay_film
@@ -487,5 +491,5 @@ def test_the_jacobian_reaches_the_undiluted_gas() -> None:
         full(out, wall, stub, factor, relay_, up)
 
     s._relay_film = without_inf
-    assert _jac_err(s, x) > 1e-5
+    assert _jac_err(s, x, fd) > 1e-5
     s._relay_film = full

@@ -196,7 +196,7 @@ def _fresh_jacobian_error(g: FlowNetwork, x: np.ndarray) -> float:
     s = NetworkSolver(g)
     s._build_x0()
     J = s._residuals_and_jacobian(x)[1]
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     return float(np.max(scaled_error(J, fd, x)))
 
 

@@ -78,7 +78,7 @@ def test_every_row_matches_central_differences(
     x = x * (1.0 + 1e-3 * np.random.default_rng(3).standard_normal(x.size))
     _, J = solver._residuals_and_jacobian(x)
     J = J.toarray()
-    J_fd = fd_jacobian(solver, x, rel=1e-7, floor=1e-10)
+    J_fd = fd_jacobian(solver, x)
     scaled_err = np.abs(J - J_fd) * np.abs(x)
     row_ref = np.max(np.abs(J_fd) * np.abs(x), axis=1) + 1e-30
     assert float(np.max(scaled_err.max(axis=1) / row_ref)) < 1e-6

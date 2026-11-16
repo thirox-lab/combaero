@@ -323,39 +323,16 @@ def _all_rows_fd_error(build, own: str, point: str) -> float:
     f._build_x0()
     J = f._residuals_and_jacobian(x)[1]
     J = J.toarray() if hasattr(J, "toarray") else np.asarray(J)
-    fd = fd_jacobian(f, x, floor=1e-10)
-    # The FD helper caps a pressure column's step at 1 % of its smallest gap
-    # to any other pressure. Off the root, two levels a lossless link holds
-    # equal (a fuel boundary's P and its combustor's Pt) sit a few Pa apart,
-    # and the cap puts the step in round-off: 9.6e-8 on the tail row's mc.Pt
-    # column at a 0.012 Pa step, which agrees to 1.8e-10 at 1 Pa. Each entry
-    # takes the better of that step and the uncapped one, both Richardson:
-    # an analytic error shows at every step in the window, round-off and
-    # truncation do not.
+    fd = np.asarray(fd_jacobian(f, x))
+    # Off the root, two levels a lossless link holds equal (a fuel boundary's
+    # P and its combustor's Pt) sit a few Pa apart: the old gap-capped step
+    # put the tail row's mc.Pt column in round-off (9.6e-8 at 0.012 Pa, 1.8e-10
+    # at 1 Pa) and this test took the better of that and an uncapped step.
+    # The helper's per-row ladder now chooses the step itself.
     err = np.abs(J - fd)
-    fd_wide = _pressure_columns_uncapped(f, x, fd)
-    err = np.minimum(err, np.abs(J - fd_wide))
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1), 1e-300)
     return float(np.max(np.max(err * cols, axis=1) / scale))
-
-
-def _pressure_columns_uncapped(s: NetworkSolver, x: np.ndarray, fd: np.ndarray) -> np.ndarray:
-    """``fd`` with each pressure column re-differenced at 1e-6 |P| (the
-    helper's own step before its gap cap), Richardson-extrapolated."""
-    out = fd.copy()
-
-    def central(j: int, h: float) -> np.ndarray:
-        xp, xm = x.copy(), x.copy()
-        xp[j] += h
-        xm[j] -= h
-        return (np.asarray(s._residuals(xp)) - np.asarray(s._residuals(xm))) / (xp[j] - xm[j])
-
-    for j, name in enumerate(s.unknown_names):
-        if is_pressure(name):
-            h = 1e-6 * max(abs(x[j]), 1.0)
-            out[:, j] = (4.0 * central(j, h) - central(j, 2.0 * h)) / 3.0
-    return out
 
 
 NET_CASES = [
@@ -374,8 +351,9 @@ def test_relayed_gas_reservoir_jacobian(
 ) -> None:
     """A burning combustor or a mixing plenum feeding a segment, a merge
     chamber or a chain (and reversed: the chain's gas from the exit and the
-    mixed jet): every row to 1e-7 scaled. Measured <= 2.8e-8 (main: up to
-    1.0e-3 on the segment rows)."""
+    mixed jet): every row to 1e-7 scaled. Measured <= 5.9e-8 (main: up to
+    1.0e-3 on the segment rows; 2.8e-8 when each entry took the better of two
+    FD steps)."""
     own = "s1x.m_dot" if topo in ("entry", "chamber") else "u0.m_dot"
     err = _all_rows_fd_error(lambda: _network(regime, res, topo, rev), own, point)
     assert err < 1e-7, err
@@ -393,7 +371,7 @@ def test_reversed_out_of_a_burning_combustor_jacobian(
     (#1137's networks): incompressible the reversed exit term ``exit_in``
     reads the burnt gas; behind the 'chain' reservoir the burnt gas runs back
     through the station, both legs' halves at its density. Every row to 1e-7
-    scaled. Measured <= 1.3e-8 (main: 7.2e-4 incompressible, 2.7e-5 on the
+    scaled. Measured <= 2.6e-8 (main: 7.2e-4 incompressible, 2.7e-5 on the
     compressible chain's legs)."""
     err = _all_rows_fd_error(
         lambda: _merge(regime, 8000.0, "combustor", rev=True, reservoir=reservoir, fuel=2e-4),

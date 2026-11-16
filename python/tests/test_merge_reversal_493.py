@@ -57,11 +57,10 @@ def test_the_jacobian_holds_with_the_main_reversed(liner: tuple, frac: float) ->
     xp = x.copy()
     xp[j] = frac * x[j]
     _, J = s._residuals_and_jacobian(xp)
-    # Flows step 1e-5, pressures and temperatures 1e-7: a compressible
-    # channel's residual repeats only to ~1e-12 (its Fanno iteration is
-    # warm-started), which a 1e-6 flow step differences into 3e-6 of noise.
-    rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = fd_jacobian(s, xp, rel=rel)
+    # The helper's default steps: it clears the Fanno warm starts before each
+    # evaluation, which made a 1e-6 flow step read 3e-6 of noise when this
+    # test stepped flows 1e-5 and pressures 1e-7 by hand.
+    fd = fd_jacobian(s, xp)
     # RESIDUAL-ROW-SCALING: compare J_ij |x_j| (see _build_residual_scales).
     cols = np.maximum(np.abs(xp), 1e-12)[None, :]
     Js, fds = J.toarray() * cols, fd * cols

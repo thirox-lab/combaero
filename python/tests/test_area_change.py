@@ -568,7 +568,7 @@ def test_step_into_a_chamber_jacobian_matches_fd() -> None:
     x = np.array([sol[n] for n in solver.unknown_names], dtype=float)
     _, jac = solver._residuals_and_jacobian(x)
     jac = jac.toarray()
-    fd = fd_jacobian(solver, x, floor=1e-10)
+    fd = fd_jacobian(solver, x)
     row_scale = np.abs(fd * x).max(axis=1, keepdims=True) + 1e-300
     err = np.abs(jac - fd) * np.abs(x) / row_scale
     assert err.max() < 1e-6, err.max()

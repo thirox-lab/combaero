@@ -330,7 +330,7 @@ def test_jacobian(layout: str, reversed_: bool, regime: str, point: str) -> None
     f._build_x0()
     J = f._residuals_and_jacobian(x)[1]
     J = J.toarray() if hasattr(J, "toarray") else np.asarray(J, dtype=float)
-    err = float(np.max(scaled_error(J, fd_jacobian(f, x, floor=1e-10), x)))
+    err = float(np.max(scaled_error(J, fd_jacobian(f, x), x)))
     assert err < 1e-7, err
 
 
