@@ -2,11 +2,13 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -89,6 +91,104 @@ struct PyWarningHandler {
   }
 };
 
+// Pickle (and so copy.deepcopy) support for plain input structs (#1164).
+//
+// The state is every read-write property of the object's class: the
+// fields def_readwrite registered. Read-only properties (derived
+// quantities) are left out; they follow from the fields. Nested structs and
+// enums in the state pickle through their own support, so every nested
+// type needs it too. Never for result structs: they are outputs and have
+// no business on a copied network.
+//
+// A C++ member without a binding would come back at its T{} default, with
+// no error. Two guards, neither read from the binding list:
+// - at compile time, field_pickle<T, N>() asserts that the struct has N
+//   members, counted by the compiler from the definition itself
+//   (aggregate_field_count, below). A member added to the struct fails the
+//   build here;
+// - at run time, __getstate__ and __setstate__ refuse a state whose size
+//   is not N. Bumping N without binding the new member fails the first
+//   pickle, deepcopy or copy of that type.
+// Counting members, not sizeof, so the same N holds on every compiler and
+// standard library (padding and std::string differ between them).
+
+// Converts to any type: a stand-in initializer for counting members.
+// Declared only; it is used in unevaluated contexts.
+struct AnyField {
+  template <typename U> operator U &() const;
+};
+
+template <typename T, typename Seq, typename = void>
+struct brace_init_n : std::false_type {};
+template <typename T, std::size_t... I>
+struct brace_init_n<T, std::index_sequence<I...>,
+                    std::void_t<decltype(T{(void(I), AnyField{})...})>>
+    : std::true_type {};
+
+// The number of members of an aggregate: the largest N for which T{a1, ...,
+// aN} is well-formed. AnyField converts to a nested struct whole, so a
+// nested struct counts as one member, as its binding does.
+template <typename T, std::size_t N = 0>
+constexpr std::size_t aggregate_field_count() {
+  static_assert(std::is_aggregate_v<T>, "field_pickle needs an aggregate");
+  if constexpr (N < 128 &&
+                brace_init_n<T, std::make_index_sequence<N + 1>>::value) {
+    return aggregate_field_count<T, N + 1>();
+  } else {
+    return N;
+  }
+}
+
+static py::dict field_state(const py::object &self) {
+  py::dict state;
+  py::object property = py::module_::import("builtins").attr("property");
+  for (py::handle klass : py::type::handle_of(self).attr("__mro__")) {
+    for (py::handle item : klass.attr("__dict__").attr("items")()) {
+      py::object key = item[py::int_(0)];
+      py::object value = item[py::int_(1)];
+      if (py::isinstance(value, property) && !value.attr("fset").is_none() &&
+          !state.contains(key)) {
+        state[key] = self.attr(key);
+      }
+    }
+  }
+  return state;
+}
+
+static void check_field_count(const py::handle &type, std::size_t n_state,
+                              std::size_t n_members) {
+  if (n_state != n_members) {
+    throw std::runtime_error(
+        py::str(type.attr("__name__")).cast<std::string>() + " has " +
+        std::to_string(n_members) + " C++ members but the pickle state has " +
+        std::to_string(n_state) +
+        " fields: bind every member read-write (def_readwrite) so a copy "
+        "keeps it (#1164)");
+  }
+}
+
+// N: the struct's member count. A build error here means the struct
+// changed: bind the new member read-write, then update N.
+template <typename T, std::size_t N> auto field_pickle() {
+  static_assert(aggregate_field_count<T>() == N,
+                "the struct's member count is not N: bind every member "
+                "read-write (def_readwrite), then update N (#1164)");
+  return py::pickle(
+      [](const py::object &self) {
+        py::dict state = field_state(self);
+        check_field_count(py::type::handle_of(self), state.size(), N);
+        return state;
+      },
+      [](const py::dict &state) {
+        py::object obj = py::cast(T{});
+        check_field_count(py::type::handle_of(obj), state.size(), N);
+        for (auto item : state) {
+          py::setattr(obj, item.first, item.second);
+        }
+        return obj.cast<T>();
+      });
+}
+
 PYBIND11_MODULE(_core, m) {
 
   // ---------------------------------------------------------------------
@@ -167,7 +267,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readwrite("reference", &combaero::cooling::RibTerm::reference,
                      "What the variable is divided by before the exponent is "
                      "applied. Data, not a convention: (p/e/10)^b and (p/e)^b "
-                     "are the same function with different constants.");
+                     "are the same function with different constants.")
+      .def(field_pickle<combaero::cooling::RibTerm, 2>());
 
   py::class_<combaero::cooling::RibRange>(m, "RibRange")
       .def(py::init<>())
@@ -176,7 +277,8 @@ PYBIND11_MODULE(_core, m) {
            }),
            py::arg("lo") = 0.0, py::arg("hi") = 0.0)
       .def_readwrite("lo", &combaero::cooling::RibRange::lo)
-      .def_readwrite("hi", &combaero::cooling::RibRange::hi);
+      .def_readwrite("hi", &combaero::cooling::RibRange::hi)
+      .def(field_pickle<combaero::cooling::RibRange, 2>());
 
   py::class_<combaero::cooling::RibGeometry>(m, "RibGeometry")
       .def(py::init<>())
@@ -188,7 +290,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readwrite("e_D", &combaero::cooling::RibGeometry::e_D)
       .def_readwrite("p_e", &combaero::cooling::RibGeometry::p_e)
       .def_readwrite("W_H", &combaero::cooling::RibGeometry::W_H)
-      .def_readwrite("alpha_deg", &combaero::cooling::RibGeometry::alpha_deg);
+      .def_readwrite("alpha_deg", &combaero::cooling::RibGeometry::alpha_deg)
+      .def(field_pickle<combaero::cooling::RibGeometry, 4>());
 
   py::class_<combaero::cooling::RibResult>(m, "RibResult")
       .def_readonly("R", &combaero::cooling::RibResult::R)
@@ -238,7 +341,8 @@ PYBIND11_MODULE(_core, m) {
                   py::arg("value"))
       .def_static("measured", &combaero::cooling::StatedAccuracy::measured,
                   py::arg("value"))
-      .def_static("unstated", &combaero::cooling::StatedAccuracy::unstated);
+      .def_static("unstated", &combaero::cooling::StatedAccuracy::unstated)
+      .def(field_pickle<combaero::cooling::StatedAccuracy, 2>());
 
   py::class_<combaero::cooling::RibCorrelationSet>(m, "RibCorrelationSet")
       .def(py::init<>())
@@ -338,7 +442,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readwrite("accuracy_R",
                      &combaero::cooling::RibCorrelationSet::accuracy_R)
       .def_readwrite("accuracy_G",
-                     &combaero::cooling::RibCorrelationSet::accuracy_G);
+                     &combaero::cooling::RibCorrelationSet::accuracy_G)
+      .def(field_pickle<combaero::cooling::RibCorrelationSet, 49>());
 
   m.def("han_1988_orthogonal", &combaero::cooling::han_1988_orthogonal,
         "Han (1988) 90 deg orthogonal ribs. Extracted and confirmed; see "
@@ -396,7 +501,8 @@ PYBIND11_MODULE(_core, m) {
            py::arg("coeff"), py::arg("re_exponent"), py::arg("pr_exponent") = 0.0)
       .def_readwrite("coeff", &combaero::cooling::RatioBaseline::coeff)
       .def_readwrite("re_exponent", &combaero::cooling::RatioBaseline::re_exponent)
-      .def_readwrite("pr_exponent", &combaero::cooling::RatioBaseline::pr_exponent);
+      .def_readwrite("pr_exponent", &combaero::cooling::RatioBaseline::pr_exponent)
+      .def(field_pickle<combaero::cooling::RatioBaseline, 3>());
 
   py::enum_<combaero::cooling::RatioBelowFloor>(m, "RatioBelowFloor",
                                   "What Nu hands over to below the fitted Re range.")
@@ -447,7 +553,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readwrite("valid_alpha", &combaero::cooling::RibRatioSet::valid_alpha)
       .def_readwrite("valid_Pr", &combaero::cooling::RibRatioSet::valid_Pr)
       .def_readwrite("accuracy_Nu", &combaero::cooling::RibRatioSet::accuracy_Nu)
-      .def_readwrite("accuracy_f", &combaero::cooling::RibRatioSet::accuracy_f);
+      .def_readwrite("accuracy_f", &combaero::cooling::RibRatioSet::accuracy_f)
+      .def(field_pickle<combaero::cooling::RibRatioSet, 30>());
 
   py::class_<combaero::cooling::RibRatioResult>(m, "RibRatioResult")
       .def_readonly("Nu", &combaero::cooling::RibRatioResult::Nu)
@@ -504,7 +611,8 @@ PYBIND11_MODULE(_core, m) {
           &combaero::cooling::SingleJetImpingementSet::n_const_heat_flux)
       .def_readwrite(
           "n_const_wall_temp",
-          &combaero::cooling::SingleJetImpingementSet::n_const_wall_temp);
+          &combaero::cooling::SingleJetImpingementSet::n_const_wall_temp)
+      .def(field_pickle<combaero::cooling::SingleJetImpingementSet, 8>());
 
   m.def("goldstein_1986_single_jet",
         &combaero::cooling::goldstein_1986_single_jet,
@@ -544,7 +652,8 @@ PYBIND11_MODULE(_core, m) {
            }),
            py::arg("lo") = 0.0, py::arg("hi") = 0.0)
       .def_readwrite("lo", &combaero::cooling::ImpingementRange::lo)
-      .def_readwrite("hi", &combaero::cooling::ImpingementRange::hi);
+      .def_readwrite("hi", &combaero::cooling::ImpingementRange::hi)
+      .def(field_pickle<combaero::cooling::ImpingementRange, 2>());
 
   py::class_<combaero::cooling::JetArrayGeometricFit>(
       m, "JetArrayGeometricFit")
@@ -557,7 +666,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readwrite("C", &combaero::cooling::JetArrayGeometricFit::C)
       .def_readwrite("nx", &combaero::cooling::JetArrayGeometricFit::nx)
       .def_readwrite("ny", &combaero::cooling::JetArrayGeometricFit::ny)
-      .def_readwrite("nz", &combaero::cooling::JetArrayGeometricFit::nz);
+      .def_readwrite("nz", &combaero::cooling::JetArrayGeometricFit::nz)
+      .def(field_pickle<combaero::cooling::JetArrayGeometricFit, 4>());
 
   py::class_<combaero::cooling::JetArrayCorrelationSet>(
       m, "JetArrayCorrelationSet")
@@ -589,7 +699,8 @@ PYBIND11_MODULE(_core, m) {
           &combaero::cooling::JetArrayCorrelationSet::valid_aspect_ratio)
       .def_readwrite(
           "standard_error",
-          &combaero::cooling::JetArrayCorrelationSet::standard_error);
+          &combaero::cooling::JetArrayCorrelationSet::standard_error)
+      .def(field_pickle<combaero::cooling::JetArrayCorrelationSet, 15>());
 
   py::class_<combaero::cooling::JetArrayImpingementResult>(
       m, "JetArrayImpingementResult")
@@ -656,7 +767,8 @@ PYBIND11_MODULE(_core, m) {
       .def_readwrite("xn_d", &combaero::cooling::JetRowGeometry::xn_d)
       .def_readwrite("yn_d", &combaero::cooling::JetRowGeometry::yn_d)
       .def_readwrite("z_d", &combaero::cooling::JetRowGeometry::z_d)
-      .def_readwrite("n_holes", &combaero::cooling::JetRowGeometry::n_holes);
+      .def_readwrite("n_holes", &combaero::cooling::JetRowGeometry::n_holes)
+      .def(field_pickle<combaero::cooling::JetRowGeometry, 5>());
   py::class_<combaero::cooling::JetRowHeatTransfer>(m, "JetRowHeatTransfer")
       .def_readonly("h", &combaero::cooling::JetRowHeatTransfer::h)
       .def_readonly("Nu", &combaero::cooling::JetRowHeatTransfer::Nu)
@@ -1124,7 +1236,8 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("X_D", &cc::PinFinGeometry::X_D)
         .def_readwrite("H_D", &cc::PinFinGeometry::H_D)
         .def_readwrite("N_rows", &cc::PinFinGeometry::N_rows)
-        .def_readwrite("arrangement", &cc::PinFinGeometry::arrangement);
+        .def_readwrite("arrangement", &cc::PinFinGeometry::arrangement)
+        .def(field_pickle<cc::PinFinGeometry, 5>());
 
     m.def("pin_fin_min_gap_D", &cc::pin_fin_min_gap_D, py::arg("geometry"),
           "Minimum gap per transverse pitch / D: min(S - 1, diagonal) "
@@ -1181,7 +1294,8 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("valid_HD", &cc::PinFinNuSet::valid_HD)
         .def_readwrite("valid_Nrows", &cc::PinFinNuSet::valid_Nrows)
         .def_readwrite("valid_Pr", &cc::PinFinNuSet::valid_Pr)
-        .def_readwrite("accuracy_Nu", &cc::PinFinNuSet::accuracy_Nu);
+        .def_readwrite("accuracy_Nu", &cc::PinFinNuSet::accuracy_Nu)
+        .def(field_pickle<cc::PinFinNuSet, 20>());
 
     py::class_<cc::PinFinFrictionSet>(m, "PinFinFrictionSet",
                                       "Pin-fin friction set, one or two Re "
@@ -1207,7 +1321,8 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("valid_XD", &cc::PinFinFrictionSet::valid_XD)
         .def_readwrite("valid_HD", &cc::PinFinFrictionSet::valid_HD)
         .def_readwrite("valid_Nrows", &cc::PinFinFrictionSet::valid_Nrows)
-        .def_readwrite("accuracy_f", &cc::PinFinFrictionSet::accuracy_f);
+        .def_readwrite("accuracy_f", &cc::PinFinFrictionSet::accuracy_f)
+        .def(field_pickle<cc::PinFinFrictionSet, 20>());
 
     py::class_<cc::PinFinRatioModifier>(
         m, "PinFinRatioModifier",
@@ -1229,7 +1344,8 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("valid_Re", &cc::PinFinRatioModifier::valid_Re)
         .def_readwrite("valid_SD", &cc::PinFinRatioModifier::valid_SD)
         .def_readwrite("valid_XD", &cc::PinFinRatioModifier::valid_XD)
-        .def_readwrite("valid_HD", &cc::PinFinRatioModifier::valid_HD);
+        .def_readwrite("valid_HD", &cc::PinFinRatioModifier::valid_HD)
+        .def(field_pickle<cc::PinFinRatioModifier, 15>());
 
     py::class_<cc::PinFinNuResult>(m, "PinFinNuResult")
         .def_readonly("Nu", &cc::PinFinNuResult::Nu)
@@ -6416,7 +6532,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       .def_property_readonly("r_over_d", &OrificeGeometry::r_over_d,
                              "Radius ratio r/d [-]")
       .def("is_valid", &OrificeGeometry::is_valid,
-           "Check if geometry is valid");
+           "Check if geometry is valid")
+      .def(field_pickle<OrificeGeometry, 6>());
 
   // OrificeState struct
   py::class_<OrificeState>(m, "OrificeState",

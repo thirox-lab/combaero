@@ -1024,7 +1024,25 @@ class ConvectiveSurface:
         return result
 
 
-class _DuctHtc:
+class _ForwardsToResult:
+    """Base of the heat-transfer wrappers below: each chains a C++ surface
+    result's partials onto the solver's unknowns and forwards every other
+    attribute to that result, held as ``_r``."""
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> Any:
+        # Reached only when normal lookup fails. copy and pickle build a blank
+        # instance (no __init__) and probe it for hooks: with _r unset,
+        # forwarding read self._r, which called this again without end
+        # (RecursionError, #1164). _r itself and dunder names are never
+        # forwarded, so those protocols see a plain AttributeError.
+        if name == "_r" or (name.startswith("__") and name.endswith("__")):
+            raise AttributeError(name)
+        return getattr(self._r, name)
+
+
+class _DuctHtc(_ForwardsToResult):
     """A surface result evaluated at a duct's own static state, its partials
     chained onto what the solver differentiates: the feed node's stagnation
     T and Pt, and the element's flow (#636). Every other attribute is the
@@ -1110,9 +1128,6 @@ class _DuctHtc:
     def dT_aw_dY(self) -> list[float]:
         return self._composition()[1]
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._r, name)
-
     def __dir__(self) -> list[str]:
         # The pass-through fields too (dP, q and their partials, unchained:
         # no solver path reads them from a heat-transfer result).
@@ -1163,7 +1178,7 @@ def _duct_htc(
     return None if r is None else _DuctHtc(r, s, area, ctx)
 
 
-class _ChamberHtc:
+class _ChamberHtc(_ForwardsToResult):
     """A surface result evaluated at a momentum chamber's static state, its
     partials chained onto the node's own T0 and static P and its throughput:
     the closure's T_static moves with all three. Every other attribute is
@@ -1197,9 +1212,6 @@ class _ChamberHtc:
         dTs_Y = list(getattr(c, "dT_static_dY", None) or [0.0] * len(dh_Y))
         self.dh_dY = [a + dh_dT * t for a, t in zip(dh_Y, dTs_Y, strict=False)]
         self.dT_aw_dY = [a + dTaw_dT * t for a, t in zip(dTaw_Y, dTs_Y, strict=False)]
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._r, name)
 
     def __dir__(self) -> list[str]:
         return sorted(set(dir(self._r)) | set(self.__slots__))
@@ -4933,7 +4945,6 @@ class CombustorNode(NetworkNode):
                 f"CombustorNode '{self.id}': combustion call failed "
                 f"(T_unburned={self._T_unburned:.1f} K)"
             ) from exc
-        self._last_mix_res = mix_res
         # Expose burned temperature for adjacent PressureLossElement (theta source).
         self._T_burned = float(mix_res.Tt_mix)
         return mix_res.Tt_mix, mix_res.Y_mix, mix_res
@@ -8646,7 +8657,7 @@ def film_groups(
     return _FilmGroups(eta, [eta], [dM], [dP], [[dM]], [[dP]], bool(f.extrapolated))
 
 
-class _FilmedHtc:
+class _FilmedHtc(_ForwardsToResult):
     """A wall side's surface result under a film (#386): T_aw replaced by
 
         T_aw,f = T_ref (1 - eta) + sum_g w_g T_c,g,   sum_g w_g = eta,
@@ -8740,14 +8751,11 @@ class _FilmedHtc:
         density ratio's dependence on the gas molar mass is not chained."""
         return [self._k * float(v) for v in (getattr(self._r, "dT_aw_dY", None) or [])]
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._r, name)
-
     def __dir__(self) -> list[str]:
         return sorted(set(dir(self._r)) | set(self.__slots__))
 
 
-class _FilmSideHtc:
+class _FilmSideHtc(_ForwardsToResult):
     """A filmed wall side with the film's own h (#962): the slot kernel's
 
         h = h_duct + w(M) f_x (h_film - h_duct),
@@ -8797,9 +8805,6 @@ class _FilmSideHtc:
         if not own:
             return own
         return {k: self._kd * float(v) for k, v in own.items()}
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._r, name)
 
     def __dir__(self) -> list[str]:
         return sorted(set(dir(self._r)) | set(self.__slots__))
