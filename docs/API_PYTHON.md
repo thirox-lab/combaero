@@ -1397,7 +1397,11 @@ every cooling configuration).
   their own models enforce.
 - **k(T) layers** (a `material` from `cb.list_materials()`) take their
   conductivity at the wall temperatures of the same evaluation, iterated to
-  a fixed point -- not from the previous one.
+  a fixed point -- not from the previous one. A slow loop (a metal over
+  alumina between very hot gas and a cold coolant) is accelerated after a
+  few plain steps (#1170); `{wall}.kT_converged` is 0 if the loop still
+  ended at its cap (30 steps, 60 with radiation) in the report's evaluation,
+  1 otherwise and for constant-k layers.
 - **h <= 0** from a correlation past its range is floored smoothly at
   `cb.WALL_HTC_KNEE` (1e-2 W/(m^2 K)); the wall never refuses it.
 - With `thermal_coupling_enabled = False` the walls report nothing.

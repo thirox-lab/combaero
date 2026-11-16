@@ -3005,6 +3005,7 @@ class NetworkSolver:
             sol_dict[f"{wid}.{key}"] = float(val)
         sol_dict[f"{wid}.T_interface"] = list(wall._last_profile or [])
         sol_dict[f"{wid}.material_in_range"] = float(all(layer.in_range for layer in wall.layers))
+        sol_dict[f"{wid}.kT_converged"] = float(wall._kT_converged)
 
     # Propagation passes per evaluation when a state is read ahead of the
     # order (wall back-edges, recirculation). The passes stop when what they
@@ -7746,6 +7747,9 @@ class NetworkSolver:
                 sol_dict[f"{wid}.material_in_range"] = float(
                     all(layer.in_range for layer in wall.layers)
                 )
+                # 1 when the layers' k(T) loop settled, 0 when it stopped at
+                # its cap (#1170); 1 with no k(T) layer.
+                sol_dict[f"{wid}.kT_converged"] = float(wall._kT_converged)
 
         # Heat an energy boundary gives a node that the node does not take up:
         # below a 1 mg/s floor the heat taken up fades to none at zero flow

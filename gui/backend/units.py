@@ -163,6 +163,7 @@ UNIT_MAP: dict[str, str] = {
     "surface_extrapolated": "-",
     "surface_extrapolated_supply_crossflow": "-",  # row fed by a moving supply (C2)
     "material_in_range": "-",
+    "kT_converged": "-",  # the wall's k(T) loop settled (#1170)
     "dP_momentum": "Pa",
     # --- Effusion plate wall (#471) ---
     "h_internal_plate_area": "W/m\u00b2/K",
