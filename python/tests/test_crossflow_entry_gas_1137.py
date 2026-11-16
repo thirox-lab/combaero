@@ -44,6 +44,10 @@ from combaero.network import (
     PressureBoundary,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y = list(cb.mole_to_mass(cb.species.dry_air()))
 CH4 = list(cb.species.to_mass(cb.species.pure_species("CH4")))
 A_DUCT = 2.0e-4
@@ -257,7 +261,7 @@ def _segment_row_fd_error(build, x: np.ndarray) -> float:
     s = NetworkSolver(build())
     s._build_x0()
     J = s._residuals_and_jacobian(x)[1]
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     rows = [i for i, (label, _k) in enumerate(s._row_kinds(x)) if label.endswith("'s1x'")]
     return float(scaled_error(J, fd, x)[rows[0]])
 

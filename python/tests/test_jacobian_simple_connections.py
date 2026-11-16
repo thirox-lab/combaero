@@ -65,7 +65,7 @@ def _network(make: Callable[[str, str], NetworkElement], mass_inlet: bool) -> Fl
 
 def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
     _, J = s._residuals_and_jacobian(x)
-    fd = fd_jacobian(s, x, rel=1e-7, floor=1e-12)
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     a, b = J.toarray() * cols, fd * cols
     scale = np.maximum(np.abs(b).max(axis=1, keepdims=True), 1e-300)

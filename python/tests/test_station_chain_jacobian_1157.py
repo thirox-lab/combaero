@@ -11,27 +11,26 @@ drive (the Fanno kernel's Pt_in - Pt_out between the segment's own end
 states, after the station half-drops) sits just above
 ``FANNO_FLOW_DRIVE_FLOOR`` (1 Pa): s2x 1.06 Pa, x3 1.19 Pa, forward x4
 1.28 Pa. Below the floor the C++ kernel blends the flux into a cubic that
-is C1 at the floor, so G'' jumps there. ``fd_jacobian`` steps a pressure
+is C1 at the floor, so G'' jumps there. ``fd_jacobian`` stepped a pressure
 column by 1 % of its smallest pressure GAP (0.24 Pa on s3.P, 0.48 Pa at the
 Richardson 2h), which straddles that joint: the extrapolation assumes a
 smooth h^2 error and amplifies the jump instead. Refining the step, the
 s2x / s3.P entry converges to J as h^2 (7e-3 at 0.1 Pa, 8e-5 at 0.03 Pa,
 9e-6 at 0.01 Pa central; 1e-8 Richardson at 0.01 Pa). Every other flagged
 entry does the same. The step the pressure unknowns show is not the scale the
-row curves on (the ``_fd_jacobian`` docstring's "a drop the unknowns do not
-show").
+row curves on.
 
-So a compressible segment's row is differenced here at a step on its own
-duct's scale: at most 1/50 of its drive (the flux ~ sqrt(drive), whose
-Richardson error is ~0.2 (h / drive)^4) and 1/5 of its distance to the floor
-(h and 2h on one side of the joint). Every other row keeps
-``fd_steps``' step: a hole row's inner solve repeats only to round-off, which
-a 0.01 Pa step lifts to 1.5e-7. The kernels' warm starts are cleared before
-each evaluation, so F is a deterministic function of x (with them, one x read
-twice differs by ~1e-11, the noise in a structurally zero column).
+The helper (``_fd_jacobian.fd_jacobian``) now differences each row on its
+own step ladder; a duct's row takes the largest step at most 1/50 of its
+drive and 1/5 of the drive's distance to the floor, the cap this module
+carried by hand before (``_fd_jacobian.FLOOR_MARGIN``,
+``DRIVE_DIVISOR``). The helper also clears the kernels' warm starts before
+each evaluation (with them, one x read twice differs by ~1e-11, the noise in
+a structurally zero column).
 
 Measured on the fixed points, the solved roots and perturbations, both supply
-directions: compressible <= 7.1e-8, incompressible <= 1e-10. The fixed points
+directions: compressible <= 4.6e-8, incompressible <= 1.5e-8, the near-zero
+holes <= 2.3e-7 (``NEAR_ZERO_HOLE_TOL``). The fixed points
 are the quiet-machine roots of #1157 (the reversed one a point since #1178,
 which moved that root: ``FIXED_X``, ``ROOT_X``), and the solved-root test
 starts its solve at a root: a cold solve on a slow machine hands hybr over to LM on the wall-clock
@@ -44,7 +43,7 @@ import warnings
 
 import numpy as np
 import pytest
-from _fd_jacobian import fd_steps, is_pressure, scaled_error
+from _fd_jacobian import fd_jacobian, is_pressure, scaled_error
 
 import combaero as cb
 from combaero.network import (
@@ -67,10 +66,6 @@ N_ROWS = 5
 TOL = 1e-7
 #: The kernels' warm starts (``solver._KERNEL_WARM_STARTS``).
 WARM_STARTS = ("_last_G", "_last_M_exit")
-#: A compressible segment row's step: at most this fraction of its duct
-#: drive and of the drive's distance to the floor (module docstring).
-DRIVE_FRACTION = 1.0 / 50.0
-FLOOR_FRACTION = 1.0 / 5.0
 #: Supply-duct area [m^2]: the supply reverses at a station / runs forward.
 A_SUP = {"reversed": 1.2e-4, "forward": 1e-3}
 
@@ -274,95 +269,46 @@ def _duct_drives(s: NetworkSolver, x: np.ndarray) -> dict[str, float]:
     return out
 
 
-def _row_steps(s: NetworkSolver, x: np.ndarray) -> np.ndarray:
-    """Per row, the largest pressure step its duct allows (inf: no duct)."""
-    floor = cb.FANNO_FLOW_DRIVE_FLOOR
-    caps = {
-        eid: min(DRIVE_FRACTION * d, FLOOR_FRACTION * abs(d - floor))
-        for eid, d in _duct_drives(s, x).items()
-    }
-    steps = np.full(len(x), np.inf)
-    for i, (owner, _) in enumerate(s._row_kinds(x)):
-        if not owner.startswith("node"):
-            steps[i] = caps.get(owner.rsplit("'", 2)[1], np.inf)
-    return steps
-
-
-def _fd(s: NetworkSolver, x: np.ndarray, J: np.ndarray, lift: float = 1.0) -> np.ndarray:
-    """Central FD of F at x; pressure columns Richardson-extrapolated, each
-    row at ``fd_steps``' step capped by its own duct (``_row_steps``).
-    ``lift``: a pressure column's step is at least ``lift`` times the
-    round-off floor (1e-8 |P|), so a column pinned there by a nearby pressure
-    level moves off it; every other column keeps its step."""
-    h0 = fd_steps(s, x)
-    for j, name in enumerate(s.unknown_names):
-        if is_pressure(name):
-            h0[j] = max(h0[j], lift * 1e-8 * abs(x[j]))
-    row_cap = _row_steps(s, x)
-
-    def central(j: int, h: float) -> np.ndarray:
-        xp, xm = x.copy(), x.copy()
-        xp[j] += h
-        xm[j] -= h
-        return (_residuals(s, xp) - _residuals(s, xm)) / (xp[j] - xm[j])
-
-    fd = np.zeros_like(J)
-    for j, name in enumerate(s.unknown_names):
-        if not is_pressure(name):
-            fd[:, j] = central(j, h0[j])
-            continue
-        # Never below 1e-8 |P|, where round-off takes over (P_STEP_FLOOR).
-        h_rows = np.maximum(np.minimum(h0[j], row_cap), 1e-8 * abs(x[j]))
-        # Rows this column does not enter are zero at any step.
-        h_rows[J[:, j] == 0.0] = h0[j]
-        for h in np.unique(h_rows):
-            d = (4.0 * central(j, h) - central(j, 2.0 * h)) / 3.0
-            rows = h_rows == h
-            fd[rows, j] = d[rows]
-    return fd
-
-
 #: Near-zero holes (``_worst(near_zero_holes=True)``). A hole within a pascal
-#: of its zero flow pins the pressure steps of its nodes near the round-off
-#: floor (``fd_steps`` caps a column at 1 % of its smallest pressure gap, here
-#: the hole's own drive), and its own row curves on that scale. At #1178's
-#: reversed root p1 and p3 ingest 2.2e-5 and 8.8e-5 kg/s (s1 - c1 is 0.14 Pa):
+#: of its zero flow curves on that scale. At #1178's reversed root p1 and p3
+#: ingest 2.2e-5 and 8.8e-5 kg/s (s1 - c1 is 0.14 Pa): p3's s3.P entry reads
+#: 8.6e-2, 6.0e-4, 5.9e-6, 1.3e-7 central at 1, 0.1, 0.01, 0.001 Pa (h^2 down
+#: to round-off), and p1's row reads 2.3e-7 at the helper's chosen steps:
+#: such a row is held to NEAR_ZERO_HOLE_TOL.
 #:
-#: * p3's s3.P entry reads 8.6e-2, 6.0e-4, 5.9e-6, 1.3e-7 central at 1, 0.1,
-#:   0.01, 0.001 Pa (h^2 down to round-off) and 3.3e-7 Richardson at the
-#:   default 0.01 Pa: such a row is held to NEAR_ZERO_HOLE_TOL;
-#: * a column pinned to the round-off floor (1e-8 |P|, 1e-3 Pa here) by a
-#:   nearby level reads round-off that depends on the platform's libm: p2's
-#:   (2.3e-4 kg/s, a 9.6 Pa drive) c2.P column, stepped 1e-3 Pa, reads 7.9e-8
-#:   Richardson on macOS, 2.8e-7 on Linux arm64 (GCC 15) and 5.96e-7 on CI's
-#:   ubuntu-26.04 x86_64, while its central error falls as h^2 (1.4e-3,
-#:   1.4e-5, 1.1e-7 at 1, 0.1, 0.01 Pa, both platforms) to that floor. s0x's
-#:   s1.P column reads 1.7e-7 at 1e-3 Pa and 3.6e-8 at 0.01 Pa. Every row is
-#:   therefore also differenced with each pressure step lifted to at least
-#:   LIFT times the floor (other columns, and steps already above it, keep
-#:   theirs), and keeps the smaller error: p2 reads 6.0e-8 (macOS) and 2.1e-8
-#:   (Linux arm64) lifted. Multiplying EVERY pressure step instead put s2.P
-#:   at 0.95 Pa, on p2's curvature (2.2e-5).
+#: The old helper capped a pressure step at 1 % of its column's smallest gap,
+#: which pinned c2.P at the round-off floor (1e-8 |P|, 1e-3 Pa) by a nearby
+#: level; p2's (2.3e-4 kg/s, a 9.6 Pa drive) c2.P entry then read round-off
+#: that depends on the platform's libm: 7.9e-8 on macOS, 2.8e-7 on Linux
+#: arm64 (GCC 15) and 5.96e-7 on CI's ubuntu-26.04 x86_64, while its central
+#: error falls as h^2 (1.4e-3, 1.4e-5, 1.1e-7 at 1, 0.1, 0.01 Pa). This
+#: module then also differenced every row with each pressure step lifted to
+#: 10x the floor and kept the smaller error (#1187). The helper's ladder
+#: chooses c2.P's step per row itself (_fd_jacobian docstring): 0.05 Pa,
+#: where the entry reads 6.7e-10 on macOS and on Linux arm64 (GCC 15) at one
+#: x, the macOS root. The worst row other than the near-zero holes reads
+#: 1.5e-8 on both; with the old rule at that x it read 2.5e-7 (macOS) and
+#: 7.4e-7 (Linux), 6.7e-8 and 7.8e-8 lifted.
 #:
-#: A wrong analytic entry misses at both steps.
+#: A wrong analytic entry misses at every step
+#: (``test_a_wrong_partial_fails_the_check``).
 NEAR_ZERO_HOLE_TOL = 1e-6
 NEAR_ZERO_HOLE_FLOW = 1e-4  # [kg/s]
-LIFT = 10.0
 
 
 def _worst(s: NetworkSolver, x: np.ndarray, near_zero_holes: bool = False) -> tuple[float, str]:
-    """The worst row's scaled error, and its row. ``near_zero_holes``: the
-    smaller of the default and the LIFTed pressure steps' errors, and a hole row
-    with |m| < NEAR_ZERO_HOLE_FLOW held to NEAR_ZERO_HOLE_TOL; the error is
-    then in units of TOL (error * TOL / its bound)."""
+    """The worst row's scaled error, and its row and step. ``near_zero_holes``:
+    a hole row with |m| < NEAR_ZERO_HOLE_FLOW is held to NEAR_ZERO_HOLE_TOL;
+    the error is then in units of TOL (error * TOL / its bound)."""
     _residuals(s, x)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         J = s._residuals_and_jacobian(x)[1].toarray()
-    e = scaled_error(J, _fd(s, x, J), x)
+    fd = fd_jacobian(s, x)
+    e = scaled_error(J, fd, x)
+    kinds = s._row_kinds(x)
     if near_zero_holes:
-        e = np.minimum(e, scaled_error(J, _fd(s, x, J, lift=LIFT), x))
-        for i, (owner, _) in enumerate(s._row_kinds(x)):
+        for i, (owner, _) in enumerate(kinds):
             eid = owner.rsplit("'", 2)[1] if "'" in owner else None
             el = s.network.elements.get(eid) if eid else None
             if isinstance(el, ImpingementPlateElement):
@@ -370,7 +316,9 @@ def _worst(s: NetworkSolver, x: np.ndarray, near_zero_holes: bool = False) -> tu
                 if abs(m) < NEAR_ZERO_HOLE_FLOW:
                     e[i] *= TOL / NEAR_ZERO_HOLE_TOL
     i = int(np.argmax(e))
-    return float(e[i]), str(s._row_kinds(x)[i][0])
+    cols = np.maximum(np.abs(x), 1e-12)
+    j = int(np.argmax(np.abs((J[i] - fd[i]) * cols)))
+    return float(e[i]), f"{kinds[i][0]} at {fd.why(i, j)}"
 
 
 @pytest.mark.parametrize("regime", ["compressible", "incompressible"])
@@ -433,3 +381,36 @@ def test_every_row_meets_fd_at_the_solved_root_and_off_it(supply: str) -> None:
         # forward one passes the plain check.
         e, row = _worst(s, x, near_zero_holes=supply == "reversed")
         assert e <= TOL, f"{supply} {tag}: {row} scaled {e:.2e}"
+
+
+#: Wrong partials the check must catch (falsification), by element type:
+#: (row's element, column, factor on that entry; 0 drops it). s2x's s3.P is
+#: #1157's floor-adjacent entry, p2's c2.P #1187's platform-sensitive one.
+WRONG_PARTIALS = [
+    ("s2x", "s3.P", 1.01),
+    ("p2", "c2.P", 1.01),
+    ("x3", "c4.P", 0.0),
+]
+
+
+def test_a_wrong_partial_fails_the_check() -> None:
+    """At the reversed point, each wrong entry reads above TOL on its own row,
+    and the right Jacobian passes: the helper's per-row steps do not hide an
+    error. One FD serves every injection (it reads F only)."""
+    s = _fresh("reversed", "compressible")
+    x = _fixed_x(s, "reversed")
+    _residuals(s, x)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        J = s._residuals_and_jacobian(x)[1].toarray()
+    fd = fd_jacobian(s, x)
+    assert float(np.max(scaled_error(J, fd, x))) <= TOL
+    owners = [owner for owner, _ in s._row_kinds(x)]
+    for eid, col, factor in WRONG_PARTIALS:
+        i = next(k for k, o in enumerate(owners) if o.endswith(f"'{eid}'"))
+        j = s.unknown_names.index(col)
+        assert J[i, j] != 0.0, (eid, col)
+        wrong = J.copy()
+        wrong[i, j] *= factor
+        e = scaled_error(wrong, fd, x)
+        assert e[i] > 100.0 * TOL, f"{eid} {col} x{factor}: {e[i]:.2e} at {fd.why(i, j)}"

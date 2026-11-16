@@ -29,6 +29,7 @@ import math
 import warnings
 
 import numpy as np
+import pytest
 from _fd_jacobian import fd_jacobian, scaled_error
 
 import combaero as cb
@@ -47,6 +48,10 @@ from combaero.network import (
     WallLayer,
 )
 from combaero.network.solver import _KERNEL_WARM_STARTS
+
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
 
 Y_AIR = cb.mole_to_mass(cb.species.dry_air())
 SHAPED = {"hole_type": "shaped", "lateral_pitch": 6e-3, "area_ratio": 3.5, "breakout_width": 3e-3}

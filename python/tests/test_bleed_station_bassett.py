@@ -186,10 +186,10 @@ def test_the_compressible_station_jacobian_matches_finite_differences() -> None:
     assert r["__success__"], r.get("__message__")
     x = np.array(r["__x_solution__"], dtype=float)
     J = s._residuals_and_jacobian(x)[1].toarray()
-    # Flows step 1e-5, pressures 1e-7: the Fanno iteration is warm-started,
-    # so a residual repeats only to ~1e-12.
-    rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
-    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
+    # The helper's default steps: it clears the Fanno warm starts before each
+    # evaluation (this test stepped flows 1e-5 and pressures 1e-7 by hand for
+    # the warm-started iteration's ~1e-12 repeat).
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
     assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-5
@@ -260,7 +260,7 @@ def test_the_reversed_exit_inflow_jacobian_matches_finite_differences() -> None:
     x = np.array(r["__x_solution__"], dtype=float)
     assert x[s.unknown_names.index("s.m_dot")] < 0.0
     J = s._residuals_and_jacobian(x)[1].toarray()
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
     assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-6

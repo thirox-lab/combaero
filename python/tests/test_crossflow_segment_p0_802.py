@@ -215,10 +215,10 @@ def test_low_mach_limit_is_the_incompressible_balance() -> None:
 def _row_jac_err(s: NetworkSolver, x: np.ndarray, rows: list[int]) -> float:
     """RESIDUAL-ROW-SCALING: compare J_ij |x_j| on the given rows."""
     _, J = s._residuals_and_jacobian(x)
-    # A 1e-6 flow step: the reservoir entry row is curved enough in its own
-    # flow that 1e-5 leaves a 1e-5 truncation error (it falls as the step).
-    rel = np.array([1e-6 if n.endswith("m_dot") else 1e-7 for n in s.unknown_names])
-    fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
+    # The default 1e-6 flow step: the reservoir entry row is curved enough in
+    # its own flow that 1e-5 leaves a 1e-5 truncation error (it falls as the
+    # step).
+    fd = fd_jacobian(s, x)
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     Js, fds = (J.toarray() * cols)[rows], (fd * cols)[rows]
     scale = np.maximum(np.max(np.abs(fds), axis=1, keepdims=True), 1e-300)

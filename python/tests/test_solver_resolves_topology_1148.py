@@ -49,6 +49,10 @@ from combaero.network import (
     PressureBoundary,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 
 def _burning(regime: str, rev: bool = False, dp: float = 4000.0) -> FlowNetwork:
     """A burning combustor (air orifice + fixed CH4) as the segment's
@@ -194,7 +198,7 @@ def _segment_row_fd_error(build, x: np.ndarray) -> float:
     s = NetworkSolver(build())
     s._build_x0()
     J = s._residuals_and_jacobian(x)[1]
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     rows = [i for i, (label, _k) in enumerate(s._row_kinds(x)) if label.endswith("'s1x'")]
     return float(scaled_error(J, fd, x)[rows[0]])
 

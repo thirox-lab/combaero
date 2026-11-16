@@ -36,6 +36,10 @@ from combaero.network import (
     WallLayer,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 X_AIR = cb.species.dry_air()
 Y_AIR = cb.mole_to_mass(X_AIR)
 S, W = 2.0e-3, 0.25  # slot height and span [m]

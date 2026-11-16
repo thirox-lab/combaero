@@ -31,6 +31,10 @@ from combaero.network import (
 )
 from combaero.network.effusion_liner import LinerFilm
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y_AIR = cb.mole_to_mass(cb.species.dry_air())
 
 LINER = {
@@ -119,15 +123,16 @@ def _solve(g: FlowNetwork) -> tuple[NetworkSolver, dict]:
     return s, r
 
 
-def _jac_err(s: NetworkSolver, x: np.ndarray) -> float:
+def _jac_err(s: NetworkSolver, x: np.ndarray, fd: np.ndarray | None = None) -> float:
     """RESIDUAL-ROW-SCALING: compare J_ij |x_j|, relative to each row's largest,
     over the rows outside the liner. The film's terms land there (the wall's
     heat reaches the ducts' downstream nodes); the liner's own rows carry its
     McGreehan-Schotsch and station chain, checked in test_effusion_liner.py
-    to that file's own tolerance."""
+    to that file's own tolerance. ``fd``: the FD at x, reused where only the
+    analytic Jacobian changes."""
     _, J = s._residuals_and_jacobian(x)
     J = J.toarray()
-    fd = fd_jacobian(s, x)
+    fd = fd_jacobian(s, x) if fd is None else fd
     cols = np.maximum(np.abs(x), 1e-12)[None, :]
     a, b = J * cols, fd * cols
     scale = np.maximum(np.abs(b).max(axis=1, keepdims=True), 1e-300)
@@ -200,7 +205,8 @@ def test_the_jacobian_reaches_every_panels_flow_and_supply_temperature() -> None
     s, r = _solve(g)
     assert r["w.film_gas_undiluted"] == 1.0
     x = np.array(r["__x_solution__"])
-    assert _jac_err(s, x) < 1e-5
+    fd = fd_jacobian(s, x)
+    assert _jac_err(s, x, fd) < 1e-5
     assert _jac_err(s, x * (1.0 + 0.03 * np.sin(np.arange(len(x)) + 1.0))) < 1e-5
 
     full = s._relay_film
@@ -221,7 +227,7 @@ def test_the_jacobian_reaches_every_panels_flow_and_supply_temperature() -> None
 
     for attr in ("dT_aw_dfilm_mdot", "dT_aw_dT_coolant", "dT_aw_dT_inf"):
         s._relay_film = without(attr)
-        assert _jac_err(s, x) > 1e-5, attr
+        assert _jac_err(s, x, fd) > 1e-5, attr
     s._relay_film = full
 
 

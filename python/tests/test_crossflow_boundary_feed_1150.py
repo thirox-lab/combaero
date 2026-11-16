@@ -45,6 +45,10 @@ from combaero.network import (
     PressureBoundary,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y = list(cb.mole_to_mass(cb.species.dry_air()))
 A = 2.0e-4
 D = math.sqrt(4.0 * A / math.pi)
@@ -330,7 +334,7 @@ def test_jacobian(layout: str, reversed_: bool, regime: str, point: str) -> None
     f._build_x0()
     J = f._residuals_and_jacobian(x)[1]
     J = J.toarray() if hasattr(J, "toarray") else np.asarray(J, dtype=float)
-    err = float(np.max(scaled_error(J, fd_jacobian(f, x, floor=1e-10), x)))
+    err = float(np.max(scaled_error(J, fd_jacobian(f, x), x)))
     assert err < 1e-7, err
 
 

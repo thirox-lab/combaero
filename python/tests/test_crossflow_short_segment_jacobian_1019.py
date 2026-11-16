@@ -161,20 +161,18 @@ def test_station_rows_match_finite_differences_over_segment_length(length: float
     entry. Before the fix: 1.4e-2 at 1 um (s0's row in s0.m_dot and
     lat_o.m_dot, J 1.727 / -0.600 against FD 1.617 / -0.511).
 
-    The oracle is Richardson-extrapolated central differences, relative step
-    1e-7 and 2e-7: s1's drive sits inside the 1 Pa floor, whose cubic has
-    curvature on the Pa scale, so a plain 1e-6 step (0.5 Pa of b.P) reads
-    0.7% truncation error there, falling as the step squared, and a step
-    small enough to drop it (1e-8) sits on the residual's rounding noise
-    (~1.5e-6)."""
+    s1's drive sits inside the 1 Pa floor, whose cubic has curvature on the
+    Pa scale: a plain 1e-6 step (0.5 Pa of b.P) reads 0.7% truncation error
+    there, falling as the step squared, and a step small enough to drop it
+    (1e-8) sits on the residual's rounding noise (~1.5e-6). The helper's
+    per-row step ladder finds the window between (``_fd_jacobian``); this
+    test extrapolated twice by hand before (rel 1e-7 and 2e-7)."""
     s = NetworkSolver(_station_net(length))
     s.network.resolve_all_topology()
     s._build_x0()
     x = np.array([ISSUE_X[n] for n in s.unknown_names], dtype=float)
     J = s._residuals_and_jacobian(x)[1].toarray()
-    d1 = fd_jacobian(s, x, rel=1e-7, floor=0.0)
-    d2 = fd_jacobian(s, x, rel=2e-7, floor=0.0)
-    fd = (4.0 * d1 - d2) / 3.0
+    fd = np.asarray(fd_jacobian(s, x))
     cols = np.abs(x)[None, :]
     scale = np.maximum(np.max(np.abs(fd * cols), axis=1, keepdims=True), 1e-300)
     assert float(np.max(np.abs((J - fd) * cols) / scale)) < 1e-6

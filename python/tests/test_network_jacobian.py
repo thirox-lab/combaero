@@ -17,7 +17,7 @@ def _assert_jacobian_matches_fd(solver: NetworkSolver, max_rel_tol: float) -> No
     _, jac_analytical = solver._residuals_and_jacobian(x0)
     jac_analytical = jac_analytical.toarray()
 
-    jac_numerical = fd_jacobian(solver, x0, rel=1e-7, floor=1e-10)
+    jac_numerical = fd_jacobian(solver, x0)
 
     diff = np.abs(jac_analytical - jac_numerical)
     mask = np.abs(jac_numerical) > 1e-5

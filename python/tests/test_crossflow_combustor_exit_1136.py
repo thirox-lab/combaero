@@ -41,6 +41,10 @@ from combaero.network import (
     WallNode,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y = list(cb.mole_to_mass(cb.species.dry_air()))
 A_DUCT = 2.0e-4
 BLEED = cb.STATION_KAPPA_BLEED_BASSETT
@@ -196,7 +200,7 @@ def _fresh_jacobian_error(g: FlowNetwork, x: np.ndarray) -> float:
     s = NetworkSolver(g)
     s._build_x0()
     J = s._residuals_and_jacobian(x)[1]
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     return float(np.max(scaled_error(J, fd, x)))
 
 

@@ -43,6 +43,10 @@ from combaero.network import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "stress"))
 from networks import FAMILIES  # noqa: E402
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y_AIR = list(cb.mole_to_mass(cb.species.dry_air()))
 X_AIR = list(cb.species.dry_air())
 

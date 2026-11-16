@@ -39,7 +39,7 @@ def _max_rel_jacobian_error(net: FlowNetwork) -> float:
     # the FD drifts from J as the step shrinks (4.7e-6 at 1e-5, 2.9e-4 at 1e-7
     # locally, 1.1e-3 on Linux, 1e-2 at 1e-8). At 1e-6 the clean case measures
     # 6e-5 and a 0.5% error in its smallest entry still reads 5e-3 (#612).
-    fd = fd_jacobian(s, x, floor=1e-10)
+    fd = fd_jacobian(s, x)
     mask = np.abs(fd) > 1e-6
     return float((np.abs(jac.toarray() - fd)[mask] / np.abs(fd[mask])).max())
 
