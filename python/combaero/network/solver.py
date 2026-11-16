@@ -4003,37 +4003,6 @@ class NetworkSolver:
                         up,
                     )
 
-            # Store wall coupling debug info on the node
-            if wall_contributions:
-                dTt_mix_dQ = mix_res.dTt_mix_dQ if mix_res else 0.0
-                node._wall_couplings = []
-                for (
-                    wall,
-                    Q_inject,
-                    wall_result,
-                    ea_id,
-                    eb_id,
-                    is_side_a,
-                    ch_a,
-                    ch_b,
-                    _caps,
-                ) in wall_contributions:
-                    # dQ_inject/dQ_wall = -1 if is_side_a, +1 otherwise
-                    dT_dQ_signed = -dTt_mix_dQ if is_side_a else dTt_mix_dQ
-                    node._wall_couplings.append(
-                        {
-                            "wall": wall,
-                            "wall_result": wall_result,
-                            "Q_inject": Q_inject,
-                            "is_side_a": is_side_a,
-                            "elem_a_id": ea_id,
-                            "elem_b_id": eb_id,
-                            "dTt_mix_dQ": dT_dQ_signed,
-                            "ch_result_a": ch_a,
-                            "ch_result_b": ch_b,
-                        }
-                    )
-
             if not with_relay:
                 continue
 

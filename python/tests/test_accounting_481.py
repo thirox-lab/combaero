@@ -182,8 +182,10 @@ def test_a_combustor_fraction_loss_closes_the_ledger() -> None:
     assert r["__success__"], r.get("__message__")
     assert abs(r["__ledger__"]["energy_closure_rel"]) < 1e-12
     comb = net.nodes[nid]
-    X_b = cb.mass_to_mole(list(comb._last_mix_res.Y_mix))
-    T_out = float(comb._last_mix_res.Tt_mix)
+    # The combustor's solved state is its mixer output (Tt_mix, Y_mix).
+    n_sp = len(Y_AIR)
+    X_b = cb.mass_to_mole([r[f"{nid}.Y[{i}]"] for i in range(n_sp)])
+    T_out = float(r[f"{nid}.Tt"])
     m = float(comb._total_m_dot)
     # h_out - h_ref = (1 + f)(h_ad - h_ref): the heat is f m (h_ad - h_ref)
     expected = -0.05 * m * _sensible(T_out, X_b) / 0.95
