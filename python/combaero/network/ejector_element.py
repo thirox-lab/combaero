@@ -570,8 +570,8 @@ class EjectorElement(MultiPortChamberBase):
             p_g = float(pb.Pt)
         elif isinstance(pb, MassFlowBoundary):
             # The given flow, never a fuel controller's last iterate (#1163):
-            # a seed not written at a fresh start (it is write-once) would be
-            # written from that iterate by a later resolve.
+            # the seeds are re-derived on every resolve_topology, which every
+            # start runs, so reading m_dot re-seeded them from that iterate.
             unit = choked_mass_flow(1.0, t_g, self.throat_area, gamma, r_gas, eta=ETA_P)
             if unit > 0.0:
                 p_g = pb._given_m_dot() / unit

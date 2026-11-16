@@ -4645,10 +4645,15 @@ class FuelBoundary(MassFlowBoundary):
         self._frozen_ln_m: float | None = None
 
     def _given_m_dot(self) -> float:
-        """``m_dot_guess``, 0 without one: what a fresh one holds. ``m_dot``
-        itself holds the solver's current iterate of the unknown, whatever
-        was evaluated last; a start estimate that read it depended on the
-        evaluation history (#1163)."""
+        """The held flow while the solver's fuel-fixed stage holds it;
+        otherwise ``m_dot_guess``, 0 without one: what a fresh one holds.
+        ``m_dot`` itself holds the solver's current iterate of the unknown,
+        whatever was evaluated last; a start estimate that read it depended
+        on the evaluation history (#1163). The held flow is the stage's own
+        fresh start, so the stage's start seeds the flows downstream of the
+        combustor with the fuel it holds, not with none."""
+        if self._frozen_ln_m is not None:
+            return math.exp(self._frozen_ln_m)
         return 0.0 if self.m_dot_guess is None else float(self.m_dot_guess)
 
     @property
