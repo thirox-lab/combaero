@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
@@ -903,6 +904,130 @@ constexpr double kRayleighZetaStepFrac = 0.02;
 // exit at most 1e-5 Pa. G there is within 3e-7 of Gc either way.
 constexpr double kRayleighZetaFloor = 1e-10;
 constexpr int kRayleighStepCuts = 8;
+// A cooled duct's excess can fall through zero and rise again inside one
+// ln-2 bracket of the cold scan (#1167; see rayleigh_raw_flow). Its slope at
+// a bracket end is a backward difference over this step in log G (0.1% of
+// the flux: far above the march's rounding, small against a bracket); a
+// minimum is searched to kRayleighDipTol (plus 1.5e-8 relative) in its
+// coordinate. The last bracket, which ends at the march's sonic flux, is
+// sampled at fluxes 4^-j of that end below it, j = First..Last (6% down to
+// 2e-10 of the flux).
+constexpr double kRayleighSlopeStep = 1e-3;
+constexpr double kRayleighDipTol = 1e-10;
+constexpr int kRayleighEndGridFirst = 2;
+constexpr int kRayleighEndGridLast = 16;
+// A cooled duct's warm bracket widens (by 8x, from 1e-3) only while it spans
+// less than this fraction of the guess: so at most to 6.4%.
+constexpr double kRayleighWarmTurnSpan = 0.05;
+// The Hermite test's derivative quadratic is treated as linear when its t^2
+// coefficient is below this fraction of the others (rounding, not a turn).
+constexpr double kRayleighHermiteDegenerate = 1e-14;
+// The minimiser starts at the cubic's minimum, kept this fraction of the
+// window away from its ends.
+constexpr double kRayleighDipStartMargin = 0.05;
+// The minimiser stops, reporting no dip, once a parabola through its last
+// three points has its vertex above this fraction of the drive: the excess
+// then has a clearly positive minimum there (a choked cooled duct's
+// minimum, which it otherwise resolved fully on every call).
+constexpr double kRayleighDipStopFrac = 0.05;
+// Iteration cap of the minimiser (it converges in ~20-40).
+constexpr int kRayleighDipMaxIter = 200;
+
+// Brent's minimiser (golden section with parabolic steps) of fn on (a, b)
+// from x0 inside it, stopped as soon as fn reads <= 0: returns that point,
+// or NaN if the minimum it converges to (to abs_tol + 1.5e-8 |x|) stays
+// positive, or once an accepted parabolic step's vertex value exceeds
+// stop_above.
+template <typename Fn>
+double brent_min_to_zero(const Fn& fn, double a, double b, double x0, double abs_tol,
+                         double stop_above) {
+  constexpr double kCGold = 0.3819660112501051;  // (3 - sqrt(5)) / 2
+  constexpr double kSqrtEps = 1.5e-8;
+  double x = (x0 > a && x0 < b) ? x0 : a + kCGold * (b - a);
+  double fx = fn(x);
+  if (fx <= 0.0) {
+    return x;
+  }
+  double w = x, v = x, fw = fx, fv = fx;
+  double d = 0.0, e = 0.0;
+  for (int it = 0; it < kRayleighDipMaxIter; ++it) {
+    const double xm = 0.5 * (a + b);
+    const double tol1 = abs_tol + kSqrtEps * std::abs(x);
+    const double tol2 = 2.0 * tol1;
+    if (std::abs(x - xm) <= tol2 - 0.5 * (b - a)) {
+      break;
+    }
+    bool golden = true;
+    if (std::abs(e) > tol1) {
+      const double r = (x - w) * (fx - fv);
+      double q = (x - v) * (fx - fw);
+      double p = (x - v) * q - (x - w) * r;
+      q = 2.0 * (q - r);
+      if (q > 0.0) {
+        p = -p;
+      } else {
+        q = -q;
+      }
+      const double e_prev = e;
+      e = d;
+      if (std::abs(p) < std::abs(0.5 * q * e_prev) && p > q * (a - x) && p < q * (b - x)) {
+        d = p / q;
+        const double u = x + d;
+        // The parabola's value at its vertex u (Newton form through w, x,
+        // v): clearly positive, no dip is near.
+        if (x != w && x != v && w != v) {
+          const double s_xw = (fx - fw) / (x - w);
+          const double c2 = (s_xw - (fw - fv) / (w - v)) / (x - v);
+          if (c2 > 0.0 && fw + s_xw * (u - w) + c2 * (u - w) * (u - x) > stop_above) {
+            return std::nan("");
+          }
+        }
+        if (u - a < tol2 || b - u < tol2) {
+          d = (xm >= x) ? tol1 : -tol1;
+        }
+        golden = false;
+      }
+    }
+    if (golden) {
+      e = (x >= xm) ? a - x : b - x;
+      d = kCGold * e;
+    }
+    const double u = (std::abs(d) >= tol1) ? x + d : x + ((d >= 0.0) ? tol1 : -tol1);
+    const double fu = fn(u);
+    if (fu <= 0.0) {
+      return u;
+    }
+    if (fu <= fx) {
+      if (u >= x) {
+        a = x;
+      } else {
+        b = x;
+      }
+      v = w;
+      fv = fw;
+      w = x;
+      fw = fx;
+      x = u;
+      fx = fu;
+    } else {
+      if (u < x) {
+        a = u;
+      } else {
+        b = u;
+      }
+      if (fu <= fw || w == x) {
+        v = w;
+        fv = fw;
+        w = u;
+        fw = fu;
+      } else if (fu <= fv || v == x || v == w) {
+        v = u;
+        fv = fu;
+      }
+    }
+  }
+  return std::nan("");
+}
 
 struct RayleighDuct {
   double G, Tt0, Tt_exit, L, D, rough, fmult;
@@ -1192,13 +1317,18 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   double G = 0.0;
   bool done = false;
   // A warm start: a tight bracket around the previous flux, widened. A
-  // Newton iterate's flux is usually within 0.1% of the last one.
+  // Newton iterate's flux is usually within 0.1% of the last one. On a
+  // cooled duct, whose excess can turn, the bracket stops widening at 6.4% of
+  // the guess (kRayleighWarmTurnSpan): a wider one could hold a fall, a rise
+  // and a later fall, and Brent could take the later one (#1167); the cold
+  // scan, which looks for the first, decides those.
   if (pb.G_guess > 0.0 && pb.G_guess < G_max && pb.P > 0.0) {
+    const double w_max = (pb.Tt_exit < pb.Tt0) ? kRayleighWarmTurnSpan : 1.0;
     double w = 1e-3;
     double lo = std::log(pb.G_guess * (1.0 - w));
     double hi = std::log(std::min(G_max * (1.0 - 1e-12), pb.G_guess * (1.0 + w)));
     double f_lo = F(lo), f_hi = F(hi);
-    while ((f_lo <= 0.0 || f_hi > 0.0) && w < 1.0) {
+    while ((f_lo <= 0.0 || f_hi > 0.0) && w < w_max) {
       w *= 8.0;
       if (f_lo <= 0.0) {
         hi = lo;
@@ -1236,10 +1366,22 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // segment), so it rises again toward the choke. Taking the choke whenever
     // the excess was still positive there, or the root nearest the choke,
     // jumped that duct to its sonic flux at a few Pa of drive. Only with no
-    // fall below the choke does the duct choke. The scan tests bracket ENDS
-    // only: a fall and rise of the excess inside one ln-2 bracket (a cooled
-    // duct whose needed drive peaks and turns back) is not seen, and such a
-    // duct reads choked here while a warm start finds its first crossing.
+    // fall below the choke does the duct choke.
+    // A fall and rise of the excess inside one ln-2 bracket (a cooled duct
+    // whose needed drive peaks and turns back) leaves both of its ends
+    // positive: testing the ends alone read such a duct choked while a warm
+    // start found its first crossing (#1167). Only cooling can turn the
+    // excess back up (a Rayleigh gain), so on a cooled duct a bracket with
+    // both ends positive is also searched: an interior one where the cubic
+    // Hermite interpolant of its ends' values and slopes (kRayleighSlopeStep)
+    // has an interior minimum, the last one (ending at the march's sonic
+    // flux) at fluxes 4^-j of that end below it. Brent's minimiser looks for
+    // a point at or below zero near each minimum, and the first fall is then
+    // bracketed below that point. Heated and adiabatic ducts, and a cooled
+    // bracket with no minimum, scan exactly as before. Not seen: two turns
+    // of the excess between bracket ends whose values and slopes show none,
+    // and a bracket whose ends straddle zero, which is taken as it is: if it
+    // holds a fall, a rise and a later fall, Brent may return the later one.
     const double top = std::log(Gc) - 1e-12;
     double lo = top - 7.0;
     double f_lo = F(lo);
@@ -1262,23 +1404,147 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // below the choke.
     bool found = false;
     bool past_subsonic = false;
+    // The fold search of a cooled duct (#1167). Slopes are dF/dlog G.
+    const bool may_turn = pb.Tt_exit < pb.Tt0;
+    auto slope = [&](double x, double fx) {
+      return (fx - F(x - kRayleighSlopeStep)) / kRayleighSlopeStep;
+    };
+    // A point at or below zero, by minimising F over [a, b] of log G from
+    // x0 inside it, or NaN: the first fall then lies between a and it.
+    const double dip_stop = kRayleighDipStopFrac * (pb.Pt0 - pb.P);
+    auto dip_in = [&](double a, double b, double x0) {
+      return brent_min_to_zero(F, a, b, x0, kRayleighDipTol, dip_stop);
+    };
+    double s_lo = std::nan("");  // slope at lo, NaN not yet read
+    double x_prev = std::nan(""), f_prev = 0.0;  // the scan point before lo
     double hi = lo, f_hi = f_lo;
     while (hi < top) {
+      x_prev = (hi > lo) ? lo : std::nan("");
+      f_prev = f_lo;
       lo = hi;
       f_lo = f_hi;
       hi = std::min(top, lo + std::log(2.0));
-      if (!(march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor)) {
+      const bool cut = !(march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor);
+      if (cut) {
         hi = subsonic_end(lo, hi);
-        f_hi = F(hi);
-        found = f_lo > 0.0 && f_hi <= 0.0;
-        past_subsonic = f_hi > 0.0;
-        break;
       }
       f_hi = F(hi);
       if (f_lo > 0.0 && f_hi <= 0.0) {
         found = true;
         break;
       }
+      if (!(may_turn && f_lo > 0.0 && f_hi > 0.0)) {
+        s_lo = std::nan("");
+        if (cut) {
+          past_subsonic = f_hi > 0.0;
+          break;
+        }
+        continue;
+      }
+      if (cut) {
+        // The last bracket ends at the march's sonic flux, where the excess
+        // varies on the scale of the distance to it, not of log G: a fold
+        // there sits 1e-4 to 1e-2 of the flux below the end (the issue's
+        // ducts). Sample at fluxes 4^-j of the end below it, in order, and
+        // search each sampled minimum in u = log(G_end - G).
+        const double G_end = std::exp(hi);
+        auto x_of_u = [&](double u) { return std::log(G_end - std::exp(u)); };
+        auto Fu = [&](double u) { return F(x_of_u(u)); };
+        double xa = x_prev, fa = f_prev;  // two points back
+        double xb = lo, fb = f_lo;        // one point back
+        bool have_a = std::isfinite(xa) && fa > 0.0;
+        for (int j = kRayleighEndGridFirst; j <= kRayleighEndGridLast + 1 && !found; ++j) {
+          const double xc =
+              (j > kRayleighEndGridLast) ? hi : hi + std::log1p(-std::pow(4.0, -j));
+          if (!(xc > xb)) {
+            continue;
+          }
+          const double fc = (j > kRayleighEndGridLast) ? f_hi : F(xc);
+          if (fc <= 0.0) {
+            lo = xb;
+            f_lo = fb;
+            hi = xc;
+            f_hi = fc;
+            found = true;
+            break;
+          }
+          if (have_a && fb < fa && fb <= fc) {
+            // At the end itself (xc = hi) u is -inf: bound the window at the
+            // next grid distance, 4^-(Last+1) of the end, instead.
+            const double ua = std::log(G_end - std::exp(xa));
+            const double uc = (j > kRayleighEndGridLast)
+                                  ? std::log(G_end) - (kRayleighEndGridLast + 1) * std::log(4.0)
+                                  : std::log(G_end - std::exp(xc));
+            const double ub = std::log(G_end - std::exp(xb));
+            const double u = brent_min_to_zero(Fu, uc, ua, ub, kRayleighDipTol, dip_stop);
+            if (std::isfinite(u)) {
+              lo = xa;
+              f_lo = fa;
+              hi = x_of_u(u);
+              f_hi = F(hi);
+              found = true;
+              break;
+            }
+          }
+          xa = xb;
+          fa = fb;
+          xb = xc;
+          fb = fc;
+          have_a = true;
+        }
+        if (!found) {
+          past_subsonic = true;
+        }
+        break;
+      }
+      // An interior bracket: the cubic Hermite interpolant of the ends'
+      // values and slopes. An interior minimum of it (one turn, or a fall,
+      // rise and fall) is searched, over [lo, the cubic's next maximum].
+      if (std::isnan(s_lo)) {
+        s_lo = slope(lo, f_lo);
+      }
+      const double s_hi = slope(hi, f_hi);
+      const double H = hi - lo;
+      const double qa = 6.0 * (f_lo - f_hi) + 3.0 * H * (s_lo + s_hi);
+      const double qb = -6.0 * (f_lo - f_hi) - 4.0 * H * s_lo - 2.0 * H * s_hi;
+      const double qc = H * s_lo;
+      double t_min = std::nan(""), t_max = 1.0;
+      if (std::abs(qa) > kRayleighHermiteDegenerate * (std::abs(qb) + std::abs(qc))) {
+        const double disc = qb * qb - 4.0 * qa * qc;
+        if (disc > 0.0) {
+          const double r = std::sqrt(disc);
+          const double t1 = (-qb - r) / (2.0 * qa), t2 = (-qb + r) / (2.0 * qa);
+          for (const double t : {t1, t2}) {
+            if (t > 0.0 && t < 1.0) {
+              if (2.0 * qa * t + qb > 0.0) {
+                t_min = t;
+              }
+            }
+          }
+          for (const double t : {t1, t2}) {
+            if (t > 0.0 && t < 1.0 && 2.0 * qa * t + qb < 0.0 && t > t_min) {
+              t_max = t;
+            }
+          }
+        }
+      } else if (qb > 0.0 && -qc / qb > 0.0 && -qc / qb < 1.0) {
+        t_min = -qc / qb;
+      }
+      if (std::isfinite(t_min)) {
+        const double b = lo + t_max * H;
+        const double x0 =
+            lo + std::clamp(t_min, kRayleighDipStartMargin * t_max,
+                            (1.0 - kRayleighDipStartMargin) * t_max) *
+                     H;
+        const double x = dip_in(lo, b, x0);
+        if (std::isfinite(x)) {
+          hi = x;
+          f_hi = F(x);
+          found = true;
+          break;
+        }
+      }
+      s_lo = s_hi;
     }
     if (found) {
       G = std::exp(brent(F, lo, hi, f_lo, f_hi, 1e-13));
