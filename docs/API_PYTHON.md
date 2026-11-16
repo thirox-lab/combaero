@@ -4236,6 +4236,16 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   segment at 81% of its true choked flow, not at 99.7% of the false one. The
   diagnostics `choked`, `M_in_duct` and `M_exit_duct` report this duct; they
   used to report every exit segment choked.
+- **`dP_momentum` is what the row applies (#1155).** The pressure-form row
+  (incompressible, or a ribbed / pin-fin surface) subtracts every momentum
+  term in full, and reports their sum: the station halves, the entry's
+  (1 + K) q, a reversed exit's reservoir head, the exit head into a chamber
+  and a taper's Bernoulli term. The compressible mass-flow row carries the
+  dynamic heads in its end closures, so it reports the station halves and
+  the entry loss K q alone. No `entry_K` and `entry_K = 0` report the same
+  in both, and the two regimes differ by the entry head q. Before, the
+  compressible report added the entry's full (1 + K) q, a head the row never
+  added: 1759 Pa for `entry_K = 0` against 4e-14 Pa with no `entry_K`.
 - **Bleed scored on Bassett's own measured K5** (Fig. 7c, 43 points): MAE
   0.039 in K overall, 0.021 at q >= 0.6 (the few-percent bleed of an effusion
   station). Bassett measured psi = 1-3; a station bleeding through holes far

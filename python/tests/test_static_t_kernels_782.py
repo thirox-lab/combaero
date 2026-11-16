@@ -101,7 +101,7 @@ def test_the_bleed_station_drops_use_the_static_density() -> None:
     s0 carries the entry acceleration (K_in = 0) and its half of b's station;
     s1 the other half. The station's static T is the one of its mean flow,
     the same for both halves. Fed Tt, both came out 5.5 % low."""
-    _, r = _bleed()
+    s, r = _bleed()
     A, kappa = 1e-3, cb.STATION_KAPPA_BLEED_BASSETT
     m_a, m_b = r["s0.m_dot"], r["s1.m_dot"]
     P, Tt = r["b.P"], r["b.Tt"]
@@ -112,8 +112,18 @@ def test_the_bleed_station_drops_use_the_static_density() -> None:
     assert m_a > 0.0 and m_b > 0.0
     half = (m_b * abs(m_b) - m_a * abs(m_a) + kappa * m_a * (m_a - m_b)) / (2.0 * rho * A * A)
     entry = m_a * m_a / (2.0 * rho * A * A)
+    x = np.array(r["__x_solution__"], dtype=float)
+    el = s.network.elements["s0"]
+    a = s._get_node_state(s.network.nodes[el.from_node], x)
+    b = s._get_node_state(s.network.nodes[el.to_node], x)
+    a.m_dot = b.m_dot = float(m_a)
+    terms = {t[5]: t[0].dP for t in el._momentum_terms(a, b, s._network_flows(el, x))}
+    assert terms["entry"] == pytest.approx(entry, rel=1e-9)
+    assert terms["to"] == pytest.approx(half, rel=1e-9)
+    # The report is what the compressible row applies (#1155): the half-drop
+    # in full, K/(1 + K) = 0 of the entry (its head is the outlet closure's).
     d = r["__element_diag__"]
-    assert d["s0"]["dP_momentum"] == pytest.approx(entry + half, rel=1e-9)
+    assert d["s0"]["dP_momentum"] == pytest.approx(half, rel=1e-9)
     assert d["s1"]["dP_momentum"] == pytest.approx(half, rel=1e-9)
 
 

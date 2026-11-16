@@ -13062,8 +13062,37 @@ class CrossflowSegmentElement(ChannelElement):
         channel's kernel reads."""
         return False
 
+    def _entry_share(self) -> float:
+        """The share of the entry term (``channel_entry_drop``, (1 + K) q)
+        the compressible duct ends add to the outlet Pt: K / (1 + K), the
+        loss K q. The dynamic head q is the outlet closure's own
+        (``_duct_ends``). 0 for no ``entry_K`` and for entry_K = 0, which
+        form no entry (#1188)."""
+        K = self.entry_K
+        return K / (1.0 + K) if K else 0.0
+
+    def _applied_momentum_drop(self, terms: list[tuple]) -> float:
+        """``dP_momentum``: the momentum terms the row applies, and only
+        those (#1155). The pressure-form row (incompressible, ribbed,
+        pin-fin) subtracts every term in full. The mass-flow row
+        (``residual_scale_kind`` "mdot") moves its end statics by the
+        station half-drops in full and adds only ``_entry_share`` of the
+        entry to the outlet Pt, its head being in the closure; reporting the
+        entry's full (1 + K) q there put 1759 Pa on an entry_K = 0 segment
+        whose row is the no-entry_K one, which reported 4e-14."""
+        if self.residual_scale_kind != "mdot":
+            return float(sum(t[0].dP for t in terms))
+        share = self._entry_share()
+        return float(
+            sum(
+                (share if t[5] == "entry" else 1.0) * t[0].dP
+                for t in terms
+                if t[5] != "entry" or share
+            )
+        )
+
     def _momentum_drop_value(self, state_in, state_out, flows) -> float:
-        return float(sum(t[0].dP for t in self._momentum_terms(state_in, state_out, flows)))
+        return self._applied_momentum_drop(self._momentum_terms(state_in, state_out, flows))
 
     def residuals(
         self,
@@ -13301,9 +13330,9 @@ class CrossflowSegmentElement(ChannelElement):
         # COO list, and the CSR conversion's unstable sort of duplicates then
         # summed the round-off-zero entries in another order: one ulp apart
         # on Linux aarch64 (#1188).
-        if "entry" in kinds and self.entry_K:
+        share = self._entry_share()
+        if "entry" in kinds and share:
             t = kinds["entry"]
-            share = self.entry_K / (1.0 + self.entry_K)
             Pt_out += share * t[0].dP
             for name, v in self._term_partials(t).items():
                 d_out[name] = d_out.get(name, 0.0) + share * v
@@ -13325,7 +13354,7 @@ class CrossflowSegmentElement(ChannelElement):
     ) -> dict[str, float | str]:
         out = super().diagnostics(state_in, state_out)
         terms = self._momentum_terms(state_in, state_out, flows)
-        out["dP_momentum"] = float(sum(t[0].dP for t in terms))
+        out["dP_momentum"] = self._applied_momentum_drop(terms)
         if self.regime == "compressible":
             # The duct the row solves, between its own end states (#802), not
             # ChannelElement's node-to-node one.
