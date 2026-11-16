@@ -10,7 +10,10 @@ Three things stopped it:
   blank instance copy builds, now refusing _r and dunder names.
 
 A copy must be the same model: it re-solves to the same root, and its F and
-J at the solution are bit-identical to the original's.
+J at the solution are bit-identical to the original's at matched evaluation
+history. An evaluation leaves the Fanno kernels' warm starts (_last_G,
+_last_M_exit) on the elements, so two back-to-back evaluations at one x can
+differ in the last bits; here both start from the solve's own warm starts.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import copy
 import math
 import pickle
+import random
 import struct
 import sys
 import warnings
@@ -145,7 +149,8 @@ def test_a_network_deep_copies_before_and_after_solve(case: str) -> None:
 
 @pytest.mark.parametrize("case", sorted(CASES))
 def test_a_copied_solved_network_is_the_same_model(case: str) -> None:
-    """Same F and J, bit for bit, at the solution; the same root re-solved."""
+    """Same F and J, bit for bit, at the solution (each the first evaluation
+    after the solve, so from the same warm starts); the same root re-solved."""
     net = CASES[case][0]()
     r = _solve(net)
     x = np.asarray(r["__x_solution__"], dtype=float)
@@ -300,7 +305,9 @@ def _same_numbers(a: Any, b: Any) -> bool:
 
 
 @pytest.mark.parametrize("name", sorted(PICKLED))
-def test_an_input_struct_round_trips_field_for_field(name: str) -> None:
+def test_a_copied_input_struct_gives_identical_results(name: str) -> None:
+    """A realistic instance (the shipped factory, or a working geometry):
+    the copy compares field for field and evaluates to the same bits."""
     build, evaluate = PICKLED[name]
     obj = build()
     assert type(obj).__name__ == name
@@ -311,20 +318,153 @@ def test_an_input_struct_round_trips_field_for_field(name: str) -> None:
         assert _same_numbers(evaluate(twin), evaluate(obj))
 
 
+# --- every field away from its default ------------------------------------------
+#
+# A factory leaves many fields at their T{} default (83 of 269 leaves in the
+# fixtures above), and a restore that skipped one of those would still
+# compare equal. Here every leaf, nested ones included, is first set to a
+# value its default does not have.
+
+
+def _default(name: str) -> Any:
+    """The T{} instance: every bound constructor default is the C++ one."""
+    cls = getattr(cb, name)
+    if name == "JetRowGeometry":  # no default constructor bound
+        return cls(0.0, 0.0, 0.0, 0.0, 0.0)
+    return cls()
+
+
+def _rw_fields(cls: type) -> list[str]:
+    out: list[str] = []
+    for klass in cls.__mro__:
+        for k, v in vars(klass).items():
+            if isinstance(v, property) and v.fset is not None and k not in out:
+                out.append(k)
+    return out
+
+
+def _is_struct(v: Any) -> bool:
+    return type(type(v)).__name__ == "pybind11_type" and not hasattr(type(v), "__members__")
+
+
+# Awkward floats a lossy copy would get wrong: NaN with a payload, -0.0,
+# inf, a subnormal.
+_ODD_FLOATS = (
+    struct.unpack("<d", struct.pack("<Q", 0x7FF8000000000123))[0],
+    -0.0,
+    math.inf,
+    5e-324,
+)
+
+
+def _different(v: Any, rng: random.Random) -> Any:
+    if isinstance(v, bool):
+        return not v
+    if hasattr(type(v), "__members__"):  # a pybind enum
+        others = [m for m in type(v).__members__.values() if m != v]
+        assert others, f"{type(v).__name__} has one member"
+        return rng.choice(others)
+    if isinstance(v, int):
+        return v + rng.randint(1, 99)
+    if isinstance(v, float):
+        while True:
+            w = rng.choice((*_ODD_FLOATS, rng.uniform(-1e3, 1e3)))
+            if struct.pack("<d", w) != struct.pack("<d", v):
+                return w
+    if isinstance(v, str):
+        return v + "x\u00e9" + str(rng.random())
+    raise AssertionError(f"unhandled field type {type(v).__name__}")
+
+
+def _perturb(obj: Any, rng: random.Random) -> Any:
+    """Set every read-write field, recursively, away from its value."""
+    for k in _rw_fields(type(obj)):
+        v = getattr(obj, k)
+        if _is_struct(v):
+            setattr(obj, k, _perturb(copy.deepcopy(v), rng))
+        else:
+            setattr(obj, k, _different(v, rng))
+    return obj
+
+
+def _leaves(obj: Any, pre: str = "") -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for k in _rw_fields(type(obj)):
+        v = getattr(obj, k)
+        if _is_struct(v):
+            out.update(_leaves(v, f"{pre}{k}."))
+        elif isinstance(v, float):
+            out[pre + k] = ("f", struct.pack("<d", v))
+        else:
+            out[pre + k] = (type(v).__name__, repr(v))
+    return out
+
+
+def _set_leaf(obj: Any, path: str, value: Any) -> None:
+    head, _, rest = path.partition(".")
+    if not rest:
+        setattr(obj, head, value)
+        return
+    inner = getattr(obj, head)
+    _set_leaf(inner, rest, value)
+    setattr(obj, head, inner)
+
+
+def _get_leaf(obj: Any, path: str) -> Any:
+    for part in path.split("."):
+        obj = getattr(obj, part)
+    return obj
+
+
+@pytest.mark.parametrize("seed", range(3))
 @pytest.mark.parametrize("name", sorted(PICKLED))
-def test_the_pickled_state_is_every_read_write_field(name: str) -> None:
-    """The state is taken from the class's read-write properties, so a field
-    bound later is carried too; derived read-only ones are left out."""
+def test_every_field_round_trips(name: str, seed: int) -> None:
+    """Every leaf away from its default, then pickle (protocols 2-5),
+    deepcopy and copy: every leaf comes back, bit for bit."""
+    rng = random.Random(f"{name}:{seed}")
+    obj = _perturb(_default(name), rng)
+    ref = _leaves(obj)
+    base = _leaves(_default(name))
+    assert ref.keys() == base.keys()
+    assert not [k for k in ref if ref[k] == base[k]], "a leaf is still at its default"
+    twins = [pickle.loads(pickle.dumps(obj, protocol=p)) for p in range(2, 6)]
+    twins += [copy.deepcopy(obj), copy.copy(obj)]
+    for twin in twins:
+        assert type(twin) is type(obj)
+        assert _leaves(twin) == ref
+
+
+@pytest.mark.parametrize("name", sorted(PICKLED))
+def test_a_restore_that_skips_any_one_field_is_caught(name: str) -> None:
+    """The comparison above sees every field: a copy with any single leaf
+    left at its default (a __setstate__ that skipped it) compares unequal."""
+    rng = random.Random(name)
+    obj = _perturb(_default(name), rng)
+    ref = _leaves(obj)
+    default = _default(name)
+    for path in ref:
+        lossy = copy.deepcopy(obj)
+        _set_leaf(lossy, path, _get_leaf(default, path))
+        assert _leaves(lossy) != ref, path
+
+
+@pytest.mark.parametrize("name", sorted(PICKLED))
+def test_a_state_of_the_wrong_size_is_refused(name: str) -> None:
+    """The pickle helper knows each struct's C++ member count (asserted at
+    compile time against the struct itself, not its bindings). A state with
+    a field missing, or one too many, raises instead of leaving a member at
+    its default."""
     obj = PICKLED[name][0]()
-    cls = type(obj)
-    rw = {
-        k
-        for klass in cls.__mro__
-        for k, v in vars(klass).items()
-        if isinstance(v, property) and v.fset is not None
-    }
-    assert set(obj.__getstate__()) == rw
-    assert rw
+    state = obj.__getstate__()
+    missing = dict(state)
+    missing.pop(next(iter(missing)))
+    blank = type(obj).__new__(type(obj))
+    with pytest.raises(RuntimeError, match="C\\+\\+ members"):
+        blank.__setstate__(missing)
+    extra = dict(state, not_a_member=1.0)
+    blank = type(obj).__new__(type(obj))
+    with pytest.raises(RuntimeError, match="C\\+\\+ members"):
+        blank.__setstate__(extra)
 
 
 def test_a_changed_field_survives_the_round_trip() -> None:
