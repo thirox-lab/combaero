@@ -29,6 +29,8 @@ def _flow(
 
 LAST = (3.0e6, 1400.0, 1000.0, 0.03, 0.01)
 INTERIOR = (2.0e5, 1800.0, 400.0, 0.3, 0.01)
+# Needed drive peaks at 354.198 Pa; the excess spans ~20x the drive.
+NEAR_PEAK = (204095.106, 627.788, 327.196, 0.0475957, 0.0329094)
 
 
 @pytest.mark.parametrize(
@@ -39,6 +41,7 @@ INTERIOR = (2.0e5, 1800.0, 400.0, 0.3, 0.01)
         (LAST, 261621.0, False, 0.98554),
         (INTERIOR, 100.0, False, 0.12215),  # the fold in an interior bracket
         (INTERIOR, 13.7, True, None),  # the laminar fold, total-pressure exit
+        (NEAR_PEAK, 353.9, False, 0.47433),  # 0.3 Pa below a fold's peak
     ],
 )
 def test_cold_finds_the_first_crossing_and_warm_agrees(

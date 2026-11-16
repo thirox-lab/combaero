@@ -925,22 +925,15 @@ constexpr double kRayleighHermiteDegenerate = 1e-14;
 // The minimiser starts at the cubic's minimum, kept this fraction of the
 // window away from its ends.
 constexpr double kRayleighDipStartMargin = 0.05;
-// The minimiser stops, reporting no dip, once a parabola through its last
-// three points has its vertex above this fraction of the drive: the excess
-// then has a clearly positive minimum there (a choked cooled duct's
-// minimum, which it otherwise resolved fully on every call).
-constexpr double kRayleighDipStopFrac = 0.05;
 // Iteration cap of the minimiser (it converges in ~20-40).
 constexpr int kRayleighDipMaxIter = 200;
 
 // Brent's minimiser (golden section with parabolic steps) of fn on (a, b)
 // from x0 inside it, stopped as soon as fn reads <= 0: returns that point,
 // or NaN if the minimum it converges to (to abs_tol + 1.5e-8 |x|) stays
-// positive, or once an accepted parabolic step's vertex value exceeds
-// stop_above.
+// positive.
 template <typename Fn>
-double brent_min_to_zero(const Fn& fn, double a, double b, double x0, double abs_tol,
-                         double stop_above) {
+double brent_min_to_zero(const Fn& fn, double a, double b, double x0, double abs_tol) {
   constexpr double kCGold = 0.3819660112501051;  // (3 - sqrt(5)) / 2
   constexpr double kSqrtEps = 1.5e-8;
   double x = (x0 > a && x0 < b) ? x0 : a + kCGold * (b - a);
@@ -973,15 +966,6 @@ double brent_min_to_zero(const Fn& fn, double a, double b, double x0, double abs
       if (std::abs(p) < std::abs(0.5 * q * e_prev) && p > q * (a - x) && p < q * (b - x)) {
         d = p / q;
         const double u = x + d;
-        // The parabola's value at its vertex u (Newton form through w, x,
-        // v): clearly positive, no dip is near.
-        if (x != w && x != v && w != v) {
-          const double s_xw = (fx - fw) / (x - w);
-          const double c2 = (s_xw - (fw - fv) / (w - v)) / (x - v);
-          if (c2 > 0.0 && fw + s_xw * (u - w) + c2 * (u - w) * (u - x) > stop_above) {
-            return std::nan("");
-          }
-        }
         if (u - a < tol2 || b - u < tol2) {
           d = (xm >= x) ? tol1 : -tol1;
         }
@@ -1411,9 +1395,8 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     };
     // A point at or below zero, by minimising F over [a, b] of log G from
     // x0 inside it, or NaN: the first fall then lies between a and it.
-    const double dip_stop = kRayleighDipStopFrac * (pb.Pt0 - pb.P);
     auto dip_in = [&](double a, double b, double x0) {
-      return brent_min_to_zero(F, a, b, x0, kRayleighDipTol, dip_stop);
+      return brent_min_to_zero(F, a, b, x0, kRayleighDipTol);
     };
     double s_lo = std::nan("");  // slope at lo, NaN not yet read
     double x_prev = std::nan(""), f_prev = 0.0;  // the scan point before lo
@@ -1476,7 +1459,7 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
                                   ? std::log(G_end) - (kRayleighEndGridLast + 1) * std::log(4.0)
                                   : std::log(G_end - std::exp(xc));
             const double ub = std::log(G_end - std::exp(xb));
-            const double u = brent_min_to_zero(Fu, uc, ua, ub, kRayleighDipTol, dip_stop);
+            const double u = brent_min_to_zero(Fu, uc, ua, ub, kRayleighDipTol);
             if (std::isfinite(u)) {
               lo = xa;
               f_lo = fa;

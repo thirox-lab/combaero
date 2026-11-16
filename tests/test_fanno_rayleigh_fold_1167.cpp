@@ -94,7 +94,10 @@ TEST(FannoRayleighFold1167, IssueCasesFindTheFirstCrossing) {
     const FannoChannelFlow w = flow(kLast, drives[i], 0.9915 * Gc);
     EXPECT_FALSE(c.choked) << drives[i];
     EXPECT_FALSE(w.choked) << drives[i];
-    EXPECT_NEAR(c.G / w.G, 1.0, 1e-11) << drives[i];
+    // Cold and warm bracket the root differently, so they agree to its
+    // rounding: <= 5e-13 measured on these 3 MPa drives (clang, macOS); 1e-10
+    // leaves room for another compiler's rounding.
+    EXPECT_NEAR(c.G / w.G, 1.0, 1e-10) << drives[i];
     EXPECT_NEAR(c.G / Gc, roots[i], 1e-5) << drives[i];
     EXPECT_NEAR(needed(kLast, c.G), drives[i], 1e-6 * drives[i]) << drives[i];
   }
@@ -104,7 +107,11 @@ TEST(FannoRayleighFold1167, IssueCasesFindTheFirstCrossing) {
   const FannoChannelFlow c = flow(kInterior, 100.0);
   EXPECT_FALSE(c.choked);
   EXPECT_NEAR(c.G / Gi, 0.12215, 1e-5);
-  EXPECT_NEAR(c.G / flow(kInterior, 100.0, 0.12 * Gi).G, 1.0, 1e-11);
+  // Both land on the first fall (within 2e-12 of a bisected reference here);
+  // they differ by the root's rounding at 100 Pa on 2 bar, ~2e-12 on clang
+  // and 1.7e-11 on MSVC. 1e-9 is the bound measured over 41k kernel calls
+  // (cold vs warm up to 2.3e-9 at drives of a few Pa, the same before #1167).
+  EXPECT_NEAR(c.G / flow(kInterior, 100.0, 0.12 * Gi).G, 1.0, 1e-9);
 }
 
 TEST(FannoRayleighFold1167, ColdAndWarmAgreeThroughEachFold) {
@@ -112,7 +119,9 @@ TEST(FannoRayleighFold1167, ColdAndWarmAgreeThroughEachFold) {
   // peak. The interior duct's sweep starts at 25 Pa, above its laminar fold
   // (see LaminarFoldColdScanFindsTheFirstFall), and its fluxes agree to
   // 1e-9: at 2 bar and a few Pa of drive the root carries ~2e-10 of rounding
-  // whichever way it is bracketed (the same before #1167).
+  // whichever way it is bracketed (the same before #1167). The 3 MPa ducts
+  // agree to <= 4e-13 measured (clang); 1e-10 leaves room for another
+  // compiler's rounding.
   struct Case {
     Duct d;
     double a, b;  // where the fold's peak lies, in Gc
@@ -120,8 +129,8 @@ TEST(FannoRayleighFold1167, ColdAndWarmAgreeThroughEachFold) {
     double tol;
   };
   for (const Case& k :
-       {Case{kLast, 0.95, 0.9999, 0.0, 1e-11}, Case{kLast1050, 0.99, 0.99999, 0.0, 1e-11},
-        Case{kLast1150, 0.999, 0.9999999, 0.0, 1e-11}, Case{kInterior, 0.12, 0.2, 25.0, 1e-9}}) {
+       {Case{kLast, 0.95, 0.9999, 0.0, 1e-10}, Case{kLast1050, 0.99, 0.99999, 0.0, 1e-10},
+        Case{kLast1150, 0.999, 0.9999999, 0.0, 1e-10}, Case{kInterior, 0.12, 0.2, 25.0, 1e-9}}) {
     const double Gc = choked_flux(k.d);
     const auto [G_peak, D_peak] = fold(k.d, k.a, k.b);
     const double D_end = needed(k.d, Gc * (1.0 - 1e-6));
@@ -262,5 +271,24 @@ TEST(FannoRayleighFold1167, DerivativesAtTheNewRootsMatchDifferences) {
                           (2.0 * hTe);
       EXPECT_NEAR(f.dG_dTt_exit / fdTe, 1.0, 1e-4) << "drive " << drive;
     }
+  }
+}
+
+TEST(FannoRayleighFold1167, ADipNearTheFoldPeakIsSearchedToTheEnd) {
+  // A fold whose excess spans ~20x the drive (static exit: the needed drive
+  // peaks at 354.198 Pa near 0.48 Gc, then falls to about -7400 Pa at the
+  // choke). Within ~1 Pa below the peak the dip is shallow against that
+  // span; a minimiser stop scaled by the drive gave up there and read the
+  // duct choked (found in review). Reference: a 3001-point grid first fall,
+  // bisected (these inputs, rounded, put the roots at 0.4700448 and 0.4743297 Gc).
+  const Duct d{204095.106, 627.788, 327.196, 0.0475957, 0.0329094};
+  const double Gc = choked_flux(d);
+  const double drives[] = {353.398, 353.9};
+  const double roots[] = {0.4700448, 0.4743297};
+  for (int i = 0; i < 2; ++i) {
+    const FannoChannelFlow c = flow(d, drives[i]);
+    EXPECT_FALSE(c.choked) << drives[i];
+    EXPECT_NEAR(c.G / Gc, roots[i], 1e-6) << drives[i];
+    EXPECT_NEAR(needed(d, c.G), drives[i], 1e-6 * drives[i]) << drives[i];
   }
 }
