@@ -524,15 +524,33 @@ double psi(double Me, double P, double Pt0, double Tt0, const FlowProblem& pb) {
 // per-species partial with the other mass fractions fixed.
 //
 // Central differences of a smooth function at fixed (G or Me), the largest
-// component of the step 1e-5 (times step_scale, which a caller near a
-// singularity shrinks); one-sided where the central step would take a
-// fraction below zero (a species absent here but carried by an inflow).
+// component of the step kFannoDirStep (times step_scale, which a caller near a
+// singularity shrinks). Where the central step would take a fraction below
+// zero (a species absent or at trace level here but carried by an inflow), a
+// one-sided second-order difference, O(h^2) like the central one; first order
+// only if the doubled step is infeasible too.
+//
+// A component at or below kFannoDirRoundoff of the largest that would take its
+// fraction below zero is dropped from the step first: it contributes nothing
+// measurable to the derivative, but kept, its sign alone chose the stencil. A
+// -2.2e-20 on an absent species switched a duct's dG/dv to one-sided O(h)
+// and moved J by 2.3e-5 relative (#1199).
 template <class Fn>
 std::vector<double> d_ddir(const std::vector<double>& X,
                            const std::vector<std::vector<double>>& dirs, Fn&& g,
                            double step_scale = 1.0) {
   const std::vector<double> Y = mole_to_mass(X);
   std::vector<double> out(dirs.size(), 0.0);
+  // g at X itself, for the one-sided stencils: once per call, if at all.
+  bool have_g0 = false;
+  double g0 = 0.0;
+  auto g_at_x = [&]() {
+    if (!have_g0) {
+      g0 = g(X);
+      have_g0 = true;
+    }
+    return g0;
+  };
   auto at = [&](const std::vector<double>& v, double s) {
     std::vector<double> Ys = Y;
     for (std::size_t k = 0; k < Y.size(); ++k) {
@@ -548,8 +566,9 @@ std::vector<double> d_ddir(const std::vector<double>& X,
     }
     return true;
   };
+  std::vector<double> v;
   for (std::size_t i = 0; i < dirs.size(); ++i) {
-    const std::vector<double>& v = dirs[i];
+    v = dirs[i];
     if (v.size() != Y.size()) {
       throw std::invalid_argument("fanno_channel_flow: a dY direction has the wrong length");
     }
@@ -560,13 +579,28 @@ std::vector<double> d_ddir(const std::vector<double>& X,
     if (!(vmax > 0.0)) {
       continue;
     }
-    const double h = step_scale * 1e-5 / vmax;
+    const double h = step_scale * kFannoDirStep / vmax;
+    for (std::size_t k = 0; k < Y.size(); ++k) {
+      if (std::abs(v[k]) <= kFannoDirRoundoff * vmax && Y[k] - h * std::abs(v[k]) < 0.0) {
+        v[k] = 0.0;
+      }
+    }
     if (feasible(v, h) && feasible(v, -h)) {
       out[i] = (at(v, h) - at(v, -h)) / (2.0 * h);
-    } else if (feasible(v, h)) {
-      out[i] = (at(v, h) - g(X)) / h;
-    } else if (feasible(v, -h)) {
-      out[i] = (g(X) - at(v, -h)) / h;
+      continue;
+    }
+    // One-sided towards the feasible side s = +-h: second order,
+    // (-3 g(0) + 4 g(s) - g(2s)) / (2s), where the doubled step is feasible.
+    for (const double s : {h, -h}) {
+      if (!feasible(v, s)) {
+        continue;
+      }
+      if (feasible(v, 2.0 * s)) {
+        out[i] = (-3.0 * g_at_x() + 4.0 * at(v, s) - at(v, 2.0 * s)) / (2.0 * s);
+      } else {
+        out[i] = (at(v, s) - g_at_x()) / s;
+      }
+      break;
     }
   }
   return out;

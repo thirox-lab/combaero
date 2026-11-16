@@ -240,3 +240,52 @@ def test_the_flow_does_not_depend_on_the_warm_start(length: float, drive: float)
     cold = g(-1.0)
     for guess in (1e-4, 0.01, 0.1, 0.5, 0.99):
         assert g(guess) == pytest.approx(cold, rel=1e-9), guess
+
+
+def _air_without_co2() -> list[float]:
+    """Dry air mass fractions with CO2 moved into N2: CO2 absent (Y = 0)."""
+    Y = list(cb.mole_to_mass(cb.species.dry_air()))
+    i_co2 = cb.species_index_from_name("CO2")
+    Y[cb.species_index_from_name("N2")] += Y[i_co2]
+    Y[i_co2] = 0.0
+    return Y
+
+
+def _trade(a: str, b: str) -> np.ndarray:
+    v = np.zeros(N)
+    v[cb.species_index_from_name(a)] = 1.0 / np.sqrt(2.0)
+    v[cb.species_index_from_name(b)] = -1.0 / np.sqrt(2.0)
+    return v
+
+
+@pytest.mark.parametrize("P_target", [1.5e5, 0.5e5])
+def test_ddir_roundoff_component_on_absent_species_is_dropped(P_target: float) -> None:
+    """A round-off component on an absent species does not switch dG_ddir to a
+    one-sided difference (#1199): -2.2e-20 moved it by 2.3e-5 relative in a
+    network (stress random 30). Bit-identical to the exact-zero direction."""
+    Y = _air_without_co2()
+    X = list(cb.mass_to_mole(Y))
+    v = _trade("O2", "N2")
+    exact = _flow(X, P_target, dirs=[list(v)]).dG_ddir[0]
+    assert np.isfinite(exact) and exact != 0.0
+    for c in (-2.2e-20, 2.2e-20, -1e-14):
+        w = v.copy()
+        w[cb.species_index_from_name("CO2")] = c
+        assert _flow(X, P_target, dirs=[list(w)]).dG_ddir[0] == exact
+
+
+def test_ddir_one_sided_is_second_order() -> None:
+    """Along a genuine direction into an absent species only s > 0 is feasible.
+    The one-sided stencil is second order: within 3e-7 of central derivatives
+    at s = 2h, 4h, 6h extrapolated back to 0 (the first-order one was off by
+    3.3e-6)."""
+    Y = np.asarray(_air_without_co2())
+    v = _trade("CO2", "N2")
+    h = 1e-5 * np.sqrt(2.0)
+
+    def at(s: float) -> float:
+        X = list(cb.mass_to_mole(list(Y + s * v)))
+        return _flow(X, 1.5e5, dirs=[list(v)]).dG_ddir[0]
+
+    ref = 3.0 * at(2 * h) - 3.0 * at(4 * h) + at(6 * h)
+    assert at(0.0) == pytest.approx(ref, rel=3e-7)

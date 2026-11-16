@@ -794,7 +794,13 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // the exit Mach (P_exit is linear in G at fixed M, so G(M_exit) is explicit)
 // and differentiates implicitly, well conditioned up to the choke.
 // dY_directions: mass-fraction directions v; dG_ddir returns dG/ds along each
-// (Y -> Y + s v, X renormalised), about two length integrals per direction. A
+// (Y -> Y + s v, X renormalised), about two length integrals per direction:
+// central, step kFannoDirStep = 1e-5 on v's largest component; one-sided
+// second order where the central step would take a fraction below zero (an
+// absent or trace species), first order only if the doubled step is
+// infeasible too. A component at or below kFannoDirRoundoff = 1e-12 of the
+// largest that would take its fraction below zero is round-off and is
+// dropped from the step, so it cannot switch the stencil (#1199). A
 // unit vector e_k gives dG/dY_k at fixed others. ChannelElement passes an
 // orthonormal basis of its feeding node's dY/dx -- usually one vector -- and
 // projects back onto "{node}.Y[k]" keys. with_derivatives = false computes G,
