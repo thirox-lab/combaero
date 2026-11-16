@@ -983,6 +983,19 @@ with `w = (1 + tanh((Re - 2300)/400))/2` (`laminar_friction` in friction.h).
 The laminar branch carries its own floor of Re 1e-6, so a channel's drop stays
 linear in its flow down to essentially zero flow.
 
+```cpp
+// lim_{Re -> 0} f Re: f_re (1 - w(0)) for the blend (63.99935), and per model
+// (Registry::friction_f_re_at_zero): the blend's for haaland / serghides /
+// colebrook, 0 for petukhov (no laminar branch). Unknown tag: invalid_argument.
+double solver::laminar_blend_f_re_at_zero();
+double solver::friction_f_re_at_zero(const std::string& tag);
+```
+
+`channel_residuals_and_jacobian` takes its slope at exactly zero flow from
+this limit, `f_mult f_re_0 mu L / (2 rho A D^2)` (Hagen-Poiseuille's
+`32 mu L / (rho A D^2)`), where the kernel's `|m| f` is 0 * inf (#1156). The
+limit leaves out the Re 1e-6 floor.
+
 ---
 
 ## Heat Transfer Correlations (heat_transfer.h)

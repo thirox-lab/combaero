@@ -373,6 +373,16 @@ friction_and_jacobian(const std::string &tag, double Re, double e_D) {
               "'. Must be a registered friction model."};
 }
 
+double laminar_blend_f_re_at_zero() {
+  using namespace laminar_friction;
+  const double w0 = 0.5 * (1.0 + std::tanh(-blend_center / blend_width));
+  return f_re * (1.0 - w0);
+}
+
+double friction_f_re_at_zero(const std::string &tag) {
+  return Registry::get().friction_f_re_at_zero(tag);
+}
+
 // -----------------------------------------------------------------------------
 // 4. Thermodynamic & Transport Components
 // -----------------------------------------------------------------------------
@@ -1448,7 +1458,22 @@ ChannelResult channel_residuals_and_jacobian(double m_dot, double P_total_up,
   // gave reversed flow a slope of the wrong sign (#481).
   double dRe_dmdot = D / (mu * area);
   const double abs_m = std::abs(m_dot);
-  res.d_dP_d_mdot = (L / D) * (1.0 / (rho * area * area)) * abs_m * (f + 0.5 * abs_m * df_dRe * dRe_dmdot);
+  if (abs_m > 0.0) {
+    res.d_dP_d_mdot =
+        (L / D) * (1.0 / (rho * area * area)) * abs_m * (f + 0.5 * abs_m * df_dRe * dRe_dmdot);
+  } else {
+    // At exactly zero flow |m| f is 0 * inf (f -> 64 / Re), and the formula
+    // above read 0 where the drop's slope is laminar: dP = m (f Re) (L/D) /
+    // (2 rho A^2 dRe/dm) with f Re finite, so d dP/dm = f_re_0 (L/D) /
+    // (2 rho A^2 dRe/dm) = f_re_0 mu L / (2 rho A D^2), 32 mu L / (rho A D^2)
+    // for Hagen-Poiseuille. The limit is the one-sided slope from both sides
+    // (dP is odd in m). It omits the laminar branch's re_floor, which below
+    // Re ~ 1e-6 (|m| ~ 1e-13 kg/s here) turns the drop quadratic: a floor
+    // for 64 / Re at Re = 0, not physics, and inside any difference step
+    // (#1156; Newton stalled at an exact zero start). dP is unchanged.
+    res.d_dP_d_mdot = friction_f_re_at_zero(friction_model) * f_multiplier * (L / D) /
+                      (2.0 * rho * area * area * dRe_dmdot);
+  }
 
   const double eps_P = 1.0;
   auto [rho_p, drho_dT_p, drho_dP_p] = density_and_jacobians(Tt_up, P_static_up + eps_P, X_up);

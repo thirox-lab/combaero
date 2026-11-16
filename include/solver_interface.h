@@ -446,6 +446,18 @@ friction_and_jacobian_petukhov(double Re);
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian(const std::string &tag, double Re, double e_D);
 
+// lim_{Re -> 0} f Re of the laminar-turbulent blend (laminar_friction in
+// friction.h): f_re (1 - w(0)), w(0) = (1 + tanh(-blend_center /
+// blend_width)) / 2. The turbulent fits are finite at Re = 0 (their own
+// floor), so w f_turb Re -> 0. The limit drops the laminar branch's re_floor,
+// which only keeps 64 / Re finite at Re = 0 (#1156).
+double laminar_blend_f_re_at_zero();
+
+// lim_{Re -> 0} f Re of friction model `tag` (Registry::friction_f_re_at_zero):
+// the slope of a duct's drop at exactly zero flow is f_mult f_re_0 mu L /
+// (2 rho A D^2) (#1156). Throws std::invalid_argument for an unknown tag.
+double friction_f_re_at_zero(const std::string &tag);
+
 
 // -----------------------------------------------------------------------------
 // 4. Thermodynamic & Transport Components
