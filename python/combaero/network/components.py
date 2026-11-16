@@ -1619,6 +1619,8 @@ class _KtFixedPoint:
     def __init__(self) -> None:
         self.steps = 0
         self.converged = False
+        # Anderson steps refused (not finite and positive), g taken instead.
+        self.rejected = 0
         self._x: list[np.ndarray] = []
         self._f: list[np.ndarray] = []
 
@@ -1646,6 +1648,8 @@ class _KtFixedPoint:
         gamma = np.linalg.lstsq(dF, f[-1], rcond=None)[0]
         nxt = ga - dG @ gamma
         if not (np.all(np.isfinite(nxt)) and np.all(nxt > 0.0)):
+            # A t/k <= 0 would be refused by the profile; G's image never is.
+            self.rejected += 1
             return g, False
         return [float(v) for v in nxt], False
 

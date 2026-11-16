@@ -4977,6 +4977,12 @@ const Inspector = () => {
 									unsourced).
 								</div>
 							)}
+							{selectedEdge.data.result.kT_converged === 0 && (
+								<div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+									The layers' k(T) did not settle at this solution: the wall
+									stopped at its iteration cap (#1170).
+								</div>
+							)}
 							<div className="grid grid-cols-4 gap-1 pt-2 border-t border-stone-100">
 								<div className="flex flex-col">
 									<span className="text-[7px] text-stone-400 uppercase">

@@ -1402,6 +1402,9 @@ every cooling configuration).
   few plain steps (#1170); `{wall}.kT_converged` is 0 if the loop still
   ended at its cap (30 steps, 60 with radiation) in the report's evaluation,
   1 otherwise and for constant-k layers.
+  Like `material_in_range`, it describes the report's own evaluation at the
+  solution only (warm-started from the solve's last one), not the trial
+  points the solver visited on the way.
 - **h <= 0** from a correlation past its range is floored smoothly at
   `cb.WALL_HTC_KNEE` (1e-2 W/(m^2 K)); the wall never refuses it.
 - With `thermal_coupling_enabled = False` the walls report nothing.

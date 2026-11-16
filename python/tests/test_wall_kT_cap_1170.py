@@ -244,7 +244,7 @@ def test_the_solution_reports_kT_converged(monkeypatch: pytest.MonkeyPatch) -> N
     assert r["w.kT_converged"] == 1.0
 
 
-def test_a_heat_loss_wall_reports_kT_converged() -> None:
+def _one_sided(side_b: object) -> FlowNetwork:
     n = FlowNetwork()
     n.add_node(PressureBoundary("h_in", Pt=1.2e5, Tt=2000.0, Y=AIR))
     n.add_node(PressureBoundary("h_out", Pt=1.1e5, Tt=2000.0, Y=AIR))
@@ -263,10 +263,64 @@ def test_a_heat_loss_wall_reports_kT_converged() -> None:
             "w",
             "hot",
             None,
-            side_b=HeatLoss(T_ext=250.0, h=1e4),
+            side_b=side_b,
             layers=_stack("inconel625", 3e-3),
             contact_area=0.01,
         )
     )
-    r = _solve(n)
+    return n
+
+
+def test_a_heat_loss_wall_reports_kT_converged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one-sided report: 1 when settled, 0 under a forced cap."""
+    r = _solve(_one_sided(HeatLoss(T_ext=250.0, h=1e4)))
     assert r["w.kT_converged"] == 1.0
+    monkeypatch.setattr(components, "_KT_TOL", 0.0)
+    r = _solve(_one_sided(HeatLoss(T_ext=250.0, h=1e4)))
+    assert r["w.kT_converged"] == 0.0
+
+
+def test_an_adiabatic_wall_reports_kT_converged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An adiabatic wall has the whole stack at one T: no loop, always 1."""
+    monkeypatch.setattr(components, "_KT_TOL", 0.0)
+    r = _solve(_one_sided("adiabatic"))
+    assert r["w.kT_converged"] == 1.0
+
+
+# Review R2 (#1170): two thick alumina layers, gas radiation on side A, a
+# 21 K coolant, from k(120 K): an Anderson extrapolant goes non-positive, which
+# the profile would refuse ("t/k values must be non-negative").
+R2_LAYERS = [
+    WallLayer(0.010649317909138194, 10.0, "alumina"),
+    WallLayer(0.017786748253306506, 10.0, "alumina"),
+]
+R2_ARGS = (619731.6841837598, 1719.8458929850024, 0.01, 965613.0711133536, 21.45645833596489, 0.01)
+
+
+def test_a_non_positive_extrapolant_falls_back_to_the_plain_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guard fires (Anderson step refused, g taken) and the call settles."""
+    rejected: list[int] = []
+    orig = components._KtFixedPoint.step
+
+    def step(self: components._KtFixedPoint, x: list[float], g: list[float]) -> tuple:
+        out = orig(self, x, g)
+        if out[1] or self.steps >= components._KT_MAX_STEPS_RADIATIVE:
+            rejected.append(self.rejected)
+        return out
+
+    monkeypatch.setattr(components._KtFixedPoint, "step", step)
+    w = ThermalWall(
+        "w",
+        "a",
+        "b",
+        layers=[WallLayer(L.thickness, L.conductivity, L.material) for L in R2_LAYERS],
+        contact_area=0.01,
+        radiation_a=GasRadiation(beam_length=0.05),
+    )
+    _set_k(w, 120.0)
+    r = w.compute_coupling(*R2_ARGS, math.inf, math.inf, False, gas_a=(R2_ARGS[1], 2e6, AIR))
+    assert w._kT_converged
+    assert rejected and rejected[-1] >= 1
+    assert math.isfinite(r.Q) and r.Q > 0.0
