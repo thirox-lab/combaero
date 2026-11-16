@@ -849,6 +849,23 @@ impingement crossflow segment, L/D 1.3). At a fixed Tt_exit its exit Pt then
 rises with flow and no flow matches a pressure drop; developing-flow friction
 is the consistent closure.
 
+The root is the FIRST fall of the exit-pressure excess as G rises from zero.
+Where a cooled duct's needed drive peaks and turns back down (at a laminar
+friction range or near the choke), G rises continuously with the drive up to
+the peak and then jumps to the next branch or to the choked flux (#1161,
+#1167). Limits:
+- The cold scan (G_guess <= 0) searches for the first fall only in brackets
+  whose ends are both positive. A bracket whose ends straddle zero is taken
+  as it is, so if it holds a fall, a rise and a later fall, its root may be
+  the later one. Two turns between bracket ends whose values and slopes show
+  none (within one ln-2 step of flux; near the choke, within one gap of the
+  4^-j grid, up to a factor of 8 for the first gap) are not seen either.
+- G_guess warm-starts the root. A warm call agrees with the cold one unless
+  its guess lies within 6.4 % above a later fall: wherever the needed drive
+  rises again after a fold's valley (a single fold suffices, for example one
+  that rises again toward the choke), a warm start from that upper branch
+  returns the later crossing.
+
 ### Rocket Nozzle Thrust
 ```cpp
 struct ThrustResult {
