@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, get_args
 
+import numpy as np
 from scipy.optimize import brentq as _brentq
 
 import combaero as cb
@@ -1589,6 +1590,70 @@ class _RadiativeWallCoupling:
         self.__dict__.update(kw)
 
 
+# The layers' k(T) fixed point, t/k = G(t/k) at the wall temperatures of one
+# call (#481, #932, #1170). A warm start settles in one to a few plain steps;
+# a slow wall (contraction ~0.7: a metal on the hot side over alumina, gas at
+# 2000 K and more, coolant at 300 K and less) used to run into the cap. After
+# _KT_PLAIN_STEPS plain steps the loop takes Anderson steps of depth
+# _KT_ANDERSON_DEPTH on the relative residual, so a call that settles within
+# the plain steps is unchanged and the cap is only a backstop, reported as
+# "{wall}.kT_converged" = 0.
+_KT_TOL = 1e-12
+_KT_PLAIN_STEPS = 6
+_KT_ANDERSON_DEPTH = 2
+_KT_MAX_STEPS = 30
+_KT_MAX_STEPS_RADIATIVE = 60
+
+
+class _KtFixedPoint:
+    """The stepping and stopping of one k(T) fixed-point loop (#1170).
+
+    ``step(x, g)`` takes the iterate x (each layer's t/k) and its image
+    g = G(x) and returns the next iterate and whether the loop has settled:
+    the relative step max |g - x| / |x| below _KT_TOL, as before. The next
+    iterate is g for the first _KT_PLAIN_STEPS steps, then the Anderson
+    extrapolation over the last _KT_ANDERSON_DEPTH residual differences (g
+    when it is not finite and positive). The numerics only: G, the profile
+    and the k(T) are the caller's."""
+
+    def __init__(self) -> None:
+        self.steps = 0
+        self.converged = False
+        # Anderson steps refused (not finite and positive), g taken instead.
+        self.rejected = 0
+        self._x: list[np.ndarray] = []
+        self._f: list[np.ndarray] = []
+
+    def step(self, x: list[float], g: list[float]) -> tuple[list[float], bool]:
+        self.steps += 1
+        change = max(abs(a - b) / max(abs(b), 1e-300) for a, b in zip(g, x, strict=True))
+        if change < _KT_TOL:
+            self.converged = True
+            return g, True
+        if self.steps < _KT_PLAIN_STEPS:
+            return g, False
+        xa = np.asarray(x, dtype=float)
+        ga = np.asarray(g, dtype=float)
+        self._x.append(xa)
+        self._f.append((ga - xa) / np.maximum(np.abs(xa), 1e-300))
+        if len(self._f) > _KT_ANDERSON_DEPTH + 1:
+            del self._x[0], self._f[0]
+        if len(self._f) < 2:
+            return g, False
+        f = self._f
+        # g_j = x_j (1 + f_j): the images, from the stored iterates.
+        gs = [xj * (1.0 + fj) for xj, fj in zip(self._x, f, strict=True)]
+        dF = np.stack([f[j + 1] - f[j] for j in range(len(f) - 1)], axis=1)
+        dG = np.stack([gs[j + 1] - gs[j] for j in range(len(f) - 1)], axis=1)
+        gamma = np.linalg.lstsq(dF, f[-1], rcond=None)[0]
+        nxt = ga - dG @ gamma
+        if not (np.all(np.isfinite(nxt)) and np.all(nxt > 0.0)):
+            # A t/k <= 0 would be refused by the profile; G's image never is.
+            self.rejected += 1
+            return g, False
+        return [float(v) for v in nxt], False
+
+
 @dataclass
 class ThermalWall:
     """Thermal coupling between two elements through a shared multi-layer wall.
@@ -1712,6 +1777,9 @@ class ThermalWall:
 
     # Internal cache for temperature-dependent property iteration
     _last_profile: list[float] | None = field(default=None, init=False, repr=False)
+    # Whether the last call's k(T) loop settled (#1170); True with no k(T)
+    # layer. Reported as "{wall}.kT_converged".
+    _kT_converged: bool = field(default=True, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if (self.area_a is None) != (self.area_b is None):
@@ -1838,6 +1906,7 @@ class ThermalWall:
                 layer.update_conductivity(T_s)
                 layer.in_range = bool(cb.material_in_range(layer.material, T_s))
         self._last_profile = [T_s] * (len(self.layers) + 1)
+        self._kT_converged = True  # the stack at one T: no fixed point
         radiation: dict[str, float] = {}
         if face.kind:
             if self.area_a is not None:
@@ -2007,23 +2076,26 @@ class ThermalWall:
         t_over_k_layers = resistances()
         prof = profile(t_over_k_layers)
         kT: tuple[float, float, float, float] | None = None
+        self._kT_converged = True
         if any(L.material.lower() not in ("generic", "custom") for L in self.layers):
             # k(T) at THIS call's wall temperatures, iterated to its fixed
             # point, so Q depends on the inputs alone. It used to be lagged
             # from the previous call -- any trial point the solver probed --
             # which made the residual depend on evaluation history (#481).
-            for _ in range(30):
+            # A slow loop is accelerated, and the cap reported (#1170).
+            fp = _KtFixedPoint()
+            for _ in range(_KT_MAX_STEPS):
                 for i, layer in enumerate(self.layers):
                     layer.update_conductivity(0.5 * (prof[i] + prof[i + 1]))
-                new = resistances()
-                change = max(
-                    abs(a - b) / max(abs(b), 1e-300)
-                    for a, b in zip(new, t_over_k_layers, strict=True)
-                )
-                t_over_k_layers = new
+                t_over_k_layers, done = fp.step(t_over_k_layers, resistances())
                 prof = profile(t_over_k_layers)
-                if change < 1e-12:
+                if done:
                     break
+            if not fp.converged:
+                # At the cap: the layers' last k, not an extrapolated iterate.
+                t_over_k_layers = resistances()
+                prof = profile(t_over_k_layers)
+            self._kT_converged = fp.converged
             # Whether each layer's k came from its material's sourced range at
             # its mean temperature in the profile just placed (#882).
             for i, layer in enumerate(self.layers):
@@ -2138,22 +2210,25 @@ class ThermalWall:
         rad = solve(sum(t_over_k_layers) + self.R_fouling)
         prof = profile(rad, t_over_k_layers)
         kT_dR: list[float] | None = None
+        self._kT_converged = True
         if any(L.material.lower() not in ("generic", "custom") for L in self.layers):
             # k(T) at this call's wall temperatures, iterated jointly with the
-            # radiation's surface temperatures to their common fixed point.
-            for _ in range(60):
+            # radiation's surface temperatures to their common fixed point
+            # (accelerated when slow, the cap reported: #1170).
+            fp = _KtFixedPoint()
+            for _ in range(_KT_MAX_STEPS_RADIATIVE):
                 for i, layer in enumerate(self.layers):
                     layer.update_conductivity(0.5 * (prof[i] + prof[i + 1]))
-                new = resistances()
-                change = max(
-                    abs(a - b) / max(abs(b), 1e-300)
-                    for a, b in zip(new, t_over_k_layers, strict=True)
-                )
-                t_over_k_layers = new
+                t_over_k_layers, done = fp.step(t_over_k_layers, resistances())
                 rad = solve(sum(t_over_k_layers) + self.R_fouling)
                 prof = profile(rad, t_over_k_layers)
-                if change < 1e-12:
+                if done:
                     break
+            if not fp.converged:
+                t_over_k_layers = resistances()
+                rad = solve(sum(t_over_k_layers) + self.R_fouling)
+                prof = profile(rad, t_over_k_layers)
+            self._kT_converged = fp.converged
             for i, layer in enumerate(self.layers):
                 if layer.material.lower() not in ("generic", "custom"):
                     layer.in_range = bool(

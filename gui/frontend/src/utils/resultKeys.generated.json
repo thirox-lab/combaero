@@ -917,6 +917,7 @@
 			"eps_g_b",
 			"h_a",
 			"h_b",
+			"kT_converged",
 			"material_in_range",
 			"q_rad_a",
 			"q_rad_b"
@@ -1305,6 +1306,7 @@
 		"is_ingesting": "-",
 		"jet_flow_nonuniformity": "-",
 		"k": "W/m/K",
+		"kT_converged": "-",
 		"k_ref": "W/m/K",
 		"ln_m_dot": "-",
 		"loss_ratio": "-",
