@@ -527,8 +527,10 @@ double psi(double Me, double P, double Pt0, double Tt0, const FlowProblem& pb) {
 // component of the step kFannoDirStep (times step_scale, which a caller near a
 // singularity shrinks). Where the central step would take a fraction below
 // zero (a species absent or at trace level here but carried by an inflow), a
-// one-sided second-order difference, O(h^2) like the central one; first order
-// only if the doubled step is infeasible too.
+// one-sided second-order difference, O(h^2) like the central one, at half
+// the step where the doubled step is infeasible too. Where neither side is
+// feasible (two absent or trace species with opposite-sign components) the
+// result stays 0, as before: not yet handled.
 //
 // A component at or below kFannoDirRoundoff of the largest that would take its
 // fraction below zero is dropped from the step first: it contributes nothing
@@ -589,17 +591,18 @@ std::vector<double> d_ddir(const std::vector<double>& X,
       out[i] = (at(v, h) - at(v, -h)) / (2.0 * h);
       continue;
     }
-    // One-sided towards the feasible side s = +-h: second order,
-    // (-3 g(0) + 4 g(s) - g(2s)) / (2s), where the doubled step is feasible.
+    // One-sided towards the feasible side s = +-h, second order:
+    // (-3 g(0) + 4 g(s) - g(2s)) / (2s). Where 2s is infeasible too (a trace
+    // species blocks it), the same stencil at half the step, which needs only
+    // s: the feasible set {t : Y + t v >= 0} is an interval holding 0, so s/2
+    // is feasible with s. A first-order fallback here put a 1.2e-5 jump into
+    // dG/dv as the trace fraction crossed 2h|v_k|.
     for (const double s : {h, -h}) {
       if (!feasible(v, s)) {
         continue;
       }
-      if (feasible(v, 2.0 * s)) {
-        out[i] = (-3.0 * g_at_x() + 4.0 * at(v, s) - at(v, 2.0 * s)) / (2.0 * s);
-      } else {
-        out[i] = (at(v, s) - g_at_x()) / s;
-      }
+      const double t = feasible(v, 2.0 * s) ? s : 0.5 * s;
+      out[i] = (-3.0 * g_at_x() + 4.0 * at(v, t) - at(v, 2.0 * t)) / (2.0 * t);
       break;
     }
   }

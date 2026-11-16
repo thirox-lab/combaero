@@ -797,8 +797,8 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // (Y -> Y + s v, X renormalised), about two length integrals per direction:
 // central, step kFannoDirStep = 1e-5 on v's largest component; one-sided
 // second order where the central step would take a fraction below zero (an
-// absent or trace species), first order only if the doubled step is
-// infeasible too. A component at or below kFannoDirRoundoff = 1e-12 of the
+// absent or trace species), at half the step where the doubled step is
+// infeasible too (0 where neither side is feasible). A component at or below kFannoDirRoundoff = 1e-12 of the
 // largest that would take its fraction below zero is round-off and is
 // dropped from the step, so it cannot switch the stencil (#1199). A
 // unit vector e_k gives dG/dY_k at fixed others. ChannelElement passes an

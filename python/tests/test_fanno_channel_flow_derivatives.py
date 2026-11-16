@@ -289,3 +289,22 @@ def test_ddir_one_sided_is_second_order() -> None:
 
     ref = 3.0 * at(2 * h) - 3.0 * at(4 * h) + at(6 * h)
     assert at(0.0) == pytest.approx(ref, rel=3e-7)
+
+
+def test_ddir_halved_step_where_doubled_step_infeasible() -> None:
+    """CO2 absent blocks s < 0; H2O at 1.5e-5 (h|v_H2O| = 1e-5) blocks 2h.
+    The one-sided stencil runs at half the step, still second order (#1199
+    review: the first-order fallback was off by 1.2e-5, a jump in dG/dv as
+    Y_H2O crossed 2e-5). Reference: full-step values at Y_H2O = 3, 4, 5e-5
+    extrapolated quadratically. -v gives exactly the negated result."""
+    v = _trade("CO2", "H2O")
+
+    def d(y: float, w: np.ndarray) -> float:
+        Y = np.asarray(_air_without_co2())
+        Y[cb.species_index_from_name("H2O")] = y
+        Y[cb.species_index_from_name("N2")] -= y
+        return _flow(list(cb.mass_to_mole(list(Y))), 1.5e5, dirs=[list(w)]).dG_ddir[0]
+
+    ref = 4.375 * d(3e-5, v) - 5.25 * d(4e-5, v) + 1.875 * d(5e-5, v)
+    assert d(1.5e-5, v) == pytest.approx(ref, rel=1e-6)
+    assert d(1.5e-5, -v) == -d(1.5e-5, v)

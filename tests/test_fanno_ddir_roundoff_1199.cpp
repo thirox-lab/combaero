@@ -105,3 +105,62 @@ TEST(FannoDdirRoundoff1199, OneSidedStencilIsSecondOrder) {
     }
   }
 }
+
+TEST(FannoDdirRoundoff1199, BackwardOneSidedIsTheForwardNegated) {
+  // The SVD sign of a solver direction is arbitrary, so -v (one-sided towards
+  // s = -h) is as likely as v. dG/d(-v) = -dG/dv exactly: the backward stencil
+  // runs the forward one's arithmetic with s negated.
+  const std::vector<double> Y = air_without_co2();
+  const std::vector<double> v = trade("CO2", "N2");
+  std::vector<double> minus_v = v;
+  for (double& c : minus_v) {
+    c = -c;
+  }
+  for (const bool heated : {false, true}) {
+    const double fwd = ddir(Y, v, 1.5e5, heated);
+    ASSERT_NE(fwd, 0.0);
+    EXPECT_EQ(ddir(Y, minus_v, 1.5e5, heated), -fwd) << "heated " << heated;
+  }
+}
+
+TEST(FannoDdirRoundoff1199, HalvedStepWhereTheDoubledStepIsInfeasible) {
+  // CO2 absent blocks s < 0; H2O at 1.5e-5 with h|v_H2O| = 1e-5 lets s = h
+  // through but blocks 2h. The stencil then runs at half the step, still
+  // second order. The first-order fallback it replaced was off by 1.2e-5 here,
+  // a jump in dG/dv as Y_H2O crossed 2e-5. Reference: the full-step values at
+  // Y_H2O = 3, 4, 5e-5, extrapolated quadratically to 1.5e-5 (weights 4.375,
+  // -5.25, 1.875; their scatter amplified, ~2e-7).
+  const std::vector<double> v = trade("CO2", "H2O");
+  auto with_h2o = [](double y) {
+    std::vector<double> Y = air_without_co2();
+    Y[species_index_from_name("H2O")] = y;
+    Y[species_index_from_name("N2")] -= y;
+    return Y;
+  };
+  std::vector<double> minus_v = v;
+  for (double& c : minus_v) {
+    c = -c;
+  }
+  for (const bool heated : {false, true}) {
+    for (const double P : {1.5e5, 1.0e5}) {
+      const double d = ddir(with_h2o(1.5e-5), v, P, heated);
+      const double ref = 4.375 * ddir(with_h2o(3e-5), v, P, heated) -
+                         5.25 * ddir(with_h2o(4e-5), v, P, heated) +
+                         1.875 * ddir(with_h2o(5e-5), v, P, heated);
+      ASSERT_GT(std::abs(ref), 1.0);
+      EXPECT_NEAR(d / ref, 1.0, 1e-6) << "heated " << heated << " P " << P;
+      EXPECT_EQ(ddir(with_h2o(1.5e-5), minus_v, P, heated), -d);
+    }
+  }
+}
+
+TEST(FannoDdirRoundoff1199, SmallComponentOnAPresentSpeciesIsKept) {
+  // Only a component that would take its fraction below zero is dropped. On
+  // CO2 present (dry air) a component at the threshold stays in the step, so
+  // the result moves (here by FD rounding, ~1e-8; physically by ~4e-12).
+  const std::vector<double> Y = mole_to_mass(dry_air());
+  std::vector<double> v = trade("O2", "N2");
+  const double base = ddir(Y, v, 1.5e5, false);
+  v[species_index_from_name("CO2")] = kFannoDirRoundoff / std::sqrt(2.0);
+  EXPECT_NE(ddir(Y, v, 1.5e5, false), base);
+}
