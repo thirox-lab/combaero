@@ -44,6 +44,10 @@ from combaero.network import (
     PressureBoundary,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y = list(cb.mole_to_mass(cb.species.dry_air()))
 CH4 = list(cb.species.to_mass(cb.species.pure_species("CH4")))
 A_DUCT = 2.0e-4

@@ -58,6 +58,10 @@ from combaero.network import (
 from combaero.network.components import _moving_static_T, _moving_total_P
 from combaero.network.hole_cd import HOLE_CD_DIAGNOSTIC_KEYS
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y_AIR = list(cb.mole_to_mass(cb.species.dry_air()))
 X_AIR = list(cb.species.dry_air())
 P_ATM = 101325.0

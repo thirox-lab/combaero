@@ -23,9 +23,10 @@ row curves on.
 The helper (``_fd_jacobian.fd_jacobian``) now differences each row on its
 own step ladder; a duct's row takes the largest step at most 1/50 of its
 drive and 1/5 of the drive's distance to the floor, the cap this module
-carried by hand before (``_fd_jacobian.FLOOR_MARGIN``, ``DRIVE_DIVISOR``). The helper also clears the kernels' warm starts before each
-evaluation, so F is a deterministic function of x (with them, one x read
-twice differs by ~1e-11, the noise in a structurally zero column).
+carried by hand before (``_fd_jacobian.FLOOR_MARGIN``,
+``DRIVE_DIVISOR``). The helper also clears the kernels' warm starts before
+each evaluation (with them, one x read twice differs by ~1e-11, the noise in
+a structurally zero column).
 
 Measured on the fixed points, the solved roots and perturbations, both supply
 directions: compressible <= 4.6e-8, incompressible <= 1.5e-8, the near-zero

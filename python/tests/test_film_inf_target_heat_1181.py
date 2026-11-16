@@ -19,10 +19,15 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
+import pytest
 from _fd_jacobian import fd_jacobian, scaled_error
 from test_film_inf_wall_heat_1169 import KEY, _cold, _net
 
 from combaero.network import EnergyBoundary, FlowNetwork, NetworkSolver
+
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
 
 TT_TARGET = 1350.0
 #: The analytic Jacobian against FD, scaled (``scaled_error``): measured

@@ -44,6 +44,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_bleed_station_bassett as tb  # noqa: E402
 import test_effusion_liner as tl  # noqa: E402
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 X_AIR = list(cb.species.dry_air())
 Y_AIR = list(cb.mole_to_mass(X_AIR))
 
@@ -130,7 +134,6 @@ def _liner() -> tuple[FlowNetwork, NetworkSolver, dict]:
     return g, s, r
 
 
-@pytest.mark.slow
 def test_the_panel_crossflow_ratio_uses_the_static_duct_state() -> None:
     """McGreehan-Schotsch's U1/Vi: U1 = m_mean / (rho A) and Vi the isentropic
     jet velocity from the duct's STATIC (P, T) to the gas (their extraction
@@ -153,7 +156,6 @@ def test_the_panel_crossflow_ratio_uses_the_static_duct_state() -> None:
     assert min(gaps) > 0.05
 
 
-@pytest.mark.slow
 def test_the_panel_crossflow_ratio_partials_match_finite_differences() -> None:
     """d(U1/Vi) in the station's T0 (``{node}.T``), static P and both segment
     flows, now through the static T as well. Checked on the panel's own

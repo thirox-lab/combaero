@@ -27,6 +27,10 @@ from combaero.network import (
 )
 from validation.junction import joining_variants as jv
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 _D = 0.05
 _A = math.pi * (_D / 2.0) ** 2
 _Y = list(cb.mole_to_mass(cb.species.dry_air()))

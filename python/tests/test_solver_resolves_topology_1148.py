@@ -49,6 +49,10 @@ from combaero.network import (
     PressureBoundary,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 
 def _burning(regime: str, rev: bool = False, dp: float = 4000.0) -> FlowNetwork:
     """A burning combustor (air orifice + fixed CH4) as the segment's

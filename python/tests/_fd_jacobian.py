@@ -55,9 +55,11 @@ with its tightest window the smallest), "one-sided <element>", "plain" for a
 non-pressure column.
 
 Kernel warm starts (``_last_G``, ``_last_M_exit``) are cleared before every
-evaluation, so F is a function of x alone: with them, one x read twice
-differs by ~1e-11, the noise in a structurally zero column (#1157), and a
-warm-started flow column needed a 1e-5 step.
+evaluation: with them, one x read twice differs by ~1e-11, the noise in a
+structurally zero column (#1157), and a warm-started flow column needed a
+1e-5 step. F is then a function of x up to the state other fixed points
+keep: a ThermalWall with k(T) layers starts its conductivity iteration from
+the previous call's (``components.py``, converged to ~1e-12 relative).
 
 Cost: a pressure column takes 8 residual evaluations, 4 more per extension
 (at most 18 from the default step), against 4 for the old rule.
@@ -178,7 +180,9 @@ def fd_steps(
 
 class FDJacobian(np.ndarray):
     """The FD Jacobian, with each entry's step (``steps``), what bound it
-    (``bounds``) and its estimated error (``est``, nan where none)."""
+    (``bounds``) and its estimated error (``est``, nan where none), scaled as
+    ``scaled_error``: ``|J_ij| |x_j|`` units over the row's largest
+    ``|fd_ij x_j|``."""
 
     steps: np.ndarray
     bounds: np.ndarray
@@ -193,7 +197,7 @@ class FDJacobian(np.ndarray):
         if self.steps is None or self.steps.shape != self.shape:
             return f"column {j}"
         e = self.est[i, j]
-        est = "" if not np.isfinite(e) else f", est. error {e:.1e}"
+        est = "" if not np.isfinite(e) else f", est. scaled error {e:.1e}"
         return f"{self.names[j]} step {self.steps[i, j]:.3g} ({self.bounds[i, j]}{est})"
 
 
@@ -279,7 +283,12 @@ def _row_elements(s: NetworkSolver, x: np.ndarray, n_rows: int) -> list[str | No
         kinds = s._row_kinds(x)
     except AttributeError:
         return [None] * n_rows
-    out = [None if o.startswith("node") or "'" not in o else o.split("'")[1] for o, _ in kinds]
+    # Owners read "<Type> '<id>'": the id runs from the first quote to the
+    # last, so an id holding a quote parses whole.
+    out = [
+        None if o.startswith("node") or o.count("'") < 2 else o[o.index("'") + 1 : o.rindex("'")]
+        for o, _ in kinds
+    ]
     return out if len(out) == n_rows else [None] * n_rows
 
 
@@ -402,8 +411,12 @@ class _Column:
             # Smaller steps may help while the tightest window is the
             # smallest one and above ACCURACY, and whenever the estimate is
             # above UNRESOLVED: then the asymptotic range may lie below.
+            # A duct's row never asks: its level is the cap's, which smaller
+            # steps do not move.
             rel_e = e * xj / scale[i] if scale[i] > 0.0 else 0.0
-            more[i] = not (rel_e <= ACCURACY) and (smaller or not (rel_e <= UNRESOLVED))
+            more[i] = el not in safe and (
+                not (rel_e <= ACCURACY) and (smaller or not (rel_e <= UNRESOLVED))
+            )
         return val, step, est, why, more
 
     def one_sided(
@@ -518,8 +531,11 @@ def fd_jacobian(
             cols[i, j], steps[i, j], est[i, j] = v, away * hs[k], ek
             bounds[i, j] = f"one-sided {el}, drive {min(d0[el], key=_margin):.4g} Pa"
 
+    # The estimates in scaled units, as ``scaled_error`` reports.
+    xs = np.maximum(np.abs(x), 1e-12)[None, :]
+    row = np.maximum(np.max(np.abs(cols) * xs, axis=1), 1e-300)[:, None]
     out = cols.view(FDJacobian)
-    out.steps, out.bounds, out.est, out.names = steps, bounds, est, names
+    out.steps, out.bounds, out.est, out.names = steps, bounds, est * xs / row, names
     return out
 
 

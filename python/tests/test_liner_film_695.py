@@ -31,6 +31,10 @@ from combaero.network import (
 )
 from combaero.network.effusion_liner import LinerFilm
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y_AIR = cb.mole_to_mass(cb.species.dry_air())
 
 LINER = {

@@ -41,6 +41,10 @@ from combaero.network import (
     WallNode,
 )
 
+# Over 20 s on one worker: runs in CI's parallel slow job (see
+# validation-tests.yml), still before every merge.
+pytestmark = pytest.mark.slow
+
 Y = list(cb.mole_to_mass(cb.species.dry_air()))
 A_DUCT = 2.0e-4
 BLEED = cb.STATION_KAPPA_BLEED_BASSETT
