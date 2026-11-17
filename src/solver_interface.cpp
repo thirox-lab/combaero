@@ -1468,9 +1468,13 @@ ChannelResult channel_residuals_and_jacobian(double m_dot, double P_total_up,
     // (2 rho A^2 dRe/dm) = f_re_0 mu L / (2 rho A D^2), 32 mu L / (rho A D^2)
     // for Hagen-Poiseuille. The limit is the one-sided slope from both sides
     // (dP is odd in m). It omits the laminar branch's re_floor, which below
-    // Re ~ 1e-6 (|m| ~ 1e-13 kg/s here) turns the drop quadratic: a floor
-    // for 64 / Re at Re = 0, not physics, and inside any difference step
-    // (#1156; Newton stalled at an exact zero start). dP is unchanged.
+    // Re ~ 1e-6 (|m| ~ 1e-13 kg/s on a 1 cm air duct) turns the drop
+    // quadratic: a floor for 64 / Re at Re = 0, not physics, and inside any
+    // difference step (#1156; Newton stalled at an exact zero start). dP is
+    // unchanged, so J here is the limit from |m| above the floor band, not
+    // dP's own (zero) slope inside it. Forming the laminar drop floor-free,
+    // m (1 - w) f_re / (dRe/dm), would remove the band but moves F by
+    // round-off (19 of 3180 stress F arrays, 1.8e-15): a follow-up.
     res.d_dP_d_mdot = friction_f_re_at_zero(friction_model) * f_multiplier * (L / D) /
                       (2.0 * rho * area * area * dRe_dmdot);
   }

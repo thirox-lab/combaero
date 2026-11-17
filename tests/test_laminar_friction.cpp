@@ -135,8 +135,12 @@ TEST(LaminarFriction, ChannelSlopeAtZeroFlowIsTheLaminarLimit) {
     for (bool exit_head : {false, true}) {
       const auto r0 = channel_at(0.0, m, 1.3, exit_head);
       EXPECT_EQ(r0.dP_calc, 0.0) << m;
-      const double hp = 1.3 * combaero::solver::friction_f_re_at_zero(m) * mu * 1.0 /
-                        (2.0 * rho * A * D * D);
+      // Built from the blend's constants, not from friction_f_re_at_zero, so
+      // the check is independent of the function under test: Hagen-Poiseuille
+      // 32 mu L / (rho A D^2) times the laminar share 1 - w(0), w(0) = 1.013e-5.
+      const double w0 = 0.5 * (1.0 + std::tanh(-laminar_friction::blend_center /
+                                               laminar_friction::blend_width));
+      const double hp = 1.3 * 32.0 * mu * 1.0 / (rho * A * D * D) * (1.0 - w0);
       EXPECT_NEAR(r0.d_dP_d_mdot, hp, 1e-12 * hp) << m;
       // The one-sided limits from either side, well above the laminar
       // re_floor (Re 1e-6, |m| ~ 1e-13 kg/s here; Re 0.07 at 1e-8): the
