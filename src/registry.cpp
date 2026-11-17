@@ -14,7 +14,7 @@ Registry::Registry() {
   friction_f_re_at_zero_["haaland"] = blended;
   friction_f_re_at_zero_["serghides"] = blended;
   friction_f_re_at_zero_["colebrook"] = blended;
-  friction_f_re_at_zero_["petukhov"] = 0.0;
+  friction_f_re_at_zero_["petukhov"] = blended;
 }
 
 Registry::FrictionFunc

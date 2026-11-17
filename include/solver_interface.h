@@ -425,7 +425,10 @@ CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian_colebrook(double Re, double e_D);
 
 // Calculate Friction Factor and its derivative using the Petukhov smooth-pipe
-// correlation: f = (coeff_a * ln(Re) - coeff_b)^(-2)
+// correlation f_turb = (coeff_a * ln(Re_eff) - coeff_b)^(-2), at the turbulent
+// fits' regularized Re_eff = sqrt(Re^2 + 64^2), blended with Hagen-Poiseuille
+// like the other network kernels (friction.h, laminar_friction; #1210). The
+// raw fit has a pole at Re 7.97; friction_petukhov is the fit alone.
 //
 // Method: Analytical Chain Rule
 // Inputs:

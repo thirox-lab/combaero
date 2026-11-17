@@ -23,7 +23,7 @@ using combaero::solver::friction_and_jacobian;
 
 namespace {
 
-const char* const kModels[] = {"haaland", "serghides", "colebrook"};
+const char* const kModels[] = {"haaland", "serghides", "colebrook", "petukhov"};
 
 double f_of(const std::string& m, double Re, double eD) {
   return std::get<0>(friction_and_jacobian(m, Re, eD).result);
@@ -55,6 +55,12 @@ TEST(LaminarFriction, LeavesTheTurbulentFitsUntouched) {
                   1e-12 * friction_serghides(Re, eD));
       EXPECT_NEAR(f_of("colebrook", Re, eD), friction_colebrook(Re, eD),
                   1e-9 * friction_colebrook(Re, eD));
+      // Petukhov at the turbulent fits' regularized Re, sqrt(Re^2 + 64^2):
+      // that shifts f by 5.7e-6 relative at Re 1e4, 5.7e-8 at 1e5 (#1210).
+      const double re_eff = std::hypot(Re, laminar_friction::turbulent_re_floor);
+      EXPECT_NEAR(f_of("petukhov", Re, eD), friction_petukhov(re_eff),
+                  1e-12 * friction_petukhov(re_eff));
+      EXPECT_NEAR(f_of("petukhov", Re, eD), friction_petukhov(Re), 3e-5 * friction_petukhov(Re));
     }
   }
 }
@@ -65,6 +71,22 @@ TEST(LaminarFriction, KeepsTheDropLinearAsTheFlowStops) {
     const double ratio = (f_of(m, 1e-2, 0.0) * 1e-2) / (f_of(m, 1.0, 0.0) * 1.0);
     EXPECT_NEAR(ratio, 1.0, 1e-6) << m;
     EXPECT_TRUE(std::isfinite(f_of(m, 0.0, 0.0))) << m;
+  }
+}
+
+// The drop goes as f Re^2: it must rise with the flow at every Re. The raw
+// Petukhov fit has a pole at Re 7.97 and fell 700x across it (#1210).
+TEST(LaminarFriction, DropRisesWithFlowAtEveryRe) {
+  for (const char* m : kModels) {
+    double prev = 0.0;
+    for (double Re = 1e-3; Re < 1e6; Re *= 1.02) {
+      const double f = f_of(m, Re, 0.0);
+      ASSERT_TRUE(std::isfinite(f) && f > 0.0) << m << " Re " << Re;
+      const double drop = f * Re * Re;
+      ASSERT_GT(drop, prev) << m << " Re " << Re;
+      ASSERT_GT(df_of(m, Re, 0.0) * Re * Re + 2.0 * f * Re, 0.0) << m << " Re " << Re;
+      prev = drop;
+    }
   }
 }
 
@@ -120,8 +142,6 @@ TEST(LaminarFriction, ZeroReLimitOfFRe) {
     EXPECT_NEAR(f_of(m, 0.1, 0.0) * 0.1, combaero::solver::friction_f_re_at_zero(m), 1e-6)
         << m;
   }
-  // Petukhov has no laminar branch: f -> 0 as 1 / ln(Re)^2.
-  EXPECT_EQ(combaero::solver::friction_f_re_at_zero("petukhov"), 0.0);
   EXPECT_THROW(combaero::solver::friction_f_re_at_zero("nope"), std::invalid_argument);
 }
 
@@ -154,9 +174,4 @@ TEST(LaminarFriction, ChannelSlopeAtZeroFlowIsTheLaminarLimit) {
       }
     }
   }
-  // Petukhov: f -> 0 as the flow stops, so the slope at zero is 0, finite
-  // (it was 0 * inf = NaN).
-  const auto rp = channel_at(0.0, "petukhov", 1.0, true);
-  EXPECT_EQ(rp.dP_calc, 0.0);
-  EXPECT_EQ(rp.d_dP_d_mdot, 0.0);
 }

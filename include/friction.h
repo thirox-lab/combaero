@@ -51,7 +51,7 @@ double friction_colebrook(double Re, double e_D, double tol = 1e-10,
                           int max_iter = 20);
 
 // Laminar-turbulent blend of the network friction kernels
-// (friction_and_jacobian_{haaland,serghides,colebrook}): f = (1 - w) 64/Re +
+// (friction_and_jacobian_{haaland,serghides,colebrook,petukhov}): f = (1 - w) 64/Re +
 // w f_turb, w = (1 + tanh((Re - blend_center) / blend_width)) / 2.
 // The laminar branch is Hagen-Poiseuille, f Re = 64, and carries its own
 // floor, re_floor, far below any flow a solve meets, so the drop stays linear

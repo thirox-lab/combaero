@@ -986,7 +986,7 @@ double friction_petukhov_clamped_dRe(double Re);
 
 The functions above are the turbulent fits on their own. The network kernels
 `solver::friction_and_jacobian(model, Re, e_D)` ("haaland", "serghides",
-"colebrook") blend them with Hagen-Poiseuille, `f = (1 - w) 64/Re + w f_turb`
+"colebrook", "petukhov") blend them with Hagen-Poiseuille, `f = (1 - w) 64/Re + w f_turb`
 with `w = (1 + tanh((Re - 2300)/400))/2` (`laminar_friction` in friction.h).
 The laminar branch carries its own floor of Re 1e-6, so a channel's drop stays
 linear in its flow down to essentially zero flow.
@@ -994,7 +994,7 @@ linear in its flow down to essentially zero flow.
 ```cpp
 // lim_{Re -> 0} f Re: f_re (1 - w(0)) for the blend (63.99935), and per model
 // (Registry::friction_f_re_at_zero): the blend's for haaland / serghides /
-// colebrook, 0 for petukhov (no laminar branch). Unknown tag: invalid_argument.
+// colebrook / petukhov. Unknown tag: invalid_argument.
 double solver::laminar_blend_f_re_at_zero();
 double solver::friction_f_re_at_zero(const std::string& tag);
 ```

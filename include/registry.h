@@ -33,8 +33,8 @@ public:
 
   // lim_{Re -> 0} f Re of a registered friction model (#1156): the laminar
   // blend's share of Hagen-Poiseuille's f Re = 64 at zero flow
-  // (solver::laminar_blend_f_re_at_zero) for the blended models, 0 for one
-  // with no laminar branch (Petukhov: f -> 0 as 1 / ln(Re)^2). A duct's drop
+  // (solver::laminar_blend_f_re_at_zero), for every registered model (all four
+  // are blended since #1210; Petukhov was the raw fit, f Re -> 0). A duct's drop
   // goes as m f(Re) Re, so this is its slope at exactly zero flow, where the
   // kernel's |m| f is 0 * inf.
   double friction_f_re_at_zero(const std::string &name) const;

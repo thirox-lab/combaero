@@ -257,11 +257,11 @@ def test_friction_petukhov_jacobian():
     boundary = cb._core.friction_and_jacobian_petukhov(3000.0)
     assert boundary.status.name == "VALID"
 
-    # Below 3000: extrapolated, but still returns a finite nonzero value
+    # Below transition the kernel is the Hagen-Poiseuille blend (#1210).
     low_re = cb._core.friction_and_jacobian_petukhov(500.0)
-    assert low_re.status.name == "EXTRAPOLATED"
+    assert low_re.status.name == "VALID"
     f_low, jac_low = low_re.result
-    assert f_low > 0.0
+    assert f_low * 500.0 == pytest.approx(64.0, rel=2e-3)
     assert jac_low < 0.0
 
 
