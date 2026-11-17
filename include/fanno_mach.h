@@ -204,8 +204,8 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
 // again after a fold's valley) returns the first fall. The two scans place
 // their brackets differently (from the choke, from the warm bracket), so a
 // fold whose turns hide between one scan's bracket ends but not the other's
-// can still make a warm and a cold call differ (1 in 3,323 checked calls of
-// the #1191 sweeps).
+// (#1206) can still make a warm and a cold call differ, either way (0.4-0.8 %
+// of checked calls in the #1191 review's all-model sweeps).
 
 struct FannoRayleighMarch {
   double M_in = 0.0;       // inlet Mach

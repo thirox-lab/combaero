@@ -877,8 +877,14 @@ the peak and then jumps to the next branch or to the choked flux (#1161,
   22 marches per cooled warm call (12 -> 35 on the stress families, against
   53 for a cold call). The two scans place their brackets differently (from
   the choke, from the warm bracket), so a fold whose turns hide between one
-  scan's bracket ends but not the other's can still make a warm and a cold
-  call differ: 1 of 3,323 checked warm calls in random cooled-duct sweeps.
+  scan's bracket ends but not the other's (#1206) can still make a warm and a
+  cold call differ, either way: the check can miss a narrow fold the cold scan
+  finds, or find a real first fall the cold scan misses (then the warm call is
+  the right one). Random cooled-duct sweeps: 1 of 3,323 checked calls on
+  haaland ducts, 0.4-0.8 % of checked calls over all four friction models
+  (part of it the #1205 zero-flow offset, the same on main). Below about 1 Pa
+  of drive a fixed warm root matches the cold one only to the root's
+  derivative noise (up to 4e-4).
 
 ### Rocket Nozzle Thrust
 ```cpp

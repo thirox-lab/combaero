@@ -1648,9 +1648,13 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       // just above a later fall brackets that one (#1191): the warm root then
       // depended on the solver's history. Its root is checked against the
       // cold one by the cold scan itself, run up to the bracket's lower end:
-      // a fall below it is the first fall, and the root (to Brent's
-      // rounding: the scan's brackets are placed from lo, not from the
-      // choke). Without one the warm bracket holds the first fall.
+      // a fall below it is the first fall, and the root. Its brackets are
+      // placed from lo, not from the choke, so it matches the cold root to
+      // the root's rounding, which near a fold's peak at a few Pa of drive
+      // is ~1e-6 (and the derivatives' noise below ~1 Pa); a fold hidden
+      // between one scan's bracket ends but not the other's can make them
+      // disagree either way (#1206). Without one the warm bracket holds the
+      // first fall.
       if (may_turn) {
         const FirstFall ff = first_fall(lo);
         if (ff.found) {
