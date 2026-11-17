@@ -260,7 +260,11 @@ jobs:
         # macos-15, not macos-latest (= macos-26): in the thirox-lab org the
         # macos-latest job went unassigned and was abandoned after 15 min three
         # times on 2026-11-04.
-        os: [ ubuntu-latest, macos-15, windows-latest ]
+        # No macOS in the merge queue: on 2026-11-17 a macos-15 job went
+        # unassigned for 15 min and was abandoned three times in one evening,
+        # each time failing status-check and dropping a healthy entry. PRs,
+        # pushes to main and the nightly run still build on macOS.
+        os: ${{ github.event_name == 'merge_group' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-15", "windows-latest"]') }}
         build_type: [ Release ]
 
     steps:
