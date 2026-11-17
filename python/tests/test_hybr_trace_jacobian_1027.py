@@ -8,6 +8,15 @@ Jacobian hybrj requested at its 48th evaluation that entry became R's pivot.
 hybrj's dogleg guards only an exactly zero pivot, so the Gauss-Newton step
 overflowed, the dogleg step and the trust radius went NaN, and evaluations
 49-56 were all NaN until hybr gave up ("not making good progress").
+
+The test runs effusion 103, the other seed #1027 found. A far path like
+this is round-off sensitive: by #1198, 105 had left it (with the trace flush
+removed, hybr proposed no NaN iterate there, before and after #1198), and
+#1198's 1e-16 Jacobian change cut its run below the old 48-evaluation
+precondition. On 103, without the flush, hybr's 25th evaluation is the first
+NaN, 8 of 32 in all, before and after #1198; with it, 0 of 53. Re-check the
+seed (flush removed, it must still go NaN) whenever this test's precondition
+trips.
 """
 
 from __future__ import annotations
@@ -30,8 +39,9 @@ from networks import FAMILIES  # noqa: E402
 def test_primary_hybr_never_proposes_a_non_finite_iterate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Effusion 105 cold, minus the retries: the primary hybr attempt sees
-    only finite iterates (before: 8 of its 56 evaluations NaN)."""
+    """Effusion 103 cold, minus the retries: the primary hybr attempt sees
+    only finite iterates (without the trace flush: 8 of its 32 evaluations
+    NaN, the first at evaluation 25)."""
     hybr_x: list[np.ndarray] = []
     phase = {"primary": True}
     real_root = solver_mod.root
@@ -49,7 +59,7 @@ def test_primary_hybr_never_proposes_a_non_finite_iterate(
         return real_root(f, x0, method=method, **kw)
 
     monkeypatch.setattr(solver_mod, "root", traced_root)
-    net, _ = FAMILIES["effusion"](105)
+    net, _ = FAMILIES["effusion"](103)
     solver = NetworkSolver(net)
     solver.homotopy_retry = False
     solver.bc_ramp_retry = False
@@ -58,7 +68,7 @@ def test_primary_hybr_never_proposes_a_non_finite_iterate(
         res = solver.solve(timeout=60.0)
 
     # Enough evaluations to pass the point where the NaN step was taken.
-    assert len(hybr_x) > 48, f"hybr ran only {len(hybr_x)} evaluations: case changed"
+    assert len(hybr_x) > 25, f"hybr ran only {len(hybr_x)} evaluations: case changed"
     n_bad = sum(not np.all(np.isfinite(x)) for x in hybr_x)
     assert n_bad == 0, f"{n_bad} of {len(hybr_x)} hybr iterates non-finite"
     assert res["__converged__"], res.get("__message__")
