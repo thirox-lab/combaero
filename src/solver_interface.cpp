@@ -348,18 +348,21 @@ friction_and_jacobian_colebrook(double Re, double e_D) {
 
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian_petukhov(double Re) {
-  // f = (coeff_a * ln(Re) - coeff_b)^(-2)
-  double x = petukhov::coeff_a * std::log(Re) - petukhov::coeff_b;
-  double f = 1.0 / (x * x);
+  // f = (coeff_a * ln(Re) - coeff_b)^(-2), at the same regularized Re as the
+  // other turbulent fits. The raw fit's base vanishes at Re 7.97, a pole the
+  // floor keeps out of reach (Re_eff >= 64), and the blend hands everything
+  // below transition to Hagen-Poiseuille (#1210).
+  const double re_eps = laminar_friction::turbulent_re_floor;
+  const double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
+  const double x = petukhov::coeff_a * std::log(Re_eff) - petukhov::coeff_b;
+  const double f_turb = 1.0 / (x * x);
 
-  // df/dRe = -2 * x^(-3) * dx/dRe
-  // dx/dRe = coeff_a / Re
-  double dx_dRe = petukhov::coeff_a / Re;
-  double jacobian = (-2.0 / (x * x * x)) * dx_dRe;
+  // df/dRe = -2 * x^(-3) * dx/dRe, dx/dRe = coeff_a / Re_eff * Re / Re_eff
+  const double dx_dRe = petukhov::coeff_a * Re / (Re_eff * Re_eff);
+  const double df_turb_dRe = (-2.0 / (x * x * x)) * dx_dRe;
 
-  CorrelationValidity validity =
-      (Re >= 3000.0) ? CorrelationValidity::VALID : CorrelationValidity::EXTRAPOLATED;
-  return {{f, jacobian}, validity, ""};
+  const auto [f, jacobian] = blend_laminar(Re, f_turb, df_turb_dRe);
+  return {{f, jacobian}, CorrelationValidity::VALID, ""};
 }
 
 CorrelationResult<std::tuple<double, double>>
