@@ -964,6 +964,16 @@ constexpr double kRayleighHermiteDegenerate = 1e-14;
 constexpr double kRayleighDipStartMargin = 0.05;
 // Iteration cap of the minimiser (it converges in ~20-40).
 constexpr int kRayleighDipMaxIter = 200;
+// A cooled bracket whose ends straddle zero is walked in this many equal
+// parts of log G, each given the Hermite test (#1190). The rise of a laminar
+// fold spans 0.18-0.21 of log G on the measured ducts, against the bracket's
+// ln 2. In the kernel, over 23020 random cooled cold calls (seeds 7, 23, 41)
+// and the #1190 review's 23k (random, phase-swept and small-diameter ducts),
+// the ends' slopes alone (one part) left 14 + 20 straddling folds on a later
+// crossing; two parts found the first fall on all of them. Three, four and
+// twelve parts found no more (only root rounding differs), at +0.6, +1.1-1.3
+// and +5-6 marches per cold call over two.
+constexpr int kRayleighStraddleSplit = 2;
 
 // Brent's minimiser (golden section with parabolic steps) of fn on (a, b)
 // from x0 inside it, stopped as soon as fn reads <= 0: returns that point,
@@ -1398,11 +1408,12 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // has an interior minimum, the last one (ending at the march's sonic
     // flux) at fluxes 4^-j of that end below it. Brent's minimiser looks for
     // a point at or below zero near each minimum, and the first fall is then
-    // bracketed below that point. Heated and adiabatic ducts, and a cooled
-    // bracket with no minimum, scan exactly as before. Not seen: two turns
-    // of the excess between bracket ends whose values and slopes show none,
-    // and a bracket whose ends straddle zero, which is taken as it is: if it
-    // holds a fall, a rise and a later fall, Brent may return the later one.
+    // bracketed below that point. A cooled bracket whose ends straddle zero
+    // is walked in kRayleighStraddleSplit parts with the same test (#1190),
+    // and solved in the first part that holds a fall. Heated and adiabatic
+    // ducts, and a cooled bracket with no minimum, scan exactly as before.
+    // Not seen: two turns of the excess between the ends of a bracket (or,
+    // straddling, of a part) whose values and slopes show none.
     const double top = std::log(Gc) - 1e-12;
     double lo = top - 7.0;
     double f_lo = F(lo);
@@ -1424,6 +1435,7 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // the two (with kRayleighZetaFloor) leaves a band of 0.1-8 Pa of drive
     // below the choke.
     bool found = false;
+    double root = std::nan("");  // log G of the root, where already solved
     bool past_subsonic = false;
     // The fold search of a cooled duct (#1167). Slopes are dF/dlog G.
     const bool may_turn = pb.Tt_exit < pb.Tt0;
@@ -1438,6 +1450,51 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     double s_lo = std::nan("");  // slope at lo, NaN not yet read
     double x_prev = std::nan(""), f_prev = 0.0;  // the scan point before lo
     double hi = lo, f_hi = f_lo;
+    // The Hermite test of [lo, hi] (#1167): the cubic interpolant of its
+    // ends' values and slopes (s_lo read here if not yet, then s_hi, which
+    // it returns through its argument). Where the cubic has an interior
+    // minimum, F is minimised over [lo, the cubic's next maximum, or hi]: a
+    // point at or below zero there, or NaN.
+    auto hermite_dip = [&](double& s_hi) {
+      if (std::isnan(s_lo)) {
+        s_lo = slope(lo, f_lo);
+      }
+      s_hi = slope(hi, f_hi);
+      const double H = hi - lo;
+      const double qa = 6.0 * (f_lo - f_hi) + 3.0 * H * (s_lo + s_hi);
+      const double qb = -6.0 * (f_lo - f_hi) - 4.0 * H * s_lo - 2.0 * H * s_hi;
+      const double qc = H * s_lo;
+      double t_min = std::nan(""), t_max = 1.0;
+      if (std::abs(qa) > kRayleighHermiteDegenerate * (std::abs(qb) + std::abs(qc))) {
+        const double disc = qb * qb - 4.0 * qa * qc;
+        if (disc > 0.0) {
+          const double r = std::sqrt(disc);
+          const double t1 = (-qb - r) / (2.0 * qa), t2 = (-qb + r) / (2.0 * qa);
+          for (const double t : {t1, t2}) {
+            if (t > 0.0 && t < 1.0) {
+              if (2.0 * qa * t + qb > 0.0) {
+                t_min = t;
+              }
+            }
+          }
+          for (const double t : {t1, t2}) {
+            if (t > 0.0 && t < 1.0 && 2.0 * qa * t + qb < 0.0 && t > t_min) {
+              t_max = t;
+            }
+          }
+        }
+      } else if (qb > 0.0 && -qc / qb > 0.0 && -qc / qb < 1.0) {
+        t_min = -qc / qb;
+      }
+      if (!std::isfinite(t_min)) {
+        return std::nan("");
+      }
+      const double b = lo + t_max * H;
+      const double x0 = lo + std::clamp(t_min, kRayleighDipStartMargin * t_max,
+                                        (1.0 - kRayleighDipStartMargin) * t_max) *
+                                 H;
+      return dip_in(lo, b, x0);
+    };
     while (hi < top) {
       x_prev = (hi > lo) ? lo : std::nan("");
       f_prev = f_lo;
@@ -1451,6 +1508,51 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       f_hi = F(hi);
       if (f_lo > 0.0 && f_hi <= 0.0) {
         found = true;
+        if (may_turn) {
+          // A cooled bracket whose ends straddle zero can still hold a
+          // fall, a rise and a later fall, and Brent may take the later
+          // one (#1190). Its ends' slopes alone miss such a turn wherever
+          // the fold sits near an end, so the bracket is walked in
+          // kRayleighStraddleSplit equal parts with the same Hermite test
+          // on each: the first part that straddles zero, or a point at or
+          // below zero at a part's minimum, ends the bracket. Its first fall
+          // is the bracket's (F(lo) > 0), with fewer crossings after it.
+          // The whole bracket's root is kept where that part holds it, so a
+          // bracket with no turn returns exactly what it did before. (Exact
+          // when the part holds one crossing; with several, both roots are
+          // among them. No test pins the keep: only the stress F,J hashes
+          // against main do, and dropping it moves G by rounding on about
+          // half of all cooled cold calls.)
+          const double whole = brent(F, lo, hi, f_lo, f_hi, 1e-13);
+          const double end = hi, f_end = f_hi;
+          const double part = (end - lo) / kRayleighStraddleSplit;
+          const double lo0 = lo;
+          for (int i = 1; i <= kRayleighStraddleSplit; ++i) {
+            if (i < kRayleighStraddleSplit) {
+              hi = lo0 + i * part;
+              f_hi = F(hi);
+            } else {
+              hi = end;
+              f_hi = f_end;
+            }
+            double s_hi = 0.0;
+            const double x = hermite_dip(s_hi);
+            if (std::isfinite(x)) {
+              hi = x;
+              f_hi = F(x);
+              break;
+            }
+            if (f_hi <= 0.0) {
+              break;
+            }
+            lo = hi;
+            f_lo = f_hi;
+            s_lo = s_hi;
+          }
+          if (whole >= lo && whole <= hi) {
+            root = whole;
+          }
+        }
         break;
       }
       if (!(may_turn && f_lo > 0.0 && f_hi > 0.0)) {
@@ -1520,54 +1622,18 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       // An interior bracket: the cubic Hermite interpolant of the ends'
       // values and slopes. An interior minimum of it (one turn, or a fall,
       // rise and fall) is searched, over [lo, the cubic's next maximum].
-      if (std::isnan(s_lo)) {
-        s_lo = slope(lo, f_lo);
-      }
-      const double s_hi = slope(hi, f_hi);
-      const double H = hi - lo;
-      const double qa = 6.0 * (f_lo - f_hi) + 3.0 * H * (s_lo + s_hi);
-      const double qb = -6.0 * (f_lo - f_hi) - 4.0 * H * s_lo - 2.0 * H * s_hi;
-      const double qc = H * s_lo;
-      double t_min = std::nan(""), t_max = 1.0;
-      if (std::abs(qa) > kRayleighHermiteDegenerate * (std::abs(qb) + std::abs(qc))) {
-        const double disc = qb * qb - 4.0 * qa * qc;
-        if (disc > 0.0) {
-          const double r = std::sqrt(disc);
-          const double t1 = (-qb - r) / (2.0 * qa), t2 = (-qb + r) / (2.0 * qa);
-          for (const double t : {t1, t2}) {
-            if (t > 0.0 && t < 1.0) {
-              if (2.0 * qa * t + qb > 0.0) {
-                t_min = t;
-              }
-            }
-          }
-          for (const double t : {t1, t2}) {
-            if (t > 0.0 && t < 1.0 && 2.0 * qa * t + qb < 0.0 && t > t_min) {
-              t_max = t;
-            }
-          }
-        }
-      } else if (qb > 0.0 && -qc / qb > 0.0 && -qc / qb < 1.0) {
-        t_min = -qc / qb;
-      }
-      if (std::isfinite(t_min)) {
-        const double b = lo + t_max * H;
-        const double x0 =
-            lo + std::clamp(t_min, kRayleighDipStartMargin * t_max,
-                            (1.0 - kRayleighDipStartMargin) * t_max) *
-                     H;
-        const double x = dip_in(lo, b, x0);
-        if (std::isfinite(x)) {
-          hi = x;
-          f_hi = F(x);
-          found = true;
-          break;
-        }
+      double s_hi = 0.0;
+      const double x = hermite_dip(s_hi);
+      if (std::isfinite(x)) {
+        hi = x;
+        f_hi = F(x);
+        found = true;
+        break;
       }
       s_lo = s_hi;
     }
     if (found) {
-      G = std::exp(brent(F, lo, hi, f_lo, f_hi, 1e-13));
+      G = std::exp(std::isfinite(root) ? root : brent(F, lo, hi, f_lo, f_hi, 1e-13));
     } else {
       choked = Fc >= 0.0 || pb.P <= 0.0 || past_subsonic;
       G = Gc;

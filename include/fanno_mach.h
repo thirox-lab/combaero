@@ -196,8 +196,9 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
 // Where the needed drive peaks and turns back down (a cooled duct at a
 // laminar friction range or near the choke), G rises continuously with the
 // drive up to the peak and then jumps to the next branch or to the choke.
-// The cold scan (G_guess <= 0) searches for that first fall only in brackets
-// whose ends are both positive (#1167). G_guess warm-starts the root, and a
+// The cold scan (G_guess <= 0) searches a cooled duct's flux brackets for that
+// first fall, those whose ends are both positive (#1167) and those whose ends
+// straddle zero (#1190). G_guess warm-starts the root, and a
 // warm call agrees with the cold one unless the guess lies within 6.4 %
 // above a LATER fall: wherever the needed drive rises again after a fold's
 // valley (one fold is enough, e.g. rising toward the choke), a warm start
