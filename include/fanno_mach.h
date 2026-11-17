@@ -198,11 +198,14 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
 // drive up to the peak and then jumps to the next branch or to the choke.
 // The cold scan (G_guess <= 0) searches a cooled duct's flux brackets for that
 // first fall, those whose ends are both positive (#1167) and those whose ends
-// straddle zero (#1190). G_guess warm-starts the root, and a
-// warm call agrees with the cold one unless the guess lies within 6.4 %
-// above a LATER fall: wherever the needed drive rises again after a fold's
-// valley (one fold is enough, e.g. rising toward the choke), a warm start
-// from that upper branch returns the later crossing.
+// straddle zero (#1190). G_guess warm-starts the root. On a cooled duct the
+// warm root is checked by the same scan run up to the warm bracket's lower
+// end (#1191), so a guess just above a LATER fall (the needed drive rising
+// again after a fold's valley) returns the first fall. The two scans place
+// their brackets differently (from the choke, from the warm bracket), so a
+// fold whose turns hide between one scan's bracket ends but not the other's
+// can still make a warm and a cold call differ (1 in 3,323 checked calls of
+// the #1191 sweeps).
 
 struct FannoRayleighMarch {
   double M_in = 0.0;       // inlet Mach
@@ -228,7 +231,8 @@ double fanno_rayleigh_choked_mass_flux(double Pt0, double Tt0, double Tt_exit,
                                        double f_multiplier = 1.0);
 
 // fanno_channel_flow with heat: same contract and fields, plus dG_dTt_exit.
-// G_guess (the previous flux, if any) only warm-starts the root.
+// G_guess (the previous flux, if any) only warm-starts the root (see the
+// cooled-duct check above).
 FannoChannelFlow fanno_rayleigh_channel_flow(
     double Pt0, double Tt0, double Tt_exit, const std::vector<double>& X, double P_target,
     bool exit_total, double L, double D, double roughness, const std::string& friction_model,

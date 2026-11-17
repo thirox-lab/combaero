@@ -1347,74 +1347,44 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   ChokeMode mode = ChokeMode::kExit;
   double G = 0.0;
   bool done = false;
-  // A warm start: a tight bracket around the previous flux, widened. A
-  // Newton iterate's flux is usually within 0.1% of the last one. On a
-  // cooled duct, whose excess can turn, the bracket stops widening at 6.4% of
-  // the guess (kRayleighWarmTurnSpan): a wider one could hold a fall, a rise
-  // and a later fall, and Brent could take the later one (#1167); the cold
-  // scan, which looks for the first, decides those.
-  if (pb.G_guess > 0.0 && pb.G_guess < G_max && pb.P > 0.0) {
-    const double w_max = (pb.Tt_exit < pb.Tt0) ? kRayleighWarmTurnSpan : 1.0;
-    double w = 1e-3;
-    double lo = std::log(pb.G_guess * (1.0 - w));
-    double hi = std::log(std::min(G_max * (1.0 - 1e-12), pb.G_guess * (1.0 + w)));
-    double f_lo = F(lo), f_hi = F(hi);
-    while ((f_lo <= 0.0 || f_hi > 0.0) && w < w_max) {
-      w *= 8.0;
-      if (f_lo <= 0.0) {
-        hi = lo;
-        f_hi = f_lo;
-        lo = std::log(pb.G_guess * std::max(1.0 - w, 1e-6));
-        f_lo = F(lo);
-      } else {
-        lo = hi;
-        f_lo = f_hi;
-        hi = std::log(std::min(G_max * (1.0 - 1e-12), pb.G_guess * (1.0 + w)));
-        f_hi = F(hi);
-      }
-    }
-    // Only a bracket whose upper end is itself unchoked holds a plain root;
-    // one that straddles the choke goes the cold way below.
-    if (f_lo > 0.0 && f_hi <= 0.0 && march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor) {
-      G = std::exp(brent(F, lo, hi, f_lo, f_hi, 1e-13));
-      done = true;
-    }
-  }
-  if (!done) {
-    const Choke ck = choked_flux(pb, pb.Pt0, pb.Tt0, pb.Tt_exit, X);
-    mode = ck.mode;
-    const double Gc = ck.G;
-    const MarchEnd mc = march_at(Gc);
-    const double Fc =
-        (pb.P > 0.0)
-            ? rayleigh_exit_pressure(pb.duct(Gc, pb.Tt0, pb.Tt_exit, &X), mc, pb.exit_total) - pb.P
-            : 1.0;
-    // The root on the branch continuous from zero flow: the FIRST fall of
-    // the excess through zero, scanned up from low flux. The excess need not
-    // be monotone: near choke a cooled duct's Rayleigh gain can outgrow its
-    // friction (a short duct, entrance-enhanced heat transfer and fully
-    // developed f: 0.76 of it on a 1.27-diameter impingement crossflow
-    // segment), so it rises again toward the choke. Taking the choke whenever
-    // the excess was still positive there, or the root nearest the choke,
-    // jumped that duct to its sonic flux at a few Pa of drive. Only with no
-    // fall below the choke does the duct choke.
-    // A fall and rise of the excess inside one ln-2 bracket (a cooled duct
-    // whose needed drive peaks and turns back) leaves both of its ends
-    // positive: testing the ends alone read such a duct choked while a warm
-    // start found its first crossing (#1167). Only cooling can turn the
-    // excess back up (a Rayleigh gain), so on a cooled duct a bracket with
-    // both ends positive is also searched: an interior one where the cubic
-    // Hermite interpolant of its ends' values and slopes (kRayleighSlopeStep)
-    // has an interior minimum, the last one (ending at the march's sonic
-    // flux) at fluxes 4^-j of that end below it. Brent's minimiser looks for
-    // a point at or below zero near each minimum, and the first fall is then
-    // bracketed below that point. A cooled bracket whose ends straddle zero
-    // is walked in kRayleighStraddleSplit parts with the same test (#1190),
-    // and solved in the first part that holds a fall. Heated and adiabatic
-    // ducts, and a cooled bracket with no minimum, scan exactly as before.
-    // Not seen: two turns of the excess between the ends of a bracket (or,
-    // straddling, of a part) whose values and slopes show none.
-    const double top = std::log(Gc) - 1e-12;
+  // The fold search of a cooled duct (#1167, #1190, #1191).
+  const bool may_turn = pb.Tt_exit < pb.Tt0;
+  // The root on the branch continuous from zero flow: the FIRST fall of
+  // the excess through zero, scanned up from low flux. The excess need not
+  // be monotone: near choke a cooled duct's Rayleigh gain can outgrow its
+  // friction (a short duct, entrance-enhanced heat transfer and fully
+  // developed f: 0.76 of it on a 1.27-diameter impingement crossflow
+  // segment), so it rises again toward the choke. Taking the choke whenever
+  // the excess was still positive there, or the root nearest the choke,
+  // jumped that duct to its sonic flux at a few Pa of drive. Only with no
+  // fall below the choke does the duct choke.
+  // A fall and rise of the excess inside one ln-2 bracket (a cooled duct
+  // whose needed drive peaks and turns back) leaves both of its ends
+  // positive: testing the ends alone read such a duct choked while a warm
+  // start found its first crossing (#1167). Only cooling can turn the
+  // excess back up (a Rayleigh gain), so on a cooled duct a bracket with
+  // both ends positive is also searched: an interior one where the cubic
+  // Hermite interpolant of its ends' values and slopes (kRayleighSlopeStep)
+  // has an interior minimum, the last one (ending at the march's sonic
+  // flux) at fluxes 4^-j of that end below it. Brent's minimiser looks for
+  // a point at or below zero near each minimum, and the first fall is then
+  // bracketed below that point. A cooled bracket whose ends straddle zero
+  // is walked in kRayleighStraddleSplit parts with the same test (#1190),
+  // and solved in the first part that holds a fall. Heated and adiabatic
+  // ducts, and a cooled bracket with no minimum, scan exactly as before.
+  // Not seen: two turns of the excess between the ends of a bracket (or,
+  // straddling, of a part) whose values and slopes show none.
+  // first_fall(top) scans log G up to top, in ln-2 brackets from top - 7, and
+  // returns the bracket of the first fall below top (or the root, where a
+  // straddle split already solved it). The cold call scans up to the choke;
+  // a cooled warm call scans below its bracket (#1191).
+  struct FirstFall {
+    bool found = false;
+    bool past_subsonic = false;  // no fall up to the march's sonic flux
+    double lo = 0.0, f_lo = 0.0, hi = 0.0, f_hi = 0.0;
+    double root = std::nan("");  // log G of the root, where already solved
+  };
+  auto first_fall = [&](double top) {
     double lo = top - 7.0;
     double f_lo = F(lo);
     while (f_lo <= 0.0 && lo > top - 60.0) {
@@ -1437,8 +1407,7 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     bool found = false;
     double root = std::nan("");  // log G of the root, where already solved
     bool past_subsonic = false;
-    // The fold search of a cooled duct (#1167). Slopes are dF/dlog G.
-    const bool may_turn = pb.Tt_exit < pb.Tt0;
+    // Slopes are dF/dlog G.
     auto slope = [&](double x, double fx) {
       return (fx - F(x - kRayleighSlopeStep)) / kRayleighSlopeStep;
     };
@@ -1632,10 +1601,83 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       }
       s_lo = s_hi;
     }
-    if (found) {
-      G = std::exp(std::isfinite(root) ? root : brent(F, lo, hi, f_lo, f_hi, 1e-13));
+    FirstFall out_ff;
+    out_ff.found = found;
+    out_ff.past_subsonic = past_subsonic;
+    out_ff.lo = lo;
+    out_ff.f_lo = f_lo;
+    out_ff.hi = hi;
+    out_ff.f_hi = f_hi;
+    out_ff.root = root;
+    return out_ff;
+  };
+  auto solve_fall = [&](const FirstFall& ff) {
+    return std::exp(std::isfinite(ff.root) ? ff.root
+                                           : brent(F, ff.lo, ff.hi, ff.f_lo, ff.f_hi, 1e-13));
+  };
+  // A warm start: a tight bracket around the previous flux, widened. A
+  // Newton iterate's flux is usually within 0.1% of the last one. On a
+  // cooled duct, whose excess can turn, the bracket stops widening at 6.4% of
+  // the guess (kRayleighWarmTurnSpan): a wider one could hold a fall, a rise
+  // and a later fall, and Brent could take the later one (#1167); the cold
+  // scan, which looks for the first, decides those.
+  if (pb.G_guess > 0.0 && pb.G_guess < G_max && pb.P > 0.0) {
+    const double w_max = may_turn ? kRayleighWarmTurnSpan : 1.0;
+    double w = 1e-3;
+    double lo = std::log(pb.G_guess * (1.0 - w));
+    double hi = std::log(std::min(G_max * (1.0 - 1e-12), pb.G_guess * (1.0 + w)));
+    double f_lo = F(lo), f_hi = F(hi);
+    while ((f_lo <= 0.0 || f_hi > 0.0) && w < w_max) {
+      w *= 8.0;
+      if (f_lo <= 0.0) {
+        hi = lo;
+        f_hi = f_lo;
+        lo = std::log(pb.G_guess * std::max(1.0 - w, 1e-6));
+        f_lo = F(lo);
+      } else {
+        lo = hi;
+        f_lo = f_hi;
+        hi = std::log(std::min(G_max * (1.0 - 1e-12), pb.G_guess * (1.0 + w)));
+        f_hi = F(hi);
+      }
+    }
+    // Only a bracket whose upper end is itself unchoked holds a plain root;
+    // one that straddles the choke goes the cold way below.
+    if (f_lo > 0.0 && f_hi <= 0.0 && march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor) {
+      // A cooled duct's excess can fall, rise and fall again, and a guess
+      // just above a later fall brackets that one (#1191): the warm root then
+      // depended on the solver's history. Its root is checked against the
+      // cold one by the cold scan itself, run up to the bracket's lower end:
+      // a fall below it is the first fall, and the root (to Brent's
+      // rounding: the scan's brackets are placed from lo, not from the
+      // choke). Without one the warm bracket holds the first fall.
+      if (may_turn) {
+        const FirstFall ff = first_fall(lo);
+        if (ff.found) {
+          G = solve_fall(ff);
+          done = true;
+        }
+      }
+      if (!done) {
+        G = std::exp(brent(F, lo, hi, f_lo, f_hi, 1e-13));
+        done = true;
+      }
+    }
+  }
+  if (!done) {
+    const Choke ck = choked_flux(pb, pb.Pt0, pb.Tt0, pb.Tt_exit, X);
+    mode = ck.mode;
+    const double Gc = ck.G;
+    const MarchEnd mc = march_at(Gc);
+    const double Fc =
+        (pb.P > 0.0)
+            ? rayleigh_exit_pressure(pb.duct(Gc, pb.Tt0, pb.Tt_exit, &X), mc, pb.exit_total) - pb.P
+            : 1.0;
+    const FirstFall ff = first_fall(std::log(Gc) - 1e-12);
+    if (ff.found) {
+      G = solve_fall(ff);
     } else {
-      choked = Fc >= 0.0 || pb.P <= 0.0 || past_subsonic;
+      choked = Fc >= 0.0 || pb.P <= 0.0 || ff.past_subsonic;
       G = Gc;
     }
   }
