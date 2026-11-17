@@ -48,6 +48,16 @@ struct FannoDuctResult {
 // ~1e-8 floor that kinks in mu(T) set once f depends on Re.
 constexpr double kFannoMachRelTol = 1e-10;
 
+// Composition directional derivatives (dG_ddir; fanno_mach.cpp d_ddir): the
+// step along a direction v, as a mass-fraction change of its largest
+// component.
+constexpr double kFannoDirStep = 1e-5;
+// A component of v at or below this fraction of its largest is round-off (an
+// orthonormal basis of a node's dY/dx carries ~1e-16 of noise). Where it would
+// take a fraction below zero it is dropped from the step, so it cannot switch
+// the stencil from central to one-sided (#1199).
+constexpr double kFannoDirRoundoff = 1e-12;
+
 // Station state at Mach M for mass flux G and stagnation temperature Tt.
 // P is rho R T with rho = G / u; at M = 0 the flow is at rest (u = 0) and P is
 // undefined, so 0 < M <= 1 is required.
