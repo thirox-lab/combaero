@@ -9033,9 +9033,9 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
 
   m.def("friction_and_jacobian_petukhov",
         &solver::friction_and_jacobian_petukhov, py::arg("Re"),
-        "Fast-path Petukhov smooth-channel friction and analytic derivative "
-        "(f, "
-        "d(f)/d(Re)).\n\n"
+        "Network Petukhov smooth-channel friction and analytic derivative "
+        "(f, d(f)/d(Re)): the fit at sqrt(Re^2 + 64^2), blended with "
+        "Hagen-Poiseuille like the other network friction kernels (#1210).\n\n"
         "Parameters:\n"
         "  Re : Reynolds number [-]\n\n"
         "Returns: tuple(friction_factor [-], derivative [-])");
