@@ -868,11 +868,23 @@ the peak and then jumps to the next branch or to the choked flux (#1161,
   whose values and slopes show none (within one ln-2 step of flux, or half of
   one when the ends straddle zero; near the choke, within one gap of the
   4^-j grid, up to a factor of 8 for the first gap).
-- G_guess warm-starts the root. A warm call agrees with the cold one unless
-  its guess lies within 6.4 % above a later fall: wherever the needed drive
-  rises again after a fold's valley (a single fold suffices, for example one
-  that rises again toward the choke), a warm start from that upper branch
-  returns the later crossing.
+- G_guess warm-starts the root. On a cooled duct the warm root is checked by
+  the same scan, run from low flux up to the warm bracket's lower end
+  (#1191): a fall below it is the first fall and is returned instead, so a
+  guess within 6.4 % above a later fall (wherever the needed drive rises
+  again after a fold's valley) no longer keeps the later crossing. Heated
+  and adiabatic ducts cannot turn and skip the check. The check costs about
+  22 marches per cooled warm call (12 -> 35 on the stress families, against
+  53 for a cold call). The two scans place their brackets differently (from
+  the choke, from the warm bracket), so a fold whose turns hide between one
+  scan's bracket ends but not the other's (#1206) can still make a warm and a
+  cold call differ, either way: the check can miss a narrow fold the cold scan
+  finds, or find a real first fall the cold scan misses (then the warm call is
+  the right one). Random cooled-duct sweeps: 1 of 3,323 checked calls on
+  haaland ducts, 0.4-0.8 % of checked calls over all four friction models
+  (part of it the #1205 zero-flow offset, the same on main). Below about 1 Pa
+  of drive a fixed warm root matches the cold one only to the root's
+  derivative noise (up to 4e-4).
 
 ### Rocket Nozzle Thrust
 ```cpp
