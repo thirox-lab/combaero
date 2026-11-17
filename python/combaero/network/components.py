@@ -13134,8 +13134,10 @@ class CrossflowSegmentElement(ChannelElement):
         1 um bleed segment held 1 kPa at zero flow (#585). The station terms
         instead move the duct's end STATIC pressures, and the Fanno kernel
         runs between the stagnation pressures of those static states
-        (``_duct_ends``, #802). As Ma -> 0 the row is the incompressible
-        Pt_in - Pt_out = dP_friction + dP_momentum.
+        (``_duct_ends``, #802). As Ma -> 0 the row is the incompressible row's
+        Pt_in - Pt_out = dP_friction + dP_momentum, with that row's
+        dP_momentum: this row's own report leaves out the dynamic heads its
+        end closures carry (#1155).
         """
         f_mult = self.surface.f_multiplier if self.surface else 1.0
         terms = self._momentum_terms(state_in, state_out, flows)

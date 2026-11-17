@@ -21,7 +21,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from combaero.network import NetworkSolver
+from combaero.network import ConvectiveSurface, NetworkSolver
+from combaero.network.components import RibbedModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_crossflow_boundary_feed_1150 as t  # noqa: E402
@@ -94,20 +95,81 @@ def _states(g: object, r: dict, eid: str) -> tuple:
     return el, a, b, s._network_flows(el, x)
 
 
-@pytest.mark.parametrize("regime", t.REGIMES)
-def test_a_set_entry_K_reports_what_its_row_applies(regime: str) -> None:
-    """entry_K = 0.5: incompressible the row subtracts the full (1 + K) q,
-    compressible it adds K/(1 + K) of it (the loss K q) to the outlet Pt.
-    The report follows the row in both."""
+class _Zeroed:
+    """A momentum term with its dP set to 0, everything else unchanged."""
+
+    def __init__(self, term: object) -> None:
+        self._term = term
+
+    dP = 0.0
+
+    def __getattr__(self, k: str) -> object:
+        return getattr(self._term, k)
+
+
+def _row_applied(el: object, a: object, b: object, flows: dict, terms: list) -> float:
+    """The momentum drop the row itself applies: every term zeroed, minus in
+    full. Pressure-form row: the residual difference (exact). Mass-flow row:
+    the Pt the duct ends gain back, which the Fanno closure then sees."""
+    zeroed = [(_Zeroed(tt[0]), *tt[1:]) for tt in terms]
+    if el.residual_scale_kind == "mdot":
+        s1, d1, _, _ = el._duct_ends(a, b, terms)
+        s0, d0, _, _ = el._duct_ends(a, b, zeroed)
+        return (s0.Pt - s1.Pt) + (d1.Pt - d0.Pt)
+    try:
+        el._momentum_terms = lambda *_a, **_k: terms
+        full = el.residuals(a, b, flows)[0][0]
+        el._momentum_terms = lambda *_a, **_k: zeroed
+        none = el.residuals(a, b, flows)[0][0]
+    finally:
+        del el._momentum_terms
+    return none - full
+
+
+def _ribbed(g: object) -> object:
+    for eid in ("x", "s1"):
+        g.elements[eid].surface = ConvectiveSurface(
+            area=0.01, model=RibbedModel(e_D=0.05, p_e=10.0, W_H=1.0)
+        )
+    return g
+
+
+@pytest.mark.parametrize(
+    ("regime", "ribbed", "kind"),
+    [
+        ("incompressible", False, "p"),
+        ("compressible", False, "mdot"),
+        # A compressible ribbed segment runs the pressure-form row: the
+        # report branches on the row form, not on the regime.
+        ("compressible", True, "p"),
+    ],
+)
+@pytest.mark.parametrize("reversed_", [False, True])
+def test_a_set_entry_K_reports_what_its_row_applies(
+    regime: str, ribbed: bool, kind: str, reversed_: bool
+) -> None:
+    """entry_K = 0.5: the pressure-form row subtracts the full (1 + K) q, the
+    mass-flow row adds K/(1 + K) of it (the loss K q) to the outlet Pt. The
+    report equals what the row applies, measured from the row."""
     K = 0.5
-    g = t._selfst(regime, False, K)
-    r = _solve(g)
-    el, a, b, flows = _states(t._selfst(regime, False, K), r, "x")
-    terms = {k[5]: k[0].dP for k in el._momentum_terms(a, b, flows)}
-    assert terms["entry"] > 1000.0  # the case is a real test
-    share = 1.0 if regime == "incompressible" else K / (1.0 + K)
-    expected = share * terms["entry"] + terms["to"]
-    assert r["__element_diag__"]["x"]["dP_momentum"] == pytest.approx(expected, rel=1e-12)
+
+    def build() -> object:
+        g = t._selfst(regime, reversed_, K)
+        return _ribbed(g) if ribbed else g
+
+    r = _solve(build())
+    el, a, b, flows = _states(build(), r, "x")
+    assert el.residual_scale_kind == kind
+    terms = el._momentum_terms(a, b, flows)
+    by_kind = {tt[5]: tt[0].dP for tt in terms}
+    if not reversed_:
+        assert by_kind["entry"] > 1000.0  # the case is a real test
+    applied = _row_applied(el, a, b, flows, terms)
+    reported = r["__element_diag__"]["x"]["dP_momentum"]
+    # Mass-flow row: the station halves pass through the end closures as
+    # static shifts, dPt/dP = 1 + O(M^2) (M ~ 0.05 here, a few 1e-3 of them).
+    rel = 1e-12 if kind == "p" else 5e-3
+    assert reported == pytest.approx(applied, rel=rel, abs=1e-9)
 
 
 @pytest.mark.parametrize("regime", t.REGIMES)

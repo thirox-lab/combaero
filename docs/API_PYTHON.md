@@ -4242,9 +4242,12 @@ first = CrossflowSegmentElement("s0", "plenum", "b1", length=0.01, area=4e-3,
   (1 + K) q, a reversed exit's reservoir head, the exit head into a chamber
   and a taper's Bernoulli term. The compressible mass-flow row carries the
   dynamic heads in its end closures, so it reports the station halves and
-  the entry loss K q alone. No `entry_K` and `entry_K = 0` report the same
-  in both, and the two regimes differ by the entry head q. Before, the
-  compressible report added the entry's full (1 + K) q, a head the row never
+  the entry loss K q alone (the halves as static shifts; their effect on the
+  ends' Pt differs by O(M^2)). Wherever no `entry_K` and `entry_K = 0` give
+  the same row they report the same, and the two regimes differ by the entry
+  head q. Where the rows differ (a compressible ribbed segment, #1212; an
+  incompressible chamber feed, #1152) each report follows its own row.
+  Before, the compressible report added the entry's full (1 + K) q, a head the row never
   added: 1759 Pa for `entry_K = 0` against 4e-14 Pa with no `entry_K`.
 - **Bleed scored on Bassett's own measured K5** (Fig. 7c, 43 points): MAE
   0.039 in K overall, 0.021 at q >= 0.6 (the few-percent bleed of an effusion
