@@ -930,12 +930,13 @@ constexpr int kRayleighDipMaxIter = 200;
 // A cooled bracket whose ends straddle zero is walked in this many equal
 // parts of log G, each given the Hermite test (#1190). The rise of a laminar
 // fold spans 0.18-0.21 of log G on the measured ducts, against the bracket's
-// ln 2. On 236 straddling brackets that hold a fold (random cooled ducts,
-// the scan's grid shifted through eight phases) the ends' slopes alone (one
-// part) missed 13 and two parts 14; three parts missed none, and in the
-// kernel they found the first fall on all 14 straddling brackets of 23020
-// random cooled cold calls that one part missed.
-constexpr int kRayleighStraddleSplit = 3;
+// ln 2. In the kernel, over 23020 random cooled cold calls (seeds 7, 23, 41)
+// and the #1190 review's 23k (random, phase-swept and small-diameter ducts),
+// the ends' slopes alone (one part) left 14 + 20 straddling folds on a later
+// crossing; two parts found the first fall on all of them. Three, four and
+// twelve parts found no more (only root rounding differs), at +0.6, +1.1-1.3
+// and +5-6 marches per cold call over two.
+constexpr int kRayleighStraddleSplit = 2;
 
 // Brent's minimiser (golden section with parabolic steps) of fn on (a, b)
 // from x0 inside it, stopped as soon as fn reads <= 0: returns that point,
@@ -1480,7 +1481,11 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
           // below zero at a part's minimum, ends the bracket. Its first fall
           // is the bracket's (F(lo) > 0), with fewer crossings after it.
           // The whole bracket's root is kept where that part holds it, so a
-          // bracket with no turn returns exactly what it did before.
+          // bracket with no turn returns exactly what it did before. (Exact
+          // when the part holds one crossing; with several, both roots are
+          // among them. No test pins the keep: only the stress F,J hashes
+          // against main do, and dropping it moves G by rounding on about
+          // half of all cooled cold calls.)
           const double whole = brent(F, lo, hi, f_lo, f_hi, 1e-13);
           const double end = hi, f_end = f_hi;
           const double part = (end - lo) / kRayleighStraddleSplit;

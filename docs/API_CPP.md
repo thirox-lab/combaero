@@ -857,10 +857,10 @@ the peak and then jumps to the next branch or to the choked flux (#1161,
 - The cold scan (G_guess <= 0) searches a cooled duct's brackets of flux for
   the first fall: a bracket whose ends are both positive by the Hermite test
   of its ends' values and slopes (#1167), and a bracket whose ends straddle
-  zero by the same test on each of its three equal parts in log G, solved in
-  the first part that holds a fall (#1190). Not seen: two turns between ends
-  whose values and slopes show none (within one ln-2 step of flux, or a third
-  of one when the ends straddle zero; near the choke, within one gap of the
+  zero by the same test on each of its two halves in log G, solved in
+  the first half that holds a fall (#1190). Not seen: two turns between ends
+  whose values and slopes show none (within one ln-2 step of flux, or half of
+  one when the ends straddle zero; near the choke, within one gap of the
   4^-j grid, up to a factor of 8 for the first gap).
 - G_guess warm-starts the root. A warm call agrees with the cold one unless
   its guess lies within 6.4 % above a later fall: wherever the needed drive

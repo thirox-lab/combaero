@@ -21,6 +21,10 @@ X = list(cb.species.dry_air())
 # The issue's duct: dry air, static-pressure exit. Its needed drive peaks at
 # 2.15199 Pa near 0.0161 Gc and dips to 2.12681 Pa near 0.0197 Gc.
 PT0, TT0, TTE, L, D = 199111.5, 868.17, 348.98, 0.09662, 9.1945e-3
+# The roots are defined only to the march's rounding: needed - drive changes
+# sign within up to 3.3e-7 of them in ln G on this duct (measured). 30x that,
+# far below the 41% jump to the third crossing.
+ROOT_BAND = 1e-5
 
 
 def _gc() -> float:
@@ -63,9 +67,9 @@ def test_issue_drive_returns_the_first_fall() -> None:
     # The issue's table: the first fall at 0.0150235 Gc, the third crossing
     # (what the cold scan returned) at 0.021177 Gc.
     assert c.G / gc == pytest.approx(0.0150235, abs=1e-6)
-    assert pytest.approx(_first_fall(2.145, gc), rel=1e-6) == c.G
+    assert pytest.approx(_first_fall(2.145, gc), rel=ROOT_BAND) == c.G
     # A warm start from below the first fall agrees.
-    assert pytest.approx(c.G, rel=1e-8) == _flow(2.145, 0.0145 * gc).G
+    assert pytest.approx(c.G, rel=ROOT_BAND) == _flow(2.145, 0.0145 * gc).G
 
 
 @pytest.mark.parametrize("drive", [2.1280, 2.1340, 2.1380, 2.1420, 2.1460, 2.1490, 2.1510, 2.1519])
@@ -76,4 +80,4 @@ def test_fold_band_returns_the_first_fall(drive: float) -> None:
     c = _flow(drive)
     assert not c.choked
     assert 0.0162 * gc > c.G  # below the peak's flux
-    assert pytest.approx(_first_fall(drive, gc), rel=1e-6) == c.G
+    assert pytest.approx(_first_fall(drive, gc), rel=ROOT_BAND) == c.G
