@@ -864,10 +864,13 @@ the peak and then jumps to the next branch or to the choked flux (#1161,
   the first fall: a bracket whose ends are both positive by the Hermite test
   of its ends' values and slopes (#1167), and a bracket whose ends straddle
   zero by the same test on each of its two halves in log G, solved in
-  the first half that holds a fall (#1190). Not seen: two turns between ends
-  whose values and slopes show none (within one ln-2 step of flux, or half of
-  one when the ends straddle zero; near the choke, within one gap of the
-  4^-j grid, up to a factor of 8 for the first gap).
+  the first half that holds a fall (#1190). A both-positive bracket whose
+  test shows no turn is walked in the same two halves wherever the needed
+  drive at one of its ends reaches a quarter of the drive (#1206): a dip
+  narrower than the bracket near one end hides from its ends' slopes. Not
+  seen: two turns between the ends of a half whose values and slopes show
+  none (near the choke, within one gap of the 4^-j grid, up to a factor of 8
+  for the first gap).
 - G_guess warm-starts the root. On a cooled duct the warm root is checked by
   the same scan, run from low flux up to the warm bracket's lower end
   (#1191): a fall below it is the first fall and is returned instead, so a
@@ -876,15 +879,13 @@ the peak and then jumps to the next branch or to the choked flux (#1161,
   and adiabatic ducts cannot turn and skip the check. The check costs about
   22 marches per cooled warm call (12 -> 35 on the stress families, against
   53 for a cold call). The two scans place their brackets differently (from
-  the choke, from the warm bracket), so a fold whose turns hide between one
-  scan's bracket ends but not the other's (#1206) can still make a warm and a
-  cold call differ, either way: the check can miss a narrow fold the cold scan
-  finds, or find a real first fall the cold scan misses (then the warm call is
-  the right one). Random cooled-duct sweeps: 1 of 3,323 checked calls on
-  haaland ducts, 0.4-0.8 % of checked calls over all four friction models
-  (part of it the #1205 zero-flow offset, the same on main). Below about 1 Pa
-  of drive a fixed warm root matches the cold one only to the root's
-  derivative noise (up to 4e-4).
+  the choke, from the warm bracket); with both walking their brackets in
+  halves (#1206), warm and cold agree on all 149k scored cooled warm calls of
+  four random 1500-duct sweeps. Within ~1e-5 of a fold's peak drive the excess is
+  flat and the two can still land up to 1e-3 apart on the same dip, and a
+  warm bracket ending within march noise of the dip's rising crossing can
+  take that crossing (#1221). Below about 1 Pa of drive a fixed warm root
+  matches the cold one only to the root's derivative noise (up to 4e-4).
 
 ### Rocket Nozzle Thrust
 ```cpp

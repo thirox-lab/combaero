@@ -974,6 +974,23 @@ constexpr int kRayleighDipMaxIter = 200;
 // twelve parts found no more (only root rounding differs), at +0.6, +1.1-1.3
 // and +5-6 marches per cold call over two.
 constexpr int kRayleighStraddleSplit = 2;
+// A cooled interior bracket whose ends are both positive and whose Hermite
+// test shows no turn is walked in the same equal parts (#1206): a dip of the
+// excess below zero narrower than the bracket, near one end of it, leaves the
+// ends' values and slopes looking monotone. The walk is needed only where the
+// needed drive N = drive - F can have risen to the drive inside the bracket:
+// it is skipped while |N| stays below kRayleighBothGate of the drive at both
+// ends. A needed drive rising as G^2 (turbulent friction) grows 4x over a
+// whole ln-2 bracket, so to reach the drive inside one it must start at a
+// quarter of it or more. Measured on the dense needed-drive grids of 6000
+// random cooled ducts: of the 27173 (fold, drive) pairs whose dip is
+// narrower than a bracket, every bracket that holds the dip has max |N| at
+// its ends >= 0.74 of the drive, 3x the gate. Over 9200 cooled cold and
+// 149k warm calls of those ducts (and 6400 more calls placed in their
+// fold bands) the walk costs +4.3-4.7 marches per cooled cold call (+8-9
+// %, from 51-53); walking every both-positive bracket (gate 0, +19-20) or in
+// four parts (+10-11) finds no more first falls.
+constexpr double kRayleighBothGate = 0.25;
 
 // Brent's minimiser (golden section with parabolic steps) of fn on (a, b)
 // from x0 inside it, stopped as soon as fn reads <= 0: returns that point,
@@ -1370,10 +1387,12 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   // a point at or below zero near each minimum, and the first fall is then
   // bracketed below that point. A cooled bracket whose ends straddle zero
   // is walked in kRayleighStraddleSplit parts with the same test (#1190),
-  // and solved in the first part that holds a fall. Heated and adiabatic
-  // ducts, and a cooled bracket with no minimum, scan exactly as before.
-  // Not seen: two turns of the excess between the ends of a bracket (or,
-  // straddling, of a part) whose values and slopes show none.
+  // and solved in the first part that holds a fall. An interior cooled
+  // bracket with both ends positive and no minimum is walked the same way
+  // where the needed drive at an end reaches kRayleighBothGate of the drive
+  // (#1206). Heated and adiabatic ducts, and a cooled bracket with no
+  // minimum below that gate, scan exactly as before. Not seen: two turns of
+  // the excess between the ends of a part whose values and slopes show none.
   // first_fall(top) scans log G up to top, in ln-2 brackets from top - 7, and
   // returns the bracket of the first fall below top (or the root, where a
   // straddle split already solved it). The cold call scans up to the choke;
@@ -1416,6 +1435,11 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     auto dip_in = [&](double a, double b, double x0) {
       return brent_min_to_zero(F, a, b, x0, kRayleighDipTol);
     };
+    // Whether a both-positive bracket is walked (kRayleighBothGate, #1206).
+    const double drive = pb.Pt0 - pb.P;
+    auto walk_both = [&](double fa, double fb) {
+      return std::max(std::abs(drive - fa), std::abs(drive - fb)) >= kRayleighBothGate * drive;
+    };
     double s_lo = std::nan("");  // slope at lo, NaN not yet read
     double x_prev = std::nan(""), f_prev = 0.0;  // the scan point before lo
     double hi = lo, f_hi = f_lo;
@@ -1424,11 +1448,13 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     // it returns through its argument). Where the cubic has an interior
     // minimum, F is minimised over [lo, the cubic's next maximum, or hi]: a
     // point at or below zero there, or NaN.
-    auto hermite_dip = [&](double& s_hi) {
+    auto hermite_dip = [&](double& s_hi, bool s_hi_known = false) {
       if (std::isnan(s_lo)) {
         s_lo = slope(lo, f_lo);
       }
-      s_hi = slope(hi, f_hi);
+      if (!s_hi_known) {
+        s_hi = slope(hi, f_hi);
+      }
       const double H = hi - lo;
       const double qa = 6.0 * (f_lo - f_hi) + 3.0 * H * (s_lo + s_hi);
       const double qb = -6.0 * (f_lo - f_hi) - 4.0 * H * s_lo - 2.0 * H * s_hi;
@@ -1599,6 +1625,49 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
         found = true;
         break;
       }
+      if (walk_both(f_lo, f_hi)) {
+        // The cubic of the whole bracket shows no turn, but a dip narrower
+        // than it near one end can hide from its ends' slopes (#1206): walk
+        // it in kRayleighStraddleSplit equal parts with the same test. A part
+        // end at or below zero, or a point at or below zero at a part's
+        // minimum, ends the bracket below it; otherwise the scan goes on from
+        // the whole bracket's end as before, so a bracket with no dip is
+        // scanned to the same root.
+        const double lo0 = lo, f_lo0 = f_lo;
+        const double end = hi, f_end = f_hi, s_end = s_hi;
+        const double part = (end - lo0) / kRayleighStraddleSplit;
+        for (int i = 1; i <= kRayleighStraddleSplit && !found; ++i) {
+          double s_i = s_end;
+          if (i < kRayleighStraddleSplit) {
+            hi = lo0 + i * part;
+            f_hi = F(hi);
+          } else {
+            hi = end;
+            f_hi = f_end;
+          }
+          if (f_hi <= 0.0) {
+            found = true;
+            break;
+          }
+          const double xi = hermite_dip(s_i, i == kRayleighStraddleSplit);
+          if (std::isfinite(xi)) {
+            hi = xi;
+            f_hi = F(xi);
+            found = true;
+            break;
+          }
+          lo = hi;
+          f_lo = f_hi;
+          s_lo = s_i;
+        }
+        if (found) {
+          break;
+        }
+        lo = lo0;
+        f_lo = f_lo0;
+        hi = end;
+        f_hi = f_end;
+      }
       s_lo = s_hi;
     }
     FirstFall out_ff;
@@ -1649,12 +1718,12 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       // depended on the solver's history. Its root is checked against the
       // cold one by the cold scan itself, run up to the bracket's lower end:
       // a fall below it is the first fall, and the root. Its brackets are
-      // placed from lo, not from the choke, so it matches the cold root to
-      // the root's rounding, which near a fold's peak at a few Pa of drive
-      // is ~1e-6 (and the derivatives' noise below ~1 Pa); a fold hidden
-      // between one scan's bracket ends but not the other's can make them
-      // disagree either way (#1206). Without one the warm bracket holds the
-      // first fall.
+      // placed from lo, not from the choke; both scans walk their brackets
+      // in parts (#1190, #1206), so a fold that hides between one scan's
+      // bracket ends is not left to the other's, and the check matches the
+      // cold root to the root's rounding, which within ~1e-5 of a fold's
+      // peak drive is up to 1e-3 (and the derivatives' noise below ~1 Pa).
+      // Without a fall below it the warm bracket holds the first fall.
       if (may_turn) {
         const FirstFall ff = first_fall(lo);
         if (ff.found) {
