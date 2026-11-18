@@ -205,7 +205,8 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
 // again after a fold's valley) returns the first fall. The two scans place
 // their brackets differently (from the choke, from the warm bracket); both
 // walk them in halves, and they agree on random cooled-duct sweeps except
-// within ~1e-5 of a fold's peak drive (the root's rounding) and #1221.
+// within ~1e-5 of a fold's peak drive (the root's rounding), #1221, and a
+// fold shallower than ~1e-5 of the drive inside one half (#1227).
 
 struct FannoRayleighMarch {
   double M_in = 0.0;       // inlet Mach

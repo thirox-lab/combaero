@@ -977,15 +977,21 @@ constexpr int kRayleighStraddleSplit = 2;
 // A cooled interior bracket whose ends are both positive and whose Hermite
 // test shows no turn is walked in the same equal parts (#1206): a dip of the
 // excess below zero narrower than the bracket, near one end of it, leaves the
-// ends' values and slopes looking monotone. The walk is needed only where the
-// needed drive N = drive - F can have risen to the drive inside the bracket:
-// it is skipped while |N| stays below kRayleighBothGate of the drive at both
-// ends. A needed drive rising as G^2 (turbulent friction) grows 4x over a
-// whole ln-2 bracket, so to reach the drive inside one it must start at a
-// quarter of it or more. Measured on the dense needed-drive grids of 6000
-// random cooled ducts: of the 27173 (fold, drive) pairs whose dip is
-// narrower than a bracket, every bracket that holds the dip has max |N| at
-// its ends >= 0.74 of the drive, 3x the gate. Over 9200 cooled cold and
+// ends' values and slopes looking monotone. The gate is a cost filter, not a
+// bound: the walk is skipped while |N| (N = drive - F, the needed drive)
+// stays below kRayleighBothGate of the drive at both ends. Where N is
+// non-negative and rises at most as G^2 (turbulent friction) over a ln-2
+// bracket it grows at most 4x, so it cannot reach the drive inside one from
+// below a quarter of it. A duct with a second fold after a negative valley
+// breaks that (N rises from below zero through the dip): there the walk is
+// skipped and the whole bracket's Hermite test is what catches the dip.
+// Measured on the dense needed-drive grids of 6000 rsweep ducts (about 70 %
+// cooled): of the 27173 (fold, drive) pairs whose dip is narrower than a
+// bracket, every bracket that holds the dip has max |N| at its ends >= 0.74
+// of the drive. The #1225 review's strongly cooled generator has 101 pairs
+// below 0.25 (down to 5e-4 of the drive) in 21 of 800 ducts; their dips are
+// wide enough for the whole-bracket test, and gate 0 gives the same results
+// there (0 misses over 31794 warm calls). Over 9200 cooled cold and
 // 149k warm calls of those ducts (and 6400 more calls placed in their
 // fold bands) the walk costs +4.3-4.7 marches per cooled cold call (+8-9
 // %, from 51-53); walking every both-positive bracket (gate 0, +19-20) or in
