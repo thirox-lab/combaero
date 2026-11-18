@@ -790,6 +790,52 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
   res.dTt_mix_d_delta_h = (cp_mix > 0.0) ? (1.0 / cp_mix) : 0.0;
   res.dTt_mix_dQ = res.dTt_mix_d_delta_h * phi_Q;
 
+  // The flow partials are differences against the mixed state, q_i - q_mix
+  // with q_mix = sum_j m_j q_j / m (#1198). Where every flowing stream (m_j
+  // != 0) carries the same q -- one stream, or streams of one gas -- q_mix is
+  // that q exactly, but m q / m rounds and left ~1e-16 partials where the
+  // exact one is 0. The difference is taken against the common input value
+  // there, so it cancels exactly; elsewhere it is against q_mix as before.
+  // The mixed state itself (Y_mix, h_mix_base, Pt_mix) is not changed.
+  std::vector<double> Y_diff_ref = Y_mix;
+  double h_diff_ref = h_mix_base;
+  double Pt_diff_ref = Pt_mix;
+  {
+    std::size_t first = n_streams;
+    for (std::size_t i = 0; i < n_streams; ++i) {
+      if (streams[i].m_dot != 0.0) {
+        first = i;
+        break;
+      }
+    }
+    if (first < n_streams) {
+      bool same_h = mdot_tot > 0.0;
+      bool same_Pt = mdot_tot > 0.0;
+      std::vector<bool> same_Y(n_species, true);
+      for (std::size_t i = first + 1; i < n_streams; ++i) {
+        if (streams[i].m_dot == 0.0) {
+          continue;
+        }
+        same_h = same_h && h_stream[i] == h_stream[first];
+        same_Pt = same_Pt && streams[i].Pt == streams[first].Pt;
+        for (std::size_t k = 0; k < n_species; ++k) {
+          same_Y[k] = same_Y[k] && streams[i].Y[k] == streams[first].Y[k];
+        }
+      }
+      for (std::size_t k = 0; k < n_species; ++k) {
+        if (same_Y[k]) {
+          Y_diff_ref[k] = streams[first].Y[k];
+        }
+      }
+      if (same_h) {
+        h_diff_ref = h_stream[first];
+      }
+      if (same_Pt) {
+        Pt_diff_ref = streams[first].Pt;
+      }
+    }
+  }
+
   for (std::size_t i = 0; i < n_streams; ++i) {
     StreamJacobian &dT_jac = res.dTt_mix_d_stream[i];
     StreamJacobian &dP_jac = res.dPt_mix_d_stream[i];
@@ -800,7 +846,7 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
       // P_total sensitivities
       dT_jac.d_Pt = 0.0;
       dP_jac.d_Pt = streams[i].m_dot / mdot_tot;
-      dP_jac.d_mdot = (streams[i].Pt - Pt_mix) / mdot_tot;
+      dP_jac.d_mdot = (streams[i].Pt - Pt_diff_ref) / mdot_tot;
       dP_jac.d_Tt = 0.0;
 
       // d(Tt_mix)/d(T_i)
@@ -816,12 +862,12 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
       // d(Tt_mix)/d(m_dot_i). h_mix = (1+f) h_base - f h_ref + Q/m_eff, then T
       // at fixed h moves with the composition: -sum_k hk(Tt_mix) dY_k/dm_i.
       // Only the enthalpy terms carry (1+f), not the composition term.
-      double h_diff = (h_stream[i] - h_mix_base);
+      double h_diff = (h_stream[i] - h_diff_ref);
       double y_sum = 0.0;
       double ref_sum = 0.0;
       for (std::size_t k = 0; k < n_species; ++k) {
-        y_sum += hk_mix[k] * (streams[i].Y[k] - Y_mix[k]);
-        ref_sum += href_k[k] * (streams[i].Y[k] - Y_mix[k]);
+        y_sum += hk_mix[k] * (streams[i].Y[k] - Y_diff_ref[k]);
+        ref_sum += href_k[k] * (streams[i].Y[k] - Y_diff_ref[k]);
       }
       double dh_mix_dmdot = ((1.0 + fraction) * h_diff - fraction * ref_sum) / mdot_tot;
 
@@ -846,7 +892,7 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
       for (std::size_t k = 0; k < n_species; ++k) {
         StreamJacobian &dY_jac_k = res.dY_mix_d_stream[k][i];
         dY_jac_k.d_Y.resize(n_species);
-        dY_jac_k.d_mdot = (streams[i].Y[k] - Y_mix[k]) / mdot_tot;
+        dY_jac_k.d_mdot = (streams[i].Y[k] - Y_diff_ref[k]) / mdot_tot;
         dY_jac_k.d_Tt = 0.0;
         dY_jac_k.d_Pt = 0.0;
         for (std::size_t j = 0; j < n_species; ++j) {
