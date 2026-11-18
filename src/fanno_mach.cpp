@@ -956,6 +956,18 @@ constexpr int kRayleighEndGridLast = 16;
 // A cooled duct's warm bracket widens (by 8x, from 1e-3) only while it spans
 // less than this fraction of the guess: so at most to 6.4%.
 constexpr double kRayleighWarmTurnSpan = 0.05;
+// The march's exit pressure rounds. Over 21 fluxes 1e-9 apart in log G (1e-4
+// of the distance to the choke nearer it), its scatter about a quartic, the
+// same at a tenth of that spacing (so not truncation), is at most 7e-14 Pt0
+// plus 6.2e-14 of the local slope |dE/dlog G| (7749 samples of the rsweep
+// and #1225 review generators, 1e-4 Gc to 3e-8 below the choke): 2e-14 Pt0
+// typical and up to 6.6e-14 Pt0 below 0.5 Gc and on the fold dips of #1221,
+// growing with the slope toward the choke (to 1.7e-9 Pt0 within 1e-6 of it).
+// An excess within kRayleighExcessNoise Pt0 of zero has no sign to read, so a
+// cooled duct's warm bracket is taken only where both its ends are clear of
+// it (#1221). The slope term exceeds the constant only within ~1e-13 in log G
+// of a crossing; exact placements there, near the choke, found no miss.
+constexpr double kRayleighExcessNoise = 1e-13;
 // The Hermite test's derivative quadratic is treated as linear when its t^2
 // coefficient is below this fraction of the others (rounding, not a turn).
 constexpr double kRayleighHermiteDegenerate = 1e-14;
@@ -1717,8 +1729,16 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       }
     }
     // Only a bracket whose upper end is itself unchoked holds a plain root;
-    // one that straddles the choke goes the cold way below.
-    if (f_lo > 0.0 && f_hi <= 0.0 && march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor) {
+    // one that straddles the choke goes the cold way below. On a cooled duct
+    // an end whose excess is within the march's noise of zero (both crossings
+    // of a fold's dip are roots there) has no sign, and Brent converged on a
+    // noise crossing next to it: a warm bracket ending on the dip's rising
+    // crossing returned that crossing (#1221). Such a bracket goes the cold
+    // way too.
+    const double noise = kRayleighExcessNoise * pb.Pt0;
+    const bool ends_clear = !may_turn || (f_lo > noise && f_hi < -noise);
+    if (f_lo > 0.0 && f_hi <= 0.0 && ends_clear &&
+        march_at(std::exp(hi)).zeta_min > kRayleighZetaFloor) {
       // A cooled duct's excess can fall, rise and fall again, and a guess
       // just above a later fall brackets that one (#1191): the warm root then
       // depended on the solver's history. Its root is checked against the

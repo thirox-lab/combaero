@@ -882,9 +882,12 @@ the peak and then jumps to the next branch or to the choked flux (#1161,
   the choke, from the warm bracket); with both walking their brackets in
   halves (#1206), warm and cold agree on all 149k scored cooled warm calls of
   four random 1500-duct sweeps. Within ~1e-5 of a fold's peak drive the excess is
-  flat and the two can still land up to 1e-3 apart on the same dip, and a
-  warm bracket ending within march noise of the dip's rising crossing can
-  take that crossing (#1221). A fold shallower than about 1e-5 of the drive
+  flat and the two can still land up to 1e-3 apart on the same dip. A cooled
+  warm bracket whose end has an excess within 1e-13 Pt0 of zero (the march's
+  rounding noise, which grows toward the choke) goes the cold way: its sign
+  there is noise, and a bracket ending on a dip's rising crossing returned
+  that crossing, up to the dip's width (5 %) above the first fall (#1221).
+  A fold shallower than about 1e-5 of the drive
   and narrower than half a bracket can still give a warm call a later fall
   than the cold one (#1227; one held-out duct, 1.03x). Below about 1 Pa of drive a fixed warm root
   matches the cold one only to the root's derivative noise (up to 4e-4).
