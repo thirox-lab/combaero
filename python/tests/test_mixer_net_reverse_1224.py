@@ -231,3 +231,67 @@ def test_reverse_one_gas_different_state_keeps_dY_exactly_zero() -> None:
         assert r.dTt_mix_d_stream[i].d_mdot != 0.0
         assert r.dPt_mix_d_stream[i].d_mdot != 0.0
     _check_partials(s)
+
+
+# A legacy merging tee with a momentum chamber at its common node: while a
+# leg draws flow out of the chamber the tee hands it a net reverse total. The
+# chamber's closure reads that mixed state, and the stream-0 h and Pt with
+# averaged partials stalled the solve far from the root (case 65: m_com -3.9
+# kg/s, norm 889; case 176: m_com -6.0, norm 564). Both now converge to the
+# forward root. Found by the #1230 review's random legacy-tee sweep (5 of 200
+# cases went no_progress -> converged, none worse).
+LEGACY_TEE_CASES = [
+    # (P_straight, P_branch, P_out, Tt_straight, Tt_branch, Tt_out, F_C, psi)
+    (150000.0, 148760.15882950363, 148260.333624841, 500.0, 900.0, 700.0, 2e-3, 4.0),
+    (600000.0, 598294.6280038909, 597033.104368154, 500.0, 900.0, 300.0, 2e-3, 4.0),
+]
+
+
+@pytest.mark.parametrize("case", LEGACY_TEE_CASES, ids=["review_case_65", "review_case_176"])
+def test_a_legacy_merging_tee_into_a_momentum_chamber_converges(case: tuple) -> None:
+    import math
+    import warnings
+
+    from combaero.network import FlowNetwork, NetworkSolver
+    from combaero.network.components import (
+        LosslessConnectionElement,
+        MomentumChamberNode,
+        PressureBoundary,
+        TeeJunctionElement,
+    )
+
+    Pis, Pib, Po, Tis, Tib, To, F_C, psi = case
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("is", Pt=Pis, Tt=Tis, Y=AIR))
+    g.add_node(PressureBoundary("ib", Pt=Pib, Tt=Tib, Y=AIR))
+    g.add_node(PressureBoundary("o", Pt=Po, Tt=To, Y=AIR))
+    g.add_node(MomentumChamberNode("ps", area=F_C))
+    g.add_node(MomentumChamberNode("pb", area=F_C / psi))
+    g.add_node(MomentumChamberNode("pc", area=F_C))
+    g.add_element(LosslessConnectionElement("ls", "is", "ps"))
+    g.add_element(LosslessConnectionElement("lb", "ib", "pb"))
+    g.add_element(LosslessConnectionElement("lc", "pc", "o"))
+    g.add_element(
+        TeeJunctionElement(
+            id="tee",
+            common_node="pc",
+            straight_node="ps",
+            branch_node="pb",
+            theta=math.radians(90.0),
+            F_C=F_C,
+            psi=psi,
+            tee_type="merging",
+        )
+    )
+    s = NetworkSolver(g)
+    s.homotopy_retry = True
+    s.bc_ramp_retry = True
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = s.solve(timeout=20)
+    assert r["__converged__"], (r["__outcome__"], r["__final_norm__"])
+    # The forward root: both legs feed the common node, which mixes them.
+    m_com, m_b = r["tee.m_dot_com"], r["tee.m_dot_branch"]
+    assert m_com > 0.0 and 0.0 < m_b < m_com
+    assert r["lc.m_dot"] == pytest.approx(m_com, rel=1e-9)
+    assert min(Tis, Tib) < r["pc.T"] < max(Tis, Tib)
