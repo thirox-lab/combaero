@@ -733,9 +733,18 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
     }
   }
 
+  // The mixed state is the mass-weighted mean sum_i m_i q_i / m for Y, h and
+  // Pt alike, on either side of zero net flow: the partials below are that
+  // mean's, and the heat per unit flow takes |m|. A net reverse total (m <
+  // -mdot_eps) used to keep Y averaged but take h and Pt from stream 0, a
+  // state no partial described (#1224). Reversing every stream gives the
+  // same state bit for bit. In -mdot_eps <= m <= 0 stream 0's h and Pt stand
+  // in, as before (and its Y within |m| <= mdot_eps, all partials 0 there).
+  const bool averaged = mdot_tot > 0.0 || mdot_tot < -mdot_eps;
+
   // Compute adiabatic mass-averaged enthalpy
-  double h_mix_base = (mdot_tot > 0.0) ? (H_tot / mdot_tot)
-                                        : (n_streams > 0 ? h_stream[0] : 0.0);
+  double h_mix_base = averaged ? (H_tot / mdot_tot)
+                               : (n_streams > 0 ? h_stream[0] : 0.0);
 
   // Heat per unit flow: Q / |m|, fading out only near zero flow.
   const auto [phi_Q, dphi_Q] = mixer_heat_per_unit_flow(mdot_tot);
@@ -757,9 +766,8 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
   double delta_h = Q * phi_Q + fraction * (h_mix_base - h_ref);
 
   double h_mix = h_mix_base + delta_h;
-  double Pt_mix = (mdot_tot > 0.0)
-                      ? (P_total_tot / mdot_tot)
-                      : (n_streams > 0 ? streams[0].Pt : 0.0);
+  double Pt_mix = averaged ? (P_total_tot / mdot_tot)
+                           : (n_streams > 0 ? streams[0].Pt : 0.0);
 
   std::vector<double> X_mix = combaero::mass_to_mole(normalized_Y_mix);
   double T_guess = 300.0;
@@ -809,8 +817,8 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
       }
     }
     if (first < n_streams) {
-      bool same_h = mdot_tot > 0.0;
-      bool same_Pt = mdot_tot > 0.0;
+      bool same_h = averaged;
+      bool same_Pt = averaged;
       std::vector<bool> same_Y(n_species, true);
       for (std::size_t i = first + 1; i < n_streams; ++i) {
         if (streams[i].m_dot == 0.0) {
