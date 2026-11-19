@@ -410,3 +410,37 @@ def test_the_gas_constant_and_gamma_gradients_match_a_difference() -> None:
     g = cb.isentropic_expansion_coefficient
     fd_T = (g(T + 1e-3, X(Y)) - g(T - 1e-3, X(Y))) / 2e-3
     assert math.isclose(dg_dT, fd_T, rel_tol=1e-6)
+
+
+def _stress_legacy_tee(seed: int) -> FlowNetwork:
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "stress"))
+    from networks import FAMILIES
+
+    return FAMILIES["legacy_tee"](seed)[0]
+
+
+def test_a_failed_forward_retry_leaves_the_refused_solve_on_the_solver() -> None:
+    """Stress legacy_tee seed 30: the cold solve's root is refused (a leg
+    against the tee_type) and the forward retry does not converge. The solver's
+    last iterate and diagnostics are the returned solve's, not the retry's
+    (the #1233 review: 3.3-4.6 relative off on four seeds)."""
+    s = NetworkSolver(_stress_legacy_tee(30))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = s.solve(timeout=20)
+    assert r["__outcome__"] == "inconsistent"
+    assert "did not converge" in r["__message__"]
+    x = np.asarray(r["__x_solution__"], dtype=float)
+    assert np.array_equal(np.asarray(s._last_x, dtype=float), x)
+    assert np.array_equal(np.asarray(s._diagnostic_data["solution"], dtype=float), x)
+
+
+def test_the_forward_retry_honours_auto_retry() -> None:
+    s = NetworkSolver(_stress_legacy_tee(30))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = s.solve(timeout=20, auto_retry=False)
+    assert "forward start" not in r["__message__"]

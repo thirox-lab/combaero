@@ -174,8 +174,8 @@ def test_a_chain_is_one_control_volume_ending_at_its_boundary() -> None:
 
 def test_the_legacy_tee_is_checked_as_a_junction() -> None:
     """The legacy tee is a three-port control volume like the #517 junctions
-    (#1231): each leg's stream at its port node's state. A forward branching
-    tee dissipates."""
+    (#1231): a leg into it at its port node's state, a leg out of it at the
+    mix it delivers. A forward branching tee dissipates."""
     v = _solve(tee_cases._branching_net())["__second_law__"]["tee"]
     assert v["verdict"] == "pass"
     assert "reason" not in v

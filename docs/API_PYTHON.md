@@ -1833,9 +1833,10 @@ linear Mach path and bracketed by constant-Mach paths at either end; a
 `"fail"` holds even for the most favourable one (`sigma_norm_high <
 -SIGMA_TOL`, `SIGMA_TOL = 1e-8`). A chain of crossflow segments is one control
 volume (a segment's momentum spans half of each station). A junction, the
-legacy `TeeJunctionElement` included (#1231), is one control volume with each
-port's stream at its port node's state. Each element's `sigma_norm` also
-appears in its diagnostics.
+legacy `TeeJunctionElement` included (#1231), is one control volume: a stream
+into it at its port node's state, a stream out of it at the mix it delivers
+there (a port chamber may also take other streams), at the port node's total
+pressure. Each element's `sigma_norm` also appears in its diagnostics.
 A failing verdict demotes the solve to INCONSISTENT (#598). An element whose
 own closure explains the failure says why through `second_law_hint(sol) -> str`,
 appended to `__message__`: `IdealMomentumTeeElement` names a `loss_factor`

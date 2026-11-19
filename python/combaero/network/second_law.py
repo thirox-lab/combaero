@@ -48,7 +48,8 @@ Control volumes
   composition and the enthalpy its walls added (the solver deposits wall
   heat on the downstream node, so the node's own temperature is a mix).
 * A multi-port junction, the legacy ``TeeJunctionElement`` included (#1231).
-  Each port's stream at its port node's state.
+  A stream into it at its port node's state; a stream out of it at the mix it
+  delivers there, at the port node's total pressure (``_ports``).
 * A chain of crossflow segments (a liner's backside duct). A segment's
   momentum spans half of each station, so one segment is not a control
   volume; the chain is. It is built from the segments' ``prev_seg`` /

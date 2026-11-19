@@ -5207,6 +5207,7 @@ class NetworkSolver:
         """
         depth = getattr(self, "_solve_depth", 0)
         self._solve_depth = depth + 1
+        t_start = time.time()
         try:
             # A fuel controller's target proven unreachable (#1114): refused
             # without the Newton search and its retries (up to 8 s).
@@ -5225,7 +5226,9 @@ class NetworkSolver:
         finally:
             self._solve_depth = depth
         if depth == 0:
-            sol = self._retry_legacy_tees_forward(sol, timeout, method, options, use_jac)
+            if auto_retry:
+                left = None if timeout is None else timeout - (time.time() - t_start)
+                sol = self._retry_legacy_tees_forward(sol, left, method, options, use_jac)
             sol = self._mark_fraction_unanchored(sol)
         return sol
 
@@ -5247,7 +5250,11 @@ class NetworkSolver:
         root with each tee's legs mirrored into the tee_type's direction
         (their magnitudes kept, the common leg their sum). Only that demotion
         triggers it; the retry's own result is returned only when it
-        succeeds, else the refused root stands.
+        succeeds, else the refused root stands, and the solver's last iterate
+        and diagnostics stay the refused solve's. ``timeout`` is the time left
+        of the caller's budget; ``auto_retry=False`` skips it. Only a port node
+        joined by exactly one two-port has that element's flow mirrored too;
+        any other is left as the refused root had it.
         """
         from .components import TEE_REVERSE_FLOW_TOL, TeeJunctionElement
 
@@ -5292,6 +5299,9 @@ class NetworkSolver:
                     continue
                 e = others[0]
                 x[two[e.id]] = f_out if e.from_node == nid else -f_out
+        if timeout is not None and timeout < 0.5:
+            return sol
+        saved = {k: getattr(self, k) for k in ("_last_x", "_diagnostic_data") if hasattr(self, k)}
         self._in_tee_forward_retry = True
         try:
             retry = self.solve(
@@ -5300,6 +5310,8 @@ class NetworkSolver:
         finally:
             self._in_tee_forward_retry = False
         if not retry.get("__success__", False):
+            for k, v in saved.items():
+                setattr(self, k, v)
             sol["__message__"] = (
                 f"{sol.get('__message__', '')} A retry from a forward start (every "
                 "legacy tee leg along its tee_type) did not converge."
@@ -5308,6 +5320,13 @@ class NetworkSolver:
         retry["__message__"] = (
             "Converged from a forward start (every legacy tee leg along its tee_type) "
             f"after the cold solve found a root outside the tee's model: {retry['__message__']}"
+        )
+        # The cold attempt's caught exceptions stay on the record.
+        cold = list(sol.get("__caught_exceptions__", []) or [])
+        mine = list(retry.get("__caught_exceptions__", []) or [])
+        retry["__caught_exceptions__"] = (cold + mine)[:_MAX_CAUGHT_RECORDS]
+        retry["__caught_exception_count__"] = int(sol.get("__caught_exception_count__", 0)) + int(
+            retry.get("__caught_exception_count__", 0)
         )
         return retry
 
