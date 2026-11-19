@@ -47,7 +47,8 @@ Control volumes
   inlet: at the chamber's main face, which is what it delivers), with the upstream
   composition and the enthalpy its walls added (the solver deposits wall
   heat on the downstream node, so the node's own temperature is a mix).
-* A multi-port junction. Each port's stream at its port node's state.
+* A multi-port junction, the legacy ``TeeJunctionElement`` included (#1231).
+  Each port's stream at its port node's state.
 * A chain of crossflow segments (a liner's backside duct). A segment's
   momentum spans half of each station, so one segment is not a control
   volume; the chain is. It is built from the segments' ``prev_seg`` /
@@ -62,8 +63,8 @@ Control volumes
   chain's pressure recovery is the jet's, so closing the hole at the
   station's Pt would charge the chain with momentum it was given.
 
-Not checked: elements without a solved flow, the legacy
-``TeeJunctionElement``, and a stagnant control volume (no flow through it).
+Not checked: elements without a solved flow and a stagnant control volume
+(no flow through it).
 """
 
 from __future__ import annotations
@@ -76,6 +77,7 @@ from typing import Any
 import numpy as np
 
 import combaero as cb
+from combaero import _solver_tools
 
 #: Below this, sigma_norm counts as negative. Chosen from a sweep of 238 element
 #: instances across the suite's networks plus 50 random junctions: the most
@@ -355,21 +357,64 @@ class SecondLawReport:
             cv.heat.append(self._heat_entropy(m, inflow.Tt, Tt_out, inflow.Y, M_in, M_out))
         return cv
 
-    def _junction(self, element: Any) -> _Volume | str:
+    def _ports(
+        self,
+        nodes: list[str],
+        flows: list[float],
+        arriving: dict[str, tuple[float, Any]] | None = None,
+    ) -> _Volume | str:
+        """A junction's control volume: each port's stream at its port
+        node's state, ``flows`` positive leaving the junction. ``arriving``
+        gives the (Tt, Y) a port's outflow carries where that is not its
+        node's (a boundary's set state)."""
         cv = _Volume()
+        arriving = arriving or {}
+        for pid, m_out in zip(nodes, flows, strict=True):
+            if m_out == 0.0:
+                continue
+            st = self._stream_at(pid, abs(m_out))
+            if m_out > 0.0 and pid in arriving:
+                st.Tt, st.Y = arriving[pid]
+            (cv.outflows if m_out > 0.0 else cv.inflows).append(st)
+        if sum(st.m for st in cv.inflows) < cb.MIXER_HEAT_MDOT_FLOOR:
+            return "no flow"
+        return cv
+
+    def _junction(self, element: Any) -> _Volume | str:
+        flows = []
         for i, pid in enumerate(element.port_nodes):
             outer = element._port_element_ids[i]
             m = self._flow(outer) if outer else None
             if m is None:
                 return f"port {pid} has no solved flow"
-            m_out = float(element._port_signs[i]) * m  # > 0 leaves the junction
-            if m_out == 0.0:
+            flows.append(float(element._port_signs[i]) * m)  # > 0 leaves the junction
+        return self._ports(list(element.port_nodes), flows)
+
+    def _tee(self, eid: str, element: Any) -> _Volume | str:
+        """The legacy TeeJunctionElement (#1231): its three legs at their
+        port nodes' states, as a junction's ports."""
+        ind = self.solver._unknown_indices.get(eid, [])
+        if len(ind) < 2:
+            return "no solved flow"
+        nodes, flows, dflows, _ = element.port_flows(self.x, ind)
+        # A legacy tee may be wired straight to boundaries (the branching
+        # stress draws). A boundary holds its set Tt and Y, not the gas the
+        # tee delivers into it: that leg leaves at the mix of the legs
+        # supplying it (_junction_streams), as a two-port's outflow leaves at
+        # its inflow's state. Taken at the boundary's own 300 K, an 800 K
+        # supply read as sigma_norm -3.5.
+        arriving: dict[str, tuple[float, Any]] = {}
+        for pid, m_out in zip(nodes, flows, strict=True):
+            if not (m_out > 0.0 and self.net.nodes[pid].is_boundary):
                 continue
-            st = self._stream_at(pid, abs(m_out))
-            (cv.outflows if m_out > 0.0 else cv.inflows).append(st)
-        if sum(st.m for st in cv.inflows) < cb.MIXER_HEAT_MDOT_FLOOR:
-            return "no flow"
-        return cv
+            streams = [
+                cb.MassStream(m, float(self._state(src).Tt), 0.0, list(self._state(src).Y))
+                for src, m, _ in self.solver._junction_streams(pid, nodes, flows, dflows)
+            ]
+            if streams:
+                mix = _solver_tools.mixer_from_streams_and_jacobians(streams, Q=0.0, fraction=0.0)
+                arriving[pid] = (float(mix.Tt_mix), list(mix.Y_mix))
+        return self._ports(nodes, flows, arriving)
 
     def _momentum_jets(self, members: list[str]) -> list[str]:
         """Holes at the chain's stations whose jets join it with axial
@@ -563,7 +608,7 @@ class SecondLawReport:
             if eid in chained:
                 continue
             if isinstance(element, TeeJunctionElement):
-                record([eid], lambda: "legacy TeeJunctionElement", None)
+                record([eid], lambda eid=eid, element=element: self._tee(eid, element), None)
             elif isinstance(element, MultiPortChamberBase):
                 record([eid], lambda element=element: self._junction(element), None)
             else:
@@ -654,6 +699,7 @@ class SecondLawReport:
             H = m_in * float(cb.h_mass(Tt, _X(Y)))
             rows.append({"node": node, "via": via, "m_dot_in": m_in, "H_in": H})
 
+        rev_jct = self.solver._reversed_junctions(self.x)
         for nid, node in self.net.nodes.items():
             if not node.is_flow_boundary:
                 continue
@@ -667,6 +713,23 @@ class SecondLawReport:
             for element in {e.id: e for e in [*ups, *downs]}.values():
                 ind = self.solver._unknown_indices.get(element.id, [])
                 if not ind:
+                    continue
+                if element.id in rev_jct:
+                    # A junction with a reversed port (a legacy tee at a
+                    # boundary, #1231): a port flow into it enters at the
+                    # boundary's state; one out of it leaves carrying the
+                    # streams the solver delivers there (_junction_streams).
+                    ports, flows, dflows = rev_jct[element.id]
+                    m_out = flows[ports.index(nid)]
+                    if m_out <= 0.0:
+                        st = self._state(nid)
+                        add(nid, element.id, -m_out, float(st.Tt), st.Y)
+                        continue
+                    H = 0.0
+                    for src, m_s, _ in self.solver._junction_streams(nid, ports, flows, dflows):
+                        st = self._state(src)
+                        H += m_s * float(cb.h_mass(float(st.Tt), _X(st.Y)))
+                    rows.append({"node": nid, "via": element.id, "m_dot_in": -m_out, "H_in": -H})
                     continue
                 # signed source -> sink, as the element itself reports it here
                 m = float(element.flow_at_node(nid, self.x, ind))

@@ -1830,9 +1830,10 @@ element only its end Mach numbers are known, so the heat is evaluated along a
 linear Mach path and bracketed by constant-Mach paths at either end; a
 `"fail"` holds even for the most favourable one (`sigma_norm_high <
 -SIGMA_TOL`, `SIGMA_TOL = 1e-8`). A chain of crossflow segments is one control
-volume (a segment's momentum spans half of each station). The legacy
-`TeeJunctionElement` is not checked. Each element's `sigma_norm` also appears
-in its diagnostics.
+volume (a segment's momentum spans half of each station). A junction, the
+legacy `TeeJunctionElement` included (#1231), is one control volume with each
+port's stream at its port node's state. Each element's `sigma_norm` also
+appears in its diagnostics.
 A failing verdict demotes the solve to INCONSISTENT (#598). An element whose
 own closure explains the failure says why through `second_law_hint(sol) -> str`,
 appended to `__message__`: `IdealMomentumTeeElement` names a `loss_factor`
@@ -2771,6 +2772,15 @@ tee_branch = TeeJunctionElement(
 )
 # Solved unknowns: tee.m_dot_com (total), tee.m_dot_branch (branch arm)
 # Straight flow is implicit: m_dot_straight = m_dot_com - m_dot_branch
+# A leg running against tee_type is fed by the sign of its flow, as a reversed
+# MultiPortChamberBase port is: each port node mixes only the legs arriving at
+# it, and the node a reversed leg flows into receives its stream (#1231). Such
+# a root is outside Bassett's coefficients for the tee_type's pattern, so it is
+# demoted to INCONSISTENT (verify_solution_consistent, listed in
+# __inconsistent_elements__), __message__ names the legs ("use
+# IdealMomentumTeeElement, which reverses ports"), and the diagnostics count
+# them in n_reversed_ports (correlation_extrapolated = 1 there), within
+# TEE_REVERSE_FLOW_TOL = 1e-6 of the largest leg flow.
 # A given F_C (common and straight arm) or F_branch that contradicts the single
 # pipe at its arm is refused at resolve_topology (#1023, as AreaChangeElement's
 # faces). A branch wider than the main (psi < 1) is accepted.
