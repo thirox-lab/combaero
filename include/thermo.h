@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace combaero::thermo {
@@ -170,6 +171,13 @@ std::tuple<double, double, double> cp_secant_mass_and_jacobian(double T1, double
 // The secant cp's gradient in the MASS fractions [J/(kg K)] per species
 // (#717): a wall side's capacity rate |m| cp moves with its composition.
 std::vector<double> cp_secant_mass_dY(double T1, double T2, const std::vector<double>& X);
+// Gradients in the MASS fractions, per species, of R = R_GAS / MW [J/(kg K)]
+// and of gamma = cp / (cp - R_GAS) (isentropic_expansion_coefficient), with
+// gamma's dT [1/K]: an element taking a node's R and gamma as inputs chains
+// them onto the node's composition (#1231, the legacy tee's kernel).
+std::vector<double> specific_gas_constant_dY(const std::vector<double>& X);
+std::pair<double, std::vector<double>> isentropic_expansion_coefficient_dT_dY(
+    double T, const std::vector<double>& X);
 double cv_mass(double T, const std::vector<double>& X);
 double h_mass(double T, const std::vector<double>& X);
 double s_mass(double T, const std::vector<double>& X, double P, double P_ref = 101325.0);

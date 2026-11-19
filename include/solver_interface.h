@@ -872,6 +872,13 @@ struct CompressibleTeeResult {
     double dR1_dP_bra;
     double dR1_dT_bra;
     double dR1_dmdot_branch;
+    // The ports' gas properties (#1231): d/d(R_gas) and d/d(gamma_eff) of
+    // each port, which an element chains onto its nodes' composition. Both
+    // kernels take R only in the product R T, so d/dR = (T / R) d/dT.
+    double dR0_dRgas_com, dR0_dRgas_str, dR0_dRgas_bra;
+    double dR1_dRgas_com, dR1_dRgas_str, dR1_dRgas_bra;
+    double dR0_dgamma_com, dR0_dgamma_str, dR0_dgamma_bra;
+    double dR1_dgamma_com, dR1_dgamma_str, dR1_dgamma_bra;
 };
 
 // Branching tee: common is the single supplier; straight and branch are collectors.

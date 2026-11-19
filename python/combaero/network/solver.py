@@ -5225,8 +5225,91 @@ class NetworkSolver:
         finally:
             self._solve_depth = depth
         if depth == 0:
+            sol = self._retry_legacy_tees_forward(sol, timeout, method, options, use_jac)
             sol = self._mark_fraction_unanchored(sol)
         return sol
+
+    def _retry_legacy_tees_forward(
+        self,
+        sol: dict[str, Any],
+        timeout: float | None,
+        method: str,
+        options: dict[str, Any] | None,
+        use_jac: bool,
+    ) -> dict[str, Any]:
+        """A root a legacy tee refused for a leg against its tee_type (#1231),
+        retried once from a forward start (#1234).
+
+        Outside the tee's flow pattern Bassett's coefficients are extrapolated
+        and have roots of their own, and a cold solve can land there although
+        the forward root exists: the residuals of a tee with every leg forward
+        are those of #1230, whose solve found it. The start is the refused
+        root with each tee's legs mirrored into the tee_type's direction
+        (their magnitudes kept, the common leg their sum). Only that demotion
+        triggers it; the retry's own result is returned only when it
+        succeeds, else the refused root stands.
+        """
+        from .components import TEE_REVERSE_FLOW_TOL, TeeJunctionElement
+
+        bad = sol.get("__inconsistent_elements__") or []
+        x = sol.get("__x_solution__")
+        if not bad or x is None or sol.get("__success__", False):
+            return sol
+        if getattr(self, "_in_tee_forward_retry", False):
+            return sol
+        x = np.array(x, dtype=float)
+        tees = []
+        for eid in bad:
+            e = self.network.elements.get(eid)
+            ind = self._unknown_indices.get(eid, [])
+            if (
+                isinstance(e, TeeJunctionElement)
+                and len(ind) >= 2
+                and e.reversed_legs(x, ind, TEE_REVERSE_FLOW_TOL)
+            ):
+                tees.append((eid, ind))
+        if not tees or len(x) != len(self.unknown_names):
+            return sol
+        two = self._two_port_mdot_indices()
+        for eid, ind in tees:
+            tee = self.network.elements[eid]
+            m_s = abs(float(x[ind[0]]) - float(x[ind[1]]))
+            m_b = abs(float(x[ind[1]]))
+            x[ind[0]], x[ind[1]] = m_s + m_b, m_b
+            # The port nodes' mass rows: a port node joined to the tee by one
+            # other two-port carries the mirrored leg through it.
+            nodes, flows, _, _ = tee.port_flows(x, ind)
+            for nid, f_out in zip(nodes, flows, strict=True):
+                if self.network.nodes[nid].is_boundary:
+                    continue
+                others = [
+                    e
+                    for e in self.network.get_upstream_elements(nid)
+                    + self.network.get_downstream_elements(nid)
+                    if e.id != eid
+                ]
+                if len(others) != 1 or others[0].id not in two:
+                    continue
+                e = others[0]
+                x[two[e.id]] = f_out if e.from_node == nid else -f_out
+        self._in_tee_forward_retry = True
+        try:
+            retry = self.solve(
+                method=method, timeout=timeout, options=options, use_jac=use_jac, x0=x
+            )
+        finally:
+            self._in_tee_forward_retry = False
+        if not retry.get("__success__", False):
+            sol["__message__"] = (
+                f"{sol.get('__message__', '')} A retry from a forward start (every "
+                "legacy tee leg along its tee_type) did not converge."
+            )
+            return sol
+        retry["__message__"] = (
+            "Converged from a forward start (every legacy tee leg along its tee_type) "
+            f"after the cold solve found a root outside the tee's model: {retry['__message__']}"
+        )
+        return retry
 
     def _solve_entry(
         self,

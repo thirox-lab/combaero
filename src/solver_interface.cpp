@@ -2616,6 +2616,20 @@ TeeJunctionResult branching_tee_residuals_and_jacobian(
 // Unified0D compressible tee junction (Section 5-7, sources/junction/)
 // =============================================================================
 
+// R enters both tee kernels only as R T (u ~ m R T / (P A), q ~ m^2 R T /
+// (P A^2), the merging datum's R T_dat from the suppliers' R T and gamma):
+// d/dR at fixed T is (T / R) d/dT (#1231).
+static void tee_gas_constant_partials(CompressibleTeeResult &res, const BranchInput &com,
+                                      const BranchInput &str, const BranchInput &bra) {
+  auto ratio = [](const BranchInput &b) { return b.R_gas > 0.0 ? b.T / b.R_gas : 0.0; };
+  res.dR0_dRgas_com = ratio(com) * res.dR0_dT_com;
+  res.dR0_dRgas_str = ratio(str) * res.dR0_dT_str;
+  res.dR0_dRgas_bra = ratio(bra) * res.dR0_dT_bra;
+  res.dR1_dRgas_com = ratio(com) * res.dR1_dT_com;
+  res.dR1_dRgas_str = ratio(str) * res.dR1_dT_str;
+  res.dR1_dRgas_bra = ratio(bra) * res.dR1_dT_bra;
+}
+
 CompressibleTeeResult compressible_branching_tee_rj(
     const BranchInput& com,
     const BranchInput& str,
@@ -2736,6 +2750,8 @@ CompressibleTeeResult compressible_branching_tee_rj(
     res.dR1_dT_str = 0.0;
     res.dR1_dPt_str = 0.0;
 
+    // gamma_eff does not enter the branching closure.
+    tee_gas_constant_partials(res, com, str, bra);
     return res;
 }
 
@@ -2928,7 +2944,32 @@ CompressibleTeeResult compressible_merging_tee_rj(
         res.dR1_dmdot_branch = dp0dat_dv(du_d, dh0_d, 0.0)
                              + dNeg_Kq(du_d, dh0_d, 0.0, 0.0, dtheta_d);
     }
-
+    // dR1/dgamma_bra: gamma_bra enters only cp_bra, so h0_bra (#1231).
+    {
+        const double dcp_b = -Rb / ((gb - 1.0) * (gb - 1.0));
+        const double dh0_d = m_bra / m_dat_safe * dcp_b * Tb;
+        res.dR1_dgamma_bra = dp0dat_dv(0.0, dh0_d, 0.0)
+                           + dNeg_Kq(0.0, dh0_d, 0.0, 0.0, 0.0);
+    }
+    // dR1/dgamma_str: cp_str (h0_str and the datum's cp, cp_dat = cp_str)
+    // and the datum's own gamma (M2_dat, Phi_dat and its exponent).
+    {
+        const double dcp_s = -Rs / ((gs - 1.0) * (gs - 1.0));
+        // T_dat = (h0_dat - u_dat^2 / 2) / cp_dat: the helpers' dT_d is
+        // (dh0_d - u_dat du_d) / cp_dat, so cp_dat's own change enters as
+        // an equivalent -T_dat dcp_s in dh0_d.
+        const double dh0_d = m_str / m_dat_safe * dcp_s * Ts - T_dat * dcp_s;
+        double d = dp0dat_dv(0.0, dh0_d, 0.0) + dNeg_Kq(0.0, dh0_d, 0.0, 0.0, 0.0);
+        if (u_dat > eps_m) {
+            const double gm1 = g_dat - 1.0;
+            const double dM2_g = -M2_dat / g_dat;  // M2 = u^2 / (g R T_dat)
+            const double dPhi = 0.5 * M2_dat + 0.5 * gm1 * dM2_g;
+            d += p0_dat_val * (-std::log(Phi_dat) / (gm1 * gm1) + g_dat / gm1 * dPhi / Phi_dat);
+            d -= dKc_dM2 * dM2_g * q_ref;
+        }
+        res.dR1_dgamma_str = d;
+    }
+    tee_gas_constant_partials(res, com, str, bra);
     return res;
 }
 

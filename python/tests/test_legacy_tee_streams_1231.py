@@ -28,7 +28,9 @@ from combaero import _solver_tools
 from combaero.network import FlowNetwork, NetworkSolver
 from combaero.network.components import (
     LosslessConnectionElement,
+    MassFlowBoundary,
     MomentumChamberNode,
+    OrificeElement,
     PressureBoundary,
     TeeJunctionElement,
 )
@@ -259,3 +261,152 @@ def test_a_forward_branching_tee_into_colder_boundaries_passes_the_second_law() 
     assert 0.0 < r["tee.m_dot_branch"] < r["tee.m_dot_com"]
     v = r["__second_law__"]["tee"]
     assert v["verdict"] == "pass" and v["sigma_norm"] > 0.0
+
+
+def _co2_air(f: float) -> list[float]:
+    Y = [(1.0 - f) * y for y in AIR]
+    Y[cb.species.species_index("CO2")] += f
+    return Y
+
+
+def _branching_mc(side: str | None = None) -> FlowNetwork:
+    """A branching tee between three chambers fed by lossless connections,
+    each boundary its own gas; ``side`` injects a hot CO2-laden stream into
+    that port chamber through an orifice."""
+    g = FlowNetwork()
+    gases = {
+        "c": (2.0e5, 650.0, _co2_air(0.05)),
+        "s": (2.02e5, 420.0, _fuel_air()),
+        "b": (1.99e5, 880.0, AIR),
+    }
+    for k, (P, T, Y) in gases.items():
+        g.add_node(PressureBoundary("B" + k, Pt=P, Tt=T, Y=Y))
+        g.add_node(MomentumChamberNode("p" + k, area=1e-2 if k != "b" else 5e-3))
+        a, b = ("B" + k, "p" + k) if k == "c" else ("p" + k, "B" + k)
+        g.add_element(LosslessConnectionElement("l" + k, a, b))
+    if side is not None:
+        g.add_node(MassFlowBoundary("Mx", m_dot=0.05, Tt=1200.0, Y=_co2_air(0.1)))
+        g.add_element(
+            OrificeElement("ox", "Mx", "p" + side, Cd=0.7, diameter=0.03, correlation="fixed")
+        )
+    g.add_element(
+        TeeJunctionElement(
+            id="tee",
+            common_node="pc",
+            straight_node="ps",
+            branch_node="pb",
+            theta=math.radians(60.0),
+            F_C=1e-2,
+            psi=2.0,
+            tee_type="branching",
+        )
+    )
+    return g
+
+
+def _fd_at(g: FlowNetwork, legs: dict[str, float]) -> tuple[float, str]:
+    s = NetworkSolver(g)
+    g.resolve_all_topology()
+    x = np.asarray(s._build_x0(), dtype=float)
+    for name, m in legs.items():
+        x[s._name_to_index[name]] = m
+    _, J = s._residuals_and_jacobian(x)
+    return worst(J, fd_jacobian(s, x), x, list(s.unknown_names))
+
+
+def test_the_jacobian_carries_the_port_nodes_gas_constant_and_gamma() -> None:
+    """The kernel takes each port node's R and gamma as numbers. With the
+    straight leg of a branching tee reversed its node mixes gases that move
+    with m_com and m_branch (0.2-0.7 % off on those columns without the
+    chain), and a side stream of another gas into the common chamber moves
+    its R with the side stream's flow (2 % off on ox.m_dot, #1235). A
+    merging tee reads its suppliers' gamma too."""
+    reversed_straight = {"tee.m_dot_com": 1.0, "tee.m_dot_branch": 1.3, "lc.m_dot": 1.0}
+    reversed_straight |= {"ls.m_dot": -0.3, "lb.m_dot": 1.3}
+    e, where = _fd_at(_branching_mc(), reversed_straight)
+    assert e < 1e-6, where
+    forward = {"tee.m_dot_com": 1.0, "tee.m_dot_branch": 0.4, "lc.m_dot": 0.95, "ox.m_dot": 0.05}
+    forward |= {"ls.m_dot": 0.6, "lb.m_dot": 0.4}
+    e, where = _fd_at(_branching_mc(side="c"), forward)
+    assert e < 1e-6, where
+    # Merging: a side stream of another gas and T into the straight chamber
+    # moves that supplier's R and gamma.
+    g = _net()
+    g.add_node(MassFlowBoundary("Mx", m_dot=0.05, Tt=1200.0, Y=_co2_air(0.1)))
+    g.add_element(OrificeElement("ox", "Mx", "ps", Cd=0.7, diameter=0.03, correlation="fixed"))
+    legs = {"tee.m_dot_com": 1.0, "tee.m_dot_branch": 0.3, "lc.m_dot": 1.0, "lb.m_dot": 0.3}
+    legs |= {"ls.m_dot": 0.65, "ox.m_dot": 0.05}
+    e, where = _fd_at(g, legs)
+    assert e < 1e-6, where
+
+
+def test_a_side_stream_into_a_port_chamber_is_not_the_tees_outflow() -> None:
+    """The tee's control volume books each leg it delivers at the mix it
+    delivers, not at the receiving chamber's state, which also holds a side
+    stream. A forward branching tee whose straight chamber takes 0.05 kg/s
+    of 300 K air read its own outflow at that chamber's mix and failed the
+    second law (the #1233 review: 8 forward roots base accepts, sigma_norm
+    -0.16 to -2.1)."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("Bc", Pt=2.0e5, Tt=800.0, Y=AIR))
+    g.add_node(PressureBoundary("Bs", Pt=1.999e5, Tt=300.0, Y=AIR))
+    g.add_node(PressureBoundary("Bb", Pt=1.98e5, Tt=300.0, Y=AIR))
+    g.add_node(MomentumChamberNode("pc", area=1e-2))
+    g.add_node(MomentumChamberNode("ps", area=1e-2, main_inlet="tee"))
+    g.add_node(MomentumChamberNode("pb", area=1e-2))
+    g.add_element(LosslessConnectionElement("lc", "Bc", "pc"))
+    g.add_element(LosslessConnectionElement("ls", "ps", "Bs"))
+    g.add_element(LosslessConnectionElement("lb", "pb", "Bb"))
+    g.add_node(MassFlowBoundary("Mx", m_dot=0.05, Tt=300.0, Y=AIR))
+    g.add_element(OrificeElement("ox", "Mx", "ps", Cd=0.7, diameter=0.02, correlation="fixed"))
+    g.add_element(
+        TeeJunctionElement(
+            id="tee",
+            common_node="pc",
+            straight_node="ps",
+            branch_node="pb",
+            theta=math.radians(90.0),
+            F_C=1e-2,
+            psi=1.0,
+            tee_type="branching",
+        )
+    )
+    r = _solve(g)
+    assert r["__outcome__"] == "converged", r["__message__"]
+    assert 0.0 < r["tee.m_dot_branch"] < r["tee.m_dot_com"]
+    # The chamber mixes the 800 K leg with the 300 K side stream; the tee's
+    # outflow there is the 800 K leg.
+    assert r["ps.Tt"] < 790.0
+    v = r["__second_law__"]["tee"]
+    assert v["verdict"] == "pass" and v["sigma_norm"] > 0.0
+
+
+def test_the_gas_constant_and_gamma_gradients_match_a_difference() -> None:
+    """cb.specific_gas_constant_dY and cb.isentropic_expansion_coefficient_dT_dY
+    against central differences in the mass fractions (renormalised, as a
+    node's X is) and in T."""
+    Y = np.asarray(_co2_air(0.07), dtype=float)
+    Y[cb.species.species_index("CH4")] += 0.02
+    Y /= Y.sum()
+    T = 700.0
+
+    def X(Yv: np.ndarray) -> list[float]:
+        return list(cb.mass_to_mole(list(Yv / Yv.sum())))
+
+    dR = np.asarray(cb.specific_gas_constant_dY(X(Y)))
+    dg_dT, dg = cb.isentropic_expansion_coefficient_dT_dY(T, X(Y))
+    h = 1e-6
+    for k in range(Y.size):
+        Yp, Ym = Y.copy(), Y.copy()
+        Yp[k] += h
+        Ym[k] -= h
+        if Ym[k] < 0.0:
+            continue
+        fd_R = (cb.specific_gas_constant(X(Yp)) - cb.specific_gas_constant(X(Ym))) / (2 * h)
+        g = cb.isentropic_expansion_coefficient
+        fd_g = (g(T, X(Yp)) - g(T, X(Ym))) / (2 * h)
+        assert math.isclose(dR[k], fd_R, rel_tol=1e-6, abs_tol=1e-6), k
+        assert math.isclose(dg[k], fd_g, rel_tol=1e-6, abs_tol=1e-9), k
+    g = cb.isentropic_expansion_coefficient
+    fd_T = (g(T + 1e-3, X(Y)) - g(T - 1e-3, X(Y))) / 2e-3
+    assert math.isclose(dg_dT, fd_T, rel_tol=1e-6)

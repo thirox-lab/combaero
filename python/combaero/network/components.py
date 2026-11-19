@@ -13945,9 +13945,10 @@ class TeeJunctionElement(NetworkElement):
         entropy than the pressure gain removes. So any root with a leg against
         the tee_type, beyond ``TEE_REVERSE_FLOW_TOL`` of the largest leg, is
         not reported as a solution, like the ejector's (#619). The solver
-        names the legs (``_declared_direction_hints``) and the element reports
-        them as ``n_reversed_ports``. Missing keys mean True, as for the
-        junction verifiers.
+        names the legs (``_declared_direction_hints``), the element reports
+        them as ``n_reversed_ports``, and the solve is retried once from a
+        forward start (``NetworkSolver._retry_legacy_tees_forward``, #1234).
+        Missing keys mean True, as for the junction verifiers.
         """
         keys = [f"{self.id}.m_dot_com", f"{self.id}.m_dot_branch"]
         if not all(k in sol for k in keys):
@@ -14180,6 +14181,9 @@ class TeeJunctionElement(NetworkElement):
             }
 
         self._chain_static_T(res, jac, ports)
+        self._chain_gas_properties(
+            res, jac, {"com": state_com, "str": state_straight, "bra": state_branch}
+        )
         return [res.R_0, res.R_1], jac
 
     def _branch_inputs(
@@ -14256,6 +14260,43 @@ class TeeJunctionElement(NetworkElement):
                 for k, d in st.dY.items():
                     key = f"{node}.Y[{k}]"
                     r[key] = r.get(key, 0.0) + dR_dT * d
+
+    def _chain_gas_properties(
+        self,
+        res: Any,
+        jac: dict[int, dict[str, float]],
+        states: dict[str, NetworkMixtureState],
+    ) -> None:
+        """The kernel's d/d(R_gas) and d/d(gamma_eff) of each port, chained
+        onto the port node's composition and T0 (#1231). BranchInput carries
+        a node's R and gamma (at its T0) as numbers, so a node whose mixture
+        moves with the flows (a reversed leg's delivered stream, a side
+        stream into a port chamber) moved the rows by more than their
+        Jacobian said: 0.2-0.7 % on the flow columns of a branching tee with
+        its straight leg reversed, 2 % on a side stream's column (#1235)."""
+        nodes = {"com": self.common_node, "str": self.straight_node, "bra": self.branch_node}
+        for suffix, state in states.items():
+            node = nodes[suffix]
+            dR = [float(getattr(res, f"dR{row}_dRgas_{suffix}")) for row in (0, 1)]
+            dg = [float(getattr(res, f"dR{row}_dgamma_{suffix}")) for row in (0, 1)]
+            if not any(dR) and not any(dg):
+                continue
+            X = state.X
+            dR_dY = cb.specific_gas_constant_dY(X) if any(dR) else None
+            dg_dT, dg_dY = cb.isentropic_expansion_coefficient_dT_dY(float(state.Tt), X)
+            for row in (0, 1):
+                r = jac[row]
+                if dg[row] != 0.0:
+                    key = f"{node}.Tt"
+                    r[key] = r.get(key, 0.0) + dg[row] * float(dg_dT)
+                for k in range(len(X)):
+                    d = 0.0
+                    if dR_dY is not None:
+                        d += dR[row] * float(dR_dY[k])
+                    d += dg[row] * float(dg_dY[k])
+                    if d != 0.0:
+                        key = f"{node}.Y[{k}]"
+                        r[key] = r.get(key, 0.0) + d
 
     def diagnostics(
         self,

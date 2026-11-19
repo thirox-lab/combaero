@@ -1358,6 +1358,8 @@ inlet, with `NTU = UA / C_min` and `C = |m| cp` (cp the secant over the inlet
 span, `cb.cp_secant_mass_and_jacobian`, so `C_min dT` is the exact maximum). Behind a combustor the side's composition moves with the unknowns too:
 `ChannelResult.dh_dY` and `dT_aw_dY` (smooth channels) and
 `cb.cp_secant_mass_dY` carry h, T_aw and C to the relay (#717).
+`cb.specific_gas_constant_dY(X)` and `cb.isentropic_expansion_coefficient_dT_dY(T, X)`
+(`(dgamma/dT, dgamma/dY)`) carry a node's R and gamma the same way (#1231).
 It never exceeds what the weaker stream can take, and a stream that stops
 takes none. A node side is a well-mixed reservoir (`C = inf`). The linear
 `U A dT` it replaced is its small-NTU limit; it moved up to 2.3x the heat at
@@ -2780,7 +2782,10 @@ tee_branch = TeeJunctionElement(
 # __inconsistent_elements__), __message__ names the legs ("use
 # IdealMomentumTeeElement, which reverses ports"), and the diagnostics count
 # them in n_reversed_ports (correlation_extrapolated = 1 there), within
-# TEE_REVERSE_FLOW_TOL = 1e-6 of the largest leg flow.
+# TEE_REVERSE_FLOW_TOL = 1e-6 of the largest leg flow. A solve so refused is
+# retried once from a forward start (the refused root with every leg mirrored
+# into the tee_type's direction, #1234); its root is returned when it
+# converges, __message__ saying so.
 # A given F_C (common and straight arm) or F_branch that contradicts the single
 # pipe at its arm is refused at resolve_topology (#1023, as AreaChangeElement's
 # faces). A branch wider than the main (psi < 1) is accepted.

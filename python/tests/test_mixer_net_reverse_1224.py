@@ -243,14 +243,11 @@ def test_reverse_one_gas_different_state_keeps_dY_exactly_zero() -> None:
 #
 # Since #1231 the tee feeds its port nodes by the sign of its legs, so the
 # reversed region carries real states instead of a signed mean, and from the
-# same start the root finder now lands on a root with the common and
-# straight legs reversed: the outlet boundary feeding the higher-pressure
-# straight inlet. The second law passes it (the 500/700/900 K mixing
-# generates more entropy than the 1.7 kPa / 3 kPa total-pressure rise
-# removes), but it is outside the tee's model -- Bassett's merging
-# coefficients at a negative flow ratio -- so it is demoted, with the legs
-# named. The pins now hold that honest outcome: the root finder still
-# converges (no stall), and the root is reported as outside the model.
+# same start the root finder lands on a root with the common and straight legs
+# reversed: the outlet boundary feeding the higher-pressure straight inlet.
+# That root is outside the tee's model (Bassett's merging coefficients at a
+# negative flow ratio) and is refused, and the solve retries from a forward
+# start (#1234), which converges to the forward root #1230 found.
 LEGACY_TEE_CASES = [
     # (P_straight, P_branch, P_out, Tt_straight, Tt_branch, Tt_out, F_C, psi)
     (150000.0, 148760.15882950363, 148260.333624841, 500.0, 900.0, 700.0, 2e-3, 4.0),
@@ -300,18 +297,15 @@ def test_a_legacy_merging_tee_into_a_momentum_chamber_converges(case: tuple) -> 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         r = s.solve(timeout=20)
-    # The root finder converges (#1230: no stall)...
-    assert r["__converged__"], (r["__outcome__"], r["__final_norm__"])
-    # ...to a root with legs against the tee_type, which is outside the tee's
-    # model and demoted, the legs named (#1231).
+    # The forward root (#1230), reached from a forward start after the cold
+    # solve's reversed root was refused (#1231, #1234).
+    assert r["__outcome__"] == "converged", (r["__outcome__"], r["__message__"])
     m_com, m_b = r["tee.m_dot_com"], r["tee.m_dot_branch"]
-    assert m_com < 0.0 and m_com - m_b < 0.0 < m_b
-    assert r["__outcome__"] == "inconsistent"
-    assert r["__inconsistent_elements__"] == ["tee"]
-    assert "runs leg(s) ['pc', 'ps'] against its tee_type" in r["__message__"]
-    assert "IdealMomentumTeeElement" in r["__message__"]
-    assert r["__element_diag__"]["tee"]["n_reversed_ports"] == 2.0
-    # The straight node receives the two arriving streams and nothing else.
-    assert min(Tib, To) < r["ps.Tt"] < max(Tib, To)
+    assert m_com > 0.0 and 0.0 < m_b < m_com
+    assert r["lc.m_dot"] == pytest.approx(m_com, rel=1e-9)
+    assert min(Tis, Tib) < r["pc.Tt"] < max(Tis, Tib)
+    assert "forward start" in r["__message__"]
+    v = r["__second_law__"]["tee"]
+    assert v["verdict"] == "pass" and v["sigma_norm"] > 0.0
     L = r["__ledger__"]
     assert abs(L["mass_closure_rel"]) < 1e-12 and abs(L["energy_closure_rel"]) < 1e-12

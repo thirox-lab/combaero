@@ -2526,7 +2526,19 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       .def_readonly("dR1_dPt_bra",      &solver::CompressibleTeeResult::dR1_dPt_bra)
       .def_readonly("dR1_dP_bra",       &solver::CompressibleTeeResult::dR1_dP_bra)
       .def_readonly("dR1_dT_bra",       &solver::CompressibleTeeResult::dR1_dT_bra)
-      .def_readonly("dR1_dmdot_branch", &solver::CompressibleTeeResult::dR1_dmdot_branch);
+      .def_readonly("dR1_dmdot_branch", &solver::CompressibleTeeResult::dR1_dmdot_branch)
+      .def_readonly("dR0_dRgas_com", &solver::CompressibleTeeResult::dR0_dRgas_com)
+      .def_readonly("dR0_dRgas_str", &solver::CompressibleTeeResult::dR0_dRgas_str)
+      .def_readonly("dR0_dRgas_bra", &solver::CompressibleTeeResult::dR0_dRgas_bra)
+      .def_readonly("dR0_dgamma_com", &solver::CompressibleTeeResult::dR0_dgamma_com)
+      .def_readonly("dR0_dgamma_str", &solver::CompressibleTeeResult::dR0_dgamma_str)
+      .def_readonly("dR0_dgamma_bra", &solver::CompressibleTeeResult::dR0_dgamma_bra)
+      .def_readonly("dR1_dRgas_com", &solver::CompressibleTeeResult::dR1_dRgas_com)
+      .def_readonly("dR1_dRgas_str", &solver::CompressibleTeeResult::dR1_dRgas_str)
+      .def_readonly("dR1_dRgas_bra", &solver::CompressibleTeeResult::dR1_dRgas_bra)
+      .def_readonly("dR1_dgamma_com", &solver::CompressibleTeeResult::dR1_dgamma_com)
+      .def_readonly("dR1_dgamma_str", &solver::CompressibleTeeResult::dR1_dgamma_str)
+      .def_readonly("dR1_dgamma_bra", &solver::CompressibleTeeResult::dR1_dgamma_bra);
 
   m.def("compressible_branching_tee_rj",
         &solver::compressible_branching_tee_rj,
@@ -2716,6 +2728,25 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "The secant cp's gradient in the MASS fractions [J/(kg*K)], one entry\n"
       "per species: a wall side's capacity rate |m| cp moves with its\n"
       "composition (#717).");
+
+  m.def(
+      "specific_gas_constant_dY",
+      [](py::array_t<double, py::array::c_style | py::array::forcecast> X_arr) {
+        return specific_gas_constant_dY(to_vec(X_arr));
+      },
+      py::arg("X"),
+      "Gradient of the specific gas constant R = R_GAS / MW [J/(kg*K)] in\n"
+      "the MASS fractions, one entry per species (#1231).");
+
+  m.def(
+      "isentropic_expansion_coefficient_dT_dY",
+      [](double T, py::array_t<double, py::array::c_style | py::array::forcecast> X_arr) {
+        return isentropic_expansion_coefficient_dT_dY(T, to_vec(X_arr));
+      },
+      py::arg("T"), py::arg("X"),
+      "(dgamma/dT [1/K], dgamma/dY per species) of gamma = cp / cv\n"
+      "(isentropic_expansion_coefficient), the gradient in the MASS\n"
+      "fractions (#1231).");
 
   m.def(
       "cp_mass",

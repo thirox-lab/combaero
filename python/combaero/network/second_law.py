@@ -357,24 +357,37 @@ class SecondLawReport:
             cv.heat.append(self._heat_entropy(m, inflow.Tt, Tt_out, inflow.Y, M_in, M_out))
         return cv
 
-    def _ports(
-        self,
-        nodes: list[str],
-        flows: list[float],
-        arriving: dict[str, tuple[float, Any]] | None = None,
-    ) -> _Volume | str:
-        """A junction's control volume: each port's stream at its port
-        node's state, ``flows`` positive leaving the junction. ``arriving``
-        gives the (Tt, Y) a port's outflow carries where that is not its
-        node's (a boundary's set state)."""
+    def _ports(self, nodes: list[str], flows: list[float]) -> _Volume | str:
+        """A junction's control volume, ``flows`` positive leaving it.
+
+        A stream into the junction is at its port node's state. A stream out
+        of it leaves at the mix the junction delivers there -- the streams
+        ``_junction_streams`` gives that port, from the suppliers' port
+        states -- at the port node's total pressure: as a two-port's outflow
+        leaves at its inflow's state (#1231). The port node's own state is
+        that mix only when nothing else feeds the node. A legacy tee port
+        also taking a side stream (a chamber with a second inlet) or held at
+        a boundary's set Tt read that other gas as the tee's: a cold side
+        stream into a forward tee's outlet chamber gave sigma_norm -0.16 to
+        -2.1, an 800 K supply into a 300 K boundary -3.5, and a hot one could
+        hide a real violation.
+        """
         cv = _Volume()
-        arriving = arriving or {}
+        dflows: list[dict[int, float]] = [{} for _ in nodes]
         for pid, m_out in zip(nodes, flows, strict=True):
             if m_out == 0.0:
                 continue
             st = self._stream_at(pid, abs(m_out))
-            if m_out > 0.0 and pid in arriving:
-                st.Tt, st.Y = arriving[pid]
+            if m_out > 0.0:
+                streams = [
+                    cb.MassStream(m, float(self._state(src).Tt), 0.0, list(self._state(src).Y))
+                    for src, m, _ in self.solver._junction_streams(pid, nodes, flows, dflows)
+                ]
+                if streams:
+                    mix = _solver_tools.mixer_from_streams_and_jacobians(
+                        streams, Q=0.0, fraction=0.0
+                    )
+                    st.Tt, st.Y = float(mix.Tt_mix), list(mix.Y_mix)
             (cv.outflows if m_out > 0.0 else cv.inflows).append(st)
         if sum(st.m for st in cv.inflows) < cb.MIXER_HEAT_MDOT_FLOOR:
             return "no flow"
@@ -391,30 +404,13 @@ class SecondLawReport:
         return self._ports(list(element.port_nodes), flows)
 
     def _tee(self, eid: str, element: Any) -> _Volume | str:
-        """The legacy TeeJunctionElement (#1231): its three legs at their
-        port nodes' states, as a junction's ports."""
+        """The legacy TeeJunctionElement (#1231): its three legs as a
+        junction's ports."""
         ind = self.solver._unknown_indices.get(eid, [])
         if len(ind) < 2:
             return "no solved flow"
-        nodes, flows, dflows, _ = element.port_flows(self.x, ind)
-        # A legacy tee may be wired straight to boundaries (the branching
-        # stress draws). A boundary holds its set Tt and Y, not the gas the
-        # tee delivers into it: that leg leaves at the mix of the legs
-        # supplying it (_junction_streams), as a two-port's outflow leaves at
-        # its inflow's state. Taken at the boundary's own 300 K, an 800 K
-        # supply read as sigma_norm -3.5.
-        arriving: dict[str, tuple[float, Any]] = {}
-        for pid, m_out in zip(nodes, flows, strict=True):
-            if not (m_out > 0.0 and self.net.nodes[pid].is_boundary):
-                continue
-            streams = [
-                cb.MassStream(m, float(self._state(src).Tt), 0.0, list(self._state(src).Y))
-                for src, m, _ in self.solver._junction_streams(pid, nodes, flows, dflows)
-            ]
-            if streams:
-                mix = _solver_tools.mixer_from_streams_and_jacobians(streams, Q=0.0, fraction=0.0)
-                arriving[pid] = (float(mix.Tt_mix), list(mix.Y_mix))
-        return self._ports(nodes, flows, arriving)
+        nodes, flows, _, _ = element.port_flows(self.x, ind)
+        return self._ports(nodes, flows)
 
     def _momentum_jets(self, members: list[str]) -> list[str]:
         """Holes at the chain's stations whose jets join it with axial
