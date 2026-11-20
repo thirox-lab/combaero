@@ -419,11 +419,15 @@ double solve_increasing_T(FDF&& f_df, double T_guess, double tol,
     // narrower than tol: the published NASA-9 h and s step slightly at the
     // interval joins (H/R up to 5e-3 K, S/R up to 4e-7 at 6000 K), so a
     // target on a join can have no exact root for Newton to land on.
+    // Both take tol or, where it is finer than T resolves, a few ulps of T:
+    // above T ~ tol / (4 eps) = 1.1e9 K at tol 1e-6 K a Newton step from one
+    // side cannot get below tol, and a probe at such a T threw (#1232).
+    const double tol_T = std::max(tol, 4.0 * std::numeric_limits<double>::epsilon() * T);
     if (have_lo && have_hi &&
         hi - lo <= std::max(tol, 4.0 * std::numeric_limits<double>::epsilon() * hi)) {
       return T_new;
     }
-    if (T_new == T_newton && std::abs(T_new - T) < tol) {
+    if (T_new == T_newton && std::abs(T_new - T) < tol_T) {
       return T_new;
     }
     dx_old = std::abs(T_new - T);

@@ -617,9 +617,12 @@ constexpr double kSensibleEnthalpyRefT = 298.15;
 // Mix generalized non-reacting incoming streams into a single outgoing state,
 // and compute all analytical Jacobians w.r.t upstream mass flows, Temperatures,
 // and mass fractions (Y_i).
-// Streams are signed: Y, h and Pt are the mass-weighted mean
-// sum_i m_i q_i / m on either side of zero net flow m, and the partials are
-// that mean's (#1224). Within |m| <= 1e-12 stream 0's state stands in.
+// Streams are signed (m_i > 0 arrives at the node). Y, h and Pt are the
+// mass-weighted mean sum_i m_i q_i / m over the arriving streams, or over
+// every stream when none arrives (#1224), and the partials are that mean's; a
+// leaving stream beside an arriving one moves nothing (#1232). Over streams
+// of one sign the mean stays within its inputs at any nonzero m; with no flow
+// at all stream 0's state stands in, with zero partials.
 // Q [W]: absolute heat transfer rate (positive = heating)
 // fraction [-]: relative to total enthalpy flow (positive = heating)
 MixerResult

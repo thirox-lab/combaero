@@ -8,7 +8,8 @@ analytic, 0 by difference), and a non-flowing stream 0 of another gas gave
 Tt_mix = -4333 K (its h with the averaged Y). The state is now the mean on
 either side of zero, so it and every partial come from one definition.
 Reversing every stream gives the same state bit for bit and flips only the
-flow partials. Near zero (|m| <= 1e-12) stream 0 stands in, as before.
+flow partials. Streams of both signs mix only the arriving ones (#1232,
+test_mixer_arriving_1232.py), and the near-zero band is gone.
 """
 
 from __future__ import annotations
@@ -98,11 +99,13 @@ def _check_partials(
                 # A mixed fraction is clamped below 0 (normalize_fractions):
                 # step a stream's zero fraction, or a flow whose weight
                 # m_i / m would turn negative, only the way that keeps it >= 0.
+                # A stream in the mix has a positive weight (#1232), so its
+                # zero fraction steps up.
                 side = None
                 if var == "mdot" and one_sided and i in one_sided:
                     side = one_sided[i]
                 elif var == "Y" and streams[i].Y[j] == 0.0:
-                    side = 1.0 if streams[i].m_dot * sum(t.m_dot for t in streams) > 0 else -1.0
+                    side = 1.0
                 if side is not None:
                     h *= side
                     p1 = _out(_mix(_perturbed(streams, i, var, h, j), Q, fraction))
@@ -155,27 +158,12 @@ def test_a_non_flowing_stream_zero_of_another_gas_no_longer_sets_h() -> None:
     _check_partials(s, one_sided={0: -1.0})
 
 
-@pytest.mark.parametrize(("Q", "fraction"), [(0.0, 0.0), (250.0, 0.0), (0.0, 0.15), (-80.0, 0.1)])
-def test_mixed_sign_net_reverse_multi_species_partials_match(Q: float, fraction: float) -> None:
-    # The legacy tee's iterates: one stream arriving, two leaving, more out
-    # than in, three gases. The arriving stream's weight m_i / m is negative,
-    # so its species are ones the leaving streams carry more of: every mixed
-    # fraction stays positive, clear of the clamp at 0.
-    s = [
-        cb.MassStream(-0.03, 450.0, 2.0e5, _Y({"N2": 0.7, "O2": 0.2, "CO2": 0.1})),
-        cb.MassStream(0.01, 800.0, 2.3e5, _Y({"N2": 0.75, "O2": 0.2, "CO2": 0.05})),
-        cb.MassStream(-0.02, 600.0, 2.1e5, _Y({"N2": 0.7, "O2": 0.15, "H2O": 0.15})),
-    ]
-    assert min(v for v in _mix(s).Y_mix if v != 0.0) > 0.01
-    _check_partials(s, Q=Q, fraction=fraction)
-
-
 @pytest.mark.parametrize(("Q", "fraction"), [(0.0, 0.0), (300.0, 0.2)])
 def test_reversing_every_stream_gives_the_same_state_bit_for_bit(Q: float, fraction: float) -> None:
     fwd = [
         cb.MassStream(0.03, 450.0, 2.0e5, _Y({"N2": 0.7, "O2": 0.2, "CO2": 0.1})),
         cb.MassStream(0.02, 800.0, 2.3e5, _Y({"N2": 0.7, "O2": 0.1, "H2O": 0.2})),
-        cb.MassStream(-0.01, 600.0, 2.1e5, AIR),
+        cb.MassStream(0.01, 600.0, 2.1e5, AIR),
     ]
     rev = [cb.MassStream(-s.m_dot, s.Tt, s.Pt, list(s.Y)) for s in fwd]
     a, b = _mix(fwd, Q, fraction), _mix(rev, Q, fraction)
@@ -203,15 +191,14 @@ def test_all_reverse_state_holds_as_the_flow_vanishes(scale: float) -> None:
     _check_partials(streams(scale))
 
 
-def test_the_near_zero_band_keeps_stream_zero() -> None:
-    # |m| <= 1e-12: stream 0's state, zero partials, unchanged by #1224.
+def test_the_near_zero_band_is_the_mean() -> None:
+    # |m| <= 1e-12 took stream 0's state with zero partials until #1232; the
+    # mean of one-sign streams holds there as anywhere else.
     s = [cb.MassStream(-4e-13, 500.0, 2e5, AIR), cb.MassStream(-3e-13, 900.0, 2.4e5, AIR)]
     r = _mix(s)
-    assert r.Tt_mix == pytest.approx(500.0, rel=1e-12)
-    assert r.Pt_mix == 2e5
-    for i in range(2):
-        for var in ("mdot", "Tt", "Pt"):
-            assert all(v == 0.0 for v in _analytic(r, i, var))
+    assert r.Pt_mix == pytest.approx((4 * 2e5 + 3 * 2.4e5) / 7, rel=1e-14)
+    assert 500.0 < r.Tt_mix < 900.0
+    _check_partials(s)
 
 
 def test_reverse_one_gas_one_state_partials_are_exactly_zero() -> None:

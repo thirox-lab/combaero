@@ -2857,9 +2857,12 @@ square.
 // withdrawal past what the streams hold, T continues on h's line through
 // 0 K (C1) instead of raising (#552), and the network reports a node at
 // T <= 0 in __T_clamped__. The combustor forms do the same for their
-// post-combustion heat shift. Streams are signed: Y, h and Pt are the
-// mass-weighted mean sum m_i q_i / m on either side of zero net flow m,
-// partials included (#1224); within |m| <= 1e-12 stream 0's state stands in.
+// post-combustion heat shift. Streams are signed (m_i > 0 arrives): Y, h
+// and Pt are the mass-weighted mean sum m_i q_i / m over the arriving
+// streams, or over every stream when none arrives (#1224), partials
+// included; a leaving stream beside an arriving one moves nothing (#1232).
+// The mean stays within its inputs at any nonzero m; with no flow at all
+// stream 0's state stands in. The combustor forms weight the same streams.
 MixerResult mixer_from_streams_and_jacobians(
     const std::vector<Stream>& streams, double Q = 0.0, double fraction = 0.0);
 
