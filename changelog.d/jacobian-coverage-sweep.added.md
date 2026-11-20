@@ -1,0 +1,4 @@
+- **A Jacobian coverage sweep in the test suite.** `python/tests/_jacobian_sweep.py` checks the network's analytic Jacobian against finite differences where the hand-written tests do not go.
+  - **Networks:** the stress families, plus builders for the classes they never draw. Each one is taken with its boundary gases, temperatures and combustor methods redrawn, and with side streams injected into its ports.
+  - **Points:** every sign pattern of each element's legs, flows near zero on both sides of the mixer's no-flow band, and boundary-fed flows at exactly zero.
+  - **Tests:** a one-second tier of fixed points that caught #1233 and #1235 before their fixes, and the full sweep with a coverage gate under `slow`. The gate fails if an exported element or node class is never reached, never reversed, or never sees differing compositions.
