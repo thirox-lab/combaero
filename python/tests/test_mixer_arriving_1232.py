@@ -8,9 +8,11 @@ so its partials no longer matched). Now the mix is the mean over the
 arriving streams (m_i > 0), or over every stream when none arrives (the
 #1224 reverse mean). Over streams of one sign the mean is a convex
 combination: Y stays in the simplex and h and Pt within the inputs at any
-nonzero total, so there is no pole and no near-zero band where stream 0's
-state stood in. Only a mixer with no flow at all (every m_i = 0) falls back
-to stream 0, with zero partials.
+nonzero total, so there is no pole, and no near-zero band where stream 0's
+state stood in. Within |m| <= 1e-12 the state is the same mean, but its
+partials are 0, as before: the mean's own partials grow as 1 / m and sent
+the first Newton step from a near-zero start the wrong way (#1238 review).
+Only a mixer with no flow at all (every m_i = 0) falls back to stream 0.
 """
 
 from __future__ import annotations
@@ -162,7 +164,56 @@ def test_a_vanishing_flow_keeps_the_same_state(scale: float) -> None:
 
     ref, r = _mix(streams(1.0 if scale > 0 else -1.0)), _mix(streams(scale))
     assert _out(r) == pytest.approx(_out(ref), rel=1e-12, abs=1e-15)
-    _check_partials(streams(scale), rel=1e-4)
+    if abs(0.1 * scale) > BAND:
+        _check_partials(streams(scale), rel=1e-4)
+    else:
+        _assert_zero_partials(r, 2)
+
+
+BAND = 1e-12  # kMixerNoFlowBand
+
+
+def _assert_zero_partials(r: object, n: int) -> None:
+    for i in range(n):
+        for var in ("mdot", "Tt", "Pt"):
+            assert all(v == 0.0 for v in _analytic(r, i, var)), (i, var)
+        for j in range(N):
+            assert all(v == 0.0 for v in _analytic(r, i, "Y", j)), (i, j)
+
+
+@pytest.mark.parametrize("sign", [1.0, -1.0])
+def test_the_band_edge_keeps_the_state_and_drops_only_the_partials(sign: float) -> None:
+    # Two gases at a total of 1e-12 (inside) and just outside: the state is
+    # the same mean either side, so it is continuous at the edge. Inside, the
+    # partials are 0; just outside they are the mean's and match a
+    # difference that stays outside.
+    def streams(m_tot: float) -> list:
+        return [
+            cb.MassStream(sign * 0.3 * m_tot, 300.0, 2e5, FUEL),
+            cb.MassStream(sign * 0.7 * m_tot, 700.0, 2.2e5, AIR),
+        ]
+
+    ref = _out(_mix(streams(1.0)))
+    inside, outside = _mix(streams(BAND)), _mix(streams(BAND * (1.0 + 1e-6)))
+    assert _out(inside) == pytest.approx(ref, rel=1e-12, abs=1e-15)
+    assert _out(outside) == pytest.approx(_out(inside), rel=1e-12, abs=1e-15)
+    _assert_zero_partials(inside, 2)
+    assert outside.dTt_mix_d_stream[0].d_mdot != 0.0
+    _check_partials(streams(3.0 * BAND), rel=1e-4)
+
+
+def test_a_band_with_mixed_signs_is_the_arriving_mean() -> None:
+    # Arriving total 1e-13 beside a leaving stream: the arriving streams'
+    # mean, zero partials.
+    s = [
+        cb.MassStream(-0.05, 900.0, 3e5, AIR),
+        cb.MassStream(4e-14, 300.0, 2e5, FUEL),
+        cb.MassStream(6e-14, 700.0, 2.2e5, AIR),
+    ]
+    r = _mix(s)
+    assert _out(r) == pytest.approx(_out(_mix(s[1:])), rel=1e-12, abs=1e-15)
+    assert 300.0 < r.Tt_mix < 700.0
+    _assert_zero_partials(r, 3)
 
 
 def test_no_flow_is_stream_zero_with_zero_partials() -> None:

@@ -192,13 +192,15 @@ def test_all_reverse_state_holds_as_the_flow_vanishes(scale: float) -> None:
 
 
 def test_the_near_zero_band_is_the_mean() -> None:
-    # |m| <= 1e-12 took stream 0's state with zero partials until #1232; the
-    # mean of one-sign streams holds there as anywhere else.
+    # |m| <= 1e-12 took stream 0's state until #1232; now it is the mean of
+    # the one-sign streams, as anywhere else, with the band's zero partials.
     s = [cb.MassStream(-4e-13, 500.0, 2e5, AIR), cb.MassStream(-3e-13, 900.0, 2.4e5, AIR)]
     r = _mix(s)
     assert r.Pt_mix == pytest.approx((4 * 2e5 + 3 * 2.4e5) / 7, rel=1e-14)
     assert 500.0 < r.Tt_mix < 900.0
-    _check_partials(s)
+    for i in range(2):
+        for var in ("mdot", "Tt", "Pt"):
+            assert all(v == 0.0 for v in _analytic(r, i, var))
 
 
 def test_reverse_one_gas_one_state_partials_are_exactly_zero() -> None:

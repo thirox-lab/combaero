@@ -2862,7 +2862,9 @@ square.
 // streams, or over every stream when none arrives (#1224), partials
 // included; a leaving stream beside an arriving one moves nothing (#1232).
 // The mean stays within its inputs at any nonzero m; with no flow at all
-// stream 0's state stands in. The combustor forms weight the same streams.
+// stream 0's state stands in. Within |m| <= kMixerNoFlowBand (1e-12 kg/s)
+// the state is the same mean but its partials are 0. The combustor forms
+// weight the same streams.
 MixerResult mixer_from_streams_and_jacobians(
     const std::vector<Stream>& streams, double Q = 0.0, double fraction = 0.0);
 

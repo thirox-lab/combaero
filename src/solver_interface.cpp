@@ -724,7 +724,7 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
   // clamped). Over streams of one sign the mean is a convex combination, so
   // Y stays in the simplex and h and Pt within the inputs for any nonzero
   // total: there is no pole, and no band near zero flow where another state
-  // stands in. With no stream arriving (all m_i <= 0) it is the mean of the
+  // stands in (the band keeps only zero partials, below). With no stream arriving (all m_i <= 0) it is the mean of the
   // leaving streams (#1224), as before; the state then jumps from the last
   // arriving stream's own state to that mean as that stream crosses zero.
   const std::vector<bool> in_mix = streams_in_mix(streams);
@@ -762,12 +762,18 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
     P_total_tot += streams[i].m_dot * streams[i].Pt;
   }
 
-  // Y, h and Pt are the mean sum_i m_i q_i / m over the streams in the mix,
-  // and the partials below are that mean's, at any nonzero m. With no flow
-  // (every m_i = 0) stream 0's state stands in, all partials 0. The heat per
-  // unit flow takes |m|. Reversing every stream of one sign gives the same
-  // state bit for bit (#1224).
+  // Y, h and Pt are the mean sum_i m_i q_i / m over the streams in the mix
+  // at any nonzero m; with no flow (every m_i = 0) stream 0's state stands
+  // in. The partials below are that mean's outside the near-zero band |m| <=
+  // kMixerNoFlowBand, and 0 inside it: there the mean's own partials, of
+  // order (q_i - q) / m, made the first Newton step from a near-zero start go
+  // the wrong way (cond 1e18 against 6e6; 7 of 7 such starts stalled that
+  // converge with the band, #1238 review). The state is the same mean inside
+  // and outside the band, so it is continuous at the band's edge; only its
+  // slope is dropped. The heat per unit flow takes |m|. Reversing every
+  // stream of one sign gives the same state bit for bit (#1224).
   const bool averaged = mdot_tot != 0.0;
+  const bool with_partials = std::abs(mdot_tot) > kMixerNoFlowBand;
   if (averaged) {
     for (std::size_t k = 0; k < n_species; ++k) {
       Y_mix[k] /= mdot_tot;
@@ -893,7 +899,7 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
     dP_jac.d_Y.assign(n_species, 0.0);
 
     // A stream outside the mix (leaving while another arrives) moves nothing.
-    if (averaged && in_mix[i]) {
+    if (with_partials && in_mix[i]) {
       // P_total sensitivities
       dT_jac.d_Pt = 0.0;
       dP_jac.d_Pt = streams[i].m_dot / mdot_tot;
@@ -976,27 +982,16 @@ MixerResult adiabatic_T_complete_and_jacobian_T_from_streams(
   // First mix adiabatically to get base state
   MixerResult mix = mixer_from_streams_and_jacobians(streams);
 
-  // Compute total enthalpy flow for fraction calculation, over the streams
-  // the mixer weights (#1232).
+  // The flow the heat is spread over: that of the streams the mixer weights
+  // (#1232).
   const std::vector<bool> in_mix = streams_in_mix(streams);
   double mdot_tot = 0.0;
-  double H_tot = 0.0;
   std::size_t n_species = combaero::num_species();
   for (std::size_t i_s = 0; i_s < streams.size(); ++i_s) {
-    if (!in_mix[i_s]) {
-      continue;
+    if (in_mix[i_s]) {
+      mdot_tot += streams[i_s].m_dot;
     }
-    const Stream &s = streams[i_s];
-    mdot_tot += s.m_dot;
-    double h_stream = 0.0;
-    for (std::size_t k = 0; k < n_species; ++k) {
-      double hk = J_per_mol_to_J_per_kg(combaero::h_species(k, s.Tt),
-                                        combaero::species_molar_mass(k));
-      h_stream += s.Y[k] * hk;
-    }
-    H_tot += s.m_dot * h_stream;
   }
-  double h_mix_base = (mdot_tot > 1e-12) ? (H_tot / mdot_tot) : 0.0;
 
   // Heat per unit flow: Q / |m|, fading out only near zero flow.
   const auto [phi_Q, dphi_Q] = mixer_heat_per_unit_flow(mdot_tot);
@@ -1004,7 +999,6 @@ MixerResult adiabatic_T_complete_and_jacobian_T_from_streams(
   // Q now; 'fraction' of the PRODUCTS' sensible enthalpy below, once T_ad
   // and the burnt composition are known (#481).
   double delta_h = Q * phi_Q;
-  (void)h_mix_base;
 
   std::vector<double> X_mix = combaero::mass_to_mole(combaero::normalize_fractions(mix.Y_mix));
   const CompleteAdiabatic cad = complete_adiabatic(mix.Tt_mix, P, X_mix);
@@ -1191,27 +1185,16 @@ MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
   // First mix adiabatically to get base state
   MixerResult mix = mixer_from_streams_and_jacobians(streams);
 
-  // Compute total enthalpy flow for fraction calculation, over the streams
-  // the mixer weights (#1232).
+  // The flow the heat is spread over: that of the streams the mixer weights
+  // (#1232).
   const std::vector<bool> in_mix = streams_in_mix(streams);
   double mdot_tot = 0.0;
-  double H_tot = 0.0;
   std::size_t n_species = combaero::num_species();
   for (std::size_t i_s = 0; i_s < streams.size(); ++i_s) {
-    if (!in_mix[i_s]) {
-      continue;
+    if (in_mix[i_s]) {
+      mdot_tot += streams[i_s].m_dot;
     }
-    const Stream &s = streams[i_s];
-    mdot_tot += s.m_dot;
-    double h_stream = 0.0;
-    for (std::size_t k = 0; k < n_species; ++k) {
-      double hk = J_per_mol_to_J_per_kg(combaero::h_species(k, s.Tt),
-                                        combaero::species_molar_mass(k));
-      h_stream += s.Y[k] * hk;
-    }
-    H_tot += s.m_dot * h_stream;
   }
-  double h_mix_base = (mdot_tot > 1e-12) ? (H_tot / mdot_tot) : 0.0;
 
   // Heat per unit flow: Q / |m|, fading out only near zero flow.
   const auto [phi_Q, dphi_Q] = mixer_heat_per_unit_flow(mdot_tot);
@@ -1219,7 +1202,6 @@ MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
   // Q now; 'fraction' of the PRODUCTS' sensible enthalpy below, once T_ad
   // and the burnt composition are known (#481).
   double delta_h = Q * phi_Q;
-  (void)h_mix_base;
 
   std::vector<double> X_mix = combaero::mass_to_mole(combaero::normalize_fractions(mix.Y_mix));
   const bool T_clamped = mix.Tt_mix < thermo::T_FLOOR;

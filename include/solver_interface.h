@@ -599,6 +599,12 @@ adiabatic_T_equilibrium_and_jacobians(double T_in, double P,
 // Convergence measured the same at 2e-3 and 1e-6 (#481).
 constexpr double kMixerHeatMdotFloor = 1e-6;
 
+// Near-zero band of a mixer's total flow [kg/s]: within |m| <= this, the
+// mixed state is the same arriving-stream mean as outside it, but its
+// partials are 0 (#1232). The mean's own partials grow as 1 / m, and at a
+// near-zero start they sent the first Newton step the wrong way.
+constexpr double kMixerNoFlowBand = 1e-12;
+
 // The enthalpy rise per unit heat, phi = delta_h / Q [1/(kg/s)], a mixing node
 // applies at total flow mdot_tot, and d(phi)/d(mdot_tot). 1/|m| at or above
 // kMixerHeatMdotFloor m0; below it phi = (4 u^2 - 3 u^3) / m0, u = |m| / m0,
@@ -622,7 +628,8 @@ constexpr double kSensibleEnthalpyRefT = 298.15;
 // every stream when none arrives (#1224), and the partials are that mean's; a
 // leaving stream beside an arriving one moves nothing (#1232). Over streams
 // of one sign the mean stays within its inputs at any nonzero m; with no flow
-// at all stream 0's state stands in, with zero partials.
+// at all stream 0's state stands in. Within |m| <= kMixerNoFlowBand the
+// partials are 0.
 // Q [W]: absolute heat transfer rate (positive = heating)
 // fraction [-]: relative to total enthalpy flow (positive = heating)
 MixerResult
