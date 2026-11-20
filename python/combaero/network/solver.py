@@ -3051,10 +3051,12 @@ class NetworkSolver:
     def _reversed_elements(self, x: np.ndarray) -> set[str]:
         return {eid for eid, i in self._two_port_mdot_indices().items() if x[i] < 0.0}
 
-    def _reversed_junctions(self, x: np.ndarray) -> dict[str, tuple[list[float], list[int]]]:
+    def _reversed_junctions(
+        self, x: np.ndarray
+    ) -> dict[str, tuple[list[str], list[float], list[dict[int, float]]]]:
         """Junctions with at least one port running against its declared
-        direction: id -> (port flows, positive OUT of the junction; the
-        global index of each port's outer m_dot).
+        direction: id -> (port nodes, port flows positive OUT of the junction,
+        d(each port flow)/d(x) by global unknown index).
 
         A junction feeds its port nodes in the declared direction otherwise
         (flow_at_node). At a reversed port that counts the stream leaving the
@@ -3065,11 +3067,26 @@ class NetworkSolver:
         junction with several inlets AND several outlets is always listed
         (flow_at_node credits each outlet with the whole throughput); other
         fully forward junctions are not, so their propagation is unchanged.
-        """
-        from .components import MultiPortChamberBase
 
-        out: dict[str, tuple[list[float], list[int]]] = {}
+        The legacy TeeJunctionElement is a three-port junction here too
+        (#1231, ``port_flows``). It used to hand its sink nodes signed leg
+        flows: a merging tee's common node took a leg drawing flow out of it
+        as a negative stream, and the node that leg flows into received
+        nothing and kept the 300 K fallback.
+        """
+        from .components import MultiPortChamberBase, TeeJunctionElement
+
+        out: dict[str, tuple[list[str], list[float], list[dict[int, float]]]] = {}
         for eid, e in self.network.elements.items():
+            if isinstance(e, TeeJunctionElement):
+                ind = self._unknown_indices.get(eid, [])
+                if len(ind) < 2:
+                    continue
+                nodes, flows, dflows, declared = e.port_flows(x, ind)
+                if all(d * m >= 0.0 for d, m in zip(declared, flows, strict=True)):
+                    continue
+                out[eid] = (nodes, flows, dflows)
+                continue
             if not isinstance(e, MultiPortChamberBase):
                 continue
             idx_map = getattr(e, "_port_outer_mdot_idx", None) or {}
@@ -3087,7 +3104,8 @@ class NetworkSolver:
             if all(m >= 0.0 for m in outer) and not several_each:
                 continue
             flows = [float(s) * m for s, m in zip(e._port_signs, outer, strict=True)]
-            out[eid] = (flows, [int(i) for i in idxs])
+            dflows = [{int(i): float(s)} for s, i in zip(e._port_signs, idxs, strict=True)]
+            out[eid] = (list(e.port_nodes), flows, dflows)
         return out
 
     def _declared_direction_hints(self, x: np.ndarray) -> str:
@@ -3096,7 +3114,9 @@ class NetworkSolver:
         best iterate holds a port at zero or against that direction. Such a
         junction does not reverse a port, so an operating point that needs it
         has no root; the stress tee3 draws that stalled all solve with
-        IdealMomentumTeeElement, with that port reversed.
+        IdealMomentumTeeElement, with that port reversed. The legacy
+        TeeJunctionElement is named the same way for a leg against its
+        tee_type (#1231), which its verify_solution_consistent refuses.
         """
         from .components import MultiPortChamberBase
 
@@ -3129,6 +3149,24 @@ class NetworkSolver:
                     "boundary pressures, change flow_direction, or use "
                     "IdealMomentumTeeElement, which reverses ports."
                 )
+        # The legacy tee's closure is its tee_type's flow pattern (#1231): a
+        # leg the other way at the best iterate (a root it demoted included)
+        # is outside its model.
+        from .components import TEE_REVERSE_FLOW_TOL, TeeJunctionElement
+
+        for eid, e in self.network.elements.items():
+            ind = self._unknown_indices.get(eid, [])
+            if not isinstance(e, TeeJunctionElement) or len(ind) < 2:
+                continue
+            bad = e.reversed_legs(x, ind, TEE_REVERSE_FLOW_TOL)
+            if bad:
+                hints.append(
+                    f"TeeJunctionElement '{eid}' (tee_type='{e.tee_type}') runs leg(s) "
+                    f"{bad} against its tee_type at the best iterate: its Bassett "
+                    "coefficients describe that flow pattern only, so this operating "
+                    "point is outside its model. Check the boundary pressures, or use "
+                    "IdealMomentumTeeElement, which reverses ports."
+                )
         # Elements that can tell from their boundaries alone that the
         # operating point is outside their model (an ejector's outlet above
         # its dead head).
@@ -3140,8 +3178,9 @@ class NetworkSolver:
                     hints.append(text)
         return " ".join(hints)
 
+    @staticmethod
     def _junction_streams(
-        self, elem: Any, nid: str, flows: list[float], idxs: list[int]
+        nid: str, nodes: list[str], flows: list[float], dflows: list[dict[int, float]]
     ) -> list[tuple[str, float, dict[int, float]]]:
         """Streams a reversed-port junction delivers INTO port node nid, by
         the sign of the port flows: (supplying port node, mass, d mass/d x).
@@ -3157,32 +3196,36 @@ class NetworkSolver:
         - several of each: m_j |m_k| / sum|m| from each supplier, so every
           receiver carries the supplied mixture at its own flow.
 
-        The derivatives are in the outer m_dot unknowns (m_i = sign_i x_i).
+        ``dflows[i]`` is d m_i / d x by global unknown index: one outer m_dot
+        times its port sign for a #517 junction, m_com and m_branch for the
+        legacy tee's straight leg (#1231). A port flow enters a stream's
+        weight linearly, so a port crossing zero enters (or leaves) with
+        weight zero: the delivered states are continuous there.
         """
-        i = elem.port_nodes.index(nid)
+        i = nodes.index(nid)
         m_i = flows[i]
         if not m_i > 0.0:
             return []
-        signs = elem._port_signs
         sup = [k for k, m in enumerate(flows) if m < 0.0]
         rec = [j for j, m in enumerate(flows) if m > 0.0]
         if not sup:
             return []
         if len(sup) == 1:
             k = sup[0]
-            return [(elem.port_nodes[k], m_i, {idxs[i]: float(signs[i])})]
+            return [(nodes[k], m_i, dict(dflows[i]))]
         if len(rec) == 1:
-            return [(elem.port_nodes[k], -flows[k], {idxs[k]: -float(signs[k])}) for k in sup]
+            return [(nodes[k], -flows[k], {c: -v for c, v in dflows[k].items()}) for k in sup]
         total = -sum(flows[k] for k in sup)
         out = []
         for k in sup:
             a_k = -flows[k]
-            jac: dict[int, float] = {idxs[i]: float(signs[i]) * a_k / total}
+            jac: dict[int, float] = {c: v * a_k / total for c, v in dflows[i].items()}
             for k2 in sup:
-                # d(m_i a_k / S)/d a_k2, then d a_k2 / d x_k2 = -sign_k2.
+                # d(m_i a_k / S)/d a_k2, then d a_k2 / d x = -d m_k2 / d x.
                 d_a = m_i * ((total - a_k) if k2 == k else -a_k) / (total * total)
-                jac[idxs[k2]] = jac.get(idxs[k2], 0.0) - float(signs[k2]) * d_a
-            out.append((elem.port_nodes[k], m_i * a_k / total, jac))
+                for c, v in dflows[k2].items():
+                    jac[c] = jac.get(c, 0.0) - v * d_a
+            out.append((nodes[k], m_i * a_k / total, jac))
         return out
 
     def _flow_ends(self, obj: Any, x: np.ndarray) -> tuple[str, str]:
@@ -3198,7 +3241,8 @@ class NetworkSolver:
     def _signed_order(
         self,
         reversed_ids: set[str],
-        reversed_junctions: dict[str, tuple[list[float], list[int]]] | None = None,
+        reversed_junctions: dict[str, tuple[list[str], list[float], list[dict[int, float]]]]
+        | None = None,
     ) -> list[str]:
         """Propagation order with each reversed element pointing the way its
         flow goes; nodes left in a cycle follow in network order. A junction
@@ -3210,9 +3254,9 @@ class NetworkSolver:
         reversed_junctions = reversed_junctions or {}
         for e in self.network.elements.values():
             if e.id in reversed_junctions:
-                flows = reversed_junctions[e.id][0]
-                srcs = [n for n, m in zip(e.port_nodes, flows, strict=True) if m < 0.0]
-                sinks = [n for n, m in zip(e.port_nodes, flows, strict=True) if m > 0.0]
+                ports, flows, _ = reversed_junctions[e.id]
+                srcs = [n for n, m in zip(ports, flows, strict=True) if m < 0.0]
+                sinks = [n for n, m in zip(ports, flows, strict=True) if m > 0.0]
             elif e.id in reversed_ids:
                 srcs, sinks = [e.to_node], [e.from_node]
             else:
@@ -3877,8 +3921,7 @@ class NetworkSolver:
                 stream_info.append((state_up, elem, elem.to_node, {i_m: -1.0}))
             # A junction with a reversed port, by the sign of its port flows.
             for elem in jct_in:
-                flows, idxs = rev_jct[elem.id]
-                streams = self._junction_streams(elem, nid, flows, idxs)
+                streams = self._junction_streams(nid, *rev_jct[elem.id])
                 # The node takes d(total inflow)/dx once per element (it
                 # de-duplicates by element id), so every stream carries the
                 # element's TOTAL, as flow_jac_at_node does for a merge.
@@ -4113,7 +4156,7 @@ class NetworkSolver:
             nid
         ):
             if e.id in rev_jct:
-                for src, m, _ in self._junction_streams(e, nid, *rev_jct[e.id]):
+                for src, m, _ in self._junction_streams(nid, *rev_jct[e.id]):
                     st = state(src)
                     out.append((m, float(st.Tt), list(st.Y)))
         for e in self.network.get_upstream_elements(nid):
@@ -5164,6 +5207,7 @@ class NetworkSolver:
         """
         depth = getattr(self, "_solve_depth", 0)
         self._solve_depth = depth + 1
+        t_start = time.time()
         try:
             # A fuel controller's target proven unreachable (#1114): refused
             # without the Newton search and its retries (up to 8 s).
@@ -5182,8 +5226,109 @@ class NetworkSolver:
         finally:
             self._solve_depth = depth
         if depth == 0:
+            if auto_retry:
+                left = None if timeout is None else timeout - (time.time() - t_start)
+                sol = self._retry_legacy_tees_forward(sol, left, method, options, use_jac)
             sol = self._mark_fraction_unanchored(sol)
         return sol
+
+    def _retry_legacy_tees_forward(
+        self,
+        sol: dict[str, Any],
+        timeout: float | None,
+        method: str,
+        options: dict[str, Any] | None,
+        use_jac: bool,
+    ) -> dict[str, Any]:
+        """A root a legacy tee refused for a leg against its tee_type (#1231),
+        retried once from a forward start (#1234).
+
+        Outside the tee's flow pattern Bassett's coefficients are extrapolated
+        and have roots of their own, and a cold solve can land there although
+        the forward root exists: the residuals of a tee with every leg forward
+        are those of #1230, whose solve found it. The start is the refused
+        root with each tee's legs mirrored into the tee_type's direction
+        (their magnitudes kept, the common leg their sum). Only that demotion
+        triggers it; the retry's own result is returned only when it
+        succeeds, else the refused root stands, and the solver's last iterate
+        and diagnostics stay the refused solve's. ``timeout`` is the time left
+        of the caller's budget; ``auto_retry=False`` skips it. Only a port node
+        joined by exactly one two-port has that element's flow mirrored too;
+        any other is left as the refused root had it.
+        """
+        from .components import TEE_REVERSE_FLOW_TOL, TeeJunctionElement
+
+        bad = sol.get("__inconsistent_elements__") or []
+        x = sol.get("__x_solution__")
+        if not bad or x is None or sol.get("__success__", False):
+            return sol
+        if getattr(self, "_in_tee_forward_retry", False):
+            return sol
+        x = np.array(x, dtype=float)
+        tees = []
+        for eid in bad:
+            e = self.network.elements.get(eid)
+            ind = self._unknown_indices.get(eid, [])
+            if (
+                isinstance(e, TeeJunctionElement)
+                and len(ind) >= 2
+                and e.reversed_legs(x, ind, TEE_REVERSE_FLOW_TOL)
+            ):
+                tees.append((eid, ind))
+        if not tees or len(x) != len(self.unknown_names):
+            return sol
+        two = self._two_port_mdot_indices()
+        for eid, ind in tees:
+            tee = self.network.elements[eid]
+            m_s = abs(float(x[ind[0]]) - float(x[ind[1]]))
+            m_b = abs(float(x[ind[1]]))
+            x[ind[0]], x[ind[1]] = m_s + m_b, m_b
+            # The port nodes' mass rows: a port node joined to the tee by one
+            # other two-port carries the mirrored leg through it.
+            nodes, flows, _, _ = tee.port_flows(x, ind)
+            for nid, f_out in zip(nodes, flows, strict=True):
+                if self.network.nodes[nid].is_boundary:
+                    continue
+                others = [
+                    e
+                    for e in self.network.get_upstream_elements(nid)
+                    + self.network.get_downstream_elements(nid)
+                    if e.id != eid
+                ]
+                if len(others) != 1 or others[0].id not in two:
+                    continue
+                e = others[0]
+                x[two[e.id]] = f_out if e.from_node == nid else -f_out
+        if timeout is not None and timeout < 0.5:
+            return sol
+        saved = {k: getattr(self, k) for k in ("_last_x", "_diagnostic_data") if hasattr(self, k)}
+        self._in_tee_forward_retry = True
+        try:
+            retry = self.solve(
+                method=method, timeout=timeout, options=options, use_jac=use_jac, x0=x
+            )
+        finally:
+            self._in_tee_forward_retry = False
+        if not retry.get("__success__", False):
+            for k, v in saved.items():
+                setattr(self, k, v)
+            sol["__message__"] = (
+                f"{sol.get('__message__', '')} A retry from a forward start (every "
+                "legacy tee leg along its tee_type) did not converge."
+            )
+            return sol
+        retry["__message__"] = (
+            "Converged from a forward start (every legacy tee leg along its tee_type) "
+            f"after the cold solve found a root outside the tee's model: {retry['__message__']}"
+        )
+        # The cold attempt's caught exceptions stay on the record.
+        cold = list(sol.get("__caught_exceptions__", []) or [])
+        mine = list(retry.get("__caught_exceptions__", []) or [])
+        retry["__caught_exceptions__"] = (cold + mine)[:_MAX_CAUGHT_RECORDS]
+        retry["__caught_exception_count__"] = int(sol.get("__caught_exception_count__", 0)) + int(
+            retry.get("__caught_exception_count__", 0)
+        )
+        return retry
 
     def _solve_entry(
         self,
@@ -7236,8 +7381,9 @@ class NetworkSolver:
                     f"junction(s) {_bad_junctions}: the solution failed "
                     "the junction's physical-consistency verification "
                     "(wrong-direction port flow under a soft barrier, an "
-                    "energy-inconsistent mirror root, or a state where the "
-                    "junction's own loss closure is not net dissipative). "
+                    "energy-inconsistent mirror root, a state where the "
+                    "junction's own loss closure is not net dissipative, or a "
+                    "flow pattern outside the junction's model). "
                     "Treating as non-converged; "
                 )
                 # Suggest another start only where one is left to try: a root

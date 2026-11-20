@@ -13791,6 +13791,12 @@ class AreaChangeElement(NetworkElement):
         }
 
 
+#: Relative to the largest leg flow: a legacy tee's leg further than this
+#: against its tee_type puts the root outside the tee's model (#1231). The
+#: ejector's bound for the same question (EJECTOR_REVERSE_FLOW_TOL, #619).
+TEE_REVERSE_FLOW_TOL = 1e-6
+
+
 class TeeJunctionElement(NetworkElement):
     """
     Three-port tee junction element using Bassett 2001 pressure-loss coefficients.
@@ -13884,6 +13890,71 @@ class TeeJunctionElement(NetworkElement):
         if node_id == self.branch_node:
             return {indices[1]: 1.0}
         return {indices[0]: 1.0, indices[1]: -1.0}  # straight_node
+
+    def port_flows(
+        self, x: Any, indices: list[int]
+    ) -> tuple[list[str], list[float], list[dict[int, float]], list[float]]:
+        """The tee as a three-port junction (#1231): (port nodes, flow OUT
+        of the tee at each port, d(that flow)/d(x), declared sign of each).
+
+        Ports are (common, straight, branch). The convention is
+        ``MultiPortChamberBase``'s: positive leaves the tee, and the declared
+        sign is that of a port running in the tee_type's direction (+1 an
+        outlet, -1 an inlet). A port whose flow has the other sign is
+        reversed; the solver then feeds the port nodes by the sign of these
+        flows (``NetworkSolver._junction_streams``), as it does a reversed
+        #517 junction.
+        """
+        i_c, i_b = indices[0], indices[1]
+        m_com, m_b = float(x[i_c]), float(x[i_b])
+        m_s = m_com - m_b
+        nodes = [self.common_node, self.straight_node, self.branch_node]
+        if self.tee_type == "merging":
+            return (
+                nodes,
+                [m_com, -m_s, -m_b],
+                [{i_c: 1.0}, {i_c: -1.0, i_b: 1.0}, {i_b: -1.0}],
+                [1.0, -1.0, -1.0],
+            )
+        return (
+            nodes,
+            [-m_com, m_s, m_b],
+            [{i_c: -1.0}, {i_c: 1.0, i_b: -1.0}, {i_b: 1.0}],
+            [-1.0, 1.0, 1.0],
+        )
+
+    def reversed_legs(self, x: Any, indices: list[int], rel_tol: float = 0.0) -> list[str]:
+        """Port nodes whose leg runs against the tee_type's direction by more
+        than ``rel_tol`` of the largest leg flow (#1231)."""
+        nodes, flows, _, declared = self.port_flows(x, indices)
+        tol = rel_tol * max(abs(f) for f in flows)
+        return [n for n, f, d in zip(nodes, flows, declared, strict=True) if d * f < -tol]
+
+    def verify_solution_consistent(self, sol: dict[str, float]) -> bool:
+        """Reject a root outside the tee's flow pattern (#1231).
+
+        Bassett's coefficients are those of the tee_type's pattern: a merging
+        tee's straight and branch legs feeding its common leg, a branching
+        tee's common leg feeding the other two. A leg running the other way
+        is a different junction (another of Bassett's flow types), which this
+        closure does not describe. Its K is then extrapolated to a negative
+        flow ratio, and the roots found there are artefacts: of 200 random
+        merging tees, 38 such roots raise total pressure enough to fail the
+        second-law check. Another 23 raise it at fixed temperature but pass,
+        because mixing streams at different temperatures generates more
+        entropy than the pressure gain removes. So any root with a leg against
+        the tee_type, beyond ``TEE_REVERSE_FLOW_TOL`` of the largest leg, is
+        not reported as a solution, like the ejector's (#619). The solver
+        names the legs (``_declared_direction_hints``), the element reports
+        them as ``n_reversed_ports``, and the solve is retried once from a
+        forward start (``NetworkSolver._retry_legacy_tees_forward``, #1234).
+        Missing keys mean True, as for the junction verifiers.
+        """
+        keys = [f"{self.id}.m_dot_com", f"{self.id}.m_dot_branch"]
+        if not all(k in sol for k in keys):
+            return True
+        x = [float(sol[keys[0]]), float(sol[keys[1]])]
+        return not self.reversed_legs(x, [0, 1], TEE_REVERSE_FLOW_TOL)
 
     def unknowns(self) -> list[str]:
         return [f"{self.id}.m_dot_com", f"{self.id}.m_dot_branch"]
@@ -14110,6 +14181,9 @@ class TeeJunctionElement(NetworkElement):
             }
 
         self._chain_static_T(res, jac, ports)
+        self._chain_gas_properties(
+            res, jac, {"com": state_com, "str": state_straight, "bra": state_branch}
+        )
         return [res.R_0, res.R_1], jac
 
     def _branch_inputs(
@@ -14187,6 +14261,43 @@ class TeeJunctionElement(NetworkElement):
                     key = f"{node}.Y[{k}]"
                     r[key] = r.get(key, 0.0) + dR_dT * d
 
+    def _chain_gas_properties(
+        self,
+        res: Any,
+        jac: dict[int, dict[str, float]],
+        states: dict[str, NetworkMixtureState],
+    ) -> None:
+        """The kernel's d/d(R_gas) and d/d(gamma_eff) of each port, chained
+        onto the port node's composition and T0 (#1231). BranchInput carries
+        a node's R and gamma (at its T0) as numbers, so a node whose mixture
+        moves with the flows (a reversed leg's delivered stream, a side
+        stream into a port chamber) moved the rows by more than their
+        Jacobian said: 0.2-0.7 % on the flow columns of a branching tee with
+        its straight leg reversed, 2 % on a side stream's column (#1235)."""
+        nodes = {"com": self.common_node, "str": self.straight_node, "bra": self.branch_node}
+        for suffix, state in states.items():
+            node = nodes[suffix]
+            dR = [float(getattr(res, f"dR{row}_dRgas_{suffix}")) for row in (0, 1)]
+            dg = [float(getattr(res, f"dR{row}_dgamma_{suffix}")) for row in (0, 1)]
+            if not any(dR) and not any(dg):
+                continue
+            X = state.X
+            dR_dY = cb.specific_gas_constant_dY(X) if any(dR) else None
+            dg_dT, dg_dY = cb.isentropic_expansion_coefficient_dT_dY(float(state.Tt), X)
+            for row in (0, 1):
+                r = jac[row]
+                if dg[row] != 0.0:
+                    key = f"{node}.Tt"
+                    r[key] = r.get(key, 0.0) + dg[row] * float(dg_dT)
+                for k in range(len(X)):
+                    d = 0.0
+                    if dR_dY is not None:
+                        d += dR[row] * float(dR_dY[k])
+                    d += dg[row] * float(dg_dY[k])
+                    if d != 0.0:
+                        key = f"{node}.Y[{k}]"
+                        r[key] = r.get(key, 0.0) + d
+
     def diagnostics(
         self,
         state_com: NetworkMixtureState,
@@ -14223,7 +14334,12 @@ class TeeJunctionElement(NetworkElement):
                 F_C=self.F_C,
                 blend_k=self.blend_k,
             )
-        is_extrapolated = res.status != cb._core.CorrelationValidity.VALID
+        # A leg against the tee_type is outside the pattern Bassett's
+        # coefficients describe (#1231): extrapolated whatever the ratio's
+        # status, and counted as the ideal tee counts its reversed ports, at
+        # the tolerance verify_solution_consistent refuses them at.
+        n_rev = len(self.reversed_legs([m_com, m_branch], [0, 1], TEE_REVERSE_FLOW_TOL))
+        is_extrapolated = res.status != cb._core.CorrelationValidity.VALID or n_rev > 0
         return {
             "m_dot_com": float(m_com),
             "m_dot_straight": float(m_com - m_branch),
@@ -14231,6 +14347,7 @@ class TeeJunctionElement(NetworkElement):
             "mass_flow_ratio": float(res.q),
             "K_straight": float(res.K_straight),
             "K_branch": float(res.K_branch),
+            "n_reversed_ports": float(n_rev),
             "correlation_extrapolated": 1.0 if is_extrapolated else 0.0,
             "F_C": float(self.F_C or 0.0),
             "area_source": self._area_source,

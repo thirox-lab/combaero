@@ -620,6 +620,30 @@ std::vector<double> cp_secant_mass_dY(double T1, double T2, const std::vector<do
   return mole_gradient_to_mass(X, g);
 }
 
+std::vector<double> specific_gas_constant_dY(const std::vector<double> &X) {
+  // R = R_GAS / MW: dR/dX_j = -R W_j / MW.
+  const double MW = mwmix(X);
+  const double R = specific_gas_constant(X);
+  std::vector<double> g(X.size(), 0.0);
+  for (std::size_t j = 0; j < X.size(); ++j) {
+    g[j] = -R * species_molar_mass(j) / MW;
+  }
+  return mole_gradient_to_mass(X, g);
+}
+
+std::pair<double, std::vector<double>> isentropic_expansion_coefficient_dT_dY(
+    double T, const std::vector<double> &X) {
+  // gamma = c / (c - R_GAS) with c the molar cp: dgamma/dc = -R_GAS / (c -
+  // R_GAS)^2, and c moves with T through dcp_dT and with X_j by cp_j.
+  const double c = cp(T, X);
+  const double k = -thermo::R_GAS / ((c - thermo::R_GAS) * (c - thermo::R_GAS));
+  std::vector<double> g(X.size(), 0.0);
+  for (std::size_t j = 0; j < X.size(); ++j) {
+    g[j] = k * cp_species(j, T);
+  }
+  return {k * dcp_dT(T, X), mole_gradient_to_mass(X, g)};
+}
+
 double h_mass(double T, const std::vector<double> &X) {
   return h(T, X) / (mwmix(X) / 1000.0);
 }

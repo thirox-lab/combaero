@@ -116,6 +116,12 @@ std::tuple<double, double, double> cp_secant_mass_and_jacobian(
 // Its gradient in the MASS fractions, per species: a wall side's capacity
 // rate moves with its composition (#717).
 std::vector<double> cp_secant_mass_dY(double T1, double T2, const std::vector<double>& X);
+// Gradients in the MASS fractions of R = R_GAS / MW and of gamma = cp / cv,
+// with gamma's dT: an element taking a node's R and gamma as inputs chains them
+// onto its composition (#1231).
+std::vector<double> specific_gas_constant_dY(const std::vector<double>& X);
+std::pair<double, std::vector<double>> isentropic_expansion_coefficient_dT_dY(
+    double T, const std::vector<double>& X);
 double cv_mass(double T, const std::vector<double>& X);
 double h_mass(double T, const std::vector<double>& X);
 double u_mass(double T, const std::vector<double>& X);

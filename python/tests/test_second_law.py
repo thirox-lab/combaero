@@ -172,14 +172,15 @@ def test_a_chain_is_one_control_volume_ending_at_its_boundary() -> None:
     assert v[chain[0]]["verdict"] == "pass"
 
 
-def test_the_legacy_tee_is_not_checked_and_says_so() -> None:
+def test_the_legacy_tee_is_checked_as_a_junction() -> None:
+    """The legacy tee is a three-port control volume like the #517 junctions
+    (#1231): a leg into it at its port node's state, a leg out of it at the
+    mix it delivers. A forward branching tee dissipates."""
     v = _solve(tee_cases._branching_net())["__second_law__"]["tee"]
-    assert {k: v[k] for k in ("verdict", "reason")} == {
-        "verdict": "not_checked",
-        "reason": "legacy TeeJunctionElement",
-    }
-    # The band keys stay, undefined.
-    assert all(math.isnan(v[k]) for k in ("sigma_norm", "sigma_norm_low", "sigma_norm_high"))
+    assert v["verdict"] == "pass"
+    assert "reason" not in v
+    assert v["sigma_norm"] > 0.0
+    assert v["sigma_norm_low"] <= v["sigma_norm"] <= v["sigma_norm_high"]
 
 
 # --- heat ---------------------------------------------------------------------

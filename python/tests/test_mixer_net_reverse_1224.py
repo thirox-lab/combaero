@@ -234,12 +234,20 @@ def test_reverse_one_gas_different_state_keeps_dY_exactly_zero() -> None:
 
 
 # A legacy merging tee with a momentum chamber at its common node: while a
-# leg draws flow out of the chamber the tee hands it a net reverse total. The
+# leg draws flow out of the chamber the tee handed it a net reverse total. The
 # chamber's closure reads that mixed state, and the stream-0 h and Pt with
 # averaged partials stalled the solve far from the root (case 65: m_com -3.9
-# kg/s, norm 889; case 176: m_com -6.0, norm 564). Both now converge to the
-# forward root. Found by the #1230 review's random legacy-tee sweep (5 of 200
-# cases went no_progress -> converged, none worse).
+# kg/s, norm 889; case 176: m_com -6.0, norm 564). Found by the #1230 review's
+# random legacy-tee sweep (5 of 200 cases went no_progress -> converged, none
+# worse). #1230 converged both to the forward root.
+#
+# Since #1231 the tee feeds its port nodes by the sign of its legs, so the
+# reversed region carries real states instead of a signed mean, and from the
+# same start the root finder lands on a root with the common and straight legs
+# reversed: the outlet boundary feeding the higher-pressure straight inlet.
+# That root is outside the tee's model (Bassett's merging coefficients at a
+# negative flow ratio) and is refused, and the solve retries from a forward
+# start (#1234), which converges to the forward root #1230 found.
 LEGACY_TEE_CASES = [
     # (P_straight, P_branch, P_out, Tt_straight, Tt_branch, Tt_out, F_C, psi)
     (150000.0, 148760.15882950363, 148260.333624841, 500.0, 900.0, 700.0, 2e-3, 4.0),
@@ -289,9 +297,15 @@ def test_a_legacy_merging_tee_into_a_momentum_chamber_converges(case: tuple) -> 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         r = s.solve(timeout=20)
-    assert r["__converged__"], (r["__outcome__"], r["__final_norm__"])
-    # The forward root: both legs feed the common node, which mixes them.
+    # The forward root (#1230), reached from a forward start after the cold
+    # solve's reversed root was refused (#1231, #1234).
+    assert r["__outcome__"] == "converged", (r["__outcome__"], r["__message__"])
     m_com, m_b = r["tee.m_dot_com"], r["tee.m_dot_branch"]
     assert m_com > 0.0 and 0.0 < m_b < m_com
     assert r["lc.m_dot"] == pytest.approx(m_com, rel=1e-9)
-    assert min(Tis, Tib) < r["pc.T"] < max(Tis, Tib)
+    assert min(Tis, Tib) < r["pc.Tt"] < max(Tis, Tib)
+    assert "forward start" in r["__message__"]
+    v = r["__second_law__"]["tee"]
+    assert v["verdict"] == "pass" and v["sigma_norm"] > 0.0
+    L = r["__ledger__"]
+    assert abs(L["mass_closure_rel"]) < 1e-12 and abs(L["energy_closure_rel"]) < 1e-12
