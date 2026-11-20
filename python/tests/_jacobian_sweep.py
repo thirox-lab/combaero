@@ -1164,9 +1164,9 @@ def sweep(
 
 @dataclass(frozen=True)
 class Open:
-    """A mismatch pattern open on main: the issue (a placeholder until
-    filed), what it is, which findings it covers, and one reproducer (a case
-    and a point desc) that the fast tier runs as a strict xfail."""
+    """A mismatch pattern open on main: the filed issue, what it is, which
+    findings it covers, and one reproducer (a case and a point desc) that
+    the fast tier runs as a strict xfail."""
 
     issue: str
     what: str
@@ -1199,7 +1199,7 @@ OPEN: tuple[Open, ...] = (
         "inj.m_dot = 0",
     ),
     Open(
-        "#ISSUE-EQ-DEGENERATE-MIX",
+        "#1244",
         "equilibrium combustor at a near-zero oxidizer flow or with a stream reversed "
         "(complete combustion is clean at the same points): 1.3e-5 .. 7.5e-1",
         lambda f: "equilibrium" in f.tags and f.kind != "exact_zero",
@@ -1207,16 +1207,16 @@ OPEN: tuple[Open, ...] = (
         "a_in flows 3e-05",
     ),
     Open(
-        "#ISSUE-EXACT-ZERO",
+        "#1245",
         "J at an exactly-zero flow with one boundary end matches neither one-sided "
         "difference (tee ports, ConstantKTee, ejector outlet chamber, crossflow segments, "
-        "a wall-coupled channel): 1e-6 .. 5e-2",
+        "wall-coupled channels): 1e-6 .. 3.3e-1",
         lambda f: f.kind == "exact_zero",
         Case("legacy_tee_ports", 2, 2, 1),
         "lc.m_dot = 0",
     ),
     Open(
-        "#ISSUE-EJECTOR-REVERSED",
+        "#1246",
         "EjectorElement rows (and its chambers') with a leg reversed, one gas included: "
         "1e-6 .. 1.8e-1",
         lambda f: _fam(f) == "ejector",
@@ -1224,7 +1224,7 @@ OPEN: tuple[Open, ...] = (
         "cs pattern 1 ratio 1",
     ),
     Open(
-        "#ISSUE-MPCE-NEAR-ZERO-ARM",
+        "#1247",
         "MultiPortChamberElement momentum row's port-pressure column with one arm near "
         "zero flow: 1.5e-1",
         lambda f: _cls(f) == "MultiPortChamberElement",
@@ -1233,7 +1233,7 @@ OPEN: tuple[Open, ...] = (
         slow=True,
     ),
     Open(
-        "#ISSUE-IMPINGEMENT-PLATE-GASES",
+        "#1248",
         "ImpingementPlateElement flow row's chamber-pressure column once the boundary "
         "gases differ, at the start vector already: 7.7e-3",
         lambda f: _cls(f) == "ImpingementPlateElement",
@@ -1242,7 +1242,7 @@ OPEN: tuple[Open, ...] = (
         slow=True,
     ),
     Open(
-        "#ISSUE-WALL-CHANNEL-PT",
+        "#1249",
         "a wall-coupled high-Mach channel's flow row on its outlet chamber's Pt, one gas "
         "included (hotcold families): 1e-6 .. 4e-6",
         lambda f: _fam(f) in ("hotcold", "hotcold_mild") and f.kind != "exact_zero",
@@ -1251,7 +1251,7 @@ OPEN: tuple[Open, ...] = (
         slow=True,
     ),
     Open(
-        "#ISSUE-IDEAL-TEE-REVERSED",
+        "#1250",
         "IdealMomentumTeeElement with an outlet arm reversed: 1.2e-6",
         lambda f: _cls(f) == "IdealMomentumTeeElement",
         Case("ideal_nport", 2, 1, 0),
