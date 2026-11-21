@@ -14,8 +14,12 @@ exclusion rules.
   vector; a tee with port chambers, two side streams, a leg reversed: 1.3e-4.
   Both points also fail on 24067756.
 
+The metric is falsified on its own: a dropped or halved entry, a spurious
+entry where the true partial is 0, a bug only an equilibrium combustor has,
+and a wrong entry at an exact zero are each a mismatch no open issue covers.
+
 The open reproducers on a Fanno network (over a second each) carry the
-``slow`` mark; the rest of the module runs in about a second.
+``slow`` mark; the rest of the module runs in about two seconds.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
-from _jacobian_sweep import OPEN, Case, Report, evaluate, point
+from _jacobian_sweep import OPEN, Case, Report, evaluate, open_issue, point
 
 from combaero.network import NetworkSolver
 
@@ -84,6 +88,68 @@ def test_the_sweep_flags_a_wrong_entry(factor: float) -> None:
     [f] = rep.mismatches()
     assert (f.element, f.row_kind, f.column) == ("TeeJunctionElement 'tee'", "p", "ss0.m_dot")
     assert "TeeJunctionElement 'tee' [p]: scaled" in f.message and "ss0.m_dot step" in f.message
+
+
+@pytest.mark.parametrize("size", [1e-5, 0.1])
+def test_a_spurious_entry_is_a_mismatch(size: float) -> None:
+    """A wrong entry where the true partial is 0 (the tee row on ps.Pt; the
+    FD reads exact zeros) is a mismatch, judged against the row scale, not
+    against the FD value: an estimate relative to |C| called it unresolved."""
+
+    def spurious(s: NetworkSolver, J: np.ndarray) -> None:
+        x = s._build_x0()
+        j = s.unknown_names.index("ps.Pt")
+        sc = np.maximum(np.abs(x), 1e-12)
+        i = next(
+            k
+            for k, (o, _) in enumerate(s._row_kinds(x))
+            if o == "TeeJunctionElement 'tee'" and J[k, j] == 0.0
+        )
+        J[i, j] = size * np.max(np.abs(J[i] * sc)) / sc[j]
+
+    rep = _check(Case("legacy_tee", 2, 2, 1), "start vector", perturb_J=spurious)
+    [f] = rep.mismatches()
+    assert (f.element, f.column) == ("TeeJunctionElement 'tee'", "ps.Pt")
+    assert f.error == pytest.approx(size, rel=1e-3) and open_issue(f) is None
+
+
+def _halve_orifice_rows(s: NetworkSolver, J: np.ndarray) -> None:
+    """Every OrificeElement row's partials halved, in a network with an
+    equilibrium combustor only: a bug no other network has."""
+    if not any(getattr(n, "method", None) == "equilibrium" for n in s.network.nodes.values()):
+        return
+    for i, (owner, _) in enumerate(s._row_kinds(s._build_x0())):
+        if owner.startswith("OrificeElement"):
+            J[i] *= 0.5
+
+
+@pytest.mark.parametrize(
+    ("case", "desc"),
+    [
+        (Case("combustor", 1, 0, 0), "start vector"),
+        # A point #1244 covers: the bug must still be new there.
+        (Case("combustor", 1, 0, 0), "a_in flows 3e-05"),
+    ],
+)
+def test_a_bug_only_in_an_equilibrium_combustor_is_new(case: Case, desc: str) -> None:
+    """The OPEN hits are narrow (row, column, point kind, a cap): halving
+    every orifice row in an equilibrium-combustor network is new at a clean
+    point and at a point an open issue already covers."""
+    rep = _check(case, desc, perturb_J=_halve_orifice_rows)
+    new = [f for f in rep.mismatches() if open_issue(f) is None]
+    assert new, [f.message for f in rep.mismatches()]
+
+
+def test_a_wrong_entry_at_an_exact_zero_is_new() -> None:
+    """#1245 covers its own rows and columns at exact zero, not every exact
+    zero: a 0.5 error on a compressor-network row there is new."""
+    rep = _check(
+        Case("machine", 0, 3, 2),
+        "oi.m_dot = 0",
+        perturb_J=_scale_entry("OrificeElement 'oo'", "oo.m_dot", 0.5),
+    )
+    new = [f for f in rep.mismatches() if open_issue(f) is None]
+    assert [(f.element, f.column) for f in new] == [("OrificeElement 'oo'", "oo.m_dot")]
 
 
 @pytest.mark.parametrize(

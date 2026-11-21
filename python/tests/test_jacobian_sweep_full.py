@@ -17,6 +17,7 @@ from _jacobian_sweep import (
     BUILDERS,
     MAX_POINTS_CI,
     MAX_UNKNOWNS,
+    UNRESOLVED_LIMIT,
     Case,
     Report,
     _small,
@@ -34,7 +35,7 @@ GROUPS = {
     "ducts": ["random", "pin_fin", "series", "port_discharge", "machine"],
     "walls": ["hotcold", "hotcold_mild"],
     "cooling": ["impingement", "impingement_bypass", "effusion", "bleed_station", "jet_chain"],
-    "combustion": ["fuel_controller", "combustor", "film"],
+    "combustion": ["fuel_controller", "combustor", "walled_combustor", "film"],
 }
 
 
@@ -45,6 +46,14 @@ def _check(case: Case) -> None:
     run_case(case, rep, max_points=MAX_POINTS_CI)
     new = [f for f in rep.mismatches() if open_issue(f) is None]
     assert not new, "\n".join(f"{f.case} {f.point}: {f.message}" for f in new)
+    # An unresolved row FD could have resolved (not round-off bound) fails
+    # above UNRESOLVED_LIMIT: unresolved never passes silently.
+    bad = rep.unresolved(UNRESOLVED_LIMIT)
+    assert not bad, "\n".join(
+        f"unresolved {f.error:.2e} (est {f.fd_estimate:.1e}) {f.element} [{f.row_kind}] col "
+        f"{f.column} | {f.case} | {f.point}"
+        for f in bad
+    )
 
 
 def _params(group: str) -> list[Case]:
@@ -93,14 +102,15 @@ ABSTRACT = {
     "MultiPortChamberBase": "base of the junctions (MPCE, ConstantKTee, IdealMomentumTee, ejector)",
     "TurbomachineElement": "base of CompressorElement and TurbineElement",
 }
-#: Classes that cannot see differing compositions mix, with the reason. A
+#: Classes whose rows never carry a composition partial, with the reason. A
 #: listed class the sweep does reach that way fails the gate: the reason is
-#: then wrong.
+#: then wrong. (A FuelBoundary is not listed: its Tt_target row reads its
+#: combustor's mix, and is counted there.)
 NO_COMPOSITION = {
-    "MassFlowBoundary": "imposes its own gas; at most one stream (its element's, reversed) "
-    "arrives at it",
-    "FuelBoundary": "imposes its own gas; its one element is the only stream that can arrive",
-    "WallNode": "a dead end on one element: at most one arriving stream",
+    "PressureBoundary": "a fixed state: nothing it receives mixes into it",
+    "MassFlowBoundary": "a fixed state at the network's edge; one feeding a node mid-network "
+    "is that node's stream, counted at the node",
+    "WallNode": "a dead end on one element: at most one stream arrives, nothing mixes",
 }
 #: Classes that cannot run reversed. None: every class has a leg that can.
 NO_REVERSAL: dict[str, str] = {}
@@ -108,11 +118,12 @@ NO_REVERSAL: dict[str, str] = {}
 
 class TestCoverageGate:
     def test_every_class_is_reached_reversed_and_mixing(self) -> None:
-        """Over the slow tier's cases, every element and node class exported
-        from combaero.network is reached at a compared point, with a leg
-        reversed against the start, and with differing compositions across
-        its nodes (an element) or its arriving streams (a node)."""
-        rep = sweep(ci_cases(), coverage_only=True)
+        """Over the slow tier's cases and points, every element and node
+        class exported from combaero.network (and the ThermalWall) is
+        reached at a compared point, with a leg reversed against the start,
+        and where its composition partials are non-zero (``_record_coverage``:
+        a node mixing differing streams, an element or wall touching one)."""
+        rep = sweep(ci_cases(), max_points=MAX_POINTS_CI, coverage_only=True)
         missing = []
         for name in sorted(network_classes()):
             c = rep.coverage.get(name)

@@ -19,30 +19,47 @@ their networks, and a few builders of its own for the classes they never draw
   magnitude ratios (so a derived leg, a tee's straight run, reverses too; a
   MultiPortChamberBase junction's legs are its arms), one element's flows
   near zero, one flow at exactly zero, and every flow at a node near zero on
-  both sides of the mixer's no-flow band (``kMixerNoFlowBand``).
+  both sides of the mixer's no-flow band (``kMixerNoFlowBand``). One point
+  per distinct sign pattern of each element's legs is always kept; the rest
+  are sampled down to the tier's point count.
 
 Each point gets a fresh, resolved solver: a fresh NetworkSolver on an
 unresolved network is a different model, and a reused one keeps warm starts.
 
 Comparison
 ----------
-Columns are compared in scaled variables (``scaled_error``: per row, max_j
-|J_ij - fd_ij| s_j over max_j |fd_ij| s_j), with one change: a flow column's
-scale s_j is the larger of |x_j| and its start value, so a near-zero flow's
-column still counts (at 1e-9 kg/s, J_ij |x_j| would hide any error in it).
+Columns are compared in scaled variables, J_ij s_j, with s_j = |x_j| and a
+flow column's at least its start value (at 1e-9 kg/s, J_ij |x_j| would hide
+any error in it). Each row's scale is its largest scaled entry, of J or of
+the FD (``_row_scale``): a spurious entry, J nonzero where the true partial
+is ~0, is then a miss of its own size.
 
 A cheap screen (``fd_jacobian(adaptive=False)``, flow steps ``_flow_step``)
-flags rows above ``TOL``; ``_confirm`` re-differences them: pressure columns
-on ``fd_jacobian``'s drive-aware ladder (retried from a 100x larger step when
-its estimate does not resolve the entry), every other column on a Richardson
-ladder over six decades of step (``_ladder``, the window ``_pick`` chooses);
-a near-zero flow one-sided away from zero within |x| of the point, an
-exactly-zero one on both sides from 1e-6 of its scale down, each row taking
-the side it agrees with.
-A row is a **mismatch** only when the FD's own estimate (its window's spread,
-and never below the round-off ``ROUNDOFF |F_i| / h``) is below a tenth of
-the miss and within ``FD_RESOLVED`` of its value; otherwise it is
-**unresolved**, counted per element and never silently passed.
+flags rows above ``TOL``; ``_confirm`` re-differences them:
+
+* pressure columns on ``fd_jacobian``'s drive-aware ladder; a column with a
+  missing entry also from a 100x larger top step and on a central ladder
+  down to 1e-12 |P| (below fd_jacobian's 1e-8 |P| round-off floor), each
+  entry keeping its best-resolved value;
+* every other column on a Richardson ladder over six decades of step
+  (``_ladder``, the window ``_pick`` chooses); a near-zero flow one-sided
+  away from zero within |x| of the point; an exactly-zero one on both
+  sides from 1e-6 of its scale down, each row taking the side it agrees
+  with.
+
+Each entry's estimate is its window's spread, never below the round-off
+``ROUNDOFF * T_i / h`` (T_i the row's term scale, max(|F_i|, max_j |J_ij
+x_j|)). Per row (``_verdict``), with errors and estimates both over the row
+scale:
+
+* **mismatch**: an entry misses by more than TOL and its estimate is below
+  RESOLVED of the miss;
+* **unresolved**: an entry misses without that, or has no level to
+  difference on (every level crosses a leg's zero); it fails the slow tier
+  above ``UNRESOLVED_LIMIT``;
+* **unresolved-roundoff**: the estimate at the largest allowed step is the
+  round-off itself, which no step can beat (a flow at 1e-9 kg/s on a column
+  scaled by its start value); counted, not failed.
 
 Exclusion rules
 ---------------
@@ -50,9 +67,12 @@ Each is a point or entry without a derivative to check (none is a
 tolerance); every excluded point is counted per rule in ``Report.excluded``
 (``zero_between`` points are never built).
 
-``exact_zero``     a leg exactly 0 at a point not built for it: a derived
-                   leg (a tee's straight run at m_com = m_branch) is a kink,
-                   the stream's direction and the mixer's arriving set switch
+``exact_zero``     a leg exactly 0 at a point not built for it. Legs
+                   (``_leg_defs``) include the derived ones an element
+                   switches on: a legacy tee's straight run (m_com -
+                   m_branch), a junction's partial sums of its signed port
+                   flows (an ejector's inlet sum). The stream's direction,
+                   the mixer's arriving set, a junction's pattern switch
                    there. Near-zero points use distinct magnitudes per
                    unknown so a derived leg stays off zero.
 ``zero_between``   an exactly-zero flow between two interior nodes: at zero
@@ -68,11 +88,12 @@ tolerance); every excluded point is counted per rule in ``Report.excluded``
 ``nonfinite``      F or J not finite, or an exception, at the point or on a
                    stencil: counted per family and exception.
 A ladder level is used only while its whole stencil keeps every leg's sign
-(``_signature``), so no difference crosses a sign change, own or derived;
+(``_signature``), derived legs included, so no difference crosses a kink;
 pressure columns keep a duct's stencil on its side of the Fanno drive floor.
 
-Mismatches open on main are listed in ``OPEN``, each with a reproducer; the
-slow test tier fails on any other. Run as a script for the coverage table and
+Mismatches open on main are listed in ``OPEN``, narrowly (``Hit``: family,
+row, row kind, column, point kind, a cap on the error), each with a
+reproducer; the slow test tier fails on any other. Run as a script for the coverage table and
 the mismatch list over every seed and variant::
 
     uv run python python/tests/_jacobian_sweep.py --out tmp/jacsweep.json
@@ -82,6 +103,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import inspect
 import json
 import math
 import random
@@ -116,10 +138,9 @@ import combaero.network as cbn  # noqa: E402
 from combaero.network import (  # noqa: E402
     ChannelElement,
     CombustorNode,
-    CompressorElement,
+    ConvectiveSurface,
     FilmCoolingElement,
     FlowNetwork,
-    FuelBoundary,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -128,10 +149,25 @@ from combaero.network import (  # noqa: E402
     PlenumNode,
     PortDischargeElement,
     PressureBoundary,
-    SlotFilmElement,
     TeeJunctionElement,
+    ThermalWall,
+    WallLayer,
 )
 from combaero.network.ejector_element import EjectorElement  # noqa: E402
+
+
+class _Absent:
+    """Stands in for a class an older checkout lacks (the falsification
+    runs the sweep on the commits before past fixes): no node is one, and a
+    builder that needs it raises, which run_case records as refused."""
+
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError(f"{type(self).__name__}: not in this checkout")
+
+
+CompressorElement = getattr(cbn, "CompressorElement", type("CompressorElement", (_Absent,), {}))
+FuelBoundary = getattr(cbn, "FuelBoundary", type("FuelBoundary", (_Absent,), {}))
+SlotFilmElement = getattr(cbn, "SlotFilmElement", type("SlotFilmElement", (_Absent,), {}))
 
 #: The mixer's near-zero band [kg/s] (kMixerNoFlowBand, solver_interface.h).
 MIXER_NO_FLOW_BAND = 1e-12
@@ -150,10 +186,11 @@ ELEMENT_NEAR_ZERO = (1e-9, 3e-5)
 RATIOS = (1.0, 3.0)
 #: Sign patterns per element at most (a junction with many ports).
 MAX_PATTERNS = 8
-#: Points per case at most: the start and its perturbations, then the
-#: mandatory points (every element's first reversal, every boundary-fed flow
-#: at zero at a mixer, every node near zero outside the band), then a seeded
-#: sample of the rest. Below the mandatory count, a sample of those.
+#: Points per case: the start, its perturbations and one point per sign
+#: pattern of each element's legs are always kept; then, up to this many in
+#: all, the mandatory points (every boundary-fed flow at zero at a mixer,
+#: every node near zero outside the band), then a seeded sample of the rest.
+#: Below the mandatory count, a sample of those.
 MAX_POINTS = 40
 
 _Y_AIR = list(cb.species.dry_air_mass())
@@ -182,6 +219,13 @@ GASES: dict[str, list[float]] = {
     "rich_ch4": _with_ch4(0.15),
 }
 TEMPS = (260.0, 300.0, 450.0, 700.0, 1100.0)
+
+
+#: A lumped orifice declared a wall hole (#788); a checkout older than
+#: ``in_pipe`` reads every such orifice as one.
+_WALL_HOLE = (
+    {"in_pipe": False} if "in_pipe" in inspect.signature(OrificeElement.__init__).parameters else {}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -316,20 +360,70 @@ def combustor(seed: int) -> tuple[FlowNetwork, list[str]]:
     g.add_node(CombustorNode("burner", method=method))
     g.add_element(
         OrificeElement(
-            "a_in", "air", "burner", Cd=0.8, diameter=0.02, correlation="fixed", in_pipe=False
+            "a_in", "air", "burner", Cd=0.8, diameter=0.02, correlation="fixed", **_WALL_HOLE
         )
     )
     g.add_element(
         OrificeElement(
-            "inj", "fuel", "burner", Cd=0.7, diameter=0.002, correlation="fixed", in_pipe=False
+            "inj", "fuel", "burner", Cd=0.7, diameter=0.002, correlation="fixed", **_WALL_HOLE
         )
     )
     g.add_element(
         OrificeElement(
-            "exit", "burner", "out", Cd=0.8, diameter=0.025, correlation="fixed", in_pipe=False
+            "exit", "burner", "out", Cd=0.8, diameter=0.025, correlation="fixed", **_WALL_HOLE
         )
     )
     return g, ["combustor", f"method:{method}"]
+
+
+def walled_combustor(seed: int) -> tuple[FlowNetwork, list[str]]:
+    """A combustor whose exit duct heats a coolant duct through a wall: the
+    burnt gas's composition moves with the fuel flow, so the wall's heat
+    carries composition partials (#744). Incompressible ducts keep it cheap
+    for the CI tier (fuel_controller 7 is the stress families' only walled
+    combustor, 22 ms a residual)."""
+    r = random.Random(seed)
+    g = FlowNetwork()
+    method = r.choice(["complete", "equilibrium"])
+    P = r.choice([2e5, 4e5])
+    _pb(g, "air", P, r.choice([300.0, 600.0]))
+    _pb(g, "fuel", P * 1.05, 300.0, list(cb.species.pure_species("CH4")))
+    _pb(g, "out", P * 0.9)
+    _pb(g, "ci", P * 0.5, 300.0)
+    _pb(g, "co", P * 0.45)
+    g.add_node(CombustorNode("burner", method=method))
+    g.add_element(
+        OrificeElement(
+            "a_in", "air", "burner", Cd=0.8, diameter=0.02, correlation="fixed", **_WALL_HOLE
+        )
+    )
+    g.add_element(
+        OrificeElement(
+            "inj", "fuel", "burner", Cd=0.7, diameter=0.002, correlation="fixed", **_WALL_HOLE
+        )
+    )
+    D, L = 0.03, 0.5
+    # Each duct ends in a plenum whose temperature the wall's heat sets and
+    # whose exit orifice's flow reads it (an incompressible duct's own rows
+    # do not).
+    for nid, b in (("h2", "out"), ("c2", "co")):
+        g.add_node(PlenumNode(nid))
+        g.add_element(
+            OrificeElement(
+                f"x_{nid}", nid, b, Cd=0.8, diameter=0.02, correlation="fixed", **_WALL_HOLE
+            )
+        )
+    for eid, a, b in (("hot", "burner", "h2"), ("cold", "ci", "c2")):
+        g.add_element(
+            ChannelElement(
+                eid, a, b, length=L, diameter=D, regime="incompressible",
+                surface=ConvectiveSurface(area=math.pi * D * L),
+            )
+        )  # fmt: skip
+    g.add_wall(
+        ThermalWall(id="w", element_a="hot", element_b="cold", layers=[WallLayer(0.002, 25.0)])
+    )
+    return g, ["walled_combustor", f"method:{method}"]
 
 
 #: The sweep's own builders, beside the stress FAMILIES.
@@ -339,6 +433,7 @@ EXTRA: dict[str, Callable[[int], tuple[FlowNetwork, list[str]]]] = {
     "machine": machine,
     "port_discharge": port_discharge,
     "combustor": combustor,
+    "walled_combustor": walled_combustor,
 }
 BUILDERS = {**FAMILIES, **EXTRA}
 
@@ -423,7 +518,7 @@ def build(case: Case) -> tuple[FlowNetwork, list[str]]:
         _pb(net, src, p_hi * 1.05, r.choice(TEMPS), list(GASES[r.choice(list(GASES))]))
         net.add_element(
             OrificeElement(
-                f"ss{k}", src, nid, Cd=0.7, diameter=0.003, correlation="fixed", in_pipe=False
+                f"ss{k}", src, nid, Cd=0.7, diameter=0.003, correlation="fixed", **_WALL_HOLE
             )
         )
         tags.append(f"side_stream:{nid}")
@@ -491,13 +586,59 @@ def _flow_cols(s: NetworkSolver) -> dict[str, list[int]]:
     return out
 
 
-def _legs(e: Any, x: np.ndarray, cols: list[int]) -> list[float]:
-    """An element's signed leg flows: its flow unknowns, and a legacy tee's
-    straight run (m_com - m_branch)."""
-    legs = [float(x[j]) for j in cols]
-    if isinstance(e, TeeJunctionElement) and len(cols) == 2:
-        legs.append(legs[0] - legs[1])
-    return legs
+#: A leg: a signed combination of flow unknowns, [(column, coefficient)].
+Leg = list[tuple[int, float]]
+
+
+def _leg_defs(s: NetworkSolver) -> dict[str, list[Leg]]:
+    """Each element's legs: its own flows, or a junction's arm flows (signed
+    into the junction), and every sum an element can switch on (a kink
+    where it crosses zero):
+
+    * a legacy tee's straight run, m_com - m_branch;
+    * a junction's partial sums of its signed port flows (an ejector's inlet
+      sum, a port's share of the rest), every subset of two or more ports
+      short of all of them.
+    """
+    own = _own_flow_cols(s)
+    net = s.network
+    out: dict[str, list[Leg]] = {}
+    for eid, e in net.elements.items():
+        if eid in own:
+            legs: list[Leg] = [[(j, 1.0)] for j in own[eid]]
+            if isinstance(e, TeeJunctionElement) and len(own[eid]) == 2:
+                legs.append([(own[eid][0], 1.0), (own[eid][1], -1.0)])
+            out[eid] = legs
+            continue
+        nodes = e.all_source_nodes() + e.all_sink_nodes()
+        if len(nodes) <= 2:
+            continue
+        arms: list[tuple[int, float]] = []
+        for nid in nodes:
+            for a in net.get_upstream_elements(nid) + net.get_downstream_elements(nid):
+                if a.id != eid and a.id in own:
+                    # +1: the arm's positive flow arrives at the port, i.e.
+                    # enters the junction.
+                    arms.append((own[a.id][0], 1.0 if a.to_node == nid else -1.0))
+                    break
+        if not arms:
+            continue
+        legs = [[(j, 1.0)] for j, _ in arms]
+        n = len(arms)
+        for mask in range(1, 2**n):
+            k = bin(mask).count("1")
+            if 2 <= k < n:
+                legs.append([arms[q] for q in range(n) if (mask >> q) & 1])
+        out[eid] = legs
+    return out
+
+
+def _leg_values(legs: list[Leg], x: np.ndarray) -> list[float]:
+    return [float(sum(c * x[j] for j, c in leg)) for leg in legs]
+
+
+def _all_legs(s: NetworkSolver, x: np.ndarray) -> list[float]:
+    return [v for legs in _leg_defs(s).values() for v in _leg_values(legs, x)]
 
 
 def _node_flow_cols(s: NetworkSolver) -> dict[str, list[int]]:
@@ -545,14 +686,16 @@ def points(s: NetworkSolver, seed: int, max_points: int | None = MAX_POINTS) -> 
             elif j in flows:
                 x[j] *= math.exp(0.5 * r.uniform(-1.0, 1.0))
         pts.append(Point("perturb", f"perturbation {k}", x))
+    kept: list[Point] = []
     mandatory: list[Point] = []
     optional: list[Point] = []
+    defs = _leg_defs(s)
     for eid, cols in fc.items():
         n = len(cols)
+        seen: set[tuple[bool, ...]] = set()
         pats = list(range(1, 2**n))
         if len(pats) > MAX_PATTERNS:
             pats = pats[:n] + r.sample(pats[n:], MAX_PATTERNS - n)
-        first = True
         for p in pats:
             for ratio in RATIOS if n > 1 else (1.0,):
                 x = base.copy()
@@ -560,8 +703,15 @@ def points(s: NetworkSolver, seed: int, max_points: int | None = MAX_POINTS) -> 
                     sgn = -1.0 if (p >> q) & 1 else 1.0
                     x[j] = sgn * base[j] * (ratio if q == n - 1 else 1.0)
                 pt = Point("signs", f"{eid} pattern {p:0{n}b} ratio {ratio:g}", x)
-                (mandatory if first else optional).append(pt)
-                first = False
+                # One point per sign pattern of the element's legs, derived
+                # ones included (a tee's pattern 10 at ratio 3 reverses the
+                # straight run, at ratio 1 not), is never sampled out.
+                key = tuple(v > 0.0 for v in _leg_values(defs.get(eid, []), x))
+                if key not in seen:
+                    seen.add(key)
+                    kept.append(pt)
+                else:
+                    optional.append(pt)
         for mag in ELEMENT_NEAR_ZERO:
             for sgn in (1.0, -1.0):
                 x = base.copy()
@@ -591,6 +741,7 @@ def points(s: NetworkSolver, seed: int, max_points: int | None = MAX_POINTS) -> 
                 x[j] = r.choice((1.0, -1.0)) * mag * (1.0 + 0.37 * q)
             pt = Point("node_near_zero", f"{nid} flows +-{mag:g}", x)
             (mandatory if mag == NEAR_ZERO_OUT_BAND else optional).append(pt)
+    pts += kept
     if max_points is not None and len(pts) + len(mandatory) + len(optional) > max_points:
         # The mandatory points first; below their count (a quick tier) a
         # seeded sample of them.
@@ -622,14 +773,20 @@ NEAR_ZERO_BOTTOM = 1e-4
 #: An exactly-zero flow's one-sided ladders: from ZERO_TOP to ZERO_BOTTOM of
 #: its column's scale.
 ZERO_TOP, ZERO_BOTTOM = 1e-6, 1e-12
-#: The FD's estimate must be within this fraction of its value (and below a
-#: tenth of the miss) for a miss to count: a window outside the asymptotic
-#: range can agree with itself to a fraction of a value far from J.
-FD_RESOLVED = 1e-2
-#: One residual evaluation's round-off relative to |F_i|, with margin: no
-#: difference resolves below ROUNDOFF |F_i| / h (a row of fixed boundary
-#: pressures reads exact zeros at every level).
-ROUNDOFF = 1e-13
+#: A miss counts when the FD's own estimate is below this fraction of it,
+#: both scaled by the row scale (``_verdict``).
+RESOLVED = 0.1
+#: An unresolved row (not round-off bound) above this fails the slow tier.
+UNRESOLVED_LIMIT = 100 * TOL
+#: The deep pressure ladder: from DEEP_TOP |P| halving DEEP_LEVELS times
+#: (to ~1e-12 |P|), below fd_jacobian's 1e-8 |P| round-off floor.
+DEEP_TOP, DEEP_LEVELS = 1e-6, 21
+#: One residual evaluation's round-off relative to its row's term scale
+#: (``_confirm``: max(|F_i|, max_j |J_ij x_j|)), about 45 ulp: series:0's
+#: e2 scattered 6e-7 at h = 7e-5 Pa on a 1.7e4 term scale (~16 ulp). No
+#: difference resolves below ROUNDOFF * scale / h (a row of fixed boundary pressures
+#: reads exact zeros at every level).
+ROUNDOFF = 1e-14
 
 
 def column_scale(s: NetworkSolver, x: np.ndarray, x0: np.ndarray) -> np.ndarray:
@@ -663,12 +820,10 @@ def _steps(s: NetworkSolver, x: np.ndarray, x0: np.ndarray) -> tuple[np.ndarray,
 
 
 def _signature(s: NetworkSolver, x: np.ndarray) -> tuple[bool, ...]:
-    """The sign of every leg (``_legs``): where one flips, a stream changes
-    direction, a mixer its arriving set, a junction its pattern."""
-    fc = _flow_cols(s)
-    return tuple(
-        leg > 0.0 for eid, e in s.network.elements.items() for leg in _legs(e, x, fc.get(eid, []))
-    )
+    """The sign of every leg and derived leg (``_leg_defs``): where one
+    flips, a stream changes direction, a mixer its arriving set, a junction
+    its pattern."""
+    return tuple(v > 0.0 for v in _all_legs(s, x))
 
 
 def _ladder(
@@ -721,6 +876,48 @@ def _raw_est(fd: FDJacobian, x: np.ndarray, F0: np.ndarray) -> np.ndarray:
     return np.maximum(np.nan_to_num(E, nan=np.inf), ROUNDOFF * F0[:, None] / steps)
 
 
+def _row_scale(Ji: np.ndarray, Ci: np.ndarray, sc: np.ndarray) -> float:
+    """A row's scale: its largest scaled entry, of J or of the FD. With J's
+    in it a spurious entry (J nonzero, the true partial ~0) is its own
+    scale, a miss of order 1."""
+    return max(float(np.max(np.abs(Ci * sc))), float(np.max(np.abs(Ji * sc))), 1e-300)
+
+
+def _verdict(
+    Ji: np.ndarray,
+    Ci: np.ndarray,
+    Ei: np.ndarray,
+    sc: np.ndarray,
+    no_level: set[int],
+    roundoff: set[int] = frozenset(),
+) -> tuple[str, int, float, float]:
+    """One row's (verdict, column, scaled error, scaled FD estimate). Errors
+    and estimates are both scaled by the row scale (``_row_scale``), never by
+    the FD value: a 'mismatch' is an entry that misses by more than TOL with
+    the FD's estimate below RESOLVED of the miss; 'unresolved' an entry that
+    misses without that, or one with no level to difference on; else 'ok'.
+    'unresolved-roundoff' is an unresolved entry whose estimate is the
+    evaluation's round-off at the largest step its stencil may take (a flow
+    at 1e-9 kg/s read on a column scaled by its start value): FD cannot
+    resolve it at any step, which is counted (``Report.excluded``), not
+    failed. Every other unresolved entry above UNRESOLVED_LIMIT fails the
+    slow tier."""
+    R = _row_scale(Ji, Ci, sc)
+    d = np.abs(Ji - Ci) * sc / R
+    e = np.nan_to_num(Ei, nan=np.inf) * sc / R
+    hit = [j for j in range(d.size) if d[j] > TOL and e[j] <= RESOLVED * d[j]]
+    if hit:
+        j = max(hit, key=lambda k: d[k])
+        return "mismatch", j, float(d[j]), float(e[j])
+    open_ = [j for j in range(d.size) if d[j] > TOL] + sorted(no_level)
+    if open_:
+        j = max(open_, key=lambda k: (k in no_level, d[k]))
+        kind = "unresolved-roundoff" if j in roundoff and j not in no_level else "unresolved"
+        return kind, j, float(d[j]) if j not in no_level else math.inf, float(e[j])
+    j = int(np.argmax(d))
+    return "ok", j, float(d[j]), float(e[j])
+
+
 @dataclass
 class Confirmed:
     """``_confirm``'s result: per checked row (verdict, column, scaled error,
@@ -746,7 +943,11 @@ def _confirm(
     s = resolved_solver(case)
     names = s.unknown_names
     rel, floor = _steps(s, x, x0)
-    F0 = np.abs(_evaluate(s, x)[0])
+    # Round-off scales with the terms that cancel in a row, not with what is
+    # left of them: |F_i| at a root is ~0 while P_1 - P_2 cancels 3e5 Pa
+    # down to 0.02 (series:0's e2 read 1e-5 of scatter). The row's term
+    # scale: the larger of |F_i| and its largest |J_ij x_j|.
+    F0 = np.maximum(np.abs(_evaluate(s, x)[0]), np.max(np.abs(J) * np.abs(x)[None, :], axis=1))
     fd = fd_jacobian(s, x, rel, floor)
     C = np.asarray(fd).copy()
     E = _raw_est(fd, x, F0)
@@ -754,14 +955,42 @@ def _confirm(
     steps = np.asarray(fd.steps, dtype=float).copy()
     sc = column_scale(s, x, x0)
     p_cols = [j for j, n in enumerate(names) if is_pressure(n)]
-    if any(E[i, j] > FD_RESOLVED * abs(C[i, j]) for i in rows for j in p_cols):
+    no_level: set[tuple[int, int]] = set()
+
+    def missing(cols: list[int]) -> list[int]:
+        """Columns with an entry in ``rows`` that misses J by more than TOL."""
+        out = set()
+        for i in rows:
+            R = _row_scale(J[i], C[i], sc)
+            out |= {j for j in cols if abs(J[i, j] - C[i, j]) * sc[j] / R > TOL}
+        return sorted(out)
+
+    def offer(i: int, j: int, v: float, e: float, how: str, h: float) -> None:
+        """Keep the candidate with the smaller estimate."""
+        if e < E[i, j]:
+            C[i, j], E[i, j], why[i, j], steps[i, j] = v, e, how, h
+
+    # A pressure entry that misses is differenced twice more, and keeps the
+    # best-resolved value: from a 100x larger top step (noise falls with the
+    # step), and on a central ladder below fd_jacobian's round-off floor
+    # (P_STEP_FLOOR |P|): a restriction whose drop is a few round-off steps
+    # curves on the Pa scale (random:8's e13 on n4.Pt meets J only below
+    # 1e-9 |P|, and agrees with itself to 3 % above it). Each level's
+    # round-off is in its estimate.
+    p_miss = missing(p_cols)
+    if p_miss:
         fd_b = fd_jacobian(resolved_solver(case), x, rel * 100.0, floor)
         E_b = _raw_est(fd_b, x, F0)
         for i in rows:
-            for j in p_cols:
-                if E_b[i, j] < E[i, j]:
-                    C[i, j], E[i, j] = fd_b[i, j], E_b[i, j]
-                    why[i, j], steps[i, j] = f"x100 {fd_b.bounds[i, j]}", fd_b.steps[i, j]
+            for j in p_miss:
+                offer(i, j, fd_b[i, j], E_b[i, j], f"x100 {fd_b.bounds[i, j]}", fd_b.steps[i, j])
+    for j in p_miss:
+        R_, hs, ok = _ladder(s, x, j, DEEP_TOP * abs(x[j]), DEEP_LEVELS)
+        for i in rows:
+            if ok.any():
+                v, k, e, _ = _pick(R_[:, i], hs, ok)
+                e = max(float(np.nan_to_num(e, nan=np.inf)), ROUNDOFF * F0[i] / hs[k])
+                offer(i, j, v, e, "deep ladder", hs[k])
     for j, n in enumerate(names):
         if is_pressure(n):
             continue
@@ -795,25 +1024,29 @@ def _confirm(
                 if best is None or abs(J[i, j] - v) < abs(J[i, j] - best[0]):
                     how = "central" if sd == 0.0 else f"one-sided {sd:+.0f}"
                     best = (v, e, f"{how} ladder", hs[k])
-            if best is None:  # every level crosses a leg's zero
+            if best is None:
+                # Every level crosses a leg's zero: nothing to compare with.
+                # The entry is unresolved (E infinite), never passed: C
+                # carries J only so the row's other entries keep their scale.
                 C[i, j], E[i, j], why[i, j], steps[i, j] = J[i, j], np.inf, "no level", np.nan
+                no_level.add((i, j))
             else:
                 C[i, j], E[i, j], why[i, j], steps[i, j] = best
-    out: dict[int, tuple[str, int, float, float]] = {}
-    for i in rows:
-        row = max(float(np.max(np.abs(C[i] * sc))), 1e-300)
-        d = np.abs((J[i] - C[i]) * sc) / row
-        j = int(np.argmax(d))
-        est = float(E[i, j]) * sc[j] / row
-        if d[j] <= TOL:
-            verdict = "ok"
-        elif est <= 0.1 * d[j] and E[i, j] <= FD_RESOLVED * abs(C[i, j]):
-            verdict = "mismatch"
-        else:
-            verdict = "unresolved"
-        out[i] = (verdict, j, float(d[j]), est)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        roff = ROUNDOFF * F0[:, None] / np.abs(steps)
+    out = {
+        i: _verdict(
+            J[i],
+            C[i],
+            E[i],
+            sc,
+            {j for r, j in no_level if r == i},
+            {j for j in range(C.shape[1]) if np.isfinite(E[i, j]) and roff[i, j] >= 0.5 * E[i, j]},
+        )
+        for i in rows
+    }
     # E in scaled units, as fd_jacobian reports ``est``.
-    rows_sc = np.maximum(np.max(np.abs(C) * sc[None, :], axis=1), 1e-300)
+    rows_sc = np.array([_row_scale(J[i], C[i], sc) for i in range(C.shape[0])])
     view = C.view(FDJacobian)
     view.steps, view.bounds, view.names = steps, why, list(names)
     view.est = E * sc[None, :] / rows_sc[:, None]
@@ -881,6 +1114,11 @@ class Report:
     def mismatches(self) -> list[Finding]:
         return [f for f in self.findings if f.verdict == "mismatch"]
 
+    def unresolved(self, limit: float = 0.0) -> list[Finding]:
+        """Unresolved rows above ``limit`` that FD could have resolved (not
+        round-off bound)."""
+        return [f for f in self.findings if f.verdict == "unresolved" and f.error > limit]
+
 
 def _node_state(s: NetworkSolver, nid: str) -> tuple[float, list[float]] | None:
     n = s.network.nodes[nid]
@@ -901,31 +1139,53 @@ def _differ(states: list[tuple[float, list[float]]]) -> tuple[bool, bool]:
 
 
 def _record_coverage(rep: Report, s: NetworkSolver, x: np.ndarray, x0: np.ndarray) -> None:
+    """Count the point for every element, node and wall it reaches.
+
+    "Differing composition" (temperature) counts only where the composition
+    (temperature) partials are non-zero: a node whose state the solver
+    derives and whose arriving streams differ (its mix moves with their
+    flows); an element touching such a node; a FuelBoundary whose
+    combustor's mix is such (its Tt_target row reads it); a wall whose
+    either side's element is such. Two boundaries of different gases on one
+    element are fixed states: no partial."""
     s._propagate_states(x)
     net = s.network
-    fc = _flow_cols(s)
+    mix_y: dict[str, bool] = {}
+    mix_t: dict[str, bool] = {}
+    for nid, n in net.nodes.items():
+        derived = nid in s._derived_states and not isinstance(n, PressureBoundary)
+        try:
+            inflows = s._node_inflows(nid, x) if derived else []
+        except Exception:  # noqa: BLE001 -- coverage bookkeeping only
+            inflows = []
+        mix_y[nid], mix_t[nid] = _differ([(t, y) for m, t, y in inflows if m > 0.0])
+    defs = _leg_defs(s)
+    own = _own_flow_cols(s)
     rev_el: dict[str, bool] = {}
+    comp_el: dict[str, tuple[bool, bool]] = {}
     for eid, e in net.elements.items():
-        cols = fc.get(eid, [])
-        legs, legs0 = _legs(e, x, cols), _legs(e, x0, cols)
+        legs, legs0 = _leg_values(defs.get(eid, []), x), _leg_values(defs.get(eid, []), x0)
         rev = any(a * b < 0.0 for a, b in zip(legs, legs0, strict=True)) or any(
-            x[j] < 0.0 for j in cols
+            x[j] < 0.0 for j in own.get(eid, [])
         )
         rev_el[eid] = rev
         ends = e.all_source_nodes() + e.all_sink_nodes()
-        comp, temp = _differ([st for n in ends if (st := _node_state(s, n)) is not None])
-        rep.cov(type(e).__name__).add(rev, comp, temp)
+        comp_el[eid] = (any(mix_y[n] for n in ends), any(mix_t[n] for n in ends))
+        rep.cov(type(e).__name__).add(rev, *comp_el[eid])
     for nid, n in net.nodes.items():
         adj = net.get_upstream_elements(nid) + net.get_downstream_elements(nid)
         rev = any(rev_el.get(e.id, False) for e in adj)
-        try:
-            inflows = s._node_inflows(nid, x)
-        except Exception:  # noqa: BLE001 -- coverage bookkeeping only
-            inflows = []
-        comp, temp = _differ([(t, y) for m, t, y in inflows if m > 0.0])
+        comp, temp = mix_y[nid], mix_t[nid]
+        if isinstance(n, FuelBoundary):
+            comp, temp = mix_y.get(n.combustor, False), mix_t.get(n.combustor, False)
         rep.cov(type(n).__name__).add(rev, comp, temp)
     for w in net.walls.values():
-        rep.cov(type(w).__name__).add(False, False, True)
+        sides = [e for e in (w.element_a, getattr(w, "element_b", None)) if e in comp_el]
+        rep.cov(type(w).__name__).add(
+            any(rev_el[e] for e in sides),
+            any(comp_el[e][0] for e in sides),
+            any(comp_el[e][1] for e in sides),
+        )
 
 
 def _in_band(s: NetworkSolver, x: np.ndarray) -> bool:
@@ -970,8 +1230,8 @@ def _findings(
     for i, (verdict, j, e, est) in c.rows.items():
         if verdict == "ok":
             continue
-        if verdict == "unresolved":
-            rep.exclude("unresolved")
+        if verdict.startswith("unresolved"):
+            rep.exclude(verdict)
         owner, rk = kinds[i]
         f = Finding(case.label(), pt.desc, pt.kind, verdict, owner, rk, names[j], e, est, tags=tags)
         if verdict == "mismatch":
@@ -1005,15 +1265,10 @@ def evaluate(
         if not (np.all(np.isfinite(F)) and np.all(np.isfinite(J))):
             _refused(rep, case, FloatingPointError("non-finite F or J"), "point")
             return
-        fc = _flow_cols(s)
         x_chk = pt.x.copy()
         if pt.zero_col is not None:
             x_chk[pt.zero_col] = 1e-300
-        if any(
-            leg == 0.0
-            for eid, e in s.network.elements.items()
-            for leg in _legs(e, x_chk, fc.get(eid, []))
-        ):
+        if any(v == 0.0 for v in _all_legs(s, x_chk)):
             rep.exclude("exact_zero")
             return
         if _in_band(s, pt.x):
@@ -1109,6 +1364,7 @@ EXTRA_SEEDS_CI: dict[str, tuple[int, ...]] = {
     "film": (1,),  # film holes (seed 0 is a slot)
     "tee3": (1,),  # a MultiPortChamberElement (seed 0 is a ConstantKTee)
     "series": (1,),  # a VortexElement
+    "legacy_tee": (2,),  # a branching tee: #1233's own pattern (branch and straight run reversed)
 }
 VARIANTS_CI = ((1, 0), (3, 2))
 MAX_POINTS_CI = 8
@@ -1163,71 +1419,103 @@ def sweep(
 
 
 @dataclass(frozen=True)
+class Hit:
+    """One open mismatch, narrow: the family, the row's owner and kind, the
+    column, the point kind, and a cap on its scaled error (about twice the
+    measured). A finding is covered only when every field matches and its
+    error is below the cap."""
+
+    family: str
+    element: str
+    row_kind: str
+    column: str
+    kind: str
+    cap: float
+
+    def covers(self, f: Finding) -> bool:
+        return (
+            f.case.split(":", 1)[0] == self.family
+            and f.element == self.element
+            and f.row_kind == self.row_kind
+            and f.column == self.column
+            and f.kind == self.kind
+            and f.error <= self.cap
+        )
+
+
+@dataclass(frozen=True)
 class Open:
-    """A mismatch pattern open on main: the filed issue, what it is, which
-    findings it covers, and one reproducer (a case and a point desc) that
-    the fast tier runs as a strict xfail."""
+    """A mismatch open on main: the filed issue, what it is, every place the
+    sweep (the slow tier and the fast reproducers) meets it (``hits``), and
+    one reproducer (a case and a point desc) that the fast tier runs as a
+    strict xfail."""
 
     issue: str
     what: str
-    covers: Callable[[Finding], bool]
+    hits: tuple[Hit, ...]
     case: Case
     point: str
     #: The reproducer takes over a second (a Fanno network): the slow tier.
     slow: bool = False
 
-
-def _fam(f: Finding) -> str:
-    return f.case.split(":", 1)[0]
-
-
-def _cls(f: Finding) -> str:
-    return f.element.split(" ", 1)[0]
+    def covers(self, f: Finding) -> bool:
+        return any(h.covers(f) for h in self.hits)
 
 
-#: Each pattern is measured in the PR that added the sweep; the sweep fails
-#: on any mismatch none of them covers.
+_EXIT, _NOZZLE, _TT = "OrificeElement 'exit'", "OrificeElement 'nozzle'", "node 'fuel' Tt_target"
+
+#: Each hit was measured on main (the slow tier's cases and the reproducers);
+#: the sweep fails on any mismatch none of them covers, or that grows past
+#: its cap.
 OPEN: tuple[Open, ...] = (
     Open(
         "#1241",
-        "equilibrium combustor, a fuel stream at exactly zero flow (a fuel-free mix): "
-        "6.8e-4 .. 8e-1 on the fuel column",
-        lambda f: (
-            "equilibrium" in f.tags and f.kind == "exact_zero" and f.column.startswith("inj.")
+        "equilibrium combustor, a fuel stream at exactly zero flow (a fuel-free mix)",
+        (
+            Hit("combustor", _EXIT, "mdot", "inj.m_dot", "exact_zero", 2e-3),
+            Hit("fuel_controller", _NOZZLE, "mdot", "inj.m_dot", "exact_zero", 0.4),
+            Hit("fuel_controller", _TT, "T", "inj.m_dot", "exact_zero", 0.4),
         ),
         Case("combustor", 1, 0, 0),
         "inj.m_dot = 0",
     ),
     Open(
         "#1244",
-        "equilibrium combustor at a near-zero oxidizer flow or with a stream reversed "
-        "(complete combustion is clean at the same points): 1.3e-5 .. 7.5e-1",
-        lambda f: "equilibrium" in f.tags and f.kind != "exact_zero",
+        "equilibrium combustor at a near-zero oxidizer flow, or with a stream reversed "
+        "(complete combustion is clean at the same points)",
+        (
+            Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "element_near_zero", 1e-3),
+            Hit("random", "ChannelElement 'e14'", "p", "in2.Pt", "signs", 1e-3),
+            Hit("random", "ChannelElement 'e15'", "p", "in2.Pt", "signs", 1e-2),
+            Hit("random", "ChannelElement 'e16'", "p", "in2.Pt", "signs", 1e-2),
+            Hit("random", "OrificeElement 'e17'", "mdot", "in2.Pt", "signs", 1e-4),
+        ),
         Case("combustor", 1, 0, 0),
         "a_in flows 3e-05",
     ),
     Open(
         "#1245",
-        "J at an exactly-zero flow with one boundary end matches neither one-sided "
-        "difference (tee ports, ConstantKTee, ejector outlet chamber, crossflow segments, "
-        "wall-coupled channels): 1e-6 .. 3.3e-1",
-        lambda f: f.kind == "exact_zero",
+        "J at a boundary-fed flow of exactly 0 matches neither one-sided difference",
+        (
+            Hit("legacy_tee_ports", "node 'ps'", "p", "lc.m_dot", "exact_zero", 3e-3),
+            Hit("legacy_tee_ports", "node 'pb'", "p", "lc.m_dot", "exact_zero", 2e-3),
+            Hit("port_discharge", "node 'c'", "p", "l.m_dot", "exact_zero", 5e-6),
+        ),
         Case("legacy_tee_ports", 2, 2, 1),
         "lc.m_dot = 0",
     ),
     Open(
         "#1246",
-        "EjectorElement rows (and its chambers') with a leg reversed, one gas included: "
-        "1e-6 .. 1.8e-1",
-        lambda f: _fam(f) == "ejector",
-        Case("ejector", 0, 0, 0),
-        "cs pattern 1 ratio 1",
+        "EjectorElement's flow row with a leg reversed away from any inlet-sum kink "
+        "(inlet sum -0.018 kg/s): J 1 against FD 0.991",
+        (Hit("ejector", "EjectorElement 'ej'", "mdot", "cp.m_dot", "signs", 2e-2),),
+        Case("ejector", 2, 1, 0),
+        "ej pattern 110 ratio 1",
     ),
     Open(
         "#1247",
-        "MultiPortChamberElement momentum row's port-pressure column with one arm near "
-        "zero flow: 1.5e-1",
-        lambda f: _cls(f) == "MultiPortChamberElement",
+        "MultiPortChamberElement momentum row's port-pressure column with one arm near zero flow",
+        (Hit("tee3", "MultiPortChamberElement 'jct'", "p", "pc.P", "element_near_zero", 0.3),),
         Case("tee3", 2, 0, 0),
         "arm0 flows 3e-05",
         slow=True,
@@ -1235,28 +1523,49 @@ OPEN: tuple[Open, ...] = (
     Open(
         "#1248",
         "ImpingementPlateElement flow row's chamber-pressure column once the boundary "
-        "gases differ, at the start vector already: 7.7e-3",
-        lambda f: _cls(f) == "ImpingementPlateElement",
+        "gases differ, at the start vector already",
+        tuple(
+            Hit(
+                "impingement_bypass",
+                f"ImpingementPlateElement 'ia__p{k}'",
+                "mdot",
+                f"ia__c{k}.P",
+                kind,
+                2e-2,
+            )
+            for k in (1, 3)
+            for kind in ("x0", "perturb", "signs")
+        ),
         Case("impingement_bypass", 0, 1, 0),
         "start vector",
         slow=True,
     ),
     Open(
         "#1249",
-        "a wall-coupled high-Mach channel's flow row on its outlet chamber's Pt, one gas "
-        "included (hotcold families): 1e-6 .. 4e-6",
-        lambda f: _fam(f) in ("hotcold", "hotcold_mild") and f.kind != "exact_zero",
+        "a wall-coupled high-Mach channel's flow row on its outlet chamber's Pt, one gas included",
+        tuple(
+            Hit("hotcold_mild", "ChannelElement 'cch'", "mdot", "cm.Pt", kind, 1e-5)
+            for kind in ("x0", "perturb", "signs", "node_near_zero")
+        ),
         Case("hotcold_mild", 0, 1, 0),
         "start vector",
         slow=True,
     ),
     Open(
         "#1250",
-        "IdealMomentumTeeElement with an outlet arm reversed: 1.2e-6",
-        lambda f: _cls(f) == "IdealMomentumTeeElement",
+        "IdealMomentumTeeElement with an outlet arm reversed",
+        (Hit("ideal_nport", "IdealMomentumTeeElement 'jct'", "p", "co1.m_dot", "signs", 3e-6),),
         Case("ideal_nport", 2, 1, 0),
         "jct pattern 0001 ratio 3",
         slow=True,
+    ),
+    Open(
+        "#ISSUE-OXIDIZER-ZERO",
+        "a combustor whose only oxidizer stream is at exactly zero flow (a fuel-only mix), "
+        "complete and equilibrium: J -17.95 against FD 155.6 on combustor:2",
+        (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "exact_zero", 3.0),),
+        Case("combustor", 2, 0, 0),
+        "a_in.m_dot = 0",
     ),
 )
 
@@ -1272,9 +1581,9 @@ def open_issue(f: Finding) -> str | None:
 
 
 def network_classes() -> dict[str, type]:
-    """Every element and node class exported from combaero.network (and the
-    ejector, which lives in its own module)."""
-    out: dict[str, type] = {"EjectorElement": EjectorElement}
+    """Every element and node class exported from combaero.network, the
+    ThermalWall, and the ejector (which lives in its own module)."""
+    out: dict[str, type] = {"EjectorElement": EjectorElement, "ThermalWall": cbn.ThermalWall}
     for name in cbn.__all__:
         obj = getattr(cbn, name)
         if isinstance(obj, type) and issubclass(obj, cbn.NetworkElement | cbn.NetworkNode):
@@ -1303,12 +1612,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-points", type=int, default=MAX_POINTS)
     p.add_argument("--seeds", default=f"{SEEDS.start}:{SEEDS.stop}", help="lo:hi")
     p.add_argument("--coverage-only", action="store_true")
+    p.add_argument("--ci", action="store_true", help="the slow test tier's cases and points")
     p.add_argument("--out", type=Path, help="JSON report")
     a = p.parse_args(argv)
     lo, hi = (int(v) for v in a.seeds.split(":"))
-    cases = full_cases(range(lo, hi))
-    if a.families != "all":
-        cases = [c for c in cases if c.family in a.families.split(",")]
+    fams = None if a.families == "all" else a.families.split(",")
+    if a.ci:
+        cases, a.max_points = ci_cases(fams), MAX_POINTS_CI
+    else:
+        cases = full_cases(range(lo, hi), families=fams)
     t0 = time.time()
     rep = sweep(cases, max_points=a.max_points, coverage_only=a.coverage_only)
     dt = time.time() - t0
