@@ -2557,9 +2557,10 @@ MomentumChamberResult momentum_chamber_residual_and_jacobian(
 ```cpp
 // Compressible orifice flow using isentropic nozzle model. Below
 // kJetDriveFloor (1e-3 Pa, flow_drive_floor.h) of drive the flow is the floor's
-// times an odd cubic in drive / floor that matches the jet's value there and,
-// with the jet exponent 1/2, its slope to 3e-5 (#1256): finite slope at zero
-// drive, no round-off staircase below the floor, exact partials.
+// times an odd cubic in drive / floor with the jet exponent 1/2 (#1256),
+// continuous at the floor with a slope step there (4e-7 at 1 bar, 6.1e-5 at
+// 100 bar): finite slope at zero drive, no round-off staircase below the
+// floor, exact partials.
 // orifice_compressible_residuals_and_jacobian and Jobson's model (below) carry
 // the same floor; ISO 5167 and the incompressible orifice regularise at 1 Pa
 // already (orifice_mdot_and_jacobian).

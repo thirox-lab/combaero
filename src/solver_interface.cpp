@@ -1967,7 +1967,7 @@ std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
   double P0_fwd = reverse_flow ? P_back : Pt;
   double P_back_fwd = reverse_flow ? Pt : P_back;
 
-  // Below kJetDriveFloor of drive, the flow is the floor's times the C1 odd
+  // Below kJetDriveFloor of drive, the flow is the floor's times the odd
   // cubic h(t), t = drive / floor (flow_drive_floor.h; #1256): the jet's
   // sqrt(drive) has an infinite slope at zero, and nozzle_flow's 1 - PR is a
   // round-off staircase near P0 (J flipped between 0 and -22 on a 1e-10 Pa
@@ -1976,8 +1976,9 @@ std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
   //   dm/dPb = -G0 h'(t) / floor,
   //   dm/dP0 =  G0 h'(t) / floor + h (dG0/dP0 + dG0/dPb),
   //   dm/dT0 = h dG0/dT0, dm/dX = h dG0/dX
-  // are exact. The nozzle's own exponent at the floor is 1/2 to 3e-5 (at
-  // 100 bar; 3e-7 at 2 kPa), the slope step the cubic leaves there.
+  // are exact. The flow is continuous at the floor, but its slope steps
+  // there by the nozzle's own exponent's distance from 1/2: measured, 4e-7 at
+  // 1 bar and 6.1e-5 at 100 bar.
   const double drive = P0_fwd - P_back_fwd;
   const bool sub_floor = drive < kJetDriveFloor && P0_fwd > kJetDriveFloor;
   NozzleForward fwd;
@@ -2185,7 +2186,7 @@ ModelEval jobson_eval_raw(double Pt, double P1, double Tt, double Pb, double Cd,
 
 // Jobson's flow with the network's zero-drive floor (flow_drive_floor.h;
 // #1256): below kJetDriveFloor of drive |pd - pb| (pd the approach static
-// with E, else Pt) the flow is the floor's times the C1 odd cubic h(t), t =
+// with E, else Pt) the flow is the floor's times the odd cubic h(t), t =
 // drive / floor, as the nozzle kernel. The floor's flow m0 is evaluated with
 // the back pressure (forward) or the drive pressure (reverse) moved to one
 // floor from the other, so its partials carry that pressure's onto the one
@@ -2193,10 +2194,15 @@ ModelEval jobson_eval_raw(double Pt, double P1, double Tt, double Pb, double Cd,
 // so every partial is exact: matching Jobson's own exponent at the floor was
 // tried and moved with the approach head q = Pt - P1 at the floor's scale
 // (0.5 at q = 0, 0.57 at 1e-4 Pa, 0.81 at 1e-3, beta 0.5), so holding it fixed
-// left dm/dPt 22-27% and dm/dP1 7-15% off in the band (#1259 review). It is
-// 1/2 to 1e-5 while q <= 1e-8 Pa, the approach head at band flows; a larger
-// q leaves a slope step at the floor instead. At exactly zero drive the flow
-// is 0 with the forward cubic's slope.
+// left dm/dPt 22-27% and dm/dP1 7-15% off in the band (#1259 review). The
+// flow is continuous at the floor, but its slope steps there by Jobson's
+// exponent's distance from 1/2. In a solved state q at the floor is about
+// Cd^2 beta^4 / (1 - beta^4) times the drive, 5e-6 to 1e-4 Pa: in solved
+// pipe-fed states the step in dm/dPb measured 0.19% (beta 0.5, Cd 0.27), 3.9%
+// (beta 0.5, Cd 0.6) and 27% (beta 0.7, Cd 0.6), with no effect on
+// convergence in any run. Exact in-band partials are the trade: a matched,
+// C1 exponent would need the jet law's second derivatives. At exactly zero
+// drive the flow is 0 with the forward cubic's slope.
 ModelEval jobson_eval(double Pt, double P1, double Tt, double Pb, double Cd, double area,
                       double beta, double Cv, const std::vector<double>& X) {
   const bool from_static = approach_from_static(beta);

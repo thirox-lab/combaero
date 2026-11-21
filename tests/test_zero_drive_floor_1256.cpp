@@ -55,7 +55,8 @@ double central(const std::function<double(double)>& f, double x, double h) {
 // d f / d(drive) for f a function of the drive: one-sided forward over 1e-3
 // of the floor within 2e-3 floors of zero (the jet's reverse side is another
 // state's law), else central over 1e-3 floors or a quarter of the distance to
-// the floor, whichever is less (the cubic is C1 but not C2 there).
+// the floor, whichever is less (the band law is continuous at the floor, but
+// its slope steps there).
 double d_ddrive(const std::function<double(double)>& f, double d) {
   if (d < 2e-3 * kFloor) {
     const double h = 1e-3 * kFloor;

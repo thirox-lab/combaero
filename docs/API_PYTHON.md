@@ -2623,10 +2623,12 @@ lumped = OrificeElement("lumped", "node1", "node2", Cd=0.8, diameter=0.05, corre
 # OrificeModelResult: OrificeResult's columns plus d_mdot_dCd, Ci, contraction,
 # expansibility, choked, in_range.
 # Zero-drive floor (#1256): below 1e-3 Pa of drive the compressible orifice
-# kernels (nozzle, Jobson) take the flow at 1e-3 Pa times a C1 odd cubic in
-# drive / 1e-3 Pa, so every orifice-family row (holes, film, effusion,
-# impingement, effective-area connections) keeps a finite slope at zero drop;
-# from 1e-3 Pa up the law is unchanged.
+# kernels (nozzle, Jobson) take the flow at 1e-3 Pa times an odd cubic in
+# drive / 1e-3 Pa (exponent 1/2), so every orifice-family row (holes, film,
+# effusion, impingement, effective-area connections) keeps a finite slope at
+# zero drop; from 1e-3 Pa up the law is unchanged. The flow is continuous at
+# the floor and its slope steps there (nozzle 4e-7 at 1 bar, 6.1e-5 at 100
+# bar; Jobson with an approach up to 27%, beta 0.7).
 sharp = OrificeElement("sharp", "node1", "node2", diameter=0.01, compressible_model="jobson1955", Cv=0.982)
 channel = ChannelElement("channel", "node2", "node3", length=2.0, diameter=0.05, roughness=1e-4, regime="compressible")
 # Compressible channel (#481): residual m - m_calc, m_calc = A * fanno_channel_flow(

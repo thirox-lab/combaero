@@ -45,9 +45,9 @@ constexpr double kJetDriveFloor = 1.0e-3;
 
 // The jet cubic's exponent: a constant, so the band's partials are exact (a
 // sigma matched to the law's slope moves with the state, and its own partials
-// would need the law's second derivatives). The nozzle's exponent at the floor
-// is 1/2 to 3e-5 up to 100 bar; Jobson's is 1/2 while the approach head is
-// far below the floor (see jobson_eval).
+// would need the law's second derivatives). The flow is then continuous at the
+// floor but its slope steps there: the nozzle's by 4e-7 at 1 bar and 6.1e-5 at
+// 100 bar; Jobson's, with an approach, by up to 27% (see jobson_eval).
 constexpr double kJetFloorExponent = 0.5;
 
 // Largest local exponent the cubic accepts: h is monotone for sigma < 3.
