@@ -1591,7 +1591,10 @@ EjectorCriticalPressureJacobian ejector_sudden_expansion_dead_head_and_jacobian(
     double p_g, double t_g, double p_e, double t_e, const EjectorGeometry& geom,
     double gamma, double r_gas, double recovery_efficiency);
 // The whole element (4 rows, Jacobian over its nine unknowns) takes the pair
-// as its last argument, default huang1999.
+// as its last argument, default huang1999. Beside `jacobian[4][9]` it returns
+// each row's partials in the gas, `d_dgamma[4]` and `d_dr_gas[4]`: gamma and
+// r_gas are the secondary port gas's, which moves with the flows, and the
+// EjectorElement chains them onto that node's T0 and composition (#1246).
 EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
     /* ... flows, port states, geometry, gamma, r_gas, efficiencies, blend
        windows ... */, EjectorAnchorClosure anchor_closure = EjectorAnchorClosure::huang1999);

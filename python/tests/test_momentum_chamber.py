@@ -325,6 +325,33 @@ def test_closure_jacobian_matches_central_differences(M: float, sign: float) -> 
     assert r.drho_dY[k_co2] == pytest.approx(fd_rho, rel=1e-6)
 
 
+def _chamber_closure(
+    P: float, Pt: float, m: float, T0: float, Y: list[float], A: float, *, incompressible=False
+):
+    from combaero import _solver_tools
+
+    return _solver_tools.momentum_chamber_residual_and_jacobian(P, Pt, m, T0, Y, A, incompressible)
+
+
+def test_static_state_below_the_data_has_an_exact_pressure_partial_1255() -> None:
+    """#1255: a chamber whose static T (168 K) is below the thermo data's
+    200 K and whose T0 (317 K) is above it. One Gauss-Legendre rule across
+    the low tail's joint (C2: the third derivative of cp jumps) missed the
+    enthalpy and entropy integrals by enough that d(res)/dP, which uses the
+    integrands, was 2.2e-6 off the residual's own slope (the ejector's
+    suction chamber with its leg reversed). The quadrature now splits there."""
+    A = 1.9634954084936207e-3
+    P, m, T0 = 28857.756662553693, 0.6445370338698646, 317.2289549347265
+    r = _chamber_closure(P, P, m, T0, _Y_AIR, A)
+    assert r.T_static < 200.0 < T0
+    for h in (1e-2, 1e-1):
+        fd = (
+            _chamber_closure(P + h, P, m, T0, _Y_AIR, A).residual
+            - _chamber_closure(P - h, P, m, T0, _Y_AIR, A).residual
+        ) / (2 * h)
+        assert r.d_res_dP == pytest.approx(fd, rel=2e-8)
+
+
 @pytest.mark.filterwarnings("ignore:.*STATIC temperature:FutureWarning")
 def test_node_reports_the_static_state_its_closure_used() -> None:
     """mach, rho and T_static of a solved chamber come from the static state,

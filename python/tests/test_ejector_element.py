@@ -202,28 +202,22 @@ def test_residuals_all_zero_at_the_converged_point():
         assert r == pytest.approx(0.0, abs=1e-6)
 
 
-def test_residuals_jacobian_matches_finite_difference(monkeypatch):
+def test_residuals_jacobian_matches_finite_difference():
     """Central-difference-check every analytic jac-dict entry against
     perturbed residuals() calls, at a non-converged operating point. This
     directly proves the column-name / sign / relay mapping in residuals()
     is correct (the error-prone part of the C++ (f,J) rewire).
 
-    gamma is monkeypatched to a constant so the FD holds it fixed, matching
-    the element's frozen-gamma Jacobian (see module docstring): only the
-    explicit (Pt, Tt) dependence is claimed analytic, and the dropped weak
-    d(gamma)/d(Tt) term would otherwise show up as spurious FD error on the
-    secondary-temperature column.
+    gamma is live: the secondary-temperature column carries its
+    d(gamma)/d(Tt) term (#1246; it used to be held frozen here). The
+    composition keys are checked along a direction in
+    test_gas_partials_chain_onto_the_secondary_composition_1246.
     """
     import dataclasses
-
-    import combaero.network.ejector_element as ejmod
 
     e = _element()
     e._port_element_ids = ["chan_p", "chan_s", "chan_o"]
     primary, secondary, outlet = _states()
-
-    frozen_gamma = choke_plane_gamma(secondary.Tt, secondary.X)
-    monkeypatch.setattr(ejmod, "choke_plane_gamma", lambda t, x, **kw: frozen_gamma)
 
     # A deliberately non-converged base point (residuals nonzero here, so the
     # Jacobian is exercised away from R=0).
@@ -279,6 +273,8 @@ def test_residuals_jacobian_matches_finite_difference(monkeypatch):
     checked = 0
     for row_idx, row in jac.items():
         for col, analytic in row.items():
+            if ".Y[" in col:
+                continue
             fn, x0 = drivers[col]
             fd = central_diff(fn, row_idx, x0)
             assert analytic == pytest.approx(fd, rel=1e-5, abs=1e-9), (
@@ -287,6 +283,65 @@ def test_residuals_jacobian_matches_finite_difference(monkeypatch):
             checked += 1
     # Guard against a silently-empty jac dict masking a regression.
     assert checked >= 12
+
+
+@pytest.mark.parametrize("anchor", ["kracik_dvorak", "huang1999"])
+@pytest.mark.parametrize(
+    "port_mdots",
+    [
+        [-0.44, -0.13, 0.57],  # forward, choked
+        [-0.44, 0.07, 0.37],  # secondary reversed: the port gas is the ejector's
+        [-0.0051, 0.010, -0.0049],  # jet pump, secondary and outlet reversed
+    ],
+)
+def test_gas_partials_chain_onto_the_secondary_composition_1246(port_mdots, anchor):
+    """#1246: gamma and R are the secondary port gas's, which moves with the
+    flows when a leg reverses (and with a side stream). The rows' partials
+    in them are chained onto the secondary node's T0 and composition; check
+    both against residuals() differenced in that T0 and along a composition
+    direction (CO2 for N2, so the mass fractions still sum to 1)."""
+    import dataclasses
+
+    e = _element(anchor_closure=anchor)
+    e._port_element_ids = ["chan_p", "chan_s", "chan_o"]
+    primary, _, outlet = _states()
+    if abs(port_mdots[0]) < 0.1:  # the jet pump: near-atmospheric supplies
+        primary = NetworkMixtureState(P=105000.0, Pt=105000.0, Tt=305.0, m_dot=0.0, Y=_DRY_AIR_Y)
+        outlet = NetworkMixtureState(P=100500.0, Pt=100500.0, Tt=300.0, m_dot=0.0, Y=_DRY_AIR_Y)
+        sec_P, P_jct = 100000.0, 99000.0
+    else:
+        sec_P, P_jct = 22850.0, 60000.0
+    i_co2 = cb.species_index_from_name("CO2")
+    i_n2 = cb.species_index_from_name("N2")
+    Y = list(_DRY_AIR_Y)
+    Y[i_co2] += 0.2
+    Y[i_n2] -= 0.2
+    secondary = NetworkMixtureState(P=sec_P, Pt=sec_P, Tt=320.0, m_dot=0.0, Y=Y)
+    dY = [0.0] * len(Y)
+    dY[i_co2], dY[i_n2] = 1.0, -1.0
+
+    def rows(sec: NetworkMixtureState) -> list[float]:
+        return e.residuals([primary, sec, outlet], P_jct, list(port_mdots))[0]
+
+    res, jac = e.residuals([primary, secondary, outlet], P_jct, list(port_mdots))
+    h_t, h_y = 1e-3, 1e-6
+    t_p = rows(dataclasses.replace(secondary, Tt=secondary.Tt + h_t))
+    t_m = rows(dataclasses.replace(secondary, Tt=secondary.Tt - h_t))
+    y_p = rows(dataclasses.replace(secondary, Y=[y + h_y * d for y, d in zip(Y, dY, strict=True)]))
+    y_m = rows(dataclasses.replace(secondary, Y=[y - h_y * d for y, d in zip(Y, dY, strict=True)]))
+    moved = 0
+    for row in range(4):
+        fd_t = (t_p[row] - t_m[row]) / (2 * h_t)
+        fd_y = (y_p[row] - y_m[row]) / (2 * h_y)
+        an_t = jac[row].get("s.Tt", 0.0)
+        an_y = sum(jac[row].get(f"s.Y[{k}]", 0.0) * d for k, d in enumerate(dY))
+        # On the row's own scale: its value and these terms.
+        scale = abs(res[row]) + abs(fd_t) * secondary.Tt + abs(fd_y) + 1e-12
+        assert an_t * secondary.Tt == pytest.approx(fd_t * secondary.Tt, abs=1e-6 * scale), row
+        assert an_y == pytest.approx(fd_y, abs=1e-6 * scale), row
+        moved += abs(fd_y) > 1e-6 * scale
+    # The composition moves the rows (R and gamma both), so this is not vacuous.
+    assert moved >= 1
 
 
 def test_diagnostics_reports_actual_omega_and_regime():

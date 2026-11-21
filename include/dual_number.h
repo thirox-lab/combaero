@@ -12,8 +12,8 @@
 //
 // Extracted from src/ejector.cpp, where it was a translation-unit-local helper
 // for the ejector's operating-regime closures, so the junction closure can use
-// the same one (issue #271). The ejector's older fixed-seed Dual4 stays where
-// it is: it backs the validated critical-mode path and is not worth disturbing.
+// the same one (issue #271). The ejector's critical-mode path, once on a
+// fixed-seed Dual4, is on DualN too since #1246 (gamma and r_gas became seeds).
 //
 // Seeding: DualN<N>::seed(v, i) is the unknown whose partial index is i;
 // DualN<N>::constant(c) is anything the Newton step does not vary.

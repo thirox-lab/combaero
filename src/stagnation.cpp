@@ -287,7 +287,12 @@ std::tuple<double, double> stagnation_from_static(
 
 namespace {
 // Integral of f over [a, b] by 8-point Gauss-Legendre, split at the
-// NASA-9 range boundaries (1000 K, 6000 K) where cp has a small jump (#549).
+// NASA-9 range boundaries (1000 K, 6000 K) where cp has a small jump (#549),
+// and at the data's lower end (200 K), where the low tail (#606) joins C2:
+// cp''' jumps there, and one rule across it missed the integral by enough
+// that its slope in the limit differed from the integrand, which the
+// analytic Jacobians use (a momentum chamber at T_static 168 K < 200 K <
+// Tt 317 K, 2.2e-6 off its own d/dP; Pt moved by up to 2.2e-6, #1255).
 // Used for h(T0) - h(T) and s(T0) - s(T) at the SAME composition: the direct
 // differences cancel ~4 significant digits near T0 and left ~1e-9 Pa of noise
 // in P0, which finite-difference Jacobian checks with small steps read as
@@ -309,7 +314,7 @@ double gl8_split(F f, double a, double b) {
   const double sign = b >= a ? 1.0 : -1.0;
   double lo = std::min(a, b), hi = std::max(a, b);
   double total = 0.0;
-  for (double bp : {1000.0, 6000.0}) {
+  for (double bp : {thermo::CP_INVERSE_T_DATA, 1000.0, 6000.0}) {
     if (lo < bp && bp < hi) {
       total += seg(lo, bp);
       lo = bp;

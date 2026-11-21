@@ -1629,9 +1629,6 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
             "walled_combustor", "OrificeElement 'x_h2'", "mdot", "ss0.m_dot", "exact_zero", 1e-05
         ),  # 4.79e-06
     ),
-    "#1246": (
-        Hit("ejector", "EjectorElement 'ej'", "mdot", "co.m_dot", "signs", 3e-02),  # 1.07e-02
-    ),
     "#1251": (
         Hit(
             "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "exact_zero", 8e-03
@@ -1645,9 +1642,6 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
         Hit(
             "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 2e00
         ),  # 1.00e+00
-    ),
-    "#1255": (
-        Hit("ejector", "node 'ms'", "p", "ms.P", "signs", 5e-06),  # 2.20e-06
     ),
     "#1254": (
         Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "perturb", 8e-05),  # 3.51e-05
@@ -1728,14 +1722,6 @@ OPEN: tuple[Open, ...] = (
         ),
         Case("combustor", 1, 0, 0),
         "a_in flows 3e-05",
-    ),
-    Open(
-        "#1246",
-        "EjectorElement's flow row with a leg reversed away from any inlet-sum kink "
-        "(inlet sum -0.018 kg/s): J 1 against FD 0.991",
-        (Hit("ejector", "EjectorElement 'ej'", "mdot", "cp.m_dot", "signs", 2e-2),),
-        Case("ejector", 2, 1, 0),
-        "ej pattern 110 ratio 1",
     ),
     Open(
         "#1248",
@@ -1831,18 +1817,6 @@ OPEN: tuple[Open, ...] = (
         Case("pin_fin", 1, 0, 0),
         "perturbation 0",
         slow=True,
-    ),
-    Open(
-        "#1255",
-        # The outlet chamber's rows on an inlet arm's flow at 3e-5 kg/s were
-        # the incompressible closure's central difference in Y (#1245 made
-        # it analytic); the suction chamber's own-P column is left. The
-        # point also meets #1246 (the ejector's flow row).
-        "the ejector's suction chamber row on its own P with a leg reversed",
-        (),
-        Case("ejector", 1, 0, 0),
-        "ej pattern 110 ratio 3",
-        strict=False,
     ),
 )
 
