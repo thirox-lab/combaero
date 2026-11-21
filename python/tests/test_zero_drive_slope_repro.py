@@ -60,7 +60,13 @@ def _brayton_solver(offset: float, unknown: str = "t_out.Pt") -> NetworkSolver:
     return s
 
 
-@pytest.mark.xfail(strict=True, reason="#1193 (#1256): J at a zero-drop orifice start is 0")
+# Not strict: the outcome is chaotic in the start, and -3e-10 converges on CI's
+# Linux x86_64 while it fails on macOS arm64. The strict pin of #1193/#1256 is
+# the orifice-slope test below, which does not depend on where the solve lands.
+@pytest.mark.xfail(
+    strict=False,
+    reason="#1193 (#1256): J at a zero-drop orifice start is 0; borderline, platform-dependent",
+)
 @pytest.mark.parametrize(
     "offset",
     [-3e-10, pytest.param(3e-10, marks=pytest.mark.slow)],  # 3.5 s: its false root
