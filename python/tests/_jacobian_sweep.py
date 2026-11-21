@@ -1663,12 +1663,12 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
             "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 2e00
         ),  # 1.00e+00
     ),
-    "#ISSUE-EJECTOR-CHAMBERS": (
+    "#1255": (
         Hit("ejector", "node 'mo'", "p", "cp.m_dot", "element_near_zero", 4e-06),  # 1.61e-06
         Hit("ejector", "node 'mo'", "p", "cs.m_dot", "element_near_zero", 5e-06),  # 2.10e-06
         Hit("ejector", "node 'ms'", "p", "ms.P", "signs", 5e-06),  # 2.20e-06
     ),
-    "#ISSUE-MPCE-ARM-ZERO": (
+    "#1252": (
         Hit(
             "tee3", "MultiPortChamberElement 'jct'", "p", "arm0.m_dot", "element_near_zero", 2e00
         ),  # 1.00e+00
@@ -1679,12 +1679,12 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
             "tee3", "MultiPortChamberElement 'jct'", "p", "arm0.m_dot", "node_near_zero", 2e00
         ),  # 1.00e+00
     ),
-    "#ISSUE-PINFIN-WALL": (
+    "#1254": (
         Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "perturb", 8e-05),  # 3.51e-05
         Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "signs", 5e-05),  # 2.22e-05
         Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "x0", 4e-05),  # 1.66e-05
     ),
-    "#ISSUE-SPLITTER-SIBLING": (
+    "#1253": (
         Hit("splitter", "ChannelElement 'a1'", "p", "a0.m_dot", "node_near_zero", 2e00),  # 1.00e+00
     ),
 }
@@ -1867,7 +1867,7 @@ OPEN: tuple[Open, ...] = (
         "a_in.m_dot = 0",
     ),
     Open(
-        "#ISSUE-MPCE-ARM-ZERO",
+        "#1252",
         "MultiPortChamberElement momentum row's partial on an arm's flow as that flow goes "
         "to zero: J 1.7e11 at 1e-9 kg/s and 2.1e15 at 0, FD exactly 0",
         (),
@@ -1875,7 +1875,7 @@ OPEN: tuple[Open, ...] = (
         "arm0 flows 1e-09",
     ),
     Open(
-        "#ISSUE-SPLITTER-SIBLING",
+        "#1253",
         "a splitter outlet channel's row on a sibling outlet's flow, that outlet's node near "
         "zero flow: J 1.85e12, FD exactly 0",
         (),
@@ -1883,7 +1883,7 @@ OPEN: tuple[Open, ...] = (
         "o0 flows +-1e-09",
     ),
     Open(
-        "#ISSUE-PINFIN-WALL",
+        "#1254",
         "a wall-coupled pin-fin channel's flow row on the other channel's flow, one gas, at "
         "the start vector already",
         (),
@@ -1892,7 +1892,7 @@ OPEN: tuple[Open, ...] = (
         slow=True,
     ),
     Open(
-        "#ISSUE-EJECTOR-CHAMBERS",
+        "#1255",
         "the ejector's chambers' rows on an inlet arm's flow at 3e-5 kg/s and on their own P "
         "with a leg reversed",
         (),
