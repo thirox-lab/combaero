@@ -14,10 +14,12 @@
 #include "thermo.h"
 
 // The zero-drive convention (#1193, #1209, #1256; flow_drive_floor.h): below
-// kJetDriveFloor of drive the jet kernels are the floor's flow times the C1
-// odd cubic h(t), with a finite slope at zero drive and no round-off
-// staircase; above it, the law as before. The Fanno kernels return the
-// cubic's slope at exactly zero drive.
+// kJetDriveFloor of drive the jet kernels are the floor's flow times the odd
+// cubic h(t) with the jet exponent 1/2: a finite slope at zero drive, exact
+// partials, no round-off staircase below the floor; above it, the law as
+// before (including its own round-off: the nozzle's staircase reaches ~8.7e-7
+// Pa at 1 bar, ~9.7e-4 Pa at 100 bar and past the floor at 1000 bar, #1261).
+// The Fanno kernels return their cubic's slope at exactly zero drive.
 
 using namespace combaero;
 using combaero::solver::orifice_compressible_mdot_and_jacobian;
@@ -28,7 +30,7 @@ namespace {
 
 // The partials are differenced on a 2 kPa reservoir: a step on 1e5 Pa cannot
 // resolve a fraction of a 1e-3 Pa floor (its ulp is 1.5e-11 Pa). The
-// staircase test runs at 1 bar, where main's staircase was measured.
+// staircase test runs at 1 bar: main's staircase there, over 0 .. 4e-9 Pa.
 constexpr double kPt = 2.0e3;
 constexpr double kPtBar = 1.01e5;
 constexpr double kTt = 300.0;
@@ -107,7 +109,7 @@ TEST(ZeroDriveFloor1256, NozzlePartialsMatchDifferences) {
   }
 }
 
-TEST(ZeroDriveFloor1256, NozzleIsC1AtTheFloorAndOddThroughZero) {
+TEST(ZeroDriveFloor1256, NozzleIsContinuousAtTheFloorAndOddThroughZero) {
   const std::vector<double> X = air_X();
   auto m = [&](double drive) {
     return std::get<0>(
@@ -128,7 +130,7 @@ TEST(ZeroDriveFloor1256, NozzleIsC1AtTheFloorAndOddThroughZero) {
   for (const double d : {1e-9 * kFloor, 0.01 * kFloor, 0.5 * kFloor}) {
     EXPECT_NEAR(m(-d) / -m(d), 1.0, 1e-5) << d;
   }
-  // The slope at zero is the cubic's (3 - sigma)/2 G0 / floor, sigma ~ 1/2.
+  // The slope at zero is the cubic's (3 - 1/2)/2 G0 / floor.
   EXPECT_NEAR(slope(0.0) / (1.25 * m(kFloor) / kFloor), 1.0, 1e-4);
 }
 
@@ -174,42 +176,63 @@ TEST(ZeroDriveFloor1256, ResidualKernelPartialsFromTheStaticStateToo) {
 }
 
 TEST(ZeroDriveFloor1256, JobsonPartialsMatchDifferences) {
-  // sigma is held fixed below the floor. Jobson's contraction moves the
-  // exponent with Cd and, with an approach, with the static drive: measured,
-  // d(m)/d(Cd) is then up to 4% off below the floor at beta 0.5 (1e-5 at
-  // beta 0), d(m)/d(P1) 2e-5. The pressures that set the drive are exact.
+  // Every column, with and without an approach (beta 0.5, 0.7: the drive is
+  // the approach static P1, and an approach head q = Pt - P1 of 0, 1e-2 and 1
+  // floor moves Jobson's own exponent at the floor from 0.5 to 0.8). The
+  // cubic's exponent is the constant 1/2, so the band's partials are exact;
+  // a matched, held exponent left dm/dPt 22-27% and dm/dP1 7-15% off there.
   const std::vector<double> Y = air_Y();
-  for (const double beta : {0.0, 0.5}) {
-    const double P1 = beta > 0.0 ? kPt - 1e-2 * kFloor : kPt;
-    const double pd = beta > 0.0 ? P1 : kPt;
-    const double tol_cd = beta > 0.0 ? 5e-2 : 1e-4;
-    auto r = [&](double Pt, double p1, double Tt, double Pb, double Cd) {
-      return orifice_jobson_residuals_and_jacobian(0.0, Pt, p1, Tt, Y, Pb, Cd, kArea, beta);
-    };
-    for (const double d : kDrives) {
-      for (const double sgn : {1.0, -1.0}) {
-        if (d == 0.0 && sgn < 0.0) {
-          continue;
-        }
-        const double Pb = pd - sgn * d;
-        const auto res = r(kPt, P1, kTt, Pb, kCd);
-        // In the drive |pd - Pb|: forward, Pb lowers it; reversed, raises it.
-        const double fd_Pb =
-            -sgn * d_ddrive([&](double dd) { return r(kPt, P1, kTt, pd - sgn * dd, kCd).m_dot_calc; },
-                            d);
-        EXPECT_TRUE(std::isfinite(res.d_mdot_dP_static_down) && res.d_mdot_dP_static_down < 0.0)
-            << "beta " << beta << " drive " << sgn * d;
-        EXPECT_NEAR(res.d_mdot_dP_static_down / fd_Pb, 1.0, 1e-6)
-            << "beta " << beta << " drive " << sgn * d;
-        if (d > 0.0) {
-          const double fd_Tt =
-              central([&](double t) { return r(kPt, P1, t, Pb, kCd).m_dot_calc; }, kTt, kStepT);
-          const double fd_Cd =
-              central([&](double c) { return r(kPt, P1, kTt, Pb, c).m_dot_calc; }, kCd, 1e-5);
-          EXPECT_NEAR(res.d_mdot_dTt_up / fd_Tt, 1.0, 1e-4)
-              << "beta " << beta << " drive " << sgn * d;
-          EXPECT_NEAR(res.d_mdot_dCd / fd_Cd, 1.0, tol_cd)
-              << "beta " << beta << " drive " << sgn * d;
+  for (const double beta : {0.0, 0.5, 0.7}) {
+    for (const double qf : {0.0, 1e-2, 1.0}) {
+      if (beta == 0.0 && qf > 0.0) {
+        continue;  // without E the drive is Pt itself: no approach head
+      }
+      const double P1 = kPt - qf * kFloor;
+      const double pd = beta > 0.0 ? P1 : kPt;
+      auto r = [&](double Pt, double p1, double Tt, double Pb, double Cd) {
+        return orifice_jobson_residuals_and_jacobian(0.0, Pt, p1, Tt, Y, Pb, Cd, kArea, beta);
+      };
+      auto m = [&](double Pt, double p1, double Pb) { return r(Pt, p1, kTt, Pb, kCd).m_dot_calc; };
+      for (const double d : kDrives) {
+        for (const double sgn : {1.0, -1.0}) {
+          if (d == 0.0 && sgn < 0.0) {
+            continue;
+          }
+          const double Pb = pd - sgn * d;
+          const auto res = r(kPt, P1, kTt, Pb, kCd);
+          const std::string at = "beta " + std::to_string(beta) + " q/floor " +
+                                 std::to_string(qf) + " drive " + std::to_string(sgn * d);
+          // In the drive |pd - Pb|: forward, Pb lowers it and pd raises it;
+          // reversed, the other way round.
+          const double fd_Pb = -sgn * d_ddrive([&](double dd) { return m(kPt, P1, pd - sgn * dd); }, d);
+          EXPECT_TRUE(std::isfinite(res.d_mdot_dP_static_down) && res.d_mdot_dP_static_down < 0.0)
+              << at;
+          EXPECT_NEAR(res.d_mdot_dP_static_down / fd_Pb, 1.0, kTol) << at;
+          if (beta > 0.0) {
+            // Pt and P1 also move q, and the flow curves in q on the floor's
+            // own scale: differenced over 1e-5 floors (forward in the drive
+            // near zero), to 2e-4 (the 2 kPa reservoir's ulp over that step).
+            const double hq = 1e-5 * kFloor;
+            const double fd_P1 =
+                (d < 2e-3 * kFloor)
+                    ? (m(kPt, P1 + sgn * hq, Pb) - res.m_dot_calc) / (sgn * hq)
+                    : central([&](double p) { return m(kPt, p, Pb); }, P1, hq);
+            const double fd_Pt = central([&](double p) { return m(p, P1, Pb); }, kPt, hq);
+            EXPECT_NEAR(res.d_mdot_dP_static_up / fd_P1, 1.0, 2e-4) << at;
+            EXPECT_NEAR(res.d_mdot_dP_total_up, fd_Pt, 2e-4 * std::abs(fd_P1)) << at;
+          } else {
+            const double fd_Pt =
+                sgn * d_ddrive([&](double dd) { return m(kPt + sgn * (dd - d), P1, Pb); }, d);
+            EXPECT_NEAR(res.d_mdot_dP_total_up / fd_Pt, 1.0, kTol) << at;
+          }
+          if (d > 0.0) {
+            const double fd_Tt =
+                central([&](double t) { return r(kPt, P1, t, Pb, kCd).m_dot_calc; }, kTt, kStepT);
+            const double fd_Cd =
+                central([&](double c) { return r(kPt, P1, kTt, Pb, c).m_dot_calc; }, kCd, 1e-5);
+            EXPECT_NEAR(res.d_mdot_dTt_up / fd_Tt, 1.0, 1e-4) << at;
+            EXPECT_NEAR(res.d_mdot_dCd / fd_Cd, 1.0, kTol) << at;
+          }
         }
       }
     }

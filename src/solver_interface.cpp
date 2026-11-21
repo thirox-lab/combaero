@@ -1970,24 +1970,21 @@ std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
   // Below kJetDriveFloor of drive, the flow is the floor's times the C1 odd
   // cubic h(t), t = drive / floor (flow_drive_floor.h; #1256): the jet's
   // sqrt(drive) has an infinite slope at zero, and nozzle_flow's 1 - PR is a
-  // round-off staircase within ~1e-9 of P0 (J flipped between 0 and -22 on a
-  // 1e-10 Pa change). The floor's flow G0 is at P_back = P0 - floor, so
+  // round-off staircase near P0 (J flipped between 0 and -22 on a 1e-10 Pa
+  // change at 1 bar). The floor's flow G0 is at P_back = P0 - floor, and the
+  // cubic's exponent is the jet's, kJetFloorExponent = 1/2, a constant, so
   //   dm/dPb = -G0 h'(t) / floor,
   //   dm/dP0 =  G0 h'(t) / floor + h (dG0/dP0 + dG0/dPb),
-  //   dm/dT0 = h dG0/dT0, dm/dX = h dG0/dX.
-  // sigma = -(dG0/dPb) floor / G0 is held fixed: a jet's exponent is
-  // 1/2 - O(drive / P0), so its own variation moves the slope by ~1e-10.
+  //   dm/dT0 = h dG0/dT0, dm/dX = h dG0/dX
+  // are exact. The nozzle's own exponent at the floor is 1/2 to 3e-5 (at
+  // 100 bar; 3e-7 at 2 kPa), the slope step the cubic leaves there.
   const double drive = P0_fwd - P_back_fwd;
   const bool sub_floor = drive < kJetDriveFloor && P0_fwd > kJetDriveFloor;
   NozzleForward fwd;
   if (sub_floor) {
     const NozzleForward at =
         nozzle_forward(T0_fwd, P0_fwd, P0_fwd - kJetDriveFloor, X, A_eff, dm_dX);
-    const double sigma =
-        (at.mdot > 0.0)
-            ? std::clamp(-at.dP_back * kJetDriveFloor / at.mdot, 0.0, kDriveFloorSigmaMax)
-            : 0.5;
-    const DriveFloorCubic c = drive_floor_cubic(drive / kJetDriveFloor, sigma);
+    const DriveFloorCubic c = drive_floor_cubic(drive / kJetDriveFloor, kJetFloorExponent);
     fwd.mdot = at.mdot * c.h;
     fwd.dP_back = -at.mdot * c.dh / kJetDriveFloor;
     fwd.dP0 = at.mdot * c.dh / kJetDriveFloor + c.h * (at.dP0 + at.dP_back);
@@ -2192,9 +2189,14 @@ ModelEval jobson_eval_raw(double Pt, double P1, double Tt, double Pb, double Cd,
 // drive / floor, as the nozzle kernel. The floor's flow m0 is evaluated with
 // the back pressure (forward) or the drive pressure (reverse) moved to one
 // floor from the other, so its partials carry that pressure's onto the one
-// it was moved from; sigma = -(dm0 / d drive) floor / m0 is held fixed (a
-// jet's exponent is 1/2 - O(drive / P)). At exactly zero drive the flow is 0
-// with the forward cubic's slope.
+// it was moved from. The cubic's exponent is the constant kJetFloorExponent,
+// so every partial is exact: matching Jobson's own exponent at the floor was
+// tried and moved with the approach head q = Pt - P1 at the floor's scale
+// (0.5 at q = 0, 0.57 at 1e-4 Pa, 0.81 at 1e-3, beta 0.5), so holding it fixed
+// left dm/dPt 22-27% and dm/dP1 7-15% off in the band (#1259 review). It is
+// 1/2 to 1e-5 while q <= 1e-8 Pa, the approach head at band flows; a larger
+// q leaves a slope step at the floor instead. At exactly zero drive the flow
+// is 0 with the forward cubic's slope.
 ModelEval jobson_eval(double Pt, double P1, double Tt, double Pb, double Cd, double area,
                       double beta, double Cv, const std::vector<double>& X) {
   const bool from_static = approach_from_static(beta);
@@ -2219,20 +2221,15 @@ ModelEval jobson_eval(double Pt, double P1, double Tt, double Pb, double Cd, dou
     at = jobson_eval_raw(Pt, P1, Tt, pd - kJetDriveFloor, Cd, area, beta, Cv, X);
   }
   // m0 along the floor: its partial by the moved pressure belongs to the
-  // partner, which the moved one follows. Reversed, m0 and its slope in the
-  // drive are both negative, so sigma is positive either way.
+  // partner, which the moved one follows.
   MD m0 = at.m;
-  const double s_drive = -m0.d[moved];  // dm0 / d(drive): drive falls as moved rises
   m0.d[partner] += m0.d[moved];
   m0.d[moved] = 0.0;
-  const double sigma =
-      (m0.v != 0.0) ? std::clamp(s_drive * kJetDriveFloor / m0.v, 0.0, kDriveFloorSigmaMax)
-                    : 0.5;
   // t = drive / floor as a dual number in the two pressures.
   MD t = MD::constant(drive / kJetDriveFloor);
   t.d[kd] = (reverse ? -1.0 : 1.0) / kJetDriveFloor;
   t.d[kMdPb] = (reverse ? 1.0 : -1.0) / kJetDriveFloor;
-  const DriveFloorCubic c = drive_floor_cubic(t.v, sigma);
+  const DriveFloorCubic c = drive_floor_cubic(t.v, kJetFloorExponent);
   MD h = MD::constant(c.h);
   for (int i = 0; i < kMdCount; ++i) {
     h.d[i] = c.dh * t.d[i];

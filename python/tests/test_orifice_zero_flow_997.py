@@ -46,8 +46,8 @@ def test_the_approach_static_at_zero_flux_is_the_total_to_the_bit(Pt: float, Tt:
 def test_the_jobson_kernel_is_finite_at_a_one_ulp_drive() -> None:
     """Finite down to one ulp of the drive, both directions. Below the 1e-3 Pa
     drive floor (#1256) the flow is the floor's times the odd cubic h(t),
-    t = dp / floor, h = (3 - sigma)/2 t + (sigma - 1)/2 t^3, sigma the
-    flow's exponent at the floor: linear in dp at one ulp."""
+    t = dp / floor, h = (3 - sigma)/2 t + (sigma - 1)/2 t^3, sigma = 1/2
+    (kJetFloorExponent): linear in dp at one ulp."""
     Pt, Tt, beta = 1.0e5, 300.0, 0.5
     area = math.pi * 0.05**2 / 4.0
     floor = 1.0e-3  # kJetDriveFloor [Pa], flow_drive_floor.h
@@ -58,7 +58,7 @@ def test_the_jobson_kernel_is_finite_at_a_one_ulp_drive() -> None:
         )
 
     at = kernel(Pt - floor)
-    sigma = -at.d_mdot_dP_static_down * floor / at.m_dot_calc
+    sigma = 0.5
     k_ref = at.m_dot_calc * (3.0 - sigma) / (2.0 * floor)  # m / dp as dp -> 0
     p = Pt
     for _ in range(40):

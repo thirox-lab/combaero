@@ -245,7 +245,15 @@ HoleDriveCdRatio hole_supply_recovery_cd_ratio(double P1, double T1, double Pt1,
     return out;
   }
   // Each side's ideal flow from rest at its own (pressure, temperature):
-  // beta 0, so the kernel expands from (P_total_up, Tt_up) as given.
+  // beta 0, so the kernel expands from (P_total_up, Tt_up) as given. The
+  // kernel's own law, with its zero-drive floor (flow_drive_floor.h, #1256):
+  // the hole's flow, this ratio times that kernel's flow on the total drive,
+  // is then Cd_S times the network's jet law on the static drive exactly (to
+  // 3e-7), with a finite slope as that drive goes to 0 (-60 kg/(s Pa) per
+  // unit area at 1 bar, q 1e-2 Pa, static drive 1e-7 Pa). The raw jet ratio
+  // would leave Cd_S sqrt-law(static drive) there: slope -2.4e3 at 1e-7 Pa,
+  // unbounded as it falls (#1259 review). Bit for bit as before from the
+  // floor up.
   const solver::OrificeResult sr =
       solver::orifice_compressible_residuals_and_jacobian(0.0, Pf, Pf, Tf, Y, P2, 1.0, 1.0, 0.0);
   const solver::OrificeResult t =
