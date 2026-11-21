@@ -44,17 +44,22 @@ def test_the_approach_static_at_zero_flux_is_the_total_to_the_bit(Pt: float, Tt:
 
 
 def test_the_jobson_kernel_is_finite_at_a_one_ulp_drive() -> None:
-    """m = Cd' sqrt(dp) down to one ulp of the drive, both directions."""
+    """Finite down to one ulp of the drive, both directions. Below the 1e-3 Pa
+    drive floor (#1256) the flow is the floor's times the odd cubic h(t),
+    t = dp / floor, h = (3 - sigma)/2 t + (sigma - 1)/2 t^3, sigma the
+    flow's exponent at the floor: linear in dp at one ulp."""
     Pt, Tt, beta = 1.0e5, 300.0, 0.5
     area = math.pi * 0.05**2 / 4.0
+    floor = 1.0e-3  # kJetDriveFloor [Pa], flow_drive_floor.h
 
     def kernel(p_down: float) -> object:
         return _solver_tools.orifice_jobson_residuals_and_jacobian(
             0.0, Pt, Pt, Tt, Y_AIR, p_down, 0.6176, area, beta, 1.0
         )
 
-    ref = kernel(Pt - 1.0e-2)
-    k_ref = ref.m_dot_calc / math.sqrt(1.0e-2)
+    at = kernel(Pt - floor)
+    sigma = -at.d_mdot_dP_static_down * floor / at.m_dot_calc
+    k_ref = at.m_dot_calc * (3.0 - sigma) / (2.0 * floor)  # m / dp as dp -> 0
     p = Pt
     for _ in range(40):
         p = math.nextafter(p, 0.0)
@@ -69,7 +74,7 @@ def test_the_jobson_kernel_is_finite_at_a_one_ulp_drive() -> None:
         )
         assert all(math.isfinite(v) for v in values), (Pt - p, values)
         assert r.m_dot_calc > 0.0
-        assert r.m_dot_calc / math.sqrt(Pt - p) == pytest.approx(k_ref, rel=1e-6)
+        assert r.m_dot_calc / (Pt - p) == pytest.approx(k_ref, rel=1e-6)
     # The reverse band: the back pressure one ulp above the drive.
     r = kernel(math.nextafter(Pt, math.inf))
     assert math.isfinite(r.m_dot_calc) and r.m_dot_calc < 0.0

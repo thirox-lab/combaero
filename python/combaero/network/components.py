@@ -11552,6 +11552,7 @@ class ChannelElement(NetworkElement):
         state_out: NetworkMixtureState,
         f_mult: float,
         derivatives: bool = True,
+        forward: bool | None = None,
     ) -> tuple[float, dict[str, float], Any]:
         """Fanno mass flow m_calc and d(m_calc)/d(node unknowns) (#481).
 
@@ -11570,9 +11571,22 @@ class ChannelElement(NetworkElement):
         The kernel differentiates along that basis and the gradient is
         projected back onto per-species keys, exact for every relay column.
         Standalone (unset): per species present, other fractions fixed.
+
+        At exactly equal end stagnation pressures (zero drive) the flow is 0
+        either way, but the two directions' one-sided slopes differ: each is
+        its own sub-floor cubic's h'(0) G0 / floor (#1209), and G0 differs
+        where one exit keeps its head and the other loses it (1.5412e-5
+        forward into a plenum, 1.5286e-5 reversed into a static-coupled
+        boundary, on a 1 m, 1 cm duct at 1 bar). The partials there are the
+        mean of the two, the central slope -- what an orifice's
+        forward/reverse blend gives at its own zero drop (w = 1/2,
+        _pressure_blend). ``forward`` forces one direction.
         """
+        if forward is None:
+            if derivatives and state_in.Pt == state_out.Pt:
+                return self._zero_drive_flow(state_in, state_out, f_mult)
+            forward = state_in.Pt >= state_out.Pt
         A = self.area
-        forward = state_in.Pt >= state_out.Pt
         src, dst = (state_in, state_out) if forward else (state_out, state_in)
         src_id, dst_id = (
             (self.from_node, self.to_node) if forward else (self.to_node, self.from_node)
@@ -11659,6 +11673,19 @@ class ChannelElement(NetworkElement):
                 if gk != 0.0:
                     derivs[f"{src_id}.Y[{k}]"] = sign * A * gk
         return sign * A * flow.G, derivs, flow
+
+    def _zero_drive_flow(
+        self, state_in: NetworkMixtureState, state_out: NetworkMixtureState, f_mult: float
+    ) -> tuple[float, dict[str, float], Any]:
+        """_compressible_flow at exactly zero drive: no flow, and the mean of
+        the forward and reverse kernels' one-sided partials (#1209). The
+        reverse call runs second, so the warm starts it leaves are those of a
+        reversed duct at zero flow: the same as the forward one's."""
+        m_f, d_f, flow = self._compressible_flow(state_in, state_out, f_mult, forward=True)
+        m_r, d_r, _ = self._compressible_flow(state_in, state_out, f_mult, forward=False)
+        # dict.fromkeys keeps the key order deterministic (see _flow_and_partials).
+        derivs = {k: 0.5 * (d_f.get(k, 0.0) + d_r.get(k, 0.0)) for k in dict.fromkeys([*d_f, *d_r])}
+        return 0.5 * (m_f + m_r), derivs, flow
 
     def choked_discharge_into(
         self, nid: str, state_in: NetworkMixtureState, state_out: NetworkMixtureState

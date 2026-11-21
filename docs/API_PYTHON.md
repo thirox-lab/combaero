@@ -2622,6 +2622,11 @@ lumped = OrificeElement("lumped", "node1", "node2", Cd=0.8, diameter=0.05, corre
 # beta, Cv) and orifice_iso5167_residuals_and_jacobian(..., beta) return an
 # OrificeModelResult: OrificeResult's columns plus d_mdot_dCd, Ci, contraction,
 # expansibility, choked, in_range.
+# Zero-drive floor (#1256): below 1e-3 Pa of drive the compressible orifice
+# kernels (nozzle, Jobson) take the flow at 1e-3 Pa times a C1 odd cubic in
+# drive / 1e-3 Pa, so every orifice-family row (holes, film, effusion,
+# impingement, effective-area connections) keeps a finite slope at zero drop;
+# from 1e-3 Pa up the law is unchanged.
 sharp = OrificeElement("sharp", "node1", "node2", diameter=0.01, compressible_model="jobson1955", Cv=0.982)
 channel = ChannelElement("channel", "node2", "node3", length=2.0, diameter=0.05, roughness=1e-4, regime="compressible")
 # Compressible channel (#481): residual m - m_calc, m_calc = A * fanno_channel_flow(
@@ -2629,7 +2634,9 @@ channel = ChannelElement("channel", "node2", "node3", length=2.0, diameter=0.05,
 # node the flow comes FROM (reversed flow: the to_node), discharges with its exit
 # head lost into a PressureBoundary (coupling "static"/default) or recovered into
 # anything else, and its flow SATURATES at the choked flow -- a choked duct
-# converges on its choked flow, never past it. Diagnostics: "choked",
+# converges on its choked flow, never past it. At exactly equal end Pt (zero
+# drive) the flow is 0 and its partials are the mean of the forward and reverse
+# sub-floor slopes (#1209). Diagnostics: "choked",
 # "M_in_duct", "M_exit_duct". Where the feeding node mixes gases, its Jacobian
 # carries d/dY along the directions that composition moves in (#489).
 # On a ThermalWall (#551) the duct carries its heat in the momentum

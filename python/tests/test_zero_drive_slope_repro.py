@@ -1,10 +1,11 @@
-"""Zero-drive slopes: strict xfails pinned to #1193, #1256 and #1209.
+"""Zero-drive slopes, fixed for #1193, #1256 and #1209.
 
-A row whose drive is exactly zero gets no slope in its drive's pressures:
+A row whose drive was exactly zero got no slope in its drive's pressures:
 an orifice at dp = 0 (#1256, the trigger of #1193's chaotic Brayton start)
-and a compressible duct at zero Fanno drive (#1209). Each test fails on main
-today; the fix of its partial (or, for #1193, of the start guess) flips it to
-XPASS, and the fix PR removes the mark and carries its Fixes lines.
+and a compressible duct at zero Fanno drive (#1209). Below kJetDriveFloor
+(1e-3 Pa, flow_drive_floor.h) the jet kernels are now the floor's flow times a
+C1 odd cubic with a finite slope at zero, and the Fanno kernels return their
+sub-floor cubic's slope at exactly zero drive.
 """
 
 from __future__ import annotations
@@ -36,12 +37,12 @@ def _fresh(net: FlowNetwork) -> NetworkSolver:
 
 
 # ---------------------------------------------------------------------------
-# #1193 / #1256: the Brayton cold solve is chaotic in its start. Its start puts
+# #1193 / #1256: the Brayton cold solve was chaotic in its start. Its start puts
 # c_in and t_out at exactly the boundaries' Pt, where both orifice rows'
-# pressure partials are 0 (|dp| < ~1.5e-10 Pa) or a round-off staircase
-# (to ~2e-9 Pa), so J at x0 jumps between 0 and -22 on a 1e-10 Pa change.
+# pressure partials were 0 (|dp| < ~1.5e-10 Pa) or a round-off staircase
+# (to ~2e-9 Pa), so J at x0 jumped between 0 and -22 on a 1e-10 Pa change.
 # An FD Jacobian at the J requests within 1e-3 Pa of that point alone
-# converges 40/40 seeds (analytic 35/40) and 14/14 offsets (analytic 10/14).
+# converged 40/40 seeds (analytic 35/40) and 14/14 offsets (analytic 10/14).
 # ---------------------------------------------------------------------------
 
 
@@ -60,21 +61,15 @@ def _brayton_solver(offset: float, unknown: str = "t_out.Pt") -> NetworkSolver:
     return s
 
 
-# Not strict: the outcome is chaotic in the start, and -3e-10 converges on CI's
-# Linux x86_64 while it fails on macOS arm64. The strict pin of #1193/#1256 is
-# the orifice-slope test below, which does not depend on where the solve lands.
-@pytest.mark.xfail(
-    strict=False,
-    reason="#1193 (#1256): J at a zero-drop orifice start is 0; borderline, platform-dependent",
-)
 @pytest.mark.parametrize(
     "offset",
     [-3e-10, pytest.param(3e-10, marks=pytest.mark.slow)],  # 3.5 s: its false root
 )
 def test_1193_brayton_converges_from_a_sub_nanopascal_start_offset(offset: float) -> None:
-    """t_out.Pt moved 3e-10 Pa off the exit's Pt: the cold solve ends on a
-    false root (|F| 51.8) today; an FD Jacobian at the zero-drop requests
-    alone converges it (40/40 seeds at 1e-14 relative, against 35/40)."""
+    """t_out.Pt moved 3e-10 Pa off the exit's Pt: the cold solve ended on a
+    false root (|F| 51.8) before #1256 on macOS arm64; an FD Jacobian at the
+    zero-drop requests alone converged it (40/40 seeds at 1e-14 relative,
+    against 35/40). The sub-floor cubic gives the rows that slope."""
     s = _brayton_solver(offset)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -82,14 +77,10 @@ def test_1193_brayton_converges_from_a_sub_nanopascal_start_offset(offset: float
     assert r["__success__"], r["__message__"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#1256 (#1193): orifice rows have no pressure slope at dp = 0"
-)
 def test_1193_orifice_rows_keep_a_pressure_slope_at_the_zero_drop_start() -> None:
-    """At x0 every orifice row's partials on its node's P and Pt are exactly
-    0 (true one-sided slope: unbounded, ~K / sqrt(dp)). Whatever finite
-    convention a fix picks, the row must not be blind to its drive there.
-    (A start-guess fix that gives the node a finite drop flips it too.)"""
+    """At x0 every orifice row's partials on its node's P and Pt were exactly
+    0 (true one-sided slope: unbounded, ~K / sqrt(dp)). The sub-floor cubic
+    gives them its finite slope; the row is not blind to its drive there."""
     from test_turbomachine_elements_893 import _brayton
 
     s = _fresh(_brayton())
@@ -105,8 +96,11 @@ def test_1193_orifice_rows_keep_a_pressure_slope_at_the_zero_drop_start() -> Non
 
 
 # ---------------------------------------------------------------------------
-# #1209: a compressible duct at exactly zero drive has dG/dPt = 0; the flux
-# is a C1 odd cubic there, central FD 1.53487e-5 kg/(s Pa) for h 1e-2..1e-5.
+# #1209: a compressible duct at exactly zero drive had dG/dPt = 0; the flux
+# is a C1 odd cubic per direction there, central FD 1.53487e-5 kg/(s Pa) for
+# h 1e-2..1e-5: the mean of the forward (1.54119e-5, into the plenum, exit
+# head kept) and reverse (1.52856e-5, into the static-coupled boundary)
+# one-sided slopes, which ChannelElement takes at exactly zero drive.
 # ---------------------------------------------------------------------------
 
 
@@ -134,7 +128,6 @@ def _zero_drive_net(kind: str) -> FlowNetwork:
     return g
 
 
-@pytest.mark.xfail(strict=True, reason="#1209: fanno_channel_flow returns dG = 0 at drive 0")
 @pytest.mark.parametrize("kind", ["channel", "crossflow_segment"])
 def test_1209_duct_flow_row_has_its_sub_floor_slope_at_zero_drive(kind: str) -> None:
     s = _fresh(_zero_drive_net(kind))

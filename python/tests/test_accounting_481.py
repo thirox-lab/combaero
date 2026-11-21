@@ -300,7 +300,9 @@ def test_a_flowing_heated_node_reports_exactly_none_withheld(m: float, Q: float)
 def test_a_fraction_boundary_with_no_flow_reports_none_applied() -> None:
     """No flow for the fraction to be a fraction of: Q_fraction is 0.0, not
     absent. (A dead branch off a flowing node is no test: it carries ~1e-22
-    kg/s, not none, so the flowing branch is taken.)"""
+    kg/s, not none, so the flowing branch is taken.) The orifices' rows have a
+    finite slope at zero drop since #1256, so the linear solve lands on zero
+    flow to round-off (~1e-30 kg/s), not on an exact 0."""
     g = FlowNetwork()
     g.add_node(MassFlowBoundary("src", m_dot=0.0, Tt=600.0, Y=Y_AIR))
     g.add_node(_pb("out", 1e5, 300.0))
@@ -312,8 +314,9 @@ def test_a_fraction_boundary_with_no_flow_reports_none_applied() -> None:
     s = NetworkSolver(g)
     r = s.solve()
     assert r["__success__"]
-    assert r["e1.m_dot"] == 0.0
-    assert r["p.Q_fraction"] == 0.0
+    assert abs(r["e1.m_dot"]) < 1e-25
+    assert r["p.Q_fraction"] is not None
+    assert abs(r["p.Q_fraction"]) < 1e-20
 
 
 @pytest.mark.parametrize("m", [0.0, 1e-9, 3e-7, 8e-7, 1e-6, 1e-4, -5e-7, -1e-4])

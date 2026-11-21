@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "flow_drive_floor.h"
+
 namespace combaero {
 
 // Fanno flow integrated in Mach number.
@@ -119,7 +121,8 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 // Below kFannoFlowDriveFloor of drive (Pt0 - P_target) the flux law, whose
 // slope is infinite at zero drive, is blended C1 into an odd cubic through
 // zero that matches its value and slope at the floor; at or below zero drive the flux is 0 (the caller reverses
-// the duct for reversed flow). M_in and M_exit are the flow's at G there too
+// the duct for reversed flow), and at exactly zero drive its partials are the
+// cubic's slope there, h'(0) G0 / floor (#1209). M_in and M_exit are the flow's at G there too
 // (#1017): M_in from the isentropic inlet at G, M_exit at the floor's
 // exit-to-inlet ratio. M_exit_root is the exit Mach of the root actually
 // solved -- the floor's below it, M_exit otherwise -- the warm start to pass
@@ -141,7 +144,8 @@ struct FannoChannelFlow {
   std::vector<double> dG_ddir;
 };
 
-// Drive [Pa] below which the flux is blended to a finite slope at zero.
+// Drive [Pa] below which the flux is blended to a finite slope at zero (the
+// cubic of flow_drive_floor.h).
 constexpr double kFannoFlowDriveFloor = 1.0;
 
 FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<double>& X,
