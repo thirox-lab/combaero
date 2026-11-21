@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "composition.h"
