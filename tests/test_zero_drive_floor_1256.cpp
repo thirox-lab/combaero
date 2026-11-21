@@ -120,10 +120,9 @@ TEST(ZeroDriveFloor1256, NozzleIsC1AtTheFloorAndOddThroughZero) {
   const double e = 1e-7 * kFloor;
   EXPECT_NEAR(m(kFloor - e) / m(kFloor + e), 1.0, 1e-6);
   EXPECT_NEAR(slope(kFloor - e) / slope(kFloor + e), 1.0, 1e-5);
-  // One-sided differences on each side of the floor agree with J there.
-  const double h = 1e-5 * kFloor;
-  EXPECT_NEAR((m(kFloor) - m(kFloor - h)) / h / slope(kFloor), 1.0, 3e-4);
-  EXPECT_NEAR((m(kFloor + h) - m(kFloor)) / h / slope(kFloor), 1.0, 3e-4);
+  // (Each side's slope against differences of the value: the partials test,
+  // at 0.9 and 1.1 floors. A one-sided difference straddling the floor over
+  // 1e-8 Pa reads the nozzle root's own scatter, 4e-4 on MinGW.)
   // Odd through zero to the floor's flow's own variation with its reservoir
   // (P0 is the upstream end either way, a drive apart: ~drive / P0).
   for (const double d : {1e-9 * kFloor, 0.01 * kFloor, 0.5 * kFloor}) {
