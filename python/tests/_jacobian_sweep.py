@@ -1602,54 +1602,6 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
             "walled_combustor", "OrificeElement 'x_h2'", "mdot", "ss0.m_dot", "exact_zero", 1e-05
         ),  # 4.79e-06
     ),
-    "#1245": (
-        Hit(
-            "bleed_station", "CrossflowSegmentElement 's0'", "mdot", "s0.m_dot", "exact_zero", 2e-05
-        ),  # 6.02e-06
-        Hit(
-            "bleed_station", "CrossflowSegmentElement 's1'", "mdot", "s0.m_dot", "exact_zero", 2e-04
-        ),  # 8.44e-05
-        Hit("ejector", "node 'mo'", "p", "cp.m_dot", "exact_zero", 3e-03),  # 1.12e-03
-        Hit("ejector", "node 'mo'", "p", "cs.m_dot", "exact_zero", 5e-02),  # 2.10e-02
-        Hit(
-            "jet_chain", "CrossflowSegmentElement 's0'", "mdot", "s0.m_dot", "exact_zero", 5e-06
-        ),  # 2.41e-06
-        Hit(
-            "jet_chain", "CrossflowSegmentElement 's1'", "mdot", "h1.m_dot", "exact_zero", 3e-05
-        ),  # 1.05e-05
-        Hit(
-            "jet_chain", "CrossflowSegmentElement 's1'", "mdot", "s0.m_dot", "exact_zero", 8e-06
-        ),  # 3.68e-06
-        Hit(
-            "jet_chain", "CrossflowSegmentElement 's2'", "mdot", "s0.m_dot", "exact_zero", 2e-03
-        ),  # 6.02e-04
-        Hit(
-            "legacy_tee", "TeeJunctionElement 'tee'", "p", "ls.m_dot", "exact_zero", 2e-03
-        ),  # 7.28e-04
-        Hit("legacy_tee", "node 'ps'", "p", "ls.m_dot", "exact_zero", 8e-06),  # 3.60e-06
-        Hit("legacy_tee", "node 'ps'", "p", "ss0.m_dot", "exact_zero", 1e-05),  # 4.80e-06
-        Hit(
-            "legacy_tee_ports", "TeeJunctionElement 'tee'", "p", "lb.m_dot", "exact_zero", 3e-05
-        ),  # 1.06e-05
-        Hit(
-            "legacy_tee_ports", "TeeJunctionElement 'tee'", "p", "ls.m_dot", "exact_zero", 2e-05
-        ),  # 5.87e-06
-        Hit("legacy_tee_ports", "node 'pc'", "p", "ss0.m_dot", "exact_zero", 2e-04),  # 9.89e-05
-        Hit("legacy_tee_ports", "node 'ps'", "p", "ss0.m_dot", "exact_zero", 1e-05),  # 4.86e-06
-        Hit("port_discharge", "node 'c'", "p", "l.m_dot", "exact_zero", 4e-05),  # 1.59e-05
-        Hit("port_discharge", "node 'c'", "p", "ss0.m_dot", "exact_zero", 4e-06),  # 1.98e-06
-        Hit(
-            "tee3", "ConstantKTeeElement 'jct'", "p", "arm0.m_dot", "exact_zero", 2e-03
-        ),  # 9.23e-04
-        Hit(
-            "tee3", "ConstantKTeeElement 'jct'", "p", "arm1.m_dot", "exact_zero", 7e-05
-        ),  # 3.40e-05
-        Hit("tee3", "node 'pc'", "p", "arm0.m_dot", "exact_zero", 2e-05),  # 5.87e-06
-        Hit("tee3", "node 'pc'", "p", "arm1.m_dot", "exact_zero", 4e-05),  # 1.82e-05
-        Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "cold.m_dot", "exact_zero", 8e-02
-        ),  # 4.00e-02
-    ),
     "#1246": (
         Hit("ejector", "EjectorElement 'ej'", "mdot", "co.m_dot", "signs", 3e-02),  # 1.07e-02
     ),
@@ -1668,8 +1620,6 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
         ),  # 1.00e+00
     ),
     "#1255": (
-        Hit("ejector", "node 'mo'", "p", "cp.m_dot", "element_near_zero", 4e-06),  # 1.61e-06
-        Hit("ejector", "node 'mo'", "p", "cs.m_dot", "element_near_zero", 5e-06),  # 2.10e-06
         Hit("ejector", "node 'ms'", "p", "ms.P", "signs", 5e-06),  # 2.20e-06
     ),
     "#1252": (
@@ -1765,17 +1715,6 @@ OPEN: tuple[Open, ...] = (
         ),
         Case("combustor", 1, 0, 0),
         "a_in flows 3e-05",
-    ),
-    Open(
-        "#1245",
-        "J at a boundary-fed flow of exactly 0 matches neither one-sided difference",
-        (
-            Hit("legacy_tee_ports", "node 'ps'", "p", "lc.m_dot", "exact_zero", 3e-3),
-            Hit("legacy_tee_ports", "node 'pb'", "p", "lc.m_dot", "exact_zero", 2e-3),
-            Hit("port_discharge", "node 'c'", "p", "l.m_dot", "exact_zero", 5e-6),
-        ),
-        Case("legacy_tee_ports", 2, 2, 1),
-        "lc.m_dot = 0",
     ),
     Open(
         "#1246",
@@ -1899,11 +1838,14 @@ OPEN: tuple[Open, ...] = (
     ),
     Open(
         "#1255",
-        "the ejector's chambers' rows on an inlet arm's flow at 3e-5 kg/s and on their own P "
-        "with a leg reversed",
+        # The outlet chamber's rows on an inlet arm's flow at 3e-5 kg/s were
+        # the incompressible closure's central difference in Y (#1245 made
+        # it analytic); the suction chamber's own-P column is left. The
+        # point also meets #1246 (the ejector's flow row).
+        "the ejector's suction chamber row on its own P with a leg reversed",
         (),
-        Case("ejector", 0, 2, 1),
-        "cs flows 3e-05",
+        Case("ejector", 1, 0, 0),
+        "ej pattern 110 ratio 3",
         strict=False,
     ),
 )

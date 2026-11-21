@@ -975,7 +975,13 @@ class ConvectiveSurface:
             or None if area=0. Access convective area via ``self.area``.
         """
 
-        if self.area == 0.0 or abs(velocity) < 1e-12:
+        # Defined at zero velocity too (the laminar limit): a stream at rest
+        # has a finite h and no capacity rate, so a wall passes it no heat,
+        # and the heat's flow slope there is the forward one, as the stream
+        # starts (#1245). A velocity gate here (|v| < 1e-12) dropped the
+        # wall's whole coupling at exactly zero flow: Q was 0 either way, but
+        # its flow partial was 0, matching neither side.
+        if self.area == 0.0:
             return None
         self._flow_area = flow_area
 

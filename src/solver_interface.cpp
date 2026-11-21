@@ -1700,32 +1700,17 @@ MomentumChamberResult momentum_chamber_residual_and_jacobian(
     res.drho_dP = rho / P;
     res.drho_dT = -rho / Tt;
     res.drho_dmdot = 0.0;
-    // Y moves R alone here: q ~ R and rho ~ 1 / R, by a central difference
-    // on R as the compressible branch does on its full closure.
+    // Y moves R alone here: q ~ R and rho ~ 1 / R, with dR/dY analytic
+    // (specific_gas_constant_dY). Every species carries its partial, an
+    // absent one included: a stream arriving at zero flow brings it, and the
+    // relay moves it there (#1245).
     res.d_res_dY.assign(Y.size(), 0.0);
     res.drho_dY.assign(Y.size(), 0.0);
     if (sum_Y >= eps) {
-      const double hY = 1e-4 * sum_Y;
-      auto R_at = [&](const std::vector<double> &Y_probe) {
-        return combaero::specific_gas_constant(
-            combaero::mass_to_mole(combaero::normalize_fractions(Y_probe)));
-      };
+      const std::vector<double> dR = combaero::specific_gas_constant_dY(X);
       for (std::size_t k = 0; k < Y.size(); ++k) {
-        if (!(Y[k] > 0.0)) {
-          continue;
-        }
-        std::vector<double> Y_p = Y;
-        Y_p[k] += hY;
-        double dR = 0.0;
-        if (Y[k] > hY) {
-          std::vector<double> Y_m = Y;
-          Y_m[k] -= hY;
-          dR = (R_at(Y_p) - R_at(Y_m)) / (2.0 * hY);
-        } else {
-          dR = (R_at(Y_p) - R_gas) / hY;
-        }
-        res.d_res_dY[k] = -q / R_gas * dR;
-        res.drho_dY[k] = -rho / R_gas * dR;
+        res.d_res_dY[k] = -q / R_gas * dR[k];
+        res.drho_dY[k] = -rho / R_gas * dR[k];
       }
     }
     return res;
@@ -1824,12 +1809,11 @@ MomentumChamberResult momentum_chamber_residual_and_jacobian(
     res.d_res_dY = combaero::mole_gradient_to_mass(X, g_res);
     res.drho_dY = combaero::mole_gradient_to_mass(X, g_rho);
     res.dT_static_dY = combaero::mole_gradient_to_mass(X, cx.dT_dX);
-    // The relay never moves a species absent at the node; keep those zero.
-    for (std::size_t k = 0; k < Y.size(); ++k) {
-      if (!(Y[k] > 0.0)) {
-        res.d_res_dY[k] = res.drho_dY[k] = res.dT_static_dY[k] = 0.0;
-      }
-    }
+    // A species absent at the node keeps its partial: a stream arriving at
+    // exactly zero flow is in the mix with weight 0 and the relay moves its
+    // species there, as it enters (#1245). Zeroing them gave J a hybrid of
+    // the two sides: the arriving side's T and present species, no absent
+    // ones (1.3e-3 scaled on a tee's port chamber).
   }
 
   return res;

@@ -712,8 +712,8 @@ struct MomentumChamberResult {
   double d_res_dT;
   // Composition sensitivity, per species mass fraction (Y is normalised
   // inside, so any mass-conserving direction of the relay is exact). Y
-  // enters through rho, a and s. Zero for species absent at the node: no
-  // stream carries them, so the relay never moves them.
+  // enters through rho, a and s. A species absent at the node keeps its
+  // partial: a stream arriving at exactly zero flow brings it (#1245).
   std::vector<double> d_res_dY;
   // The static state the closure solved for (#576): static T [K] and Mach
   // number [-] from (Tt, P, |m_dot| / A). Reporting reads these so the Mach
@@ -727,7 +727,7 @@ struct MomentumChamberResult {
   double dT_static_dT = 0.0; // d/dTt
   double dT_static_dmdot = 0.0;
   // ... and w.r.t. the mass fractions (#743), per species; zero in the
-  // incompressible limit and for species absent at the node.
+  // incompressible limit.
   std::vector<double> dT_static_dY;
   // Static density rho(T_static, P) and its sensitivities to the closure's
   // inputs, for elements that read the chamber as a port (junction kernels):
