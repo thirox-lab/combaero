@@ -16,7 +16,9 @@ exclusion rules.
 
 The metric is falsified on its own: a dropped or halved entry, a spurious
 entry where the true partial is 0, a bug only an equilibrium combustor has,
-and a wrong entry at an exact zero are each a mismatch no open issue covers.
+a wrong entry at an exact zero, and one confined to tiny flows (round-off
+bound at 1e-9 kg/s, caught at the always-kept 3e-5 kg/s point) are each a
+mismatch no open issue covers.
 
 The open reproducers on a Fanno network (over a second each) carry the
 ``slow`` mark; the rest of the module runs in about two seconds.
@@ -111,6 +113,19 @@ def test_a_spurious_entry_is_a_mismatch(size: float) -> None:
     [f] = rep.mismatches()
     assert (f.element, f.column) == ("TeeJunctionElement 'tee'", "ps.Pt")
     assert f.error == pytest.approx(size, rel=1e-3) and open_issue(f) is None
+
+
+@pytest.mark.parametrize("factor", [2.0, -1.0])
+def test_a_bug_confined_to_tiny_flows_is_caught_at_the_kept_small_flow(factor: float) -> None:
+    """At 1e-9 kg/s the tee's own column is round-off bound, so an error
+    there hides; the always-kept point at 3e-5 kg/s resolves it."""
+    rep = _check(
+        Case("legacy_tee", 0, 3, 2),
+        "tee flows 3e-05",
+        perturb_J=_scale_entry("TeeJunctionElement 'tee'", "tee.m_dot_com", factor),
+    )
+    new = [f for f in rep.mismatches() if open_issue(f) is None]
+    assert [(f.element, f.column) for f in new] == [("TeeJunctionElement 'tee'", "tee.m_dot_com")]
 
 
 def _halve_orifice_rows(s: NetworkSolver, J: np.ndarray) -> None:

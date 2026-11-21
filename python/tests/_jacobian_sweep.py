@@ -178,7 +178,8 @@ TOL = 1e-6
 #: from the heat floor kMixerHeatMdotFloor (1e-6, a C1 joint).
 NEAR_ZERO_IN_BAND = 1e-13
 NEAR_ZERO_OUT_BAND = 1e-9
-#: One element's flows near zero: outside the band, and a small real flow.
+#: One element's flows near zero: outside the band, and a small real flow
+#: (1e-6 .. 3e-5 kg/s: FD resolves it; its positive point is always kept).
 ELEMENT_NEAR_ZERO = (1e-9, 3e-5)
 #: Magnitude ratios on an element's last leg with its sign patterns: a tee's
 #: straight run is m_com - m_branch, reversed only when the branch outweighs
@@ -719,7 +720,12 @@ def points(s: NetworkSolver, seed: int, max_points: int | None = MAX_POINTS) -> 
                     # Distinct magnitudes keep a derived leg (a tee's
                     # straight run) off zero.
                     x[j] = sgn * mag * (1.0 + 0.37 * q)
-                optional.append(Point("element_near_zero", f"{eid} flows {sgn * mag:g}", x))
+                pt = Point("element_near_zero", f"{eid} flows {sgn * mag:g}", x)
+                # A small real flow is always kept: at 1e-9 kg/s a column
+                # scaled by its start value is round-off bound and hides
+                # any error; at ELEMENT_NEAR_ZERO[1] FD resolves, so a bug
+                # confined to tiny flows is checked there.
+                (kept if (mag, sgn) == (ELEMENT_NEAR_ZERO[1], 1.0) else optional).append(pt)
     node_cols = _node_flow_cols(s)
     mixing = {n for n, c in node_cols.items() if len(c) >= 2}
     interior = set(_interior(net))
@@ -1092,6 +1098,9 @@ class Finding:
     message: str = ""
     #: The network's classes, and "equilibrium" when a combustor runs it.
     tags: list[str] = field(default_factory=list)
+    #: The analytic J_ij at the entry (``column``): a scaled error saturates
+    #: near 1 once J dominates its row, J itself does not.
+    j_value: float = math.nan
 
 
 @dataclass
@@ -1190,8 +1199,24 @@ def _record_coverage(rep: Report, s: NetworkSolver, x: np.ndarray, x0: np.ndarra
 
 def _in_band(s: NetworkSolver, x: np.ndarray) -> bool:
     """Whether an interior node's arriving flow (all of its flow when none
-    arrives, as the mixer weighs it) is inside the mixer band."""
-    for nid in _interior(s.network):
+    arrives, as the mixer weighs it) is inside the mixer band. A node whose
+    adjacent elements all carry their own flow unknowns, every one inside
+    the band, is in it too, whatever ``_node_inflows`` lists (a splitter
+    outlet's own leg is not listed)."""
+    node_cols = _node_flow_cols(s)
+    own = _own_flow_cols(s)
+    net = s.network
+    for nid in _interior(net):
+        cols = node_cols.get(nid, [])
+        adj = net.get_upstream_elements(nid) + net.get_downstream_elements(nid)
+        # Only where every adjacent element's flow is its own unknown: a
+        # junction port's flow is the junction's other arms'.
+        if (
+            cols
+            and all(e.id in own for e in adj)
+            and sum(abs(x[j]) for j in cols) <= MIXER_NO_FLOW_BAND
+        ):
+            return True
         try:
             flows = [m for m, _, _ in s._node_inflows(nid, x)]
         except Exception:  # noqa: BLE001
@@ -1234,6 +1259,7 @@ def _findings(
             rep.exclude(verdict)
         owner, rk = kinds[i]
         f = Finding(case.label(), pt.desc, pt.kind, verdict, owner, rk, names[j], e, est, tags=tags)
+        f.j_value = float(J[i, j])
         if verdict == "mismatch":
             f.message = message
         key = (owner, verdict)
@@ -1431,16 +1457,29 @@ class Hit:
     column: str
     kind: str
     cap: float
+    #: The case label, where the family's draws differ (random's seeds and
+    #: variants are different networks with the same element ids).
+    case: str | None = None
+    #: The measured analytic J_ij, matched within J_TOL, where the scaled
+    #: error saturates (an entry that dominates its row reads ~1 whether it
+    #: is 2x or 10x off).
+    j_value: float | None = None
 
     def covers(self, f: Finding) -> bool:
         return (
             f.case.split(":", 1)[0] == self.family
+            and (self.case is None or f.case == self.case)
             and f.element == self.element
             and f.row_kind == self.row_kind
             and f.column == self.column
             and f.kind == self.kind
             and f.error <= self.cap
+            and (self.j_value is None or abs(f.j_value / self.j_value - 1.0) <= J_TOL)
         )
+
+
+#: A Hit's J_ij match, relative.
+J_TOL = 0.25
 
 
 @dataclass(frozen=True)
@@ -1459,7 +1498,196 @@ class Open:
     slow: bool = False
 
     def covers(self, f: Finding) -> bool:
-        return any(h.covers(f) for h in self.hits)
+        return any(h.covers(f) for h in self.hits + FULL_HITS.get(self.issue, ()))
+
+
+#: Hits measured on main by the full sweep (the script: SEEDS x VARIANTS at
+#: MAX_POINTS) of the families it runs in reasonable time (legacy_tee,
+#: legacy_tee_ports, splitter, film, machine, port_discharge, tee3,
+#: combustor, walled_combustor, series, pin_fin, bleed_station, jet_chain,
+#: ejector), beside each issue's own; the rest (random, hotcold,
+#: hotcold_mild, ideal_nport, impingement, impingement_bypass, effusion,
+#: fuel_controller) take hours there.
+FULL_HITS: dict[str, tuple[Hit, ...]] = {
+    "#1244": (
+        Hit(
+            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "element_near_zero", 8e-03
+        ),  # 3.60e-03
+        Hit(
+            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "node_near_zero", 3e-03
+        ),  # 1.29e-03
+        Hit(
+            "combustor", "OrificeElement 'exit'", "mdot", "exit.m_dot", "element_near_zero", 7e-05
+        ),  # 3.03e-05
+        Hit(
+            "walled_combustor",
+            "ChannelElement 'hot'",
+            "p",
+            "a_in.m_dot",
+            "element_near_zero",
+            5e-05,
+        ),  # 2.08e-05
+        Hit(
+            "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "perturb", 5e-06
+        ),  # 2.22e-06
+        Hit(
+            "walled_combustor",
+            "OrificeElement 'x_c2'",
+            "mdot",
+            "a_in.m_dot",
+            "element_near_zero",
+            1e-04,
+        ),  # 4.80e-05
+        Hit(
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "perturb", 6e-06
+        ),  # 2.76e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "signs", 4e-06
+        ),  # 1.57e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "x0", 4e-06
+        ),  # 1.57e-06
+        Hit(
+            "walled_combustor",
+            "OrificeElement 'x_c2'",
+            "mdot",
+            "ss0.m_dot",
+            "element_near_zero",
+            4e-06,
+        ),  # 1.81e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "ss0.m_dot", "exact_zero", 3e-06
+        ),  # 1.42e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "ss0.m_dot", "signs", 3e-06
+        ),  # 1.42e-06
+        Hit(
+            "walled_combustor",
+            "OrificeElement 'x_h2'",
+            "mdot",
+            "a_in.m_dot",
+            "element_near_zero",
+            2e-04,
+        ),  # 5.02e-05
+        Hit(
+            "walled_combustor",
+            "OrificeElement 'x_h2'",
+            "mdot",
+            "a_in.m_dot",
+            "node_near_zero",
+            3e-03,
+        ),  # 1.12e-03
+        Hit(
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "perturb", 2e-05
+        ),  # 8.24e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "signs", 9e-06
+        ),  # 4.35e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "x0", 9e-06
+        ),  # 4.04e-06
+        Hit(
+            "walled_combustor",
+            "OrificeElement 'x_h2'",
+            "mdot",
+            "ss0.m_dot",
+            "element_near_zero",
+            1e-05,
+        ),  # 4.85e-06
+        Hit(
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "ss0.m_dot", "exact_zero", 1e-05
+        ),  # 4.79e-06
+    ),
+    "#1245": (
+        Hit(
+            "bleed_station", "CrossflowSegmentElement 's0'", "mdot", "s0.m_dot", "exact_zero", 2e-05
+        ),  # 6.02e-06
+        Hit(
+            "bleed_station", "CrossflowSegmentElement 's1'", "mdot", "s0.m_dot", "exact_zero", 2e-04
+        ),  # 8.44e-05
+        Hit("ejector", "node 'mo'", "p", "cp.m_dot", "exact_zero", 3e-03),  # 1.12e-03
+        Hit("ejector", "node 'mo'", "p", "cs.m_dot", "exact_zero", 5e-02),  # 2.10e-02
+        Hit(
+            "jet_chain", "CrossflowSegmentElement 's0'", "mdot", "s0.m_dot", "exact_zero", 5e-06
+        ),  # 2.41e-06
+        Hit(
+            "jet_chain", "CrossflowSegmentElement 's1'", "mdot", "h1.m_dot", "exact_zero", 3e-05
+        ),  # 1.05e-05
+        Hit(
+            "jet_chain", "CrossflowSegmentElement 's1'", "mdot", "s0.m_dot", "exact_zero", 8e-06
+        ),  # 3.68e-06
+        Hit(
+            "jet_chain", "CrossflowSegmentElement 's2'", "mdot", "s0.m_dot", "exact_zero", 2e-03
+        ),  # 6.02e-04
+        Hit(
+            "legacy_tee", "TeeJunctionElement 'tee'", "p", "ls.m_dot", "exact_zero", 2e-03
+        ),  # 7.28e-04
+        Hit("legacy_tee", "node 'ps'", "p", "ls.m_dot", "exact_zero", 8e-06),  # 3.60e-06
+        Hit("legacy_tee", "node 'ps'", "p", "ss0.m_dot", "exact_zero", 1e-05),  # 4.80e-06
+        Hit(
+            "legacy_tee_ports", "TeeJunctionElement 'tee'", "p", "lb.m_dot", "exact_zero", 3e-05
+        ),  # 1.06e-05
+        Hit(
+            "legacy_tee_ports", "TeeJunctionElement 'tee'", "p", "ls.m_dot", "exact_zero", 2e-05
+        ),  # 5.87e-06
+        Hit("legacy_tee_ports", "node 'pc'", "p", "ss0.m_dot", "exact_zero", 2e-04),  # 9.89e-05
+        Hit("legacy_tee_ports", "node 'ps'", "p", "ss0.m_dot", "exact_zero", 1e-05),  # 4.86e-06
+        Hit("port_discharge", "node 'c'", "p", "l.m_dot", "exact_zero", 4e-05),  # 1.59e-05
+        Hit("port_discharge", "node 'c'", "p", "ss0.m_dot", "exact_zero", 4e-06),  # 1.98e-06
+        Hit(
+            "tee3", "ConstantKTeeElement 'jct'", "p", "arm0.m_dot", "exact_zero", 2e-03
+        ),  # 9.23e-04
+        Hit(
+            "tee3", "ConstantKTeeElement 'jct'", "p", "arm1.m_dot", "exact_zero", 7e-05
+        ),  # 3.40e-05
+        Hit("tee3", "node 'pc'", "p", "arm0.m_dot", "exact_zero", 2e-05),  # 5.87e-06
+        Hit("tee3", "node 'pc'", "p", "arm1.m_dot", "exact_zero", 4e-05),  # 1.82e-05
+        Hit(
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "cold.m_dot", "exact_zero", 8e-02
+        ),  # 4.00e-02
+    ),
+    "#1246": (
+        Hit("ejector", "EjectorElement 'ej'", "mdot", "co.m_dot", "signs", 3e-02),  # 1.07e-02
+    ),
+    "#1251": (
+        Hit(
+            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "exact_zero", 8e-03
+        ),  # 3.60e-03
+        Hit(
+            "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "exact_zero", 2e-01
+        ),  # 9.59e-02
+        Hit(
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "exact_zero", 9e-01
+        ),  # 4.33e-01
+        Hit(
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 2e00
+        ),  # 1.00e+00
+    ),
+    "#ISSUE-EJECTOR-CHAMBERS": (
+        Hit("ejector", "node 'mo'", "p", "cp.m_dot", "element_near_zero", 4e-06),  # 1.61e-06
+        Hit("ejector", "node 'mo'", "p", "cs.m_dot", "element_near_zero", 5e-06),  # 2.10e-06
+        Hit("ejector", "node 'ms'", "p", "ms.P", "signs", 5e-06),  # 2.20e-06
+    ),
+    "#ISSUE-MPCE-ARM-ZERO": (
+        Hit(
+            "tee3", "MultiPortChamberElement 'jct'", "p", "arm0.m_dot", "element_near_zero", 2e00
+        ),  # 1.00e+00
+        Hit(
+            "tee3", "MultiPortChamberElement 'jct'", "p", "arm0.m_dot", "exact_zero", 2e00
+        ),  # 1.00e+00
+        Hit(
+            "tee3", "MultiPortChamberElement 'jct'", "p", "arm0.m_dot", "node_near_zero", 2e00
+        ),  # 1.00e+00
+    ),
+    "#ISSUE-PINFIN-WALL": (
+        Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "perturb", 8e-05),  # 3.51e-05
+        Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "signs", 5e-05),  # 2.22e-05
+        Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "x0", 4e-05),  # 1.66e-05
+    ),
+    "#ISSUE-SPLITTER-SIBLING": (
+        Hit("splitter", "ChannelElement 'a1'", "p", "a0.m_dot", "node_near_zero", 2e00),  # 1.00e+00
+    ),
+}
 
 
 _EXIT, _NOZZLE, _TT = "OrificeElement 'exit'", "OrificeElement 'nozzle'", "node 'fuel' Tt_target"
@@ -1485,10 +1713,51 @@ OPEN: tuple[Open, ...] = (
         "(complete combustion is clean at the same points)",
         (
             Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "element_near_zero", 1e-3),
-            Hit("random", "ChannelElement 'e14'", "p", "in2.Pt", "signs", 1e-3),
-            Hit("random", "ChannelElement 'e15'", "p", "in2.Pt", "signs", 1e-2),
-            Hit("random", "ChannelElement 'e16'", "p", "in2.Pt", "signs", 1e-2),
-            Hit("random", "OrificeElement 'e17'", "mdot", "in2.Pt", "signs", 1e-4),
+            Hit(
+                "random",
+                "ChannelElement 'e14'",
+                "p",
+                "in2.Pt",
+                "signs",
+                1e-3,
+                case="random:9/v3/s2",
+            ),
+            Hit(
+                "random",
+                "ChannelElement 'e15'",
+                "p",
+                "in2.Pt",
+                "signs",
+                1e-2,
+                case="random:9/v3/s2",
+            ),
+            Hit(
+                "random",
+                "ChannelElement 'e16'",
+                "p",
+                "in2.Pt",
+                "signs",
+                1e-2,
+                case="random:9/v3/s2",
+            ),
+            Hit(
+                "random",
+                "OrificeElement 'e17'",
+                "mdot",
+                "in2.Pt",
+                "signs",
+                1e-4,
+                case="random:9/v3/s2",
+            ),
+        )
+        + tuple(
+            Hit("random", el, rk, "in2.Pt", "element_near_zero", cap, case="random:9/v3/s2")
+            for el, rk, cap in (
+                ("ChannelElement 'e14'", "p", 1e-3),
+                ("ChannelElement 'e15'", "p", 1e-2),
+                ("ChannelElement 'e16'", "p", 1e-2),
+                ("OrificeElement 'e17'", "mdot", 1e-4),
+            )
         ),
         Case("combustor", 1, 0, 0),
         "a_in flows 3e-05",
@@ -1534,7 +1803,7 @@ OPEN: tuple[Open, ...] = (
                 2e-2,
             )
             for k in (1, 3)
-            for kind in ("x0", "perturb", "signs")
+            for kind in ("x0", "perturb", "signs", "element_near_zero")
         ),
         Case("impingement_bypass", 0, 1, 0),
         "start vector",
@@ -1545,7 +1814,17 @@ OPEN: tuple[Open, ...] = (
         "a wall-coupled high-Mach channel's flow row on its outlet chamber's Pt, one gas included",
         tuple(
             Hit("hotcold_mild", "ChannelElement 'cch'", "mdot", "cm.Pt", kind, 1e-5)
-            for kind in ("x0", "perturb", "signs", "node_near_zero")
+            for kind in ("x0", "perturb", "signs", "node_near_zero", "element_near_zero")
+        )
+        + (
+            Hit(
+                "hotcold_mild",
+                "ChannelElement 'cch'",
+                "mdot",
+                "cch.m_dot",
+                "element_near_zero",
+                3e-6,
+            ),
         ),
         Case("hotcold_mild", 0, 1, 0),
         "start vector",
@@ -1563,9 +1842,62 @@ OPEN: tuple[Open, ...] = (
         "#1251",
         "a combustor whose only oxidizer stream is at exactly zero flow (a fuel-only mix), "
         "complete and equilibrium: J -17.95 against FD 155.6 on combustor:2",
-        (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "exact_zero", 3.0),),
+        (
+            Hit(
+                "combustor",
+                _EXIT,
+                "mdot",
+                "a_in.m_dot",
+                "exact_zero",
+                1.1,
+                case="combustor:2/v0/s0",
+                j_value=-17.95,
+            ),
+            Hit(
+                "combustor",
+                _EXIT,
+                "mdot",
+                "a_in.m_dot",
+                "exact_zero",
+                3e-6,
+                case="combustor:0/v1/s0",
+            ),
+        ),
         Case("combustor", 2, 0, 0),
         "a_in.m_dot = 0",
+    ),
+    Open(
+        "#ISSUE-MPCE-ARM-ZERO",
+        "MultiPortChamberElement momentum row's partial on an arm's flow as that flow goes "
+        "to zero: J 1.7e11 at 1e-9 kg/s and 2.1e15 at 0, FD exactly 0",
+        (),
+        Case("tee3", 1, 0, 0),
+        "arm0 flows 1e-09",
+    ),
+    Open(
+        "#ISSUE-SPLITTER-SIBLING",
+        "a splitter outlet channel's row on a sibling outlet's flow, that outlet's node near "
+        "zero flow: J 1.85e12, FD exactly 0",
+        (),
+        Case("splitter", 0, 3, 2),
+        "o0 flows +-1e-09",
+    ),
+    Open(
+        "#ISSUE-PINFIN-WALL",
+        "a wall-coupled pin-fin channel's flow row on the other channel's flow, one gas, at "
+        "the start vector already",
+        (),
+        Case("pin_fin", 1, 0, 0),
+        "start vector",
+        slow=True,
+    ),
+    Open(
+        "#ISSUE-EJECTOR-CHAMBERS",
+        "the ejector's chambers' rows on an inlet arm's flow at 3e-5 kg/s and on their own P "
+        "with a leg reversed",
+        (),
+        Case("ejector", 0, 2, 1),
+        "cs flows 3e-05",
     ),
 )
 
