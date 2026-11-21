@@ -1560,7 +1560,7 @@ OPEN: tuple[Open, ...] = (
         slow=True,
     ),
     Open(
-        "#ISSUE-OXIDIZER-ZERO",
+        "#1251",
         "a combustor whose only oxidizer stream is at exactly zero flow (a fuel-only mix), "
         "complete and equilibrium: J -17.95 against FD 155.6 on combustor:2",
         (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "exact_zero", 3.0),),
