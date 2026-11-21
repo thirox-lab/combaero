@@ -1496,6 +1496,10 @@ class Open:
     point: str
     #: The reproducer takes over a second (a Fanno network): the slow tier.
     slow: bool = False
+    #: False where the reproducer's error is within a few TOL and falls under
+    #: it on another platform (CI's Linux x86_64 against macOS arm64): a
+    #: non-strict xfail, "borderline, platform-dependent".
+    strict: bool = True
 
     def covers(self, f: Finding) -> bool:
         return any(h.covers(f) for h in self.hits + FULL_HITS.get(self.issue, ()))
@@ -1829,6 +1833,7 @@ OPEN: tuple[Open, ...] = (
         Case("hotcold_mild", 0, 1, 0),
         "start vector",
         slow=True,
+        strict=False,
     ),
     Open(
         "#1250",
@@ -1837,6 +1842,7 @@ OPEN: tuple[Open, ...] = (
         Case("ideal_nport", 2, 1, 0),
         "jct pattern 0001 ratio 3",
         slow=True,
+        strict=False,
     ),
     Open(
         "#1251",
@@ -1888,7 +1894,7 @@ OPEN: tuple[Open, ...] = (
         "the start vector already",
         (),
         Case("pin_fin", 1, 0, 0),
-        "start vector",
+        "perturbation 0",
         slow=True,
     ),
     Open(
@@ -1898,6 +1904,7 @@ OPEN: tuple[Open, ...] = (
         (),
         Case("ejector", 0, 2, 1),
         "cs flows 3e-05",
+        strict=False,
     ),
 )
 

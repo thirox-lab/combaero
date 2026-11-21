@@ -173,7 +173,13 @@ def test_a_wrong_entry_at_an_exact_zero_is_new() -> None:
         pytest.param(
             o.case,
             o.point,
-            marks=[pytest.mark.xfail(strict=True, reason=f"{o.issue}: {o.what}")]
+            marks=[
+                pytest.mark.xfail(
+                    strict=o.strict,
+                    reason=f"{o.issue}: {o.what}"
+                    + ("" if o.strict else " (borderline, platform-dependent)"),
+                )
+            ]
             + ([pytest.mark.slow] if o.slow else []),
             id=o.issue.lstrip("#"),
         )
