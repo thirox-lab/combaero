@@ -6,6 +6,7 @@
 #include "../include/compressible.h"
 #include "../include/cooling_correlations.h"
 #include "../include/equilibrium.h"
+#include "../include/flow_drive_floor.h"
 #include "../include/friction.h"
 #include "../include/heat_transfer.h"
 #include "../include/input_validation.h"
@@ -1885,26 +1886,20 @@ std::vector<double> nozzle_mdot_dX(double mdot_fwd, double T0, double T,
   return out;
 }
 
-// orifice_compressible_mdot_and_jacobian, with the composition gradient of
-// its flow (nozzle_mdot_dX, unnormalised X) when dm_dX is given.
-std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
-    double Tt, double Pt, double P_back,
-    const std::vector<double>& X,
-    double Cd, double area, double beta, std::vector<double>* dm_dX) {
+// The isentropic nozzle's flow and partials in its forward frame (P_back <=
+// P0): mdot = A_eff G(P0, T0, P_back), with nozzle_flow's composition
+// gradient (nozzle_mdot_dX, unnormalised X) when dm_dX is given.
+struct NozzleForward {
+  double mdot = 0.0;
+  double dP0 = 0.0;
+  double dP_back = 0.0;
+  double dT0 = 0.0;
+};
 
-  // Compute effective area with velocity-of-approach factor
-  const double E = velocity_of_approach_factor(beta);
-  double A_eff = Cd * E * area;
-
-  // Handle reverse flow (P_back > Pt)
-  bool reverse_flow = (P_back > Pt);
-  double T0_fwd = Tt;  // Temperature same in both directions
-  double P0_fwd = reverse_flow ? P_back : Pt;
-  double P_back_fwd = reverse_flow ? Pt : P_back;
-
-  // Call nozzle_flow for forward direction
-  auto sol = combaero::nozzle_flow(T0_fwd, P0_fwd, P_back_fwd, A_eff, X);
-  double mdot = reverse_flow ? -sol.mdot : sol.mdot;
+NozzleForward nozzle_forward(double Tt, double P0_fwd, double P_back_fwd,
+                             const std::vector<double>& X, double A_eff,
+                             std::vector<double>* dm_dX) {
+  auto sol = combaero::nozzle_flow(Tt, P0_fwd, P_back_fwd, A_eff, X);
 
   // Compute Jacobians analytically using isentropic relations
   // G = rho * v = (P/RT) * sqrt(2*(h0 - h))
@@ -1948,10 +1943,67 @@ std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
     d_mdot_dT0_fwd = -sol.mdot / (2.0 * Tt);
   }
 
+  if (dm_dX != nullptr) {
+    // nozzle_flow evaluates at its floored stagnation state.
+    *dm_dX = nozzle_mdot_dX(sol.mdot, sol.stagnation.T, T_outlet, X);
+  }
+  return {sol.mdot, d_mdot_dP0_fwd, d_mdot_dP_back_fwd, d_mdot_dT0_fwd};
+}
+
+// orifice_compressible_mdot_and_jacobian, with the composition gradient of
+// its flow (nozzle_mdot_dX, unnormalised X) when dm_dX is given.
+std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
+    double Tt, double Pt, double P_back,
+    const std::vector<double>& X,
+    double Cd, double area, double beta, std::vector<double>* dm_dX) {
+
+  // Compute effective area with velocity-of-approach factor
+  const double E = velocity_of_approach_factor(beta);
+  double A_eff = Cd * E * area;
+
+  // Handle reverse flow (P_back > Pt)
+  bool reverse_flow = (P_back > Pt);
+  double T0_fwd = Tt;  // Temperature same in both directions
+  double P0_fwd = reverse_flow ? P_back : Pt;
+  double P_back_fwd = reverse_flow ? Pt : P_back;
+
+  // Below kJetDriveFloor of drive, the flow is the floor's times the odd
+  // cubic h(t), t = drive / floor (flow_drive_floor.h; #1256): the jet's
+  // sqrt(drive) has an infinite slope at zero, and nozzle_flow's 1 - PR is a
+  // round-off staircase near P0 (J flipped between 0 and -22 on a 1e-10 Pa
+  // change at 1 bar). The floor's flow G0 is at P_back = P0 - floor, and the
+  // cubic's exponent is the jet's, kJetFloorExponent = 1/2, a constant, so
+  //   dm/dPb = -G0 h'(t) / floor,
+  //   dm/dP0 =  G0 h'(t) / floor + h (dG0/dP0 + dG0/dPb),
+  //   dm/dT0 = h dG0/dT0, dm/dX = h dG0/dX
+  // are exact. The flow is continuous at the floor, but its slope steps
+  // there by the nozzle's own exponent's distance from 1/2: measured, 4e-7 at
+  // 1 bar and 6.1e-5 at 100 bar.
+  const double drive = P0_fwd - P_back_fwd;
+  const bool sub_floor = drive < kJetDriveFloor && P0_fwd > kJetDriveFloor;
+  NozzleForward fwd;
+  if (sub_floor) {
+    const NozzleForward at =
+        nozzle_forward(T0_fwd, P0_fwd, P0_fwd - kJetDriveFloor, X, A_eff, dm_dX);
+    const DriveFloorCubic c = drive_floor_cubic(drive / kJetDriveFloor, kJetFloorExponent);
+    fwd.mdot = at.mdot * c.h;
+    fwd.dP_back = -at.mdot * c.dh / kJetDriveFloor;
+    fwd.dP0 = at.mdot * c.dh / kJetDriveFloor + c.h * (at.dP0 + at.dP_back);
+    fwd.dT0 = c.h * at.dT0;
+    if (dm_dX != nullptr) {
+      for (double& v : *dm_dX) {
+        v *= c.h;
+      }
+    }
+  } else {
+    fwd = nozzle_forward(T0_fwd, P0_fwd, P_back_fwd, X, A_eff, dm_dX);
+  }
+  double mdot = reverse_flow ? -fwd.mdot : fwd.mdot;
+
   // Assign results
-  double d_mdot_dP0 = d_mdot_dP0_fwd;
-  double d_mdot_dP_back = d_mdot_dP_back_fwd;
-  double d_mdot_dT0 = d_mdot_dT0_fwd;
+  double d_mdot_dP0 = fwd.dP0;
+  double d_mdot_dP_back = fwd.dP_back;
+  double d_mdot_dT0 = fwd.dT0;
 
   // For reverse flow, swap Jacobian signs appropriately.
   // mdot = -mdot_fwd(P_back, Pt), so all three derivatives are negated,
@@ -1963,13 +2015,9 @@ std::tuple<double, double, double, double> orifice_compressible_mdot_impl(
     d_mdot_dT0 = -d_mdot_dT0;
   }
 
-  if (dm_dX != nullptr) {
-    // nozzle_flow evaluates at its floored stagnation state.
-    *dm_dX = nozzle_mdot_dX(sol.mdot, sol.stagnation.T, T_outlet, X);
-    if (reverse_flow) {
-      for (double& v : *dm_dX) {
-        v = -v;
-      }
+  if (dm_dX != nullptr && reverse_flow) {
+    for (double& v : *dm_dX) {
+      v = -v;
     }
   }
 
@@ -2093,8 +2141,8 @@ struct ModelEval {
   bool in_range = true;
 };
 
-ModelEval jobson_eval(double Pt, double P1, double Tt, double Pb, double Cd, double area,
-                      double beta, double Cv, const std::vector<double>& X) {
+ModelEval jobson_eval_raw(double Pt, double P1, double Tt, double Pb, double Cd, double area,
+                          double beta, double Cv, const std::vector<double>& X) {
   const bool from_static = approach_from_static(beta);
   const double b = from_static ? beta : 0.0;
   const MD pt = MD::seed(Pt, kMdPt);
@@ -2133,6 +2181,67 @@ ModelEval jobson_eval(double Pt, double P1, double Tt, double Pb, double Cd, dou
   }
   namespace jb = ::orifice::jobson1955;
   out.in_range = ci.v >= jb::ci_min && ci.v <= jb::ci_max && b <= jb::beta_max && !degenerate;
+  return out;
+}
+
+// Jobson's flow with the network's zero-drive floor (flow_drive_floor.h;
+// #1256): below kJetDriveFloor of drive |pd - pb| (pd the approach static
+// with E, else Pt) the flow is the floor's times the odd cubic h(t), t =
+// drive / floor, as the nozzle kernel. The floor's flow m0 is evaluated with
+// the back pressure (forward) or the drive pressure (reverse) moved to one
+// floor from the other, so its partials carry that pressure's onto the one
+// it was moved from. The cubic's exponent is the constant kJetFloorExponent,
+// so every partial is exact: matching Jobson's own exponent at the floor was
+// tried and moved with the approach head q = Pt - P1 at the floor's scale
+// (0.5 at q = 0, 0.57 at 1e-4 Pa, 0.81 at 1e-3, beta 0.5), so holding it fixed
+// left dm/dPt 22-27% and dm/dP1 7-15% off in the band (#1259 review). The
+// flow is continuous at the floor, but its slope steps there by Jobson's
+// exponent's distance from 1/2. In a solved state q at the floor is about
+// Cd^2 beta^4 / (1 - beta^4) times the drive, 5e-6 to 1e-4 Pa: in solved
+// pipe-fed states the step in dm/dPb measured 0.19% (beta 0.5, Cd 0.27), 3.9%
+// (beta 0.5, Cd 0.6) and 27% (beta 0.7, Cd 0.6), with no effect on
+// convergence in any run. Exact in-band partials are the trade: a matched,
+// C1 exponent would need the jet law's second derivatives. At exactly zero
+// drive the flow is 0 with the forward cubic's slope.
+ModelEval jobson_eval(double Pt, double P1, double Tt, double Pb, double Cd, double area,
+                      double beta, double Cv, const std::vector<double>& X) {
+  const bool from_static = approach_from_static(beta);
+  const double pd = from_static ? P1 : Pt;
+  const int kd = from_static ? kMdP1 : kMdPt;
+  const bool reverse = Pb > pd;
+  const double drive = reverse ? Pb - pd : pd - Pb;
+  const double p_up = reverse ? Pb : pd;
+  if (!(drive < kJetDriveFloor) || !(p_up > kJetDriveFloor)) {
+    return jobson_eval_raw(Pt, P1, Tt, Pb, Cd, area, beta, Cv, X);
+  }
+  ModelEval at;
+  int moved = kMdPb;    // the pressure set one floor from its partner
+  int partner = kd;     // the pressure it was set from
+  if (reverse) {
+    const double p = Pb - kJetDriveFloor;
+    at = jobson_eval_raw(from_static ? Pt : p, from_static ? p : P1, Tt, Pb, Cd, area, beta, Cv,
+                         X);
+    moved = kd;
+    partner = kMdPb;
+  } else {
+    at = jobson_eval_raw(Pt, P1, Tt, pd - kJetDriveFloor, Cd, area, beta, Cv, X);
+  }
+  // m0 along the floor: its partial by the moved pressure belongs to the
+  // partner, which the moved one follows.
+  MD m0 = at.m;
+  m0.d[partner] += m0.d[moved];
+  m0.d[moved] = 0.0;
+  // t = drive / floor as a dual number in the two pressures.
+  MD t = MD::constant(drive / kJetDriveFloor);
+  t.d[kd] = (reverse ? -1.0 : 1.0) / kJetDriveFloor;
+  t.d[kMdPb] = (reverse ? 1.0 : -1.0) / kJetDriveFloor;
+  const DriveFloorCubic c = drive_floor_cubic(t.v, kJetFloorExponent);
+  MD h = MD::constant(c.h);
+  for (int i = 0; i < kMdCount; ++i) {
+    h.d[i] = c.dh * t.d[i];
+  }
+  ModelEval out = at;
+  out.m = m0 * h;
   return out;
 }
 

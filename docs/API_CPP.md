@@ -794,7 +794,9 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // pressure if exit_total, else its exit static -- with dG/dPt0, dG/dTt0,
 // dG/dP_target. Monotone in P_target, saturating exactly at the choked flux
 // (choked = true, dG/dP_target = 0); 0 at or below zero drive, and blended C1
-// to a finite slope below kFannoFlowDriveFloor = 1 Pa, where M_in and M_exit
+// to a finite slope below kFannoFlowDriveFloor = 1 Pa (the cubic of
+// flow_drive_floor.h); at exactly zero drive G = 0 with the cubic's slope
+// h'(0) G0 / floor in dG/dP_target and dG/dPt0 (#1209), where M_in and M_exit
 // are re-evaluated at the blended G (#1017) and M_exit_root keeps the floor
 // root's exit Mach (the warm start for M_exit_guess). Unchoked it solves for
 // the exit Mach (P_exit is linear in G at fixed M, so G(M_exit) is explicit)
@@ -2553,7 +2555,15 @@ MomentumChamberResult momentum_chamber_residual_and_jacobian(
 
 ### Compressible Flow Components
 ```cpp
-// Compressible orifice flow using isentropic nozzle model
+// Compressible orifice flow using isentropic nozzle model. Below
+// kJetDriveFloor (1e-3 Pa, flow_drive_floor.h) of drive the flow is the floor's
+// times an odd cubic in drive / floor with the jet exponent 1/2 (#1256),
+// continuous at the floor with a slope step there (4e-7 at 1 bar, 6.1e-5 at
+// 100 bar): finite slope at zero drive, no round-off staircase below the
+// floor, exact partials.
+// orifice_compressible_residuals_and_jacobian and Jobson's model (below) carry
+// the same floor; ISO 5167 and the incompressible orifice regularise at 1 Pa
+// already (orifice_mdot_and_jacobian).
 std::tuple<double, double, double, double> orifice_compressible_mdot_and_jacobian(
     double Tt, double Pt, double P_back, const std::vector<double>& X,
     double Cd, double area, double beta);

@@ -859,7 +859,10 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
       !validation::is_finite(P_target)) {
     throw std::invalid_argument("fanno_channel_flow: Pt0, Tt0 and P_target must be finite");
   }
-  if (!(drive > 0.0) || !(Pt0 > 0.0) || !(Tt0 > 0.0)) {
+  // No flow at or below zero drive (the caller reverses the duct for reversed
+  // flow). At exactly zero drive the flux's slope is the sub-floor cubic's at
+  // t = 0, finite (#1209): only the derivatives need the floor's flow.
+  if (!(drive >= 0.0) || !(Pt0 > 0.0) || !(Tt0 > 0.0) || (drive == 0.0 && !with_derivatives)) {
     out.dG_ddir.assign(dirs.size(), 0.0);
     return out;
   }
@@ -880,13 +883,18 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
   pb.with_derivatives = true;  // sigma needs the slope at the floor
   const FannoChannelFlow at = raw_flow(pb);
   const double sigma =
-      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * kFannoFlowDriveFloor / at.G, 0.0, 2.9) : 0.5;
+      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * kFannoFlowDriveFloor / at.G, 0.0, kDriveFloorSigmaMax)
+                 : 0.5;
   const double t = drive / kFannoFlowDriveFloor;
-  const double h = 0.5 * (3.0 - sigma) * t + 0.5 * (sigma - 1.0) * t * t * t;
-  const double dh = 0.5 * (3.0 - sigma) + 1.5 * (sigma - 1.0) * t * t;
+  const DriveFloorCubic cubic = drive_floor_cubic(t, sigma);
+  const double h = cubic.h;
+  const double dh = cubic.dh;
   out = at;
   out.G = at.G * h;
   blend_end_states(out, at, Pt0, Tt0, X);
+  if (drive == 0.0) {
+    out.M_exit_root = 0.0;  // no root at zero flow: no warm start, as before #1209
+  }
   // d/dP_target through t only; d/dPt0 through t and through G0, whose own
   // target Pt0 - floor moves with Pt0. sigma(Pt0, Tt0, Y) is held fixed. Its
   // own term, G0 (t^3 - t)/2 dsigma, is first order in sigma's variation, not
@@ -1952,7 +1960,9 @@ FannoChannelFlow fanno_rayleigh_channel_flow(
     throw std::invalid_argument(
         "fanno_rayleigh_channel_flow: Pt0, Tt0, Tt_exit and P_target must be finite");
   }
-  if (!(drive > 0.0) || !(Pt0 > 0.0) || !(Tt0 > 0.0) || !(Tt_exit > 0.0)) {
+  // As fanno_channel_flow: at exactly zero drive, the cubic's slope (#1209).
+  if (!(drive >= 0.0) || !(Pt0 > 0.0) || !(Tt0 > 0.0) || !(Tt_exit > 0.0) ||
+      (drive == 0.0 && !with_derivatives)) {
     out.dG_ddir.assign(dirs.size(), 0.0);
     return out;
   }
@@ -1968,13 +1978,18 @@ FannoChannelFlow fanno_rayleigh_channel_flow(
   pb.with_derivatives = true;
   const FannoChannelFlow at = rayleigh_raw_flow(pb);
   const double sigma =
-      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * kFannoFlowDriveFloor / at.G, 0.0, 2.9) : 0.5;
+      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * kFannoFlowDriveFloor / at.G, 0.0, kDriveFloorSigmaMax)
+                 : 0.5;
   const double t = drive / kFannoFlowDriveFloor;
-  const double h = 0.5 * (3.0 - sigma) * t + 0.5 * (sigma - 1.0) * t * t * t;
-  const double dh = 0.5 * (3.0 - sigma) + 1.5 * (sigma - 1.0) * t * t;
+  const DriveFloorCubic cubic = drive_floor_cubic(t, sigma);
+  const double h = cubic.h;
+  const double dh = cubic.dh;
   out = at;
   out.G = at.G * h;
   blend_end_states(out, at, Pt0, Tt0, X);
+  if (drive == 0.0) {
+    out.M_exit_root = 0.0;  // no root at zero flow: no warm start, as before #1209
+  }
   out.dG_dP_target = -at.G * dh / kFannoFlowDriveFloor;
   out.dG_dPt0 = at.G * dh / kFannoFlowDriveFloor + h * (at.dG_dPt0 + at.dG_dP_target);
   out.dG_dTt0 = h * at.dG_dTt0;

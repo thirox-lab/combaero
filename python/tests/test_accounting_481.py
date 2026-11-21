@@ -5,6 +5,7 @@ real flow, and heat a node cannot take is reported, not lost.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 from _closure_check import closure
 
@@ -297,10 +298,7 @@ def test_a_flowing_heated_node_reports_exactly_none_withheld(m: float, Q: float)
     _assert_closed(s, r)
 
 
-def test_a_fraction_boundary_with_no_flow_reports_none_applied() -> None:
-    """No flow for the fraction to be a fraction of: Q_fraction is 0.0, not
-    absent. (A dead branch off a flowing node is no test: it carries ~1e-22
-    kg/s, not none, so the flowing branch is taken.)"""
+def _no_flow_fraction_net() -> FlowNetwork:
     g = FlowNetwork()
     g.add_node(MassFlowBoundary("src", m_dot=0.0, Tt=600.0, Y=Y_AIR))
     g.add_node(_pb("out", 1e5, 300.0))
@@ -309,11 +307,44 @@ def test_a_fraction_boundary_with_no_flow_reports_none_applied() -> None:
     g.add_node(p)
     g.add_element(_orifice("e1", "src", "p", 0.02))
     g.add_element(_orifice("e2", "p", "out", 0.02))
+    return g
+
+
+def test_a_fraction_boundary_with_no_flow_reports_none_applied() -> None:
+    """No flow for the fraction to be a fraction of: Q_fraction is 0.0, not
+    absent. (A dead branch off a flowing node is no test: it carries ~1e-22
+    kg/s, not none, so the flowing branch is taken.) Started at its exact
+    root -- every flow 0, every pressure the outlet's, F exactly 0 -- so no
+    stream arrives at p and the no-flow branch is the one taken: since #1256
+    the orifice rows have a finite slope at zero drop, and a cold solve lands
+    on ~1e-30 kg/s instead (test below)."""
+    g = _no_flow_fraction_net()
     s = NetworkSolver(g)
-    r = s.solve()
+    g.resolve_all_topology()
+    x0 = np.array(s._build_x0(), dtype=float)
+    for j, n in enumerate(s.unknown_names):
+        if n.endswith("m_dot"):
+            x0[j] = 0.0
+        elif n.endswith((".P", ".Pt")):
+            x0[j] = 1e5
+    assert not np.any(s._residuals(x0))
+    r = s.solve(x0=x0)
     assert r["__success__"]
     assert r["e1.m_dot"] == 0.0
+    x = np.asarray(r["__x_solution__"])
+    assert sum(m for m, _, _ in s._node_inflows("p", x)) == 0.0  # the no-flow branch
     assert r["p.Q_fraction"] == 0.0
+
+
+def test_a_fraction_boundary_solved_cold_to_no_flow_reports_its_trace() -> None:
+    """The same network solved cold: zero flow to round-off (~1e-30 kg/s),
+    and the fraction of that trace, reported (~1e-28 W), never absent."""
+    s = NetworkSolver(_no_flow_fraction_net())
+    r = s.solve()
+    assert r["__success__"]
+    assert abs(r["e1.m_dot"]) < 1e-25
+    assert r["p.Q_fraction"] is not None
+    assert abs(r["p.Q_fraction"]) < 1e-20
 
 
 @pytest.mark.parametrize("m", [0.0, 1e-9, 3e-7, 8e-7, 1e-6, 1e-4, -5e-7, -1e-4])

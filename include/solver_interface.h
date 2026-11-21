@@ -199,6 +199,9 @@ std::tuple<double, double> lossless_pressure_and_jacobian(double P_in,
 //
 // Method: analytic Jacobians on the isentrope through the nozzle_flow outlet
 // state, the exact derivatives of the returned mdot on both sides of choke.
+// Below kJetDriveFloor (1e-3 Pa) of drive |Pt - P_back| the flow is the floor's
+// times the odd cubic of flow_drive_floor.h, exponent 1/2 (#1256): a finite slope at zero
+// drive, where the jet's is infinite, and no round-off staircase near it.
 // Inputs:
 //   Tt   : Stagnation temperature [K]
 //   Pt   : Stagnation pressure [Pa]
