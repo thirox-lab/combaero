@@ -198,8 +198,13 @@ inline MpceResidualJacobian mpce_residuals_and_jacobian(
   D q_dyn_com = Rho[common] * u_com * u_com * 0.5;
   if (g_com > 1.0) {
     D M2 = (Rho[common] * u_com * u_com) / (P[common] * g_com);
-    D base = M2 * (0.5 * (g_com - 1.0)) + 1.0;
-    q_dyn_com = P[common] * (dpow(base, g_com / (g_com - 1.0)) - 1.0);
+    // As P * expm1(g/(g-1) * log1p((g-1)/2 M^2)), not pow(1 + x, e) - 1:
+    // the latter cancels to round-off as M -> 0 and returned q = 0 exactly
+    // below M^2 ~ 1e-16 (a port near zero flow), while its dual still carried
+    // the analytic slope -- with K ~ 1/u_com^2 that left J at 1.7e11 against
+    // an FD of 0 (#1252).
+    D x = M2 * (0.5 * (g_com - 1.0));
+    q_dyn_com = P[common] * dexpm1(dlog1p(x) * (g_com / (g_com - 1.0)));
   }
 
   for (int i = 0; i < kMpcePorts; ++i) {
