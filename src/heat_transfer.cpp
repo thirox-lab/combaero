@@ -1293,9 +1293,11 @@ ExchangeK exchange_conductance(double UA, double C_a, double C_b, bool counterfl
   if (!(UA > 0.0)) {
     return {0.0, 1.0, 0.0, 0.0};
   }
-  // A stream that does not flow takes no heat: Q -> C dT as C -> 0.
+  // A stream that does not flow takes no heat: Q -> C dT as C -> 0. With
+  // both stopped K(C_a, 0) = K(0, C_b) = 0 for any C, so both partials are
+  // 0 (#1245); 0.5 each was the slope along C_a = C_b, not a partial.
   if (C_a <= 0.0 && C_b <= 0.0) {
-    return {0.0, 0.0, 0.5, 0.5};
+    return {0.0, 0.0, 0.0, 0.0};
   }
   if (C_a <= 0.0) {
     return {0.0, 0.0, 1.0, 0.0};

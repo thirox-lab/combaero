@@ -18,8 +18,9 @@ their networks, and a few builders of its own for the classes they never draw
   perturbations of it, every sign pattern of each element's legs at two
   magnitude ratios (so a derived leg, a tee's straight run, reverses too; a
   MultiPortChamberBase junction's legs are its arms), one element's flows
-  near zero, one flow at exactly zero, and every flow at a node near zero on
-  both sides of the mixer's no-flow band (``kMixerNoFlowBand``). One point
+  near zero, one flow at exactly zero, both ducts of a wall at exactly zero
+  (#1245), and every flow at a node near zero on both sides of the mixer's
+  no-flow band (``kMixerNoFlowBand``). One point
   per distinct sign pattern of each element's legs is always kept; the rest
   are sampled down to the tier's point count.
 
@@ -547,6 +548,12 @@ class Point:
     x: np.ndarray
     #: A flow unknown set to exactly zero: compared one-sided (``_confirm``).
     zero_col: int | None = None
+    #: Further flow unknowns held at exactly zero with it (both sides of a
+    #: wall, #1245), each also compared one-sided.
+    also_zero: tuple[int, ...] = ()
+
+    def zero_cols(self) -> tuple[int, ...]:
+        return () if self.zero_col is None else (self.zero_col, *self.also_zero)
 
 
 def _is_flow(name: str) -> bool:
@@ -738,6 +745,26 @@ def points(s: NetworkSolver, seed: int, max_points: int | None = MAX_POINTS) -> 
             x[j] = 0.0
             pt = Point("exact_zero", f"{names[j]} = 0", x, zero_col=j)
             (mandatory if any(n in mixing for n in ends) else optional).append(pt)
+    # Both sides of a wall at exactly zero at once (#1245): one leg at a time
+    # never reaches the exchange's both-stopped branch. Each side a
+    # boundary-fed duct (one interior end), as above.
+    own = _own_flow_cols(s)
+    for w in net.walls.values():
+        sides = [getattr(w, "element_a", None), getattr(w, "element_b", None)]
+        cols = []
+        for eid in sides:
+            if eid not in own or len(own[eid]) != 1:
+                break
+            ends = net.elements[eid].all_source_nodes() + net.elements[eid].all_sink_nodes()
+            if len(ends) != 2 or sum(n in interior for n in ends) != 1:
+                break
+            cols.append(own[eid][0])
+        if len(cols) != 2:
+            continue
+        x = base.copy()
+        x[cols[0]] = x[cols[1]] = 0.0
+        desc = f"{names[cols[0]]} = {names[cols[1]]} = 0"
+        mandatory.append(Point("exact_zero", desc, x, zero_col=cols[0], also_zero=(cols[1],)))
     for nid, cols in node_cols.items():
         if len(cols) > 9:
             continue
@@ -941,11 +968,11 @@ def _confirm(
     x0: np.ndarray,
     rows: list[int],
     J: np.ndarray,
-    zero_col: int | None = None,
+    zero_cols: tuple[int, ...] = (),
 ) -> Confirmed:
     """Re-difference ``rows`` (module docstring, "Comparison") on a fresh
-    resolved solver. ``zero_col``: that flow is exactly zero; each row takes
-    the one-sided difference (either side) it agrees with."""
+    resolved solver. ``zero_cols``: those flows are exactly zero; each row
+    takes the one-sided difference (either side) it agrees with."""
     s = resolved_solver(case)
     names = s.unknown_names
     rel, floor = _steps(s, x, x0)
@@ -1001,7 +1028,7 @@ def _confirm(
         if is_pressure(n):
             continue
         base = max(abs(x[j]) * rel[j], floor)
-        if j == zero_col:
+        if j in zero_cols:
             # No scale but the column's: from ZERO_TOP of it down, so the
             # levels sit where the stream is a trace (a large one-sided step
             # from zero measures a secant across whatever the flow does
@@ -1292,8 +1319,8 @@ def evaluate(
             _refused(rep, case, FloatingPointError("non-finite F or J"), "point")
             return
         x_chk = pt.x.copy()
-        if pt.zero_col is not None:
-            x_chk[pt.zero_col] = 1e-300
+        for j in pt.zero_cols():
+            x_chk[j] = 1e-300
         if any(v == 0.0 for v in _all_legs(s, x_chk)):
             rep.exclude("exact_zero")
             return
@@ -1317,7 +1344,7 @@ def evaluate(
                 rows = [int(i) for i in np.flatnonzero(err > TOL)]
             if not rows:
                 return
-            c = _confirm(case, pt.x, x0, rows, J, pt.zero_col)
+            c = _confirm(case, pt.x, x0, rows, J, pt.zero_cols())
         except Exception as exc:  # noqa: BLE001 -- a stencil the model refuses
             _refused(rep, case, exc, "stencil")
             return
@@ -1757,7 +1784,14 @@ OPEN: tuple[Open, ...] = (
         "a wall-coupled high-Mach channel's flow row on its outlet chamber's Pt, one gas included",
         tuple(
             Hit("hotcold_mild", "ChannelElement 'cch'", "mdot", "cm.Pt", kind, 1e-5)
-            for kind in ("x0", "perturb", "signs", "node_near_zero", "element_near_zero")
+            for kind in (
+                "x0",
+                "perturb",
+                "signs",
+                "node_near_zero",
+                "element_near_zero",
+                "exact_zero",
+            )
         )
         + (
             Hit(

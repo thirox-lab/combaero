@@ -4329,9 +4329,11 @@ class MomentumChamberNode(NetworkNode):
         mach = u / cs.thermo.a if cs.thermo.a > 0 else 0.0
         Tt, Pt = (state.Tt, state.Pt)
 
-        # Not evaluated (no convective surface, no flow, or a choked-bounded
-        # junction): NaN, which the GUI shows as no value. A 0 read as zero
-        # heat transfer, and T_aw = Tt as a real recovery temperature.
+        # Not evaluated (no convective surface, a surface of zero area, or a
+        # choked-bounded junction): NaN, which the GUI shows as no value. A 0
+        # read as zero heat transfer, and T_aw = Tt as a real recovery
+        # temperature. At zero flow the surface gives its laminar limit
+        # (#1245).
         nu_val = math.nan
         st_val = math.nan
         htc_val = math.nan
@@ -5082,9 +5084,11 @@ class CombustorNode(NetworkNode):
         mach = u / cs.thermo.a if cs.thermo.a > 0 else 0.0
         Tt, Pt = (state.Tt, state.Pt)
 
-        # Not evaluated (no convective surface, no flow, or a choked-bounded
-        # junction): NaN, which the GUI shows as no value. A 0 read as zero
-        # heat transfer, and T_aw = Tt as a real recovery temperature.
+        # Not evaluated (no convective surface, a surface of zero area, or a
+        # choked-bounded junction): NaN, which the GUI shows as no value. A 0
+        # read as zero heat transfer, and T_aw = Tt as a real recovery
+        # temperature. At zero flow the surface gives its laminar limit
+        # (#1245).
         nu_val = math.nan
         st_val = math.nan
         htc_val = math.nan
@@ -11120,7 +11124,9 @@ class PressureLossElement(NetworkElement):
                 diag["T_aw"] = float(h_res.T_aw)
                 diag["f"] = float(h_res.f)
             else:
-                # No correlation evaluated (no flow): the keys stay, undefined.
+                # No correlation evaluated (a surface of zero area; at zero
+                # flow it gives its laminar limit, #1245): the keys stay,
+                # undefined.
                 for key in ("Nu", "St", "htc", "T_aw", "f"):
                     diag[key] = math.nan
 
@@ -12057,7 +12063,8 @@ class ChannelElement(NetworkElement):
             surface_diag["f_surface"] = float(h_res.f)
         else:
             Nu, htc, T_aw = 0.0, 0.0, state_in.Tt
-            # No correlation evaluated (no flow): the keys stay, undefined.
+            # No correlation evaluated (a surface of zero area; at zero flow
+            # it gives its laminar limit, #1245): the keys stay, undefined.
             surface_diag = {
                 "Re_surface": math.nan,
                 "surface_extrapolated": math.nan,
