@@ -1603,26 +1603,6 @@ OPEN: tuple[Open, ...] = (
         "inj.m_dot = 0",
     ),
     Open(
-        "#1248",
-        "ImpingementPlateElement flow row's chamber-pressure column once the boundary "
-        "gases differ, at the start vector already",
-        tuple(
-            Hit(
-                "impingement_bypass",
-                f"ImpingementPlateElement 'ia__p{k}'",
-                "mdot",
-                f"ia__c{k}.P",
-                kind,
-                2e-2,
-            )
-            for k in (1, 3)
-            for kind in ("x0", "perturb", "signs", "element_near_zero")
-        ),
-        Case("impingement_bypass", 0, 1, 0),
-        "start vector",
-        slow=True,
-    ),
-    Open(
         "#1251",
         "an equilibrium combustor whose only oxidizer stream is at exactly zero flow (a "
         "fuel-only mix): on (0, ~1e-12] of oxygen no reforming runs and F's slope is J; "

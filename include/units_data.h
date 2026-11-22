@@ -424,6 +424,7 @@ inline constexpr Entry function_units[] = {
     {"CrossflowCd::Cd", "-", "-"},
     {"CrossflowCd::dCd_dG_ideal", "1/(kg/(m^2*s))", "1/(kg/(m^2*s))"},
     {"CrossflowCd::dCd_dG_c", "1/(kg/(m^2*s))", "1/(kg/(m^2*s))"},
+    {"CrossflowCd::dCd_dCd0", "-", "-"},
     {"CrossflowCd::capped", "-", "-"},
     {"rowbury_2001_coefficients", "set: -, theta_deg: deg, alpha_deg: deg",
      "Rowbury2001Coefficients"},

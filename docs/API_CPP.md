@@ -1406,7 +1406,7 @@ constexpr double ROGERS_HERSH_1976_SUCTION_A = 0.80, ROGERS_HERSH_1976_SUCTION_B
 constexpr double FLORSCHUETZ_METZGER_SU_1982_CAP_BAND = 0.1;
 constexpr double FLORSCHUETZ_METZGER_SU_1982_ZETA_C = 1.06, FLORSCHUETZ_METZGER_SU_1982_ZETA_X0 = 0.806,
                  FLORSCHUETZ_METZGER_SU_1982_ZETA_N = 0.602;
-struct CrossflowCd { double Cd, dCd_dG_ideal, dCd_dG_c; bool capped; };
+struct CrossflowCd { double Cd, dCd_dG_ideal, dCd_dG_c, dCd_dCd0; bool capped; };  // dCd_dCd0: Rogers & Hersh only
 CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool suction);
 // CR-2681's envelope by variable and branch (INFO, never a selector):
 // Vi/V_inf 0.004-0.5 (Fig. 11); L/D 0.12-2.0 injecting (0.6-1.0 above

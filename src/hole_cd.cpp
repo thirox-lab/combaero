@@ -112,12 +112,16 @@ void compose_jet(const HoleCdModel& model, const HoleCdInputs& in, HoleCdResult&
   }
   out.Cd = r.Cd;
   out.jet_acts = true;
-  out.dCd_dRe = 0.0;
-  out.dCd_dU1_over_Vi = 0.0;
-  out.dCd_dRe_D = 0.0;
-  out.dCd_dG_h = 0.0;
-  out.dCd_drho_h = 0.0;
-  out.dCd_drho_m_u_m2 = 0.0;
+  // The hole's own partials through the law's dCd/dCd0 (#1248): 0 on the
+  // fit itself and for Florschuetz, Metzger & Su (whose Cd is the table's),
+  // f - u df/du inside Rogers & Hersh's C1 cap band, where they were dropped.
+  const double c = r.dCd_dCd0;
+  out.dCd_dRe *= c;
+  out.dCd_dU1_over_Vi *= c;
+  out.dCd_dRe_D *= c;
+  out.dCd_dG_h *= c;
+  out.dCd_drho_h *= c;
+  out.dCd_drho_m_u_m2 *= c;
   // The table's constant, or no drive: Cd ~ G_ideal^1.15 has no slope at
   // G_ideal = 0 that the flow (~ Cd sqrt(dP)) would feel.
   out.jet_partials = !r.capped && in.G_ideal > 0.0;

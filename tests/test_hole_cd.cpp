@@ -267,6 +267,34 @@ TEST(HoleCdCompose, RogersHershReplacesTheHolesCdWithItsOwnPartials) {
             combaero::rogers_hersh_1976_cd(r.cd_hole, in.G_ideal, in.G_c, true).Cd);
 }
 
+TEST(HoleCdCompose, RogersHershCapBandCarriesTheHolesReynoldsSlope) {
+  // #1248: inside the law's C1 cap band its Cd reads the hole's (Cd0 f(u)),
+  // so dCd/dRe is the law's dCd/dCd0 times the hole's. Dropped, an
+  // IdelchikThick impingement row's own-flow denominator was 0.8% off.
+  HoleCdModel m = discharge(DischargeCdCorrelation::Idelchik1966Thick);
+  m.jet = HoleCdJetCrossflow::RogersHersh1976;
+  HoleCdInputs in = state();
+  in.Re = 400.0;  // where Idelchik's thick-plate Cd still rises with Re
+  const double cd_hole = hole_cd_compose(discharge(m.discharge), hole(), pipe_orifice(), in).Cd;
+  // G_ideal with the fit at the cap itself (u = 1, mid-band).
+  const double p = 1.0 / (1.0 - combaero::ROGERS_HERSH_1976_INJECTION_B);
+  const double e = combaero::ROGERS_HERSH_1976_INJECTION_B * p;
+  in.G_ideal = in.G_c * std::pow(cd_hole / std::pow(combaero::ROGERS_HERSH_1976_INJECTION_A, p),
+                                 1.0 / e);
+  const HoleCdResult r = hole_cd_compose(m, hole(), pipe_orifice(), in);
+  ASSERT_TRUE(r.jet_acts);
+  ASSERT_NE(r.dcd_base_dRe, 0.0);
+  HoleCdInputs up = in;
+  HoleCdInputs dn = in;
+  up.Re *= 1.0 + 1e-6;
+  dn.Re *= 1.0 - 1e-6;
+  const double fd = (hole_cd_compose(m, hole(), pipe_orifice(), up).Cd -
+                     hole_cd_compose(m, hole(), pipe_orifice(), dn).Cd) /
+                    (up.Re - dn.Re);
+  EXPECT_NE(r.dCd_dRe, 0.0);
+  EXPECT_NEAR(r.dCd_dRe, fd, 1e-6 * std::abs(fd));
+}
+
 TEST(HoleCdCompose, CappedRogersHershHoldsTheHolesCdAndPartials) {
   HoleCdModel m = discharge(DischargeCdCorrelation::McGreehanSchotsch1988);
   m.jet = HoleCdJetCrossflow::RogersHersh1976;
