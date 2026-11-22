@@ -1484,31 +1484,61 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
   // sets among the trace species, linear in its amount (#1251: J 2.260e6
   // against a forward difference of 2.357e6 K per kg/s at exactly zero air).
   // The derivatives are then those at the same state with each such species
-  // at REFORMING_JACOBIAN_TRACE of the total and equilibrated: the one-sided
-  // limit to that order. The value stays the solution's.
+  // at a trace of the total (REFORMING_JACOBIAN_TRACE, up by 100 until the
+  // solve converges) and equilibrated: the one-sided limit to that order. The
+  // value stays the solution's.
   if (act.size() < rx.size()) {
     double nt0 = 0.0;
     for (double v : n0) nt0 += v;
-    std::vector<double> n0v = n0;
+    // Only species of the reactions left out: an absent species no reaction
+    // of the solve holds (a hydrocarbon of a lean burn's WGS-only solve) has
+    // no extent to differentiate.
+    std::vector<bool> in_left_out(ns, false);
+    for (std::size_t r = 0; r < rx.size(); ++r) {
+      if (std::find(act.begin(), act.end(), r) != act.end()) continue;
+      for (const auto &p : rx[r].nu) in_left_out[p.first] = true;
+    }
+    std::vector<bool> n0v_fed(ns, false);
     bool fed = false;
     for (std::size_t j = 0; j < ns; ++j) {
-      if (nv[j] > 0.0) continue;
+      if (nv[j] > 0.0 || !in_left_out[j]) continue;
       bool any = false;
       for (std::size_t k = 0; k < ns; ++k) any = any || cj.dXb_dX[j][k] != 0.0;
       if (any) {
-        n0v[j] += REFORMING_JACOBIAN_TRACE * nt0;
+        n0v_fed[j] = true;
         fed = true;
       }
     }
     if (fed) {
-      std::vector<double> nv2;
-      std::vector<JointReaction> rx2;
-      std::vector<std::size_t> act2;
-      if (solve_reforming_wgs_joint(n0v, T_ad, P, cfg, has_hc, nv2, &rx2, &act2) &&
-          act2.size() > act.size()) {
-        nv = nv2;
-        rx = rx2;
-        act = act2;
+      // The smallest trace in the ladder at which the solve converges with
+      // the fed species' reactions active: 1e-30 converged for methane only
+      // (ethane, propane and blends from ~1e-22 up), and the no-trace
+      // derivatives kept as a fallback were 34-45 % off for them (#1251
+      // review 4). None converging is refused, as an unconverged solve.
+      bool got = false;
+      for (double trace = REFORMING_JACOBIAN_TRACE; trace <= REFORMING_JACOBIAN_TRACE_MAX;
+           trace *= 100.0) {
+        std::vector<double> n0v = n0;
+        for (std::size_t j = 0; j < ns; ++j) {
+          if (n0v_fed[j]) n0v[j] += trace * nt0;
+        }
+        std::vector<double> nv2;
+        std::vector<JointReaction> rx2;
+        std::vector<std::size_t> act2;
+        if (solve_reforming_wgs_joint(n0v, T_ad, P, cfg, has_hc, nv2, &rx2, &act2) &&
+            act2.size() > act.size()) {
+          nv = nv2;
+          rx = rx2;
+          act = act2;
+          got = true;
+          break;
+        }
+      }
+      if (!got) {
+        throw std::runtime_error(
+            "combustion_equilibrium_and_jacobian: no converged trace state for the one-sided "
+            "derivative at an absent fed species (T_in = " +
+            std::to_string(in.T) + " K, P = " + std::to_string(P) + " Pa)");
       }
     }
   }

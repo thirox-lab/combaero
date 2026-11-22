@@ -89,9 +89,12 @@ constexpr int REFORMING_SEED_PASSES = 3;
 // relative to the largest total, or the solve is not converged (#1262).
 constexpr double REFORMING_ELEMENT_RTOL = 1e-12;
 // The Jacobian of a solution with an absent species that the complete-
-// combustion step feeds is taken with that species at this fraction of the
-// total, equilibrated: the one-sided limit (#1251).
-constexpr double REFORMING_JACOBIAN_TRACE = 1e-30;
+// combustion step feeds is taken with that species at a trace of the total,
+// equilibrated: the one-sided limit (#1251). From this, up by 100 to
+// REFORMING_JACOBIAN_TRACE_MAX, the smallest at which the solve converges;
+// none means refused.
+constexpr double REFORMING_JACOBIAN_TRACE = 1e-20;
+constexpr double REFORMING_JACOBIAN_TRACE_MAX = 1e-12;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the

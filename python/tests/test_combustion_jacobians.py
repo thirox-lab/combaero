@@ -356,26 +356,62 @@ def test_a_fuel_only_combustor_moves_with_the_air_flow() -> None:
     assert an == pytest.approx(fd, rel=1e-6), (an, fd)
 
 
-def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow() -> None:
+def _fuel_Y(comp: dict[str, float]) -> list[float]:
+    X = np.zeros(_cb.num_species())
+    for sp, w in comp.items():
+        X[_cb.species_index_from_name(sp)] = w
+    return list(_cb.mole_to_mass(list(X / X.sum())))
+
+
+_ZERO_AIR_FUELS = {
+    "CH4": {"CH4": 1.0},
+    "C2H6": {"C2H6": 1.0},
+    "C3H8": {"C3H8": 1.0},
+    "blend": {"CH4": 0.85, "C2H6": 0.08, "C3H8": 0.04, "H2": 0.03},
+}
+
+
+@pytest.mark.parametrize("fuel", list(_ZERO_AIR_FUELS))
+@pytest.mark.parametrize(
+    ("Ta", "Tf"), [(300.0, 300.0), (650.0, 300.0), (300.0, 600.0), (900.0, 900.0)]
+)
+@pytest.mark.parametrize("P", [2e5, 2e6])
+def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow(
+    fuel: str, Ta: float, Tf: float, P: float
+) -> None:
     """The equilibrium leg of the test above (#1251): J at exactly zero air
     flow against the forward one-sided difference (the arriving side). The
     oxygen carriers are absent there and their reactions left out, so J kept
-    them at 0: 2.260e6 against 2.357e6 K per kg/s. It is now taken at the
-    same state with them at a 1e-30 trace, equilibrated (the one-sided
-    limit); the difference bends from 1e-11 kg/s on (2.317e6 at 1e-9)."""
+    them at 0: 2.260e6 against 2.357e6 K per kg/s for methane, 34-45 % off for
+    ethane, propane and a blend (at a 1e-30 trace their solve did not
+    converge and the no-trace J was kept, review 4). J is now taken at the
+    same state with them at the smallest converging trace from 1e-20,
+    equilibrated. Checked against the best of steps 1e-15 to 1e-11 kg/s, to
+    1e-3: the difference bends from 1e-14 on for the blend at 20 bar (4e-3
+    at 1e-13, against 8e-5 at 1e-15)."""
+    Yf = _fuel_Y(_ZERO_AIR_FUELS[fuel])
 
     def burn(ma: float):
-        s = [
-            _cb.MassStream(ma, 300.0, 2.0e5, _Y_AIR),
-            _cb.MassStream(5.76e-4, 300.0, 2.1e5, _Y_CH4),
-        ]
+        s = [_cb.MassStream(ma, Ta, P, _Y_AIR), _cb.MassStream(5.76e-4, Tf, 1.05 * P, Yf)]
         return _combustor(s, "equilibrium")
 
     r = burn(0.0)
     an = r.dTt_mix_d_stream[0].d_mdot
-    for h in (1e-14, 1e-13, 1e-12):
-        fd = (burn(h).Tt_mix - r.Tt_mix) / h
-        assert an == pytest.approx(fd, rel=1e-4), (h, an, fd)
+    errs = [
+        abs(an - (burn(h).Tt_mix - r.Tt_mix) / h) / abs(an)
+        for h in (1e-15, 1e-14, 1e-13, 1e-12, 1e-11)
+    ]
+    assert min(errs) < 1e-3, (fuel, an, errs)
+
+
+def test_a_zero_air_heptane_combustor_refuses_rather_than_guess() -> None:
+    """Heptane alone at exactly zero air: no trace state converges for the
+    one-sided derivative (fuel-only heptane with trace oxygen does not
+    converge, #1262), so the Jacobian is refused, never the no-trace one."""
+    Yf = _fuel_Y({"NC7H16": 1.0})
+    s = [_cb.MassStream(0.0, 300.0, 2e5, _Y_AIR), _cb.MassStream(5.76e-4, 300.0, 2.1e5, Yf)]
+    with pytest.raises(RuntimeError, match="no converged trace state"):
+        _combustor(s, "equilibrium")
 
 
 @pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])
