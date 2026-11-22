@@ -592,7 +592,7 @@ CompleteAdiabatic complete_adiabatic(double T_in, double P, const std::vector<do
   // unphysical intermediates; below the floor T_in has no effect.
   const bool clamped = T_in < thermo::T_FLOOR;
   T_in = std::max(T_in, thermo::T_FLOOR);
-  P = std::max(P, 100.0);
+  P = std::max(P, kEquilibriumPressureFloor);
   const std::size_t ns = X_in.size();
   CompleteAdiabatic out;
   const CompleteCombustionJacobian pj = combaero::complete_combustion_products_and_jacobian(X_in);
@@ -640,7 +640,7 @@ adiabatic_T_equilibrium_and_jacobians(double T_in, double P,
                                        const std::vector<double> &X_in) {
   const bool clamped = T_in < thermo::T_FLOOR;
   T_in = std::max(T_in, thermo::T_FLOOR);
-  P = std::max(P, 100.0);
+  P = std::max(P, kEquilibriumPressureFloor);
   State in_state;
   in_state.set_TPX(T_in, P, X_in);
   // Analytic (#716): implicit in the equilibrium extents and the adiabatic root.
@@ -1181,8 +1181,30 @@ MixerResult adiabatic_T_complete_and_jacobian_T_from_streams(
   return res;
 }
 
+namespace {
+
+// The burnt state's partials in the equilibrium's pressure argument P, which
+// the stream partials of adiabatic_T_equilibrium_and_jacobians_from_streams
+// hold fixed. The combustor kernel chains them through the mixed Pt (#1244).
+struct EquilibriumPressurePartials {
+  double dTt_dP = 0.0;
+  std::vector<double> dY_dP;
+};
+
+MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double P, double Q,
+                                     double fraction, EquilibriumPressurePartials *dP_out);
+
+}  // namespace
+
 MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
     const std::vector<Stream> &streams, double P, double Q, double fraction) {
+  return equilibrium_from_streams(streams, P, Q, fraction, nullptr);
+}
+
+namespace {
+
+MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double P, double Q,
+                                     double fraction, EquilibriumPressurePartials *dP_out) {
   // First mix adiabatically to get base state
   MixerResult mix = mixer_from_streams_and_jacobians(streams);
 
@@ -1206,8 +1228,10 @@ MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
 
   std::vector<double> X_mix = combaero::mass_to_mole(combaero::normalize_fractions(mix.Y_mix));
   const bool T_clamped = mix.Tt_mix < thermo::T_FLOOR;
+  const bool P_clamped = P < kEquilibriumPressureFloor;
   State eq_in;
-  eq_in.set_TPX(std::max(mix.Tt_mix, thermo::T_FLOOR), std::max(P, 100.0), X_mix);
+  eq_in.set_TPX(std::max(mix.Tt_mix, thermo::T_FLOOR), std::max(P, kEquilibriumPressureFloor),
+                X_mix);
   const EquilibriumJacobian ej = combaero::combustion_equilibrium_and_jacobian(eq_in);
   double T_ad = ej.state.T;
   double dT_ad_dT_mix = T_clamped ? 0.0 : ej.dT_dT_in;
@@ -1290,6 +1314,18 @@ MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
     }
     if (!T_clamped) {
       for (std::size_t j = 0; j < n_species; ++j) dYb_dT_mix[j] = to_Y(ej.dXout_dT_in, j);
+    }
+    if (dP_out != nullptr) {
+      // T_out(T_ad(P), Y_b(P)) at the shift, as the T_mix chain below.
+      dP_out->dY_dP.assign(n_species, 0.0);
+      dP_out->dTt_dP = 0.0;
+      if (!P_clamped) {
+        for (std::size_t j = 0; j < n_species; ++j) dP_out->dY_dP[j] = to_Y(ej.dXout_dP, j);
+        dP_out->dTt_dP = dT_out_dT_ad * ej.dT_dP;
+        for (std::size_t j = 0; j < n_species; ++j) {
+          dP_out->dTt_dP += w_shift[j] * dP_out->dY_dP[j];
+        }
+      }
     }
   }
 
@@ -1386,6 +1422,8 @@ MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
   return res;
 }
 
+}  // namespace
+
 MixerResult combustor_residuals_and_jacobians(
     const std::vector<Stream> &streams, double P, double Q, double fraction,
     const PressureLossCorrelation &pressure_loss, bool use_equilibrium) {
@@ -1393,11 +1431,54 @@ MixerResult combustor_residuals_and_jacobians(
   // 1. Get unburned mixture state (T_in, P_in)
   MixerResult mix_in = mixer_from_streams_and_jacobians(streams);
   double T_in = mix_in.Tt_mix;
+  // P must be that mix's Pt: the stream partials below (P_out's, and the
+  // equilibrium's through dP/d(stream)) are those of mix_in.Pt_mix, so any
+  // other P would carry them wrongly (dT/dPt_fuel 1.3e-4 against an FD of 0
+  // with P = 1e5 beside a mixed Pt of 2.03e5).
+  // A non-finite P or stream Pt keeps main's message ("finite and positive",
+  // raised downstream before); only a finite P that differs from the mix is the
+  // caller's contract error.
+  if (!std::isfinite(P) || !std::isfinite(mix_in.Pt_mix)) {
+    throw std::invalid_argument(
+        "combustor_residuals_and_jacobians: pressure must be finite and positive");
+  }
+  if (!(std::abs(P - mix_in.Pt_mix) <=
+        kCombustorPressureMatchRtol * std::max(std::abs(mix_in.Pt_mix), 1.0))) {
+    throw std::invalid_argument(
+        "combustor_residuals_and_jacobians: P must be the streams' mixed Pt "
+        "(mixer_from_streams_and_jacobians(streams).Pt_mix)");
+  }
 
-  // 2. Get burned state (T_ad, Y_products) including all stream jacobians
+  // 2. Get burned state (T_ad, Y_products) including all stream jacobians.
+  // P is the streams' mixed total pressure (mix_in.Pt_mix, which the P_out
+  // partials below already take it as), so the equilibrium's dependence on P
+  // moves with each stream's flow and Pt through mix_in.dPt_mix_d_stream
+  // (#1244). Without it, an equilibrium combustor near zero air flow, where
+  // that mix's Pt moves 1.7e7 Pa per kg/s, was off by 3e-4 of its row.
+  // Complete combustion does not depend on P.
+  EquilibriumPressurePartials eq_dP;
   MixerResult res = use_equilibrium
-      ? adiabatic_T_equilibrium_and_jacobians_from_streams(streams, P, Q, fraction)
+      ? equilibrium_from_streams(streams, P, Q, fraction, &eq_dP)
       : adiabatic_T_complete_and_jacobian_T_from_streams(streams, P, Q, fraction);
+  if (use_equilibrium) {
+    const std::size_t n_sp = num_species();
+    for (std::size_t i = 0; i < streams.size(); ++i) {
+      const StreamJacobian &dPm = mix_in.dPt_mix_d_stream[i];
+      StreamJacobian &dT = res.dTt_mix_d_stream[i];
+      dT.d_mdot += eq_dP.dTt_dP * dPm.d_mdot;
+      dT.d_Pt += eq_dP.dTt_dP * dPm.d_Pt;
+      dT.d_Tt += eq_dP.dTt_dP * dPm.d_Tt;
+      for (std::size_t k = 0; k < n_sp; ++k) dT.d_Y[k] += eq_dP.dTt_dP * dPm.d_Y[k];
+      for (std::size_t j = 0; j < n_sp; ++j) {
+        StreamJacobian &dY = res.dY_mix_d_stream[j][i];
+        const double c = eq_dP.dY_dP[j];
+        dY.d_mdot += c * dPm.d_mdot;
+        dY.d_Pt += c * dPm.d_Pt;
+        dY.d_Tt += c * dPm.d_Tt;
+        for (std::size_t k = 0; k < n_sp; ++k) dY.d_Y[k] += c * dPm.d_Y[k];
+      }
+    }
+  }
 
   double T_ad = res.Tt_mix;
   double theta = (T_in > 0.0) ? (T_ad / T_in - 1.0) : 0.0;

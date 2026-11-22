@@ -762,12 +762,29 @@ TEST(CombustorEquilibriumTest, StructureAndStreamJacobian_mdot) {
 // Combustor Pressure Loss Analytical Jacobian FD validation
 // ---------------------------------------------------------------------------
 
+TEST(CombustorPressureLossJacobianTest, refuses_a_pressure_other_than_the_mixed_Pt) {
+    // The stream partials are those of the mixed Pt; another P would carry
+    // them wrongly, so it is refused (#1244 review).
+    auto streams = std::vector<solver::Stream>{
+        make_air_stream(2.0, 600.0, 2.0e5),
+        make_fuel_stream(0.06, 300.0, 2.1e5),
+    };
+    auto no_loss = [](const PressureLossContext &) -> std::tuple<double, double> {
+        return {0.0, 0.0};
+    };
+    EXPECT_THROW(combustor_residuals_and_jacobians(streams, 1.0e5, 0.0, 0.0, no_loss, true),
+                 std::invalid_argument);
+    const double P = mixer_from_streams_and_jacobians(streams).Pt_mix;
+    EXPECT_NO_THROW(combustor_residuals_and_jacobians(streams, P, 0.0, 0.0, no_loss, true));
+}
+
 TEST(CombustorPressureLossJacobianTest, mdot_chain_rule) {
     auto streams = std::vector<solver::Stream>{
         make_air_stream(2.0, 600.0, 150000.0),
         make_fuel_stream(0.06, 300.0, 150000.0),
     };
-    double P_out = 140000.0;
+    // The burn's pressure is the streams' mixed Pt (#1244).
+    double P_out = mixer_from_streams_and_jacobians(streams).Pt_mix;
 
     // Define a benchmark linear correlation: zeta = k*theta + c
     const double k_zeta = 0.5;
@@ -783,7 +800,8 @@ TEST(CombustorPressureLossJacobianTest, mdot_chain_rule) {
         auto streams_p = streams;
         streams_p[i].m_dot += eps;
 
-        auto res_p = combustor_residuals_and_jacobians(streams_p, P_out, 0.0, 0.0, linear_loss, false);
+        const double P_p = mixer_from_streams_and_jacobians(streams_p).Pt_mix;
+        auto res_p = combustor_residuals_and_jacobians(streams_p, P_p, 0.0, 0.0, linear_loss, false);
 
         double analytical = base.dPt_mix_d_stream[i].d_mdot;
         double fd = (res_p.Pt_mix - base.Pt_mix) / eps;

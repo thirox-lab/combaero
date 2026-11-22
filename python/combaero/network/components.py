@@ -5019,16 +5019,16 @@ class CombustorNode(NetworkNode):
             return 300.0, list(cb.mole_to_mass(cb.species.dry_air())), None
 
         streams = [cb.MassStream(s.m_dot, s.Tt, s.Pt, s.Y) for s in upstream_states]
-        if self._total_m_dot > 0.0:
-            P_ref = sum(s.m_dot * s.Pt for s in upstream_states) / self._total_m_dot
-        else:
-            P_ref = upstream_states[0].Pt
-
         Q_total = _applied_heat(self)
         fraction_total = sum(eb.fraction for eb in self.energy_boundaries)
 
         # Combustor only: mixing + combustion, NO pressure loss (that's on the edge).
         try:
+            # The burn's pressure is the streams' mixed Pt, the mean over the
+            # arriving streams the kernel mixes (#1232); the kernel chains its
+            # partials (#1244). The signed mean over every stream, as before,
+            # left the inputs' range with a stream reversed and had no Jacobian.
+            P_ref = float(_solver_tools.mixer_from_streams_and_jacobians(streams).Pt_mix)
             mix_res = _solver_tools.combustor_residuals_and_jacobians(
                 streams,
                 P_ref,

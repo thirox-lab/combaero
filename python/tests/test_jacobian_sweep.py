@@ -30,7 +30,15 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
-from _jacobian_sweep import OPEN, Case, Report, evaluate, open_issue, point
+from _jacobian_sweep import (
+    OPEN,
+    UNRESOLVED_LIMIT,
+    Case,
+    Report,
+    evaluate,
+    open_issue,
+    point,
+)
 
 from combaero.network import NetworkSolver
 
@@ -41,6 +49,16 @@ def _check(case: Case, desc: str, **kw: object) -> Report:
     evaluate(case, pt, x0, rep, **kw)
     assert rep.compared == 1, (case.label(), desc, rep.excluded, rep.nonfinite)
     return rep
+
+
+def _failures(rep: Report) -> list[str]:
+    """What fails a point: a mismatch, or a row left unresolved above
+    UNRESOLVED_LIMIT (as the slow tier). An unresolved row has no verdict, so
+    it never passes a guard or turns a strict reproducer XPASS."""
+    return [f.message for f in rep.mismatches()] + [
+        f"unresolved {f.error:.2e} (est {f.fd_estimate:.1e}): {f.message}"
+        for f in rep.unresolved(UNRESOLVED_LIMIT)
+    ]
 
 
 #: Points that caught a past bug before its fix, or reach a pattern no
@@ -67,7 +85,7 @@ GUARDS = [
 @pytest.mark.parametrize(("case", "desc"), GUARDS)
 def test_a_guard_point_matches_its_finite_difference(case: Case, desc: str) -> None:
     rep = _check(case, desc)
-    assert not rep.mismatches(), "\n".join(f.message for f in rep.mismatches())
+    assert not _failures(rep), "\n".join(_failures(rep))
 
 
 def _scale_entry(
@@ -147,8 +165,8 @@ def _halve_orifice_rows(s: NetworkSolver, J: np.ndarray) -> None:
     ("case", "desc"),
     [
         (Case("combustor", 1, 0, 0), "start vector"),
-        # A point #1244 covers: the bug must still be new there.
-        (Case("combustor", 1, 0, 0), "a_in flows 3e-05"),
+        # A point #1262 covers: the bug must still be new there.
+        (Case("combustor", 2, 0, 0), "a_in flows 1e-09"),
     ],
 )
 def test_a_bug_only_in_an_equilibrium_combustor_is_new(case: Case, desc: str) -> None:
@@ -193,4 +211,4 @@ def test_a_wrong_entry_at_an_exact_zero_is_new() -> None:
 )
 def test_an_open_mismatch_still_reproduces(case: Case, desc: str) -> None:
     rep = _check(case, desc)
-    assert not rep.mismatches(), "\n".join(f.message for f in rep.mismatches())
+    assert not _failures(rep), "\n".join(_failures(rep))

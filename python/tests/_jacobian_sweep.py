@@ -1540,16 +1540,26 @@ class Open:
 #: hotcold_mild, ideal_nport, impingement, impingement_bypass, effusion,
 #: fuel_controller) take hours there.
 FULL_HITS: dict[str, tuple[Hit, ...]] = {
-    "#1244": (
+    "#1262": (
         Hit(
-            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "element_near_zero", 8e-03
-        ),  # 3.60e-03
+            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "element_near_zero", 3e-03
+        ),  # 1.14e-03
         Hit(
-            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "node_near_zero", 3e-03
-        ),  # 1.29e-03
+            "walled_combustor",
+            "OrificeElement 'x_h2'",
+            "mdot",
+            "a_in.m_dot",
+            "element_near_zero",
+            6e-05,
+        ),  # 2.51e-05
         Hit(
-            "combustor", "OrificeElement 'exit'", "mdot", "exit.m_dot", "element_near_zero", 7e-05
-        ),  # 3.03e-05
+            "walled_combustor",
+            "OrificeElement 'x_c2'",
+            "mdot",
+            "a_in.m_dot",
+            "element_near_zero",
+            5e-05,
+        ),  # 2.37e-05
         Hit(
             "walled_combustor",
             "ChannelElement 'hot'",
@@ -1557,91 +1567,18 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
             "a_in.m_dot",
             "element_near_zero",
             5e-05,
-        ),  # 2.08e-05
-        Hit(
-            "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "perturb", 5e-06
-        ),  # 2.22e-06
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_c2'",
-            "mdot",
-            "a_in.m_dot",
-            "element_near_zero",
-            1e-04,
-        ),  # 4.80e-05
-        Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "perturb", 6e-06
-        ),  # 2.76e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "signs", 4e-06
-        ),  # 1.57e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "x0", 4e-06
-        ),  # 1.57e-06
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_c2'",
-            "mdot",
-            "ss0.m_dot",
-            "element_near_zero",
-            4e-06,
-        ),  # 1.81e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "ss0.m_dot", "exact_zero", 3e-06
-        ),  # 1.42e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "ss0.m_dot", "signs", 3e-06
-        ),  # 1.42e-06
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_h2'",
-            "mdot",
-            "a_in.m_dot",
-            "element_near_zero",
-            2e-04,
-        ),  # 5.02e-05
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_h2'",
-            "mdot",
-            "a_in.m_dot",
-            "node_near_zero",
-            3e-03,
-        ),  # 1.12e-03
-        Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "perturb", 2e-05
-        ),  # 8.24e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "signs", 9e-06
-        ),  # 4.35e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "x0", 9e-06
-        ),  # 4.04e-06
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_h2'",
-            "mdot",
-            "ss0.m_dot",
-            "element_near_zero",
-            1e-05,
-        ),  # 4.85e-06
-        Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "ss0.m_dot", "exact_zero", 1e-05
-        ),  # 4.79e-06
+        ),  # 2.07e-05
     ),
-    "#1251": (
+    "#1241": (
         Hit(
-            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "exact_zero", 8e-03
-        ),  # 3.60e-03
+            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 3e-01
+        ),  # 1.38e-01
         Hit(
-            "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "exact_zero", 2e-01
-        ),  # 9.59e-02
+            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "exact_zero", 4e-01
+        ),  # 2.04e-01
         Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "exact_zero", 9e-01
-        ),  # 4.33e-01
-        Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 2e00
-        ),  # 1.00e+00
+            "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "exact_zero", 1e-01
+        ),  # 5.01e-02
     ),
     "#1254": (
         Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "perturb", 8e-05),  # 3.51e-05
@@ -1659,7 +1596,9 @@ _EXIT, _NOZZLE, _TT = "OrificeElement 'exit'", "OrificeElement 'nozzle'", "node 
 OPEN: tuple[Open, ...] = (
     Open(
         "#1241",
-        "equilibrium combustor, a fuel stream at exactly zero flow (a fuel-free mix)",
+        "equilibrium combustor, a fuel stream at exactly zero flow (a fuel-free mix): J is "
+        "the exact slope below the reforming cut (burnt hydrocarbon > 1e-10), F's slope "
+        "halves above it (60448 against 31730 K per kg/s, a 1e-6 K step at 4e-11 kg/s)",
         (
             Hit("combustor", _EXIT, "mdot", "inj.m_dot", "exact_zero", 2e-3),
             Hit("fuel_controller", _NOZZLE, "mdot", "inj.m_dot", "exact_zero", 0.4),
@@ -1667,61 +1606,6 @@ OPEN: tuple[Open, ...] = (
         ),
         Case("combustor", 1, 0, 0),
         "inj.m_dot = 0",
-    ),
-    Open(
-        "#1244",
-        "equilibrium combustor at a near-zero oxidizer flow, or with a stream reversed "
-        "(complete combustion is clean at the same points)",
-        (
-            Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "element_near_zero", 1e-3),
-            Hit(
-                "random",
-                "ChannelElement 'e14'",
-                "p",
-                "in2.Pt",
-                "signs",
-                1e-3,
-                case="random:9/v3/s2",
-            ),
-            Hit(
-                "random",
-                "ChannelElement 'e15'",
-                "p",
-                "in2.Pt",
-                "signs",
-                1e-2,
-                case="random:9/v3/s2",
-            ),
-            Hit(
-                "random",
-                "ChannelElement 'e16'",
-                "p",
-                "in2.Pt",
-                "signs",
-                1e-2,
-                case="random:9/v3/s2",
-            ),
-            Hit(
-                "random",
-                "OrificeElement 'e17'",
-                "mdot",
-                "in2.Pt",
-                "signs",
-                1e-4,
-                case="random:9/v3/s2",
-            ),
-        )
-        + tuple(
-            Hit("random", el, rk, "in2.Pt", "element_near_zero", cap, case="random:9/v3/s2")
-            for el, rk, cap in (
-                ("ChannelElement 'e14'", "p", 1e-3),
-                ("ChannelElement 'e15'", "p", 1e-2),
-                ("ChannelElement 'e16'", "p", 1e-2),
-                ("OrificeElement 'e17'", "mdot", 1e-4),
-            )
-        ),
-        Case("combustor", 1, 0, 0),
-        "a_in flows 3e-05",
     ),
     Open(
         "#1248",
@@ -1774,31 +1658,43 @@ OPEN: tuple[Open, ...] = (
     ),
     Open(
         "#1251",
-        "a combustor whose only oxidizer stream is at exactly zero flow (a fuel-only mix), "
-        "complete and equilibrium: J -17.95 against FD 155.6 on combustor:2",
+        "an equilibrium combustor whose only oxidizer stream is at exactly zero flow (a "
+        "fuel-only mix): on (0, ~1e-12] of oxygen no reforming runs and F's slope is J; "
+        "above it the reforming + WGS solve starts on trace steam and does not converge "
+        "(#1262), so the one-sided difference depends on the step (5865 to 2833 to 5859 "
+        "K per kg/s from 1e-12 to 1e-6). Complete combustion is fixed",
         (
             Hit(
-                "combustor",
-                _EXIT,
-                "mdot",
+                "fuel_controller",
+                _TT,
+                "T",
                 "a_in.m_dot",
                 "exact_zero",
-                1.1,
-                case="combustor:2/v0/s0",
-                j_value=-17.95,
+                2.0,
+                case="fuel_controller:2/v1/s0",
             ),
             Hit(
-                "combustor",
+                "fuel_controller",
                 _EXIT,
                 "mdot",
                 "a_in.m_dot",
                 "exact_zero",
-                3e-6,
-                case="combustor:0/v1/s0",
+                1.8,
+                case="fuel_controller:2/v1/s0",
+                j_value=44.24,
             ),
         ),
         Case("combustor", 2, 0, 0),
         "a_in.m_dot = 0",
+    ),
+    Open(
+        "#1262",
+        "equilibrium combustion not converged for a cold, very rich mix (an air stream "
+        "near zero beside cold CH4, phi ~ 1e4): ln Q - ln K up to 60, the Jacobian taken "
+        "at a non-root",
+        (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "element_near_zero", 3e-3),),
+        Case("combustor", 2, 0, 0),
+        "a_in flows 1e-09",
     ),
     Open(
         "#1254",
