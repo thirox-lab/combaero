@@ -58,6 +58,9 @@ GUARDS = [
     pytest.param(Case("film", 0, 1, 0), "h pattern 1 ratio 1", id="film-reversed-gases"),
     pytest.param(Case("tee3", 1, 0, 0), "arm0 flows 1e-09", id="1252-mpce-common-near-zero"),
     pytest.param(Case("tee3", 2, 0, 0), "arm0 flows 3e-05", id="1247-mpce-common-small"),
+    pytest.param(
+        Case("ideal_nport", 2, 1, 0), "jct pattern 0001 ratio 3", id="1250-ideal-no-supplier"
+    ),
 ]
 
 

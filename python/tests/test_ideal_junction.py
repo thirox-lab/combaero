@@ -127,3 +127,62 @@ def test_loss_factor_scales_each_receivers_loss_through_the_binding() -> None:
 def test_loss_factor_refuses_negative_or_misshaped(f: list[float]) -> None:
     with pytest.raises(ValueError, match="loss_factor"):
         _split_Pt_drop(f)
+
+
+# #1250: the sweep point "jct pattern 0001 ratio 3" (Case ideal_nport 2/1/0),
+# the kernel's own inputs there. Every port flows OUT (the inlet arm reversed),
+# so no port supplies and V is a ratio of receiver weights w_in ~ -eps^2/(4 m),
+# 1e-8 of the flow. Formed as m s - m they kept 4e-9 .. 2.4e-8 of relative
+# error, and the rows carried 1.2e-5 .. 6.8e-5 Pa of noise on 1.8e5 Pa: a
+# central difference at 1e-5 |m| read 7.7e-6 .. 8.2e-5 (scaled) off J.
+_N1250 = {
+    "p": [1.9806129994e05, 1.8888301935e05, 1.8817445859e05, 1.8499773995e05],
+    "rho": [2.3000283783, 2.1934436703, 2.1852153599, 2.1483250485],
+    "outer": [-0.23296145806, 0.23296145806, 0.23296145806, 0.69888437417],
+    "sign": [-1.0, 1.0, 1.0, 1.0],
+    "angle_deg": [90.0, 45.0, 135.0, 135.0],
+    "area": 0.001963495408493621,
+    "p_jn": 1.8064321995e05,
+}
+
+
+def _kernel_1250(outer: list[float]) -> object:
+    c = _N1250
+    geom = _core.IdealJunctionGeometry()
+    geom.area = [c["area"]] * 4
+    geom.axis_rad = [
+        math.radians(a) if s > 0.0 else math.pi - math.radians(a)
+        for a, s in zip(c["angle_deg"], c["sign"], strict=True)
+    ]
+    geom.port_sign = list(c["sign"])
+    return _core.ideal_junction_residuals_and_jacobian(
+        c["p"], c["rho"], [0.0] * 4, outer, c["p_jn"], geom
+    )
+
+
+@pytest.mark.parametrize("col", range(4))
+def test_no_supplier_rows_are_smooth_and_match_fd_1250(col: int) -> None:
+    """#1250: with no supplier the rows are smooth to round-off in every flow,
+    so a small-step difference meets J."""
+    outer = list(_N1250["outer"])
+    m = abs(outer[col])
+    J = np.array(_kernel_1250(outer).jacobian)[:4, 4 + col]
+
+    def F(d: float) -> np.ndarray:
+        o = list(outer)
+        o[col] += d
+        return np.array(_kernel_1250(o).residual[:4])
+
+    scale = max(abs(p) for p in _N1250["p"])
+    # Noise: departure from a quadratic over +-2e-5 |m| (was 8e-10 of the
+    # row scale; round-off is ~1e-16).
+    ds = np.linspace(-2e-5, 2e-5, 41) * m
+    Fs = np.array([F(d) for d in ds])
+    for i in range(4):
+        fit = np.polyval(np.polyfit(ds, Fs[:, i], 2), ds)
+        assert np.max(np.abs(Fs[:, i] - fit)) < 1e-14 * scale, i
+    h = 1e-5 * m
+    d1 = (F(h) - F(-h)) / (2.0 * h)
+    d2 = (F(2.0 * h) - F(-2.0 * h)) / (4.0 * h)
+    fd = (4.0 * d1 - d2) / 3.0
+    assert np.max(np.abs(J - fd)) * m / scale < 1e-8
