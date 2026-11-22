@@ -100,7 +100,6 @@ TEST(WallExchange, IsBoundedAndTheArrangementsMeetAsAStreamStops) {
   }
 }
 
-// At NTU -> 0 the exchange is the linear wall: same Q and h, T_aw slopes.
 // #1245: a stopped stream's partial is the forward slope K -> C as C -> 0+
 // beside a flowing one, and 0 when both are stopped (K(C, 0) = 0 for any C).
 TEST(WallExchange, StoppedStreamsTakeTheirOneSidedPartials) {
@@ -118,6 +117,7 @@ TEST(WallExchange, StoppedStreamsTakeTheirOneSidedPartials) {
   }
 }
 
+// At NTU -> 0 the exchange is the linear wall: same Q and h, T_aw slopes.
 TEST(WallExchange, IsTheLinearCouplingAtSmallNtu) {
   const WallCouplingResult lin = wall_coupling_and_jacobian(kHa, kTa, kHb, kTb, kLayers, kA, 0.0);
   for (bool cf : {false, true}) {
