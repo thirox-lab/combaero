@@ -17,6 +17,11 @@ description: Use when writing or editing a pull request title or body.
   to the release process earns more explanation than a large `feat:` nothing
   depends on yet. Anything touching release, publish, or packaging machinery is
   never "just a chore".
+- No pointers into local, untracked paths (`tmp/...`, a worktree, a scratchpad)
+  in a PR body or PR comment: no reader can open them, and they are gone once
+  the worktree is archived. If what is there is key, summarise it in the text
+  (the numbers, the reproducer's inputs); if not, omit it. The same holds for
+  review-verdict comments.
 - End with the required attribution footer.
 
 ### Standard PR Body Structure
