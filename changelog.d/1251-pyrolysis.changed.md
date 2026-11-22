@@ -1,0 +1,5 @@
+- **Equilibrium combustion now pyrolyses fuel that has no oxygen (#1251).** This implements the owner's decision of 2026-11-22 ("pyrolysis always"). The hydrocarbons interconvert with H2 as equilibrium implies, as they already did with any trace of oxygen, so the equilibrium is continuous at the oxygen onset.
+  - Pure CH4 at 900 K comes out 891.68 K, 8.32 K below its inlet.
+  - Pure C3H8 at 300 K comes out 385.52 K (+85.5 K); at 500 K +50.0 K, at 900 K +25.6 K.
+  - Pure nC7H16 is unchanged, as the most carbon-rich species of the set.
+  - Each matches a C/H-only Gibbs minimum, and none depends on pressure.

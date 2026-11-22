@@ -637,3 +637,41 @@ def test_reforming_equilibrium_adiabatic_matches_cantera(
     gas.equilibrate("HP")
     got = combaero.reforming_equilibrium_adiabatic(T_in, _cb_mix(_REFORMING_CASES[case]), 101325.0)
     assert pytest.approx(gas.T, abs=0.5) == got.state.T
+
+
+class TestTraceOxygenEquilibrium:
+    """Methane with oxygen nearly gone (#1262), TP, against Cantera on the same
+    species and combaero's own NASA-9 data (combaero_nasa9.yaml, C1-C3). The
+    joint solve stalled there before #1262 (ln Q - ln K up to 62). combaero
+    also carries C4-C7 (up to 1.2e-7 at 650 K, which sets the tolerance)."""
+
+    @pytest.fixture
+    def nasa9_gas(self, cantera):
+        import os
+
+        return cantera.Solution(os.path.join(os.path.dirname(__file__), "combaero_nasa9.yaml"))
+
+    @pytest.mark.parametrize("T", [300.0, 500.0, 650.0])
+    @pytest.mark.parametrize("x_o2", [1e-10, 1e-6, 1e-2])
+    @pytest.mark.parametrize("P", [1e5, 1.7e6])
+    def test_fuel_only_trace_oxygen(self, combaero, nasa9_gas, T, x_o2, P):
+        cb = combaero
+        X = np.zeros(num_species())
+        X[species_index_from_name("CH4")] = 1.0 - x_o2
+        X[species_index_from_name("O2")] = x_o2
+        Xb = np.array(cb.complete_combustion_products_and_jacobian(X).X_b)
+        result = cb._core.reforming_equilibrium(T, Xb, P)
+        assert result.converged
+        comp = {
+            species_name(i): Xb[i]
+            for i in range(num_species())
+            if Xb[i] > 0.0 and species_name(i) in nasa9_gas.species_names
+        }
+        nasa9_gas.TPX = T, P, comp
+        nasa9_gas.equilibrate("TP")
+        for sp in ("H2", "C2H6", "CO", "H2O", "CO2"):
+            x_cb = result.state.X[species_index_from_name(sp)]
+            x_ct = nasa9_gas[sp].X[0]
+            # Measured 2026-11-22: within 4e-4 relative at 650 K (the C4+
+            # combaero carries), 1e-7 at 300 K.
+            assert x_cb == pytest.approx(x_ct, rel=1e-3), (sp, T, x_o2, P)

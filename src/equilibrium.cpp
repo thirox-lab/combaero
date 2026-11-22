@@ -6,7 +6,10 @@
 #include "thermo_transport_data.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -604,23 +607,167 @@ struct JointReaction {
 };
 
 // The reactions: reforming of each hydrocarbon (if with_reforming), then WGS.
+// to_co2: reform to CO2 (CnHm + 2n H2O = n CO2 + (2n + m/2) H2) and key WGS
+// on CO instead of CO2, the same reaction space (#1262). Where CO is the
+// scarcer of the two (a lean burn with trace fuel: CO at 4e-12 beside CO2 at
+// 4e-4), it is then a key and steps in ln n; as a non-key it was left as the
+// difference of the hydrocarbon keys' changes, each quantised to its own ulp,
+// a ln Q noise of 1.4e-10 at phi 1e-4, 300 K.
 static std::vector<JointReaction> joint_reactions(const ReformingConfig &cfg,
-                                                  bool with_reforming) {
+                                                  bool with_reforming, bool to_co2 = false) {
   std::vector<JointReaction> rx;
   if (with_reforming) {
     for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
       const double nC = cfg.hc_C[k];
-      const double m = nC + 0.5 * cfg.hc_H[k];
-      rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0},
-                                  {cfg.i_H2O, -nC},
-                                  {cfg.i_CO, nC},
-                                  {cfg.i_H2, m}},
-                                 m - 1.0, 0});
+      const double nH = cfg.hc_H[k];
+      if (to_co2) {
+        rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0},
+                                    {cfg.i_H2O, -2.0 * nC},
+                                    {cfg.i_CO2, nC},
+                                    {cfg.i_H2, 2.0 * nC + 0.5 * nH}},
+                                   nC + 0.5 * nH - 1.0, 0});
+      } else {
+        const double m = nC + 0.5 * nH;
+        rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0},
+                                    {cfg.i_H2O, -nC},
+                                    {cfg.i_CO, nC},
+                                    {cfg.i_H2, m}},
+                                   m - 1.0, 0});
+      }
     }
   }
   rx.push_back(JointReaction{
-      {{cfg.i_CO, -1.0}, {cfg.i_H2O, -1.0}, {cfg.i_CO2, 1.0}, {cfg.i_H2, 1.0}}, 0.0, 2});
+      {{cfg.i_CO, -1.0}, {cfg.i_H2O, -1.0}, {cfg.i_CO2, 1.0}, {cfg.i_H2, 1.0}}, 0.0,
+      to_co2 ? std::size_t{0} : std::size_t{2}});
   return rx;
+}
+
+// The same reaction space in a basis for a hydrocarbon-rich mix (#1262).
+// With R = CrHs the most abundant hydrocarbon: two reactions of R among the
+// oxygen carriers H2O, CO and CO2,
+//   R + r H2O  = r CO + (r + s/2) H2      (steam),
+//   R + r CO2  = 2r CO + (s/2) H2          (dry),
+//   R + 2r H2O = r CO2 + (2r + s/2) H2     (steam to CO2),
+// the pair that shares the most abundant carrier (each other carrier the key
+// of its own), and each other hydrocarbon's exchange with R,
+//   CnHm + x H2 = (n/r) R,  x = (n s/r - m)/2         (key CnHm).
+// Every set spans steam reforming of each hydrocarbon and WGS, so the
+// equilibrium is the same. With the oxygen nearly gone (a fuel-only or very
+// rich burn) every steam-reforming row carries the trace carriers with weight
+// 1/n, and the hydrocarbon interconversions they span were left as
+// differences of those rows: the scaled Hessian's condition number reached
+// 2.5e11 (eigenvalue 3e-11 along CH4 - C2H6), and each extent update
+// cancelled 1e-3 mol into 1e-12 mol of steam, a ln Q noise of 1e-9 Newton
+// could not get under. Here the interconversions hold no oxygen species, and
+// the two scarcer carriers step in ln n as keys, so none of them is left as
+// the difference of larger changes. R itself is no key: false (rx unchanged)
+// unless it is at least REFORMING_RICH_BASIS_HC_FRACTION of the total.
+static bool joint_reactions_rich(const ReformingConfig &cfg, const std::vector<double> &n,
+                                 std::vector<JointReaction> &rx) {
+  if (cfg.hc_indices.empty()) return false;
+  double nt = 0.0;
+  for (double v : n) nt += v;
+  std::size_t k_ref = 0;
+  for (std::size_t k = 1; k < cfg.hc_indices.size(); ++k) {
+    if (n[cfg.hc_indices[k]] > n[cfg.hc_indices[k_ref]]) k_ref = k;
+  }
+  const std::size_t i_ref = cfg.hc_indices[k_ref];
+  if (!(n[i_ref] >= REFORMING_RICH_BASIS_HC_FRACTION * nt)) return false;
+  const double r = cfg.hc_C[k_ref];
+  const double sH = cfg.hc_H[k_ref];
+  rx.clear();
+  for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+    if (k == k_ref) continue;
+    const double nC = cfg.hc_C[k];
+    const double x = 0.5 * (nC * sH / r - cfg.hc_H[k]);
+    rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0}, {cfg.i_H2, -x}, {i_ref, nC / r}},
+                               nC / r - 1.0 - x, 0});
+  }
+  // nu entries ordered so that entry 0 is the key.
+  const double dn = r + 0.5 * sH - 1.0;
+  const JointReaction h2o_co_key_h2o{
+      {{cfg.i_H2O, -r}, {i_ref, -1.0}, {cfg.i_CO, r}, {cfg.i_H2, r + 0.5 * sH}}, dn, 0};
+  const JointReaction h2o_co_key_co{
+      {{cfg.i_CO, r}, {i_ref, -1.0}, {cfg.i_H2O, -r}, {cfg.i_H2, r + 0.5 * sH}}, dn, 0};
+  const JointReaction co2_co_key_co2{
+      {{cfg.i_CO2, -r}, {i_ref, -1.0}, {cfg.i_CO, 2.0 * r}, {cfg.i_H2, 0.5 * sH}}, dn, 0};
+  const JointReaction co2_co_key_co{
+      {{cfg.i_CO, 2.0 * r}, {i_ref, -1.0}, {cfg.i_CO2, -r}, {cfg.i_H2, 0.5 * sH}}, dn, 0};
+  const JointReaction h2o_co2_key_co2{
+      {{cfg.i_CO2, r}, {i_ref, -1.0}, {cfg.i_H2O, -2.0 * r}, {cfg.i_H2, 2.0 * r + 0.5 * sH}},
+      dn, 0};
+  const JointReaction h2o_co2_key_h2o{
+      {{cfg.i_H2O, -2.0 * r}, {i_ref, -1.0}, {cfg.i_CO2, r}, {cfg.i_H2, 2.0 * r + 0.5 * sH}},
+      dn, 0};
+  const double a_h2o = n[cfg.i_H2O], a_co = n[cfg.i_CO], a_co2 = n[cfg.i_CO2];
+  if (a_co >= a_h2o && a_co >= a_co2) {
+    rx.push_back(h2o_co_key_h2o);
+    rx.push_back(co2_co_key_co2);
+  } else if (a_h2o >= a_co2) {
+    rx.push_back(h2o_co_key_co);
+    rx.push_back(h2o_co2_key_co2);
+  } else {
+    rx.push_back(co2_co_key_co);
+    rx.push_back(h2o_co2_key_h2o);
+  }
+  // H2 is in every reaction above and the key of none, so its change is the
+  // sum of all the extents'. Where it is scarcer than the second hydrocarbon
+  // (the pyrolysis of cold heptane at phi 1000, 10 bar: H2 at 4e-12 beside
+  // hexane at 0.12), the linear solve cannot place it to better than a ln Q
+  // of up to 7e-9 in the oxygen carriers' rows (15 H2 in each), above
+  // REFORMING_NEWTON_FLOOR_FTOL, and half the states in 505-525 K were
+  // refused (#1262 CI). There, the second most abundant hydrocarbon joins
+  // the first as a reference: every other hydrocarbon, and H2 itself, is
+  // exchanged with the two (C and H balanced by them), and H2 is substituted
+  // out of the oxygen carriers' rows. H2 then keys its own reaction only; the
+  // same equilibrium.
+  std::size_t k2 = cfg.hc_indices.size();
+  for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+    if (k == k_ref) continue;
+    if (k2 == cfg.hc_indices.size() || n[cfg.hc_indices[k]] > n[cfg.hc_indices[k2]]) k2 = k;
+  }
+  if (k2 == cfg.hc_indices.size()) return true;
+  const std::size_t i_2 = cfg.hc_indices[k2];
+  const double c2 = cfg.hc_C[k2];
+  const double h2 = cfg.hc_H[k2];
+  const double det = r * h2 - c2 * sH;
+  if (!(n[cfg.i_H2] < n[i_2]) || !(std::abs(det) > 0.0)) return true;
+  // (c, h) = a (r, sH) + b (c2, h2).
+  auto split = [&](double c, double h, double &a, double &b) {
+    a = (c * h2 - c2 * h) / det;
+    b = (r * h - c * sH) / det;
+  };
+  double a_h = 0.0, b_h = 0.0;
+  split(0.0, 2.0, a_h, b_h);
+  std::vector<JointReaction> two;
+  for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+    if (k == k_ref || k == k2) continue;
+    double a = 0.0, b = 0.0;
+    split(cfg.hc_C[k], cfg.hc_H[k], a, b);
+    two.push_back(
+        JointReaction{{{cfg.hc_indices[k], -1.0}, {i_ref, a}, {i_2, b}}, a + b - 1.0, 0});
+  }
+  two.push_back(JointReaction{{{cfg.i_H2, -1.0}, {i_ref, a_h}, {i_2, b_h}}, a_h + b_h - 1.0, 0});
+  for (std::size_t q = rx.size() - 2; q < rx.size(); ++q) {
+    JointReaction o;
+    o.key = 0;
+    double nu_h2 = 0.0, nu_ref = 0.0;
+    for (const auto &p : rx[q].nu) {
+      if (p.first == cfg.i_H2) {
+        nu_h2 = p.second;
+      } else if (p.first == i_ref) {
+        nu_ref = p.second;
+      } else {
+        o.nu.push_back(p);
+      }
+    }
+    o.nu.push_back({i_ref, nu_ref + nu_h2 * a_h});
+    o.nu.push_back({i_2, nu_h2 * b_h});
+    o.dn = rx[q].dn + nu_h2 * (a_h + b_h - 1.0);
+    two.push_back(o);
+  }
+  rx = two;
+  return true;
 }
 
 // ln K_r(T) = -sum_j nu_rj g_j/RT.
@@ -777,11 +924,21 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
         const auto &kp = r.nu[r.key];
         const double nk = n[kp.first];
         const double d = kp.second * al * dx[a];
+        if (nk >= REFORMING_TRACE_FRACTION * nt) {
+          // A major key (methane in a fuel-only burn) steps linearly, and the
+          // extent is taken as it is: from the key's own change it would be
+          // quantised to ulp(n_key), and the reaction's trace species (steam
+          // at 1e-8 beside methane at 1) then could not move by less than
+          // 1e-16 / 1e-8 of themselves -- a residual floor of 1e-9, above
+          // REFORMING_NEWTON_FTOL (#1262).
+          const double xi = al * dx[a];
+          for (const auto &p : r.nu) out[p.first] += p.second * xi;
+          continue;
+        }
         double nk_new = nk * std::exp(d / nk);
         if (d > 0.0) {
           const double ln_cap = std::log(REFORMING_TRACE_FRACTION * nt);
           nk_new = std::max(nk + d, std::exp(std::min(std::log(nk) + d / nk, ln_cap)));
-          if (nk >= REFORMING_TRACE_FRACTION * nt) nk_new = nk + d;
         }
         const double xi = (nk_new - nk) / kp.second;
         for (const auto &p : r.nu) out[p.first] += p.second * xi;
@@ -800,8 +957,11 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
       if (curved(alpha, n_try)) {
         joint_residual(rx, act, n_try, P, lnK, F_try, nullptr);
         const double f_try = max_abs(F_try);
-        // Sufficient decrease of ||F||: the Newton direction descends it.
-        if (std::isfinite(f_try) && f_try <= (1.0 - 1e-4 * alpha) * fnorm) {
+        // Sufficient decrease of ||F||: the Newton direction descends it. A
+        // step that does not lower ||F|| at all is no progress, also where
+        // alpha is so small that the bound rounds to fnorm itself (it was
+        // taken, 200 times over, at alpha 4.5e-13).
+        if (std::isfinite(f_try) && f_try <= (1.0 - 1e-4 * alpha) * fnorm && f_try < fnorm) {
           accepted = true;
           break;
         }
@@ -809,8 +969,9 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
       alpha *= 0.5;
     }
     if (!accepted) {
-      // Round-off floor (or no descent): converged if within tolerance.
-      return fnorm <= REFORMING_NEWTON_FTOL;
+      // Round-off floor: no step lowers ||F||. Converged if within
+      // REFORMING_NEWTON_FLOOR_FTOL, the floor a trace species leaves.
+      return fnorm <= REFORMING_NEWTON_FLOOR_FTOL;
     }
     n = n_try;
     joint_residual(rx, act, n, P, lnK, F, &J);
@@ -831,9 +992,16 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
 // damped as RP-1311 Eqs. 3.1-3.2. The result is then written back as extents
 // from n (so the elements are conserved exactly) for the Newton polish.
 // Returns false if it does not converge or an amount comes back non-positive.
-static bool element_potential_start(std::vector<double> &n, double T, double P,
-                                    const std::vector<JointReaction> &rx,
-                                    const std::vector<std::size_t> &act) {
+// rebase (optional) is called with the element potentials' amounts before
+// they are written back as extents, and may replace rx and act (the caller's
+// own, which these reference) by another basis of the same reactions: the
+// write-back takes each non-key amount as n plus the extents' changes, so a
+// key chosen at the start can leave a carrier the difference of larger
+// changes (steam at 9e-15 came back as -7e-15 from 4e-3; #1262).
+static bool element_potential_start(
+    std::vector<double> &n, double T, double P, const std::vector<JointReaction> &rx,
+    const std::vector<std::size_t> &act,
+    const std::function<void(const std::vector<double> &)> &rebase = nullptr) {
   std::vector<std::size_t> sp;  // species of the active reactions
   for (std::size_t a : act) {
     for (const auto &p : rx[a].nu) {
@@ -873,6 +1041,7 @@ static bool element_potential_start(std::vector<double> &n, double T, double P,
   const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
   const double SIZE = 18.420681;  // RP-1311: ln(1e8), a trace species
   bool done = false;
+  double last_corr = std::numeric_limits<double>::infinity();
   for (int it = 0; it < REFORMING_NEWTON_MAX_IT && !done; ++it) {
     const double N = std::exp(lnN);
     std::vector<double> nq(S), mu(S);
@@ -919,8 +1088,18 @@ static bool element_potential_start(std::vector<double> &n, double T, double P,
     lnN += lam * dlnN;
     if (!std::isfinite(lnN)) return false;
     done = lam == 1.0 && std::max(dmax, std::abs(dlnN)) < 1e-9;
+    last_corr = lam == 1.0 ? std::max(dmax, std::abs(dlnN)) : last_corr;
   }
-  if (!done) return false;
+  // Only a start for the Newton polish, which decides convergence: with one
+  // element nearly absent (oxygen at 1e-11 in methane) the corrections stall
+  // at a 1e-8 noise in ln n above the 1e-9 bound, from a start already that
+  // close (#1262).
+  if (!done && !(last_corr < REFORMING_EP_START_CORRECTION)) return false;
+  if (rebase) {
+    std::vector<double> n_gm = n;
+    for (std::size_t q = 0; q < S; ++q) n_gm[sp[q]] = std::exp(lnn[q]);
+    rebase(n_gm);
+  }
   // Back to extents from the current n: n_key = n_gm,key fixes each extent.
   std::vector<double> n_new = n;
   for (std::size_t a : act) {
@@ -942,6 +1121,52 @@ static bool element_potential_start(std::vector<double> &n, double T, double P,
   return true;
 }
 
+// Absent species of the reactions (#1262). A reaction with an absent species
+// is left out of the Newton solve, and a round cannot make one where CO and
+// H2 are below 1e-12 (the scalar reforming bracket is empty), so a
+// hydrocarbon the equilibrium holds at percent level could stay exactly 0 at
+// a state reported converged: ethane at phi 2400, 266 K, 4.2 bar had no
+// methane (0.71 at equilibrium) and came out 276 K against 441 K; heptane in
+// air stepped 2.55 K between phi 87.45 and 87.475 as isobutane dropped out.
+// A reaction with an absent species whose other side is all present has an
+// unbounded driving force toward the absent one (ln Q = -inf there): it is
+// run that way by REFORMING_SEED_FRACTION of the total (at most half of any
+// amount it uses), which seeds the absent species in its own stoichiometry,
+// conserving every element exactly. (Seeding each absent species by a
+// least-norm combination of the present ones lost conservation where an
+// element was a trace: oxygen at 1e-12 left the combination's system with a
+// condition number of 1e12, and H/C moved by 2.8e-5.) Returns whether any
+// was; runnable (if given) receives whether one could still be.
+static bool seed_absent_species(std::vector<double> &n, const std::vector<JointReaction> &rx,
+                                bool *runnable = nullptr) {
+  double nt = 0.0;
+  for (double v : n) nt += v;
+  bool seeded = false, can = false;
+  for (const auto &r : rx) {
+    bool any_absent = false, lhs = true, rhs = true;
+    for (const auto &p : r.nu) {
+      if (!(n[p.first] > 0.0)) {
+        any_absent = true;
+        if (p.second < 0.0) lhs = false;
+        if (p.second > 0.0) rhs = false;
+      }
+    }
+    if (!any_absent || (!lhs && !rhs)) continue;
+    can = true;
+    if (runnable != nullptr) continue;
+    const double dir = lhs ? 1.0 : -1.0;  // toward the side with the absent species
+    double xi = REFORMING_SEED_FRACTION * nt;
+    for (const auto &p : r.nu) {
+      if (dir * p.second < 0.0) xi = std::min(xi, 0.5 * n[p.first] / std::abs(p.second));
+    }
+    if (!(xi > 0.0)) continue;
+    for (const auto &p : r.nu) n[p.first] = std::max(0.0, n[p.first]) + dir * p.second * xi;
+    seeded = true;
+  }
+  if (runnable != nullptr) *runnable = can;
+  return seeded;
+}
+
 // Joint reforming + WGS equilibrium at fixed T from n0. Rounds start it
 // (REFORMING_START_PASSES, which also make the species of a reaction that can
 // move present); Newton then solves the reactions whose species are all
@@ -954,9 +1179,8 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
                                       std::vector<double> &n_out,
                                       std::vector<JointReaction> *rx_out = nullptr,
                                       std::vector<std::size_t> *active_out = nullptr) {
-  const std::vector<JointReaction> rx = joint_reactions(cfg, with_reforming);
-  std::vector<double> lnK(rx.size());
-  for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
+  std::vector<JointReaction> rx = joint_reactions(cfg, with_reforming);
+  std::vector<double> lnK;
 
   n_out = n0;
   std::vector<double> before;
@@ -981,20 +1205,50 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     round(n_out);
     if (reforming_round_change(before, n_out) <= REFORMING_PASS_RTOL) break;
   }
+  // A hydrocarbon not a trace (it needs no log step of its own): the basis
+  // in which the interconversions carry no oxygen species, its keys the two
+  // scarcer oxygen carriers at n (#1262). Re-chosen whenever the start moves:
+  // a carrier that was the scarcest after the rounds can be the most abundant
+  // after the element potentials, and a key's own ulp then quantises the
+  // others (CO at 5e-18 stepped 1.9e-26 at a time beside steam at 2e-11).
+  auto choose_basis = [&](const std::vector<double> &n) {
+    rx = joint_reactions(cfg, with_reforming, n[cfg.i_CO] < n[cfg.i_CO2]);
+    std::vector<JointReaction> rich;
+    if (with_reforming && joint_reactions_rich(cfg, n, rich)) rx = rich;
+    lnK.assign(rx.size(), 0.0);
+    for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
+  };
+  choose_basis(n_out);
 
   bool conv = false;
   std::vector<std::size_t> act;
+  for (int seed_pass = 0; seed_pass <= REFORMING_SEED_PASSES; ++seed_pass) {
   for (int restart = 0; restart <= REFORMING_JOINT_RESTARTS; ++restart) {
+    if (restart > 0) choose_basis(n_out);
     act = joint_active(rx, n_out);
     std::vector<double> n_try = n_out;
     conv = joint_newton(n_try, P, rx, act, lnK, REFORMING_NEWTON_ROUNDS_IT);
     if (!conv) {
       // Far from equilibrium: restart Newton from the element potentials.
       std::vector<double> n_ep = n_out;
-      if (element_potential_start(n_ep, T, P, rx, act) &&
-          joint_newton(n_ep, P, rx, act, lnK, REFORMING_NEWTON_MAX_IT)) {
-        n_try = n_ep;
-        conv = true;
+      const bool ep_ok = element_potential_start(
+          n_ep, T, P, rx, act, [&](const std::vector<double> &n_gm) {
+            choose_basis(n_gm);
+            act = joint_active(rx, n_out);
+          });
+      if (ep_ok) {
+        choose_basis(n_ep);
+        const std::vector<std::size_t> act_ep = joint_active(rx, n_ep);
+        if (joint_newton(n_ep, P, rx, act_ep, lnK, REFORMING_NEWTON_MAX_IT)) {
+          n_try = n_ep;
+          act = act_ep;
+          conv = true;
+        }
+      }
+      if (!conv) {
+        // Back to the basis of the state kept.
+        choose_basis(n_try);
+        act = joint_active(rx, n_try);
       }
     }
     n_out = n_try;
@@ -1005,6 +1259,37 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     if (reforming_round_change(n_out, n_round) <= REFORMING_JOINT_CHECK_RTOL) break;
     n_out = n_round;
     conv = false;
+  }
+    // An absent species with a positive affinity: seed it and solve again;
+    // one still predicted after the last pass means not converged.
+    if (!conv) break;
+    if (seed_pass == REFORMING_SEED_PASSES) {
+      bool runnable = false;
+      seed_absent_species(n_out, rx, &runnable);
+      if (runnable) conv = false;  // still driven toward an absent species
+      break;
+    }
+    if (!seed_absent_species(n_out, rx)) break;
+    conv = false;
+    choose_basis(n_out);
+  }
+  // Elements: every step and seed conserves them; a state that does not, to
+  // round-off of the largest element total, is not a solution (#1262 review).
+  {
+    double b0[3] = {0.0, 0.0, 0.0}, b1[3] = {0.0, 0.0, 0.0};
+    for (std::size_t j = 0; j < n0.size(); ++j) {
+      const auto &ms = molecular_structures[j];
+      const double a[3] = {static_cast<double>(ms.C), static_cast<double>(ms.H),
+                           static_cast<double>(ms.O)};
+      for (std::size_t e = 0; e < 3; ++e) {
+        b0[e] += a[e] * n0[j];
+        b1[e] += a[e] * n_out[j];
+      }
+    }
+    const double bmax = std::max({b0[0], b0[1], b0[2]});
+    for (std::size_t e = 0; e < 3; ++e) {
+      if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * bmax)) conv = false;
+    }
   }
   if (rx_out != nullptr) *rx_out = rx;
   if (active_out != nullptr) *active_out = act;
@@ -1101,7 +1386,40 @@ EquilibriumResult reforming_equilibrium_adiabatic(const State &in) {
   // Solve for adiabatic temperature
   ReformingAdiabaticFun F{in.X, H_mass_target, in.P, cfg};
   bool conv_T = true;
-  const double T_ad = solve_adiabatic_T(F, in.T, conv_T);
+  double T_ad = solve_adiabatic_T(F, in.T, conv_T);
+
+  // conv_T is false when an inner solve at either end of the final bracket
+  // failed (#1262 review: five heavy rich states refused for their bracket
+  // ends): Brent then also bracketed on that end's unconverged energy
+  // residual, and T_ad is off its root by up to 1e-3 K. There, the root is
+  // polished by secant steps on converged inner solves near T_ad, and the
+  // state is converged if the equilibrium converges at it and the energy
+  // balance holds to the bracket's own tolerance.
+  if (!conv_T) {
+    bool c0 = false;
+    double f0 = F.f(T_ad, c0);
+    double slope = F.slope_frozen();
+    double T_prev = T_ad, f_prev = f0;
+    for (int it = 0; it < EQUILIBRIUM_T_POLISH_IT && c0; ++it) {
+      const double tol =
+          4.0 * F.slope_frozen() * EQUILIBRIUM_T_XTOL_REL * std::max(T_ad, EQUILIBRIUM_T_MIN);
+      if (std::abs(f0) <= tol) {
+        conv_T = true;
+        break;
+      }
+      const double T_new = T_ad - f0 / slope;
+      bool c1 = false;
+      const double f1 = F.f(T_new, c1);
+      if (!c1 || !std::isfinite(f1)) break;
+      T_prev = T_ad;
+      f_prev = f0;
+      T_ad = T_new;
+      f0 = f1;
+      c0 = c1;
+      if (T_ad != T_prev) slope = (f0 - f_prev) / (T_ad - T_prev);
+      if (!(slope > 0.0) || !std::isfinite(slope)) slope = F.slope_frozen();
+    }
+  }
 
   // Get equilibrium composition at T_ad
   std::vector<double> n_out;
@@ -1205,7 +1523,82 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
   std::vector<double> nv;
   std::vector<JointReaction> rx;
   std::vector<std::size_t> act;
-  solve_reforming_wgs_joint(n0, T_ad, P, cfg, has_hc, nv, &rx, &act);
+  const bool joint_conv = solve_reforming_wgs_joint(n0, T_ad, P, cfg, has_hc, nv, &rx, &act);
+  // The derivatives below are the implicit function's at a root: at a state
+  // the solve did not converge to they are not those of any F (#1262: ln Q -
+  // ln K up to 62 at a cold, very rich burn gave dT/dP 30 % off), so neither
+  // the state nor its Jacobian is returned. The network takes the exception
+  // as an unphysical probe.
+  if (!res.converged || !joint_conv) {
+    throw std::runtime_error(
+        "combustion_equilibrium_and_jacobian: the reforming + WGS equilibrium did not "
+        "converge (T_in = " + std::to_string(in.T) + " K, P = " + std::to_string(P) + " Pa)");
+  }
+  // A species absent at the solution that the complete-combustion step feeds
+  // (the oxygen carriers of a fuel-only mix as air starts to arrive): its
+  // reactions are left out, so the derivatives below would keep it at 0,
+  // while the solution an instant later holds it in the ratios equilibrium
+  // sets among the trace species, linear in its amount (#1251: J 2.260e6
+  // against a forward difference of 2.357e6 K per kg/s at exactly zero air).
+  // The derivatives are then those at the same state with each such species
+  // at a trace of the total (REFORMING_JACOBIAN_TRACE, up by 100 until the
+  // solve converges) and equilibrated: the one-sided limit to that order. The
+  // value stays the solution's.
+  if (act.size() < rx.size()) {
+    double nt0 = 0.0;
+    for (double v : n0) nt0 += v;
+    // Only species of the reactions left out: an absent species no reaction
+    // of the solve holds (a hydrocarbon of a lean burn's WGS-only solve) has
+    // no extent to differentiate.
+    std::vector<bool> in_left_out(ns, false);
+    for (std::size_t r = 0; r < rx.size(); ++r) {
+      if (std::find(act.begin(), act.end(), r) != act.end()) continue;
+      for (const auto &p : rx[r].nu) in_left_out[p.first] = true;
+    }
+    std::vector<bool> n0v_fed(ns, false);
+    bool fed = false;
+    for (std::size_t j = 0; j < ns; ++j) {
+      if (nv[j] > 0.0 || !in_left_out[j]) continue;
+      bool any = false;
+      for (std::size_t k = 0; k < ns; ++k) any = any || cj.dXb_dX[j][k] != 0.0;
+      if (any) {
+        n0v_fed[j] = true;
+        fed = true;
+      }
+    }
+    if (fed) {
+      // The smallest trace in the ladder at which the solve converges with
+      // the fed species' reactions active: 1e-30 converged for methane only
+      // (ethane, propane and blends from ~1e-22 up), and the no-trace
+      // derivatives kept as a fallback were 34-45 % off for them (#1251
+      // review 4). None converging is refused, as an unconverged solve.
+      bool got = false;
+      for (double trace = REFORMING_JACOBIAN_TRACE; trace <= REFORMING_JACOBIAN_TRACE_MAX;
+           trace *= 100.0) {
+        std::vector<double> n0v = n0;
+        for (std::size_t j = 0; j < ns; ++j) {
+          if (n0v_fed[j]) n0v[j] += trace * nt0;
+        }
+        std::vector<double> nv2;
+        std::vector<JointReaction> rx2;
+        std::vector<std::size_t> act2;
+        if (solve_reforming_wgs_joint(n0v, T_ad, P, cfg, has_hc, nv2, &rx2, &act2) &&
+            act2.size() > act.size()) {
+          nv = nv2;
+          rx = rx2;
+          act = act2;
+          got = true;
+          break;
+        }
+      }
+      if (!got) {
+        throw std::runtime_error(
+            "combustion_equilibrium_and_jacobian: no converged trace state for the one-sided "
+            "derivative at an absent fed species (T_in = " +
+            std::to_string(in.T) + " K, P = " + std::to_string(P) + " Pa)");
+      }
+    }
+  }
 
   // Implicit function theorem on F(xi; n0, T, P) = 0 at the solution,
   // n = n0 + N xi: J dxi = -(dF/dn0 dn0 + dF/dT dT + dF/dP dP), with
@@ -1232,7 +1625,18 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
       dxi[a * N + iT] = dlnK_dT;      // -dF/dT
       dxi[a * N + iP] = -r.dn / P;    // -dF/dP
     }
+    // Scaled symmetrically (s_a = 1/sqrt(J_aa)): a trace species' rows carry
+    // 1/n_j, up to 1e30 at the Jacobian's trace state above.
+    std::vector<double> sc(m);
+    for (std::size_t a = 0; a < m; ++a) sc[a] = 1.0 / std::sqrt(std::max(J[a * m + a], 1e-300));
+    for (std::size_t a = 0; a < m; ++a) {
+      for (std::size_t b = 0; b < m; ++b) J[a * m + b] *= sc[a] * sc[b];
+      for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+    }
     solve_dense(J, dxi, m, N);
+    for (std::size_t a = 0; a < m; ++a) {
+      for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+    }
   }
   std::vector<DV> n(ns);
   for (std::size_t j = 0; j < ns; ++j) {

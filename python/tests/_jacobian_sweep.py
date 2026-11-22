@@ -1540,35 +1540,6 @@ class Open:
 #: hotcold_mild, ideal_nport, impingement, impingement_bypass, effusion,
 #: fuel_controller) take hours there.
 FULL_HITS: dict[str, tuple[Hit, ...]] = {
-    "#1262": (
-        Hit(
-            "combustor", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "element_near_zero", 3e-03
-        ),  # 1.14e-03
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_h2'",
-            "mdot",
-            "a_in.m_dot",
-            "element_near_zero",
-            6e-05,
-        ),  # 2.51e-05
-        Hit(
-            "walled_combustor",
-            "OrificeElement 'x_c2'",
-            "mdot",
-            "a_in.m_dot",
-            "element_near_zero",
-            5e-05,
-        ),  # 2.37e-05
-        Hit(
-            "walled_combustor",
-            "ChannelElement 'hot'",
-            "p",
-            "a_in.m_dot",
-            "element_near_zero",
-            5e-05,
-        ),  # 2.07e-05
-    ),
     "#1241": (
         Hit(
             "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 3e-01
@@ -1601,46 +1572,6 @@ OPEN: tuple[Open, ...] = (
         ),
         Case("combustor", 1, 0, 0),
         "inj.m_dot = 0",
-    ),
-    Open(
-        "#1251",
-        "an equilibrium combustor whose only oxidizer stream is at exactly zero flow (a "
-        "fuel-only mix): on (0, ~1e-12] of oxygen no reforming runs and F's slope is J; "
-        "above it the reforming + WGS solve starts on trace steam and does not converge "
-        "(#1262), so the one-sided difference depends on the step (5865 to 2833 to 5859 "
-        "K per kg/s from 1e-12 to 1e-6). Complete combustion is fixed",
-        (
-            Hit(
-                "fuel_controller",
-                _TT,
-                "T",
-                "a_in.m_dot",
-                "exact_zero",
-                2.0,
-                case="fuel_controller:2/v1/s0",
-            ),
-            Hit(
-                "fuel_controller",
-                _EXIT,
-                "mdot",
-                "a_in.m_dot",
-                "exact_zero",
-                1.8,
-                case="fuel_controller:2/v1/s0",
-                j_value=44.24,
-            ),
-        ),
-        Case("combustor", 2, 0, 0),
-        "a_in.m_dot = 0",
-    ),
-    Open(
-        "#1262",
-        "equilibrium combustion not converged for a cold, very rich mix (an air stream "
-        "near zero beside cold CH4, phi ~ 1e4): ln Q - ln K up to 60, the Jacobian taken "
-        "at a non-root",
-        (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "element_near_zero", 3e-3),),
-        Case("combustor", 2, 0, 0),
-        "a_in flows 1e-09",
     ),
 )
 

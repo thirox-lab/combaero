@@ -7655,7 +7655,14 @@ class NetworkSolver:
 
         # Ensure _derived_states matches final_x (best iterate), not the
         # last trial point the solver happened to evaluate.  This is cheap:
-        # forward T/Y propagation only, no residuals or Jacobian.
+        # forward T/Y propagation only, no residuals or Jacobian. Unguarded on
+        # purpose: final_x is always best_x, which is x0 (a start that raised
+        # returned through _failed_start_result above) or an iterate whose
+        # residuals were evaluated without an exception (best_x is set only on
+        # that branch of _residuals_scaled), so the propagation has already
+        # succeeded at that x (kernel warm starts move an inner root by its
+        # tolerance only). #1262 review: the equilibrium combustor now raises
+        # where its solve does not converge.
         self._boundary_arrivals = {}
         self._record_boundary_arrivals = True
         try:
