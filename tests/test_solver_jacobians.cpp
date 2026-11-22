@@ -497,13 +497,18 @@ TEST(SolverJacobianTest, MomentumChamberIncompressibleDerivativesAndLimit) {
         (f(P + 1, Pt, m, T, Y).rho_static - f(P - 1, Pt, m, T, Y).rho_static) / 2;
     EXPECT_NEAR(r.drho_dP, fdrP, 1e-8 * std::abs(fdrP));
     for (std::size_t k = 0; k < ns; ++k) {
-      if (!(Y[k] > 0.0)) {
-        continue;
-      }
       std::vector<double> Yp = Y, Ym = Y;
-      Yp[k] += 1e-5;
-      Ym[k] -= 1e-5;
-      const double fdY = (f(P, Pt, m, T, Yp).residual - f(P, Pt, m, T, Ym).residual) / 2e-5;
+      double fdY = 0.0;
+      if (!(Y[k] > 0.0)) {
+        // An absent species keeps its partial, one-sided as it enters
+        // (#1245): a stream arriving at zero flow brings it.
+        Yp[k] += 1e-7;
+        fdY = (f(P, Pt, m, T, Yp).residual - r.residual) / 1e-7;
+      } else {
+        Yp[k] += 1e-5;
+        Ym[k] -= 1e-5;
+        fdY = (f(P, Pt, m, T, Yp).residual - f(P, Pt, m, T, Ym).residual) / 2e-5;
+      }
       EXPECT_NEAR(r.d_res_dY[k], fdY, 1e-4 * std::abs(fdY) + 1e-9) << k;
     }
   }

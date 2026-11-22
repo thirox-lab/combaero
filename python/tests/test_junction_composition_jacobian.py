@@ -84,22 +84,34 @@ def test_every_row_matches_central_differences(
     assert float(np.max(scaled_err.max(axis=1) / row_ref)) < 1e-6
 
 
-def test_momentum_chamber_reports_its_composition_derivative() -> None:
-    """The kernel's d(res)/dY_k against a difference on normalised fractions,
-    zero for species absent at the node."""
+@pytest.mark.parametrize("incompressible", [False, True])
+def test_momentum_chamber_reports_its_composition_derivative(incompressible: bool) -> None:
+    """The kernel's d(res)/dY_k against a difference on normalised fractions;
+    a species absent at the node against the one-sided difference as it
+    enters (#1245): a stream arriving at exactly zero flow brings it, and the
+    relay moves it there. Zeroing it gave J a hybrid of the two sides."""
     Y = [0.5 * a + 0.5 * c for a, c in zip(_AIR, _CO2, strict=True)]
     P, T, m, A = 1.9e5, 350.0, 0.05, _A
-    r = cb._core.momentum_chamber_residual_and_jacobian(P, 1.95e5, m, T, Y, A)
+
+    def res(Y_p: list[float]) -> float:
+        return cb._core.momentum_chamber_residual_and_jacobian(
+            P, 1.95e5, m, T, Y_p, A, incompressible
+        ).residual
+
+    r = cb._core.momentum_chamber_residual_and_jacobian(P, 1.95e5, m, T, Y, A, incompressible)
+    absent = 0
     for k, y in enumerate(Y):
+        Y_p, Y_m = list(Y), list(Y)
         if y <= 0.0:
-            assert r.d_res_dY[k] == 0.0
+            absent += 1
+            h = 1e-7
+            Y_p[k] += h
+            fd = (res(Y_p) - r.residual) / h
+            assert r.d_res_dY[k] == pytest.approx(fd, rel=1e-4, abs=1e-6), k
             continue
         h = 1e-4
-        res = []
-        for dy in (h, -h):
-            Y_p = list(Y)
-            Y_p[k] += dy
-            res.append(
-                cb._core.momentum_chamber_residual_and_jacobian(P, 1.95e5, m, T, Y_p, A).residual
-            )
-        assert r.d_res_dY[k] == pytest.approx((res[0] - res[1]) / (2.0 * h), rel=1e-4, abs=1e-6)
+        Y_p[k] += h
+        Y_m[k] -= h
+        fd = (res(Y_p) - res(Y_m)) / (2.0 * h)
+        assert r.d_res_dY[k] == pytest.approx(fd, rel=1e-4, abs=1e-6)
+    assert absent > 0

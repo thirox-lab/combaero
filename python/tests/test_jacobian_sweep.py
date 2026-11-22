@@ -158,8 +158,8 @@ def test_a_bug_only_in_an_equilibrium_combustor_is_new(case: Case, desc: str) ->
 
 
 def test_a_wrong_entry_at_an_exact_zero_is_new() -> None:
-    """#1245 covers its own rows and columns at exact zero, not every exact
-    zero: a 0.5 error on a compressor-network row there is new."""
+    """An exact zero is compared like any other point (#1245 fixed its own
+    misses there): a 0.5 error on a compressor-network row there is new."""
     rep = _check(
         Case("machine", 0, 3, 2),
         "oi.m_dot = 0",
