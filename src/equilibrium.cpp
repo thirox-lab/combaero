@@ -710,6 +710,63 @@ static bool joint_reactions_rich(const ReformingConfig &cfg, const std::vector<d
     rx.push_back(co2_co_key_co);
     rx.push_back(h2o_co2_key_h2o);
   }
+  // H2 is in every reaction above and the key of none, so its change is the
+  // sum of all the extents'. Where it is scarcer than the second hydrocarbon
+  // (the pyrolysis of cold heptane at phi 1000, 10 bar: H2 at 4e-12 beside
+  // hexane at 0.12), the linear solve cannot place it to better than a ln Q
+  // of up to 7e-9 in the oxygen carriers' rows (15 H2 in each), above
+  // REFORMING_NEWTON_FLOOR_FTOL, and half the states in 505-525 K were
+  // refused (#1262 CI). There, the second most abundant hydrocarbon joins
+  // the first as a reference: every other hydrocarbon, and H2 itself, is
+  // exchanged with the two (C and H balanced by them), and H2 is substituted
+  // out of the oxygen carriers' rows. H2 then keys its own reaction only; the
+  // same equilibrium.
+  std::size_t k2 = cfg.hc_indices.size();
+  for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+    if (k == k_ref) continue;
+    if (k2 == cfg.hc_indices.size() || n[cfg.hc_indices[k]] > n[cfg.hc_indices[k2]]) k2 = k;
+  }
+  if (k2 == cfg.hc_indices.size()) return true;
+  const std::size_t i_2 = cfg.hc_indices[k2];
+  const double c2 = cfg.hc_C[k2];
+  const double h2 = cfg.hc_H[k2];
+  const double det = r * h2 - c2 * sH;
+  if (!(n[cfg.i_H2] < n[i_2]) || !(std::abs(det) > 0.0)) return true;
+  // (c, h) = a (r, sH) + b (c2, h2).
+  auto split = [&](double c, double h, double &a, double &b) {
+    a = (c * h2 - c2 * h) / det;
+    b = (r * h - c * sH) / det;
+  };
+  double a_h = 0.0, b_h = 0.0;
+  split(0.0, 2.0, a_h, b_h);
+  std::vector<JointReaction> two;
+  for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+    if (k == k_ref || k == k2) continue;
+    double a = 0.0, b = 0.0;
+    split(cfg.hc_C[k], cfg.hc_H[k], a, b);
+    two.push_back(
+        JointReaction{{{cfg.hc_indices[k], -1.0}, {i_ref, a}, {i_2, b}}, a + b - 1.0, 0});
+  }
+  two.push_back(JointReaction{{{cfg.i_H2, -1.0}, {i_ref, a_h}, {i_2, b_h}}, a_h + b_h - 1.0, 0});
+  for (std::size_t q = rx.size() - 2; q < rx.size(); ++q) {
+    JointReaction o;
+    o.key = 0;
+    double nu_h2 = 0.0, nu_ref = 0.0;
+    for (const auto &p : rx[q].nu) {
+      if (p.first == cfg.i_H2) {
+        nu_h2 = p.second;
+      } else if (p.first == i_ref) {
+        nu_ref = p.second;
+      } else {
+        o.nu.push_back(p);
+      }
+    }
+    o.nu.push_back({i_ref, nu_ref + nu_h2 * a_h});
+    o.nu.push_back({i_2, nu_h2 * b_h});
+    o.dn = rx[q].dn + nu_h2 * (a_h + b_h - 1.0);
+    two.push_back(o);
+  }
+  rx = two;
   return true;
 }
 

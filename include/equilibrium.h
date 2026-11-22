@@ -74,7 +74,9 @@ constexpr double REFORMING_JOINT_CHECK_RTOL = 1e-10;
 // The joint solve takes the hydrocarbon-rich basis (the most abundant
 // hydrocarbon's reactions with the oxygen carriers, every other
 // hydrocarbon's exchange with it; the same equilibrium) when that
-// hydrocarbon is at least this fraction of the total (#1262).
+// hydrocarbon is at least this fraction of the total (#1262). Where H2 is
+// scarcer than the second most abundant hydrocarbon (pyrolysis), that one
+// joins as a second reference and H2 keys its own exchange with the two.
 constexpr double REFORMING_RICH_BASIS_HC_FRACTION = 1e-4;
 // The element-potential start is handed to the Newton polish once its full
 // corrections in ln n are below this, converged or not (#1262).

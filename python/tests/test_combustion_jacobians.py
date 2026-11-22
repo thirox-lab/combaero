@@ -535,17 +535,14 @@ def test_trace_oxygen_equilibrium_jacobian_is_exact() -> None:
 def test_an_unconverged_equilibrium_is_refused() -> None:
     """The combustor never takes a state, or its Jacobian, the solve did not
     converge to (#1262): combustion_equilibrium_and_jacobian raises there,
-    which the network takes as an unphysical probe. Heptane at phi ~ 1400 is
-    one state the solve still misses (hydrogen at 1e-12 is the trace there)."""
-    X_air = np.array(_X_AIR)
-    i_f = _cb.species_index_from_name("NC7H16")
-    c = X_air[_cb.species_index_from_name("O2")] / _cb.oxygen_required_per_mol_fuel(i_f)
-    Xf = np.zeros(len(X_air))
-    Xf[i_f] = 1.0
-    X = (X_air + c * 1380.0 * Xf) / (1.0 + c * 1380.0)
-    assert not _cb._core.combustion_equilibrium(535.0, X, 2.87e6).converged
+    which the network takes as an unphysical probe. Very lean methane below
+    250 K is one state the solve still misses (#1285); heptane at phi 1380,
+    the state this used before, converges since H2 is exchanged with two
+    hydrocarbons in pyrolysis."""
+    X = _fuel_in_air("CH4", 3.119e-4)
+    assert not _cb._core.combustion_equilibrium(208.5, X, 1.03e6).converged
     with pytest.raises(RuntimeError, match="did not converge"):
-        _cb._core.combustion_equilibrium_and_jacobian(535.0, X, 2.87e6)
+        _cb._core.combustion_equilibrium_and_jacobian(208.5, X, 1.03e6)
 
 
 def _fuel_in_air(fuel: str, phi: float, vitiated: bool = False) -> np.ndarray:
@@ -680,6 +677,35 @@ def test_a_root_is_not_refused_for_its_bracket_ends(
     r = _cb._core.combustion_equilibrium(T, _fuel_in_air(fuel, 1000.0), P)
     assert r.converged
     assert pytest.approx(T_ref, abs=1e-4) == r.state.T
+
+
+@pytest.mark.parametrize(
+    ("fuel", "phi", "T", "P"),
+    [
+        ("NC7H16", 1000.0, 500.0, 1e6),
+        ("NC7H16", 1000.0, 250.0, 1e5),
+        ("NC6H14", 1000.0, 300.0, 1e6),
+        ("IC4H10", 3000.0, 250.0, 1e6),
+    ],
+)
+def test_a_pyrolysis_equilibrium_converges_beside_its_neighbours(
+    fuel: str, phi: float, T: float, P: float
+) -> None:
+    """Pyrolysis, H2 scarcer than the second hydrocarbon (4e-12 beside hexane
+    at 0.12 for heptane at phi 1000, 500 K, 10 bar): H2 was in every reaction
+    and the key of none, the Newton's floor in the oxygen carriers' rows was up
+    to 7e-9, and 735 of 861 states within 1e-9 of the first case were refused,
+    T scattering by 4.6 K; the bracket-end test above passed on macOS by luck
+    and failed on Linux (#1262 CI). H2 is now exchanged with the two most
+    abundant hydrocarbons. Each state and its inlet-T neighbours converge to
+    one T."""
+    X = _fuel_in_air(fuel, phi)
+    Ts = []
+    for k in range(-5, 6):
+        r = _cb._core.combustion_equilibrium(T * (1.0 + k * 1e-12), X, P)
+        assert r.converged, (fuel, k)
+        Ts.append(r.state.T)
+    assert max(Ts) - min(Ts) < 1e-6
 
 
 @pytest.mark.parametrize(
