@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <vector>
 
 #include "thermo.h"
 #include "thermo_c2_refit_data.h"
@@ -149,5 +150,36 @@ TEST(ThermoC2Refit, EnthalpyAndEntropyAreTheIntegralsOfCpInsideTheBridges) {
         EXPECT_NEAR(dS * T, cp, 1e-7 * cp) << i << " " << T;
       }
     }
+  }
+}
+
+// cp_breakpoints (#1255): the quadratures over T split where cp is not
+// smooth. Under the re-fit that is each bridge's window edge, not the join
+// it smooths; under NASA-9 the joins themselves. The data's 200 K lower end
+// (the low tail's joint) is in both.
+TEST(ThermoC2Refit, CpBreakpointsFollowTheActiveModel) {
+  auto has = [](const std::vector<double>& v, double t) {
+    return std::find(v.begin(), v.end(), t) != v.end();
+  };
+  {
+    ModelGuard g(ThermoModel::NASA9_C2);
+    const auto& bp = combaero::cp_breakpoints();
+    EXPECT_TRUE(std::is_sorted(bp.begin(), bp.end()));
+    EXPECT_TRUE(has(bp, 200.0));
+    for (const auto& species : c2_bridges) {
+      for (const C2Bridge& b : species) {
+        EXPECT_TRUE(has(bp, b.T_join - b.half_width)) << b.T_join;
+        EXPECT_TRUE(has(bp, b.T_join + b.half_width)) << b.T_join;
+      }
+    }
+    EXPECT_FALSE(has(bp, 1000.0));  // smooth inside the bridge
+  }
+  {
+    ModelGuard g(ThermoModel::NASA9);
+    const auto& bp = combaero::cp_breakpoints();
+    EXPECT_TRUE(has(bp, 200.0));
+    EXPECT_TRUE(has(bp, 1000.0));
+    EXPECT_TRUE(has(bp, 6000.0));
+    EXPECT_FALSE(has(bp, 950.0));
   }
 }

@@ -128,8 +128,10 @@ void check_window(const char* who, double lo, double hi, const char* what) {
 // a gamma-only expression the earlier code wrote in doubles, where the
 // compiler may fuse a * b + c, keeps that double form for its value
 // (revalue). DualN's quotient of two duals is the exact a / b the double one
-// was. The element's residuals and every closure value are the earlier
-// code's bit for bit (measured at 3000 random element states, #1246).
+// was. With the C-D nozzle's exit Mach in its cancellation-free form
+// (cd_nozzle_forward) the only exception, the element's residuals and every
+// closure value are the earlier code's bit for bit (measured at 3000 random
+// element states, #1246).
 // -----------------------------------------------------------------------------
 namespace {
 
@@ -282,7 +284,11 @@ double cd_nozzle_forward(double p_up, double Tt, double p_down, double area_thro
   if (r < 1.0) {
     double gm1 = gamma - 1.0;
     double gp1 = gamma + 1.0;
-    double mach = std::sqrt(2.0 / gm1 * (std::pow(r, -gm1 / gamma) - 1.0));
+    // r^(-(g-1)/g) - 1 as expm1(-(g-1)/g log1p(x)), x = (p_down - p_up) / p_up:
+    // the pow form cancels as r -> 1, a relative error ~ eps / (1 - r) in M^2
+    // (1.5e-7 at 1 - r = 1e-9), and so in the flow and its P_py slope.
+    const double x = (p_down - p_up) / p_up;
+    double mach = std::sqrt(2.0 / gm1 * std::expm1(-gm1 / gamma * std::log1p(x)));
     // Below the critical ratio the throat is choked: hold the exit flux at
     // its sonic maximum (flux'(M = 1) = 0, so C1). The supersonic-exit flux
     // FALLS with M and dipped under the cap at deep expansion (r < 0.16 at
@@ -349,8 +355,9 @@ DualN<N> cd_nozzle_d(const DualN<N>& p0, const DualN<N>& t0, const DualN<N>& p_p
     D cap = cap_of(p_up);
     D exit_flux = D::constant(0.0);
     if (p_down.v < p_up.v) {
-      D r = p_down / p_up;
-      D mach_sq = (2.0 / gm1) * (dpow_dd(r, -gm1 / gamma) - 1.0);
+      // Cancellation-free as r = p_down / p_up -> 1 (see cd_nozzle_forward).
+      D x = (p_down - p_up) / p_up;
+      D mach_sq = (2.0 / gm1) * dexpm1((-gm1 / gamma) * dlog1p(x));
       D mach = dsqrt(mach_sq);
       if (mach.v > 1.0) mach = D::constant(1.0); // choked: see ejector_cd_nozzle_mass_flow
       D flux = mach * dpow_dd(1.0 + 0.5 * gm1 * mach * mach, -gp1 / (2.0 * gm1));

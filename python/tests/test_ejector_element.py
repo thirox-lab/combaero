@@ -529,3 +529,36 @@ def test_full_network_solves_and_conserves_mass():
     # Critical mode: the actual outlet back pressure (imposed by pb_outlet,
     # 40 kPa) must not exceed the ejector's own P_c* (ej1.P_jct).
     assert sol["mc_outlet.Pt"] <= sol["ej1.P_jct"] * 1.01
+
+
+@pytest.mark.parametrize("gap", [1e-6, 1e-9, 1e-12])
+def test_cd_nozzle_flow_and_slope_have_no_cancellation_near_zero_drive(gap: float) -> None:
+    """The C-D nozzle's subsonic exit Mach, M^2 = 2/(g-1) (r^(-(g-1)/g) - 1),
+    cancelled as r = P_py / Pt -> 1: a relative error ~ eps / (1 - r) in the
+    flow and its P_py slope (1.5e-7 at 1 - r = 1e-9, 1e-4 at 1e-12). Written
+    with expm1/log1p it stays at rounding; checked against a 40-digit
+    evaluation of the same closure (subsonic flux smooth-min'd with the cap)."""
+    mpmath = pytest.importorskip("mpmath")
+    from combaero import _solver_tools
+
+    mpmath.mp.dps = 40
+    g, R, eta, Pt, Tt, At, Ae = 1.4, 287.0, 0.95, 2.0e5, 300.0, 3.14e-5, 1.0e-4
+    p_py = Pt * (1.0 - gap)
+
+    def flux(p):
+        gm, r = mpmath.mpf(g), mpmath.mpf(p) / mpmath.mpf(Pt)
+        m = mpmath.sqrt(2 / (gm - 1) * (r ** (-(gm - 1) / gm) - 1))
+        f = m * (1 + (gm - 1) / 2 * m * m) ** (-(gm + 1) / (2 * (gm - 1)))
+        ex = Ae * mpmath.sqrt(gm / R) * mpmath.sqrt(eta) * Pt / mpmath.sqrt(Tt) * f
+        cc = mpmath.sqrt(gm / R * (2 / (gm + 1)) ** ((gm + 1) / (gm - 1)))
+        cap = cc * At * mpmath.sqrt(eta) * Pt / mpmath.sqrt(Tt)
+        e = mpmath.mpf(1e-3) * cap
+        return (ex + cap - mpmath.sqrt((ex - cap) ** 2 + e * e)) / 2
+
+    j = _solver_tools.ejector_cd_nozzle_mass_flow_and_jacobian(
+        Pt, Tt, p_py, At, Ae, g, R, eta, 1e-3
+    )
+    ref = flux(mpmath.mpf(p_py))
+    dref = mpmath.diff(flux, mpmath.mpf(p_py))
+    assert j.mdot == pytest.approx(float(ref), rel=1e-8)
+    assert j.dmdot_dp_py == pytest.approx(float(dref), rel=1e-8)

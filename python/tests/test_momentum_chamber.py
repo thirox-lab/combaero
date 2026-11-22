@@ -352,6 +352,23 @@ def test_static_state_below_the_data_has_an_exact_pressure_partial_1255() -> Non
         assert r.d_res_dP == pytest.approx(fd, rel=2e-8)
 
 
+def test_static_state_across_a_c2_bridge_edge_has_an_exact_pressure_partial() -> None:
+    """The same quadrature flaw at a C2 bridge's window edge (950 K, where the
+    re-fit's third derivative of cp jumps): T_static 935 K, T0 1100 K. One
+    rule across it left d(res)/dP 4.7e-8 off the residual's own slope; the
+    quadrature splits at the active thermo model's breakpoints."""
+    A = 1.9635e-3
+    P, m, T0 = 2.0e5, 0.9, 1100.0
+    r = _chamber_closure(P, P, m, T0, _Y_AIR, A)
+    assert r.T_static < 950.0
+    h = 1.0
+    fd = (
+        _chamber_closure(P + h, P, m, T0, _Y_AIR, A).residual
+        - _chamber_closure(P - h, P, m, T0, _Y_AIR, A).residual
+    ) / (2 * h)
+    assert r.d_res_dP == pytest.approx(fd, rel=5e-9)
+
+
 @pytest.mark.filterwarnings("ignore:.*STATIC temperature:FutureWarning")
 def test_node_reports_the_static_state_its_closure_used() -> None:
     """mach, rho and T_static of a solved chamber come from the static state,
