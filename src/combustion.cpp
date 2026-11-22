@@ -439,8 +439,16 @@ CompleteCombustionCore complete_combustion_core(const std::vector<double> &X,
     }
   }
   const double X_O2 = X[idx_O2];
-  if (X_O2 <= tol) {
-    return unchanged();  // no oxygen, no combustion
+  // No oxygen, no combustion: the products are the reactants. The value stays
+  // that; the Jacobian is the one-sided limit X_O2 -> 0+ below whenever a fuel
+  // is present (#1251): a fuel-only mix burns the first oxygen that arrives,
+  // so dX_b/dX_O2 is not the identity there. The identity slope gave a
+  // combustor fed by fuel alone dT/dm_air = 0 where the difference gave
+  // 2.2e6 K per kg/s. Any X_O2 > 0 burns (f <= r keeps O2 left >= 0): a cut
+  // at X_O2 <= 1e-12, as before, put a kink of the same size there.
+  const bool no_oxygen = !(X_O2 > 0.0);
+  if (no_oxygen && (!with_jacobian || !(a > 0.0))) {
+    return unchanged();
   }
 
   // n_req(a), its slope, s = n_req / a and ds/da.
@@ -554,6 +562,12 @@ CompleteCombustionCore complete_combustion_core(const std::vector<double> &X,
     for (std::size_t j = 0; j < ns; ++j) {
       out.dXb_dX[j][k] = (dn[j][k] - out.X_b[j] * dN) / N;
     }
+  }
+  if (no_oxygen) {
+    // The value is the unburnt mix (as without the Jacobian); the slope above
+    // is that of the burning branch at r = X_O2 / n_req -> 0.
+    out.X_b = X;
+    out.burn_fraction = 0.0;
   }
   return out;
 }

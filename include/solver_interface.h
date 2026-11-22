@@ -608,6 +608,14 @@ constexpr double kMixerHeatMdotFloor = 1e-6;
 // near-zero start they sent the first Newton step the wrong way.
 constexpr double kMixerNoFlowBand = 1e-12;
 
+// Relative mismatch combustor_residuals_and_jacobians accepts between its P
+// and the streams' mixed Pt (round-off of the same mean computed twice).
+constexpr double kCombustorPressureMatchRtol = 1e-12;
+
+// Lowest pressure [Pa] the combustion kernels evaluate a burn at: a solver
+// probe below it is burnt at this pressure, with zero pressure partials.
+constexpr double kEquilibriumPressureFloor = 100.0;
+
 // The enthalpy rise per unit heat, phi = delta_h / Q [1/(kg/s)], a mixing node
 // applies at total flow mdot_tot, and d(phi)/d(mdot_tot). 1/|m| at or above
 // kMixerHeatMdotFloor m0; below it phi = (4 u^2 - 3 u^3) / m0, u = |m| / m0,
@@ -692,6 +700,9 @@ MixerResult adiabatic_T_complete_and_jacobian_T_from_streams(
 MixerResult adiabatic_T_equilibrium_and_jacobians_from_streams(
     const std::vector<Stream> &streams, double P, double Q = 0.0, double fraction = 0.0);
 // Full combustor evaluation including pressure loss analytical chain rule.
+// P is the streams' mixed total pressure (the mixer's Pt_mix), checked to
+// kCombustorPressureMatchRtol (std::invalid_argument otherwise); the stream
+// partials chain the equilibrium's dT/dP and dY/dP through it (#1244).
 MixerResult combustor_residuals_and_jacobians(
     const std::vector<Stream> &streams, double P, double Q, double fraction,
     const PressureLossCorrelation &pressure_loss, bool use_equilibrium = false);

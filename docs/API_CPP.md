@@ -2918,7 +2918,10 @@ double heat_entropy_flux(double m_dot, double Tt_in, double Tt_out,
 // stagnant node holds the temperature of what reaches it.
 std::tuple<double, double> mixer_heat_per_unit_flow(double mdot_tot);
 
-// Combustion of mixed streams with a pressure-loss correlation
+// Combustion of mixed streams with a pressure-loss correlation. P must be the
+// streams' mixed Pt (mixer_from_streams_and_jacobians(streams).Pt_mix, to
+// kCombustorPressureMatchRtol; std::invalid_argument otherwise): the stream
+// partials carry the equilibrium's dependence on it (#1244).
 MixerResult combustor_residuals_and_jacobians(
     const std::vector<Stream>& streams, double P, double Q, double fraction,
     const PressureLossCorrelation& pressure_loss, bool use_equilibrium = false);

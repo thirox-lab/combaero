@@ -294,3 +294,120 @@ def test_equilibrium_softmin_moves_T_only_near_stoichiometric() -> None:
         assert abs(change(phi)) < 1e-9, phi
     # ln2/k1 of the fuel is left unburnt at phi = 1: measured -0.0833 K.
     assert -0.1 < change(1.0) < -0.07
+
+
+# --- #1251 / #1244: zero-oxygen slope and the burn pressure's partials -------
+
+
+def _zero_loss(ctx: object) -> tuple[float, float]:
+    return (0.0, 0.0)
+
+
+def _combustor(streams: list, method: str):
+    """The combustor kernel as CombustorNode calls it: at the streams' mixed
+    Pt (#1244)."""
+    P = _st.mixer_from_streams_and_jacobians(streams).Pt_mix
+    return _st.combustor_residuals_and_jacobians(
+        streams, P, pressure_loss=_zero_loss, use_equilibrium=(method == "equilibrium")
+    )
+
+
+def test_a_fuel_only_mix_burns_the_first_oxygen() -> None:
+    """At X_O2 = 0 with fuel present the products are the reactants, and
+    dX_b/dX_O2 is the burning branch's slope as X_O2 -> 0+, not the identity
+    (#1251): the identity gave a fuel-fed combustor dT/dm_air = 0 against a
+    one-sided difference of 2.26e6 K per kg/s."""
+    names = [_cb.species_name(i) for i in range(_cb.num_species())]
+    iO2, iC = names.index("O2"), names.index("CH4")
+    X0 = np.zeros(len(names))
+    X0[iC] = 1.0
+    cj = _cb.complete_combustion_products_and_jacobian(X0)
+    assert np.array(cj.X_b) == pytest.approx(X0, abs=0.0)
+    v = np.zeros(len(names))
+    v[iO2], v[iC] = 1.0, -1.0
+    h = 1e-9
+    fd = (np.array(_cb.complete_combustion_products_and_jacobian(X0 + h * v).X_b) - X0) / h
+    an = np.array(cj.dXb_dX) @ v
+    assert np.abs(an - fd).max() < 1e-6 * np.abs(fd).max()
+    assert np.abs(an - v).max() > 0.5  # not the identity
+
+
+def test_a_fuel_only_combustor_moves_with_the_air_flow() -> None:
+    """Combustor kernel, air stream at exactly 0 beside a CH4 stream (#1251,
+    combustor:2 point a_in.m_dot = 0): the air column against the one-sided
+    difference on the arriving side (the solver's convention at m = 0).
+    Complete combustion to 1e-6. Equilibrium only at the sweep's steps: J is
+    the complete chain's, F's slope below the reforming onset (about 1e-12
+    of oxygen); above the onset the reforming + WGS solve on trace steam does
+    not converge (#1262) and the difference depends on the step (1.0e6 at
+    1e-14 kg/s, 2.26e6 at 1e-7), which #1251 keeps open."""
+    Y_air = _Y_AIR
+    for method, h, rel in (("complete", 1e-10, 1e-6), ("equilibrium", 1e-7, 2e-3)):
+
+        def burn(ma: float, method: str = method):
+            s = [
+                _cb.MassStream(ma, 300.0, 2.0e5, Y_air),
+                _cb.MassStream(5.76e-4, 300.0, 2.1e5, _Y_CH4),
+            ]
+            return _combustor(s, method)
+
+        r = burn(0.0)
+        fd = (burn(h).Tt_mix - r.Tt_mix) / h
+        an = r.dTt_mix_d_stream[0].d_mdot
+        assert fd > 1e6
+        assert an == pytest.approx(fd, rel=rel), (method, an, fd)
+
+
+@pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])
+def test_the_equilibrium_combustor_carries_its_burn_pressure(ma: float) -> None:
+    """The equilibrium depends on its pressure, the streams' mixed Pt, which
+    moves with each stream's flow and Pt (#1244). Near zero air flow (3e-5
+    kg/s beside 5.4e-4 kg/s of fuel 5 % higher in Pt) that mean moves 1.7e7
+    Pa per kg/s, and the flow column was 3.5e-4 of the row off."""
+    Y_fuel = [0.0] * len(_Y_AIR)
+    for k, y in enumerate(_Y_AIR):
+        Y_fuel[k] = 0.85 * y
+    Y_fuel[_cb.species_index_from_name("CH4")] += 0.15
+
+    def burn(ma: float, Pa: float = 2.0e5, mf: float = 5.376e-4):
+        s = [
+            _cb.MassStream(ma, 650.0, Pa, _Y_AIR),
+            _cb.MassStream(mf, 300.0, 2.1e5, Y_fuel),
+        ]
+        return _combustor(s, "equilibrium")
+
+    r = burn(ma)
+    ico = _cb.species_index_from_name("CO")
+    hm, hp = 1e-3 * ma, 10.0
+    checks = [
+        (r.dTt_mix_d_stream[0].d_mdot, lambda d: burn(ma + d).Tt_mix, hm),
+        (r.dTt_mix_d_stream[0].d_Pt, lambda d: burn(ma, 2.0e5 + d).Tt_mix, hp),
+        (r.dY_mix_d_stream[ico][0].d_mdot, lambda d: burn(ma + d).Y_mix[ico], hm),
+        (r.dY_mix_d_stream[ico][0].d_Pt, lambda d: burn(ma, 2.0e5 + d).Y_mix[ico], hp),
+    ]
+    for an, f, step in checks:
+        fd = (f(step) - f(-step)) / (2 * step)
+        assert an == pytest.approx(fd, rel=1e-5, abs=1e-12), (an, fd)
+    if ma < 1e-4:  # rich: the reforming moves with P (lean, it does not)
+        assert abs(r.dTt_mix_d_stream[0].d_Pt) > 1e-7
+
+
+def test_the_combustor_refuses_a_pressure_other_than_the_mixed_pt() -> None:
+    """The stream partials are the mixed Pt's, so a caller's own P would carry
+    them wrongly (dT/dPt_fuel 1.3e-4 against an FD of 0 at P = 1e5 beside a
+    mixed 2.03e5): refused (#1244 review)."""
+    s = [
+        _cb.MassStream(0.05, 650.0, 2.0e5, _Y_AIR),
+        _cb.MassStream(1e-3, 300.0, 2.1e5, _Y_CH4),
+    ]
+    with pytest.raises(ValueError, match="mixed Pt"):
+        _st.combustor_residuals_and_jacobians(
+            s, 1.0e5, pressure_loss=_zero_loss, use_equilibrium=True
+        )
+    _combustor(s, "equilibrium")  # at the mixed Pt: accepted
+    # A non-finite stream Pt is refused as a bad pressure, not as a mismatch.
+    bad = [s[0], _cb.MassStream(1e-3, 300.0, float("nan"), _Y_CH4)]
+    with pytest.raises(ValueError, match="finite and positive"):
+        _st.combustor_residuals_and_jacobians(
+            bad, float("nan"), pressure_loss=_zero_loss, use_equilibrium=True
+        )
