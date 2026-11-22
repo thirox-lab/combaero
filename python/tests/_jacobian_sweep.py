@@ -1573,37 +1573,6 @@ OPEN: tuple[Open, ...] = (
         Case("combustor", 1, 0, 0),
         "inj.m_dot = 0",
     ),
-    Open(
-        "#1251",
-        "an equilibrium combustor whose only oxidizer stream is at exactly zero flow (a "
-        "fuel-only mix): on (0, ~1e-12] of oxygen no reforming runs and F's slope is J; "
-        "above it the converged equilibrium (#1262) holds the hydrocarbon interconversion "
-        "the first oxygen enables, a step in F (-1.7e-3 K at 17 bar, 300 K) that "
-        "pyrolysis-always removes. Complete combustion is fixed",
-        (
-            Hit(
-                "fuel_controller",
-                _TT,
-                "T",
-                "a_in.m_dot",
-                "exact_zero",
-                2.0,
-                case="fuel_controller:2/v1/s0",
-            ),
-            Hit(
-                "fuel_controller",
-                _EXIT,
-                "mdot",
-                "a_in.m_dot",
-                "exact_zero",
-                1.8,
-                case="fuel_controller:2/v1/s0",
-                j_value=44.24,
-            ),
-        ),
-        Case("combustor", 2, 0, 0),
-        "a_in.m_dot = 0",
-    ),
 )
 
 

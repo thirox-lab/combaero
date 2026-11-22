@@ -1477,6 +1477,41 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
         "combustion_equilibrium_and_jacobian: the reforming + WGS equilibrium did not "
         "converge (T_in = " + std::to_string(in.T) + " K, P = " + std::to_string(P) + " Pa)");
   }
+  // A species absent at the solution that the complete-combustion step feeds
+  // (the oxygen carriers of a fuel-only mix as air starts to arrive): its
+  // reactions are left out, so the derivatives below would keep it at 0,
+  // while the solution an instant later holds it in the ratios equilibrium
+  // sets among the trace species, linear in its amount (#1251: J 2.260e6
+  // against a forward difference of 2.357e6 K per kg/s at exactly zero air).
+  // The derivatives are then those at the same state with each such species
+  // at REFORMING_JACOBIAN_TRACE of the total and equilibrated: the one-sided
+  // limit to that order. The value stays the solution's.
+  if (act.size() < rx.size()) {
+    double nt0 = 0.0;
+    for (double v : n0) nt0 += v;
+    std::vector<double> n0v = n0;
+    bool fed = false;
+    for (std::size_t j = 0; j < ns; ++j) {
+      if (nv[j] > 0.0) continue;
+      bool any = false;
+      for (std::size_t k = 0; k < ns; ++k) any = any || cj.dXb_dX[j][k] != 0.0;
+      if (any) {
+        n0v[j] += REFORMING_JACOBIAN_TRACE * nt0;
+        fed = true;
+      }
+    }
+    if (fed) {
+      std::vector<double> nv2;
+      std::vector<JointReaction> rx2;
+      std::vector<std::size_t> act2;
+      if (solve_reforming_wgs_joint(n0v, T_ad, P, cfg, has_hc, nv2, &rx2, &act2) &&
+          act2.size() > act.size()) {
+        nv = nv2;
+        rx = rx2;
+        act = act2;
+      }
+    }
+  }
 
   // Implicit function theorem on F(xi; n0, T, P) = 0 at the solution,
   // n = n0 + N xi: J dxi = -(dF/dn0 dn0 + dF/dT dT + dF/dP dP), with
@@ -1503,7 +1538,18 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
       dxi[a * N + iT] = dlnK_dT;      // -dF/dT
       dxi[a * N + iP] = -r.dn / P;    // -dF/dP
     }
+    // Scaled symmetrically (s_a = 1/sqrt(J_aa)): a trace species' rows carry
+    // 1/n_j, up to 1e30 at the Jacobian's trace state above.
+    std::vector<double> sc(m);
+    for (std::size_t a = 0; a < m; ++a) sc[a] = 1.0 / std::sqrt(std::max(J[a * m + a], 1e-300));
+    for (std::size_t a = 0; a < m; ++a) {
+      for (std::size_t b = 0; b < m; ++b) J[a * m + b] *= sc[a] * sc[b];
+      for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+    }
     solve_dense(J, dxi, m, N);
+    for (std::size_t a = 0; a < m; ++a) {
+      for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+    }
   }
   std::vector<DV> n(ns);
   for (std::size_t j = 0; j < ns; ++j) {

@@ -40,7 +40,8 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // carriers as differences of larger changes; 201 of 375 trace-oxygen and
 // very rich methane states did not converge, none does now. Likewise WGS is
 // keyed on CO where it is the scarcer carbon oxide (a lean burn with trace
-// fuel), and a reaction driven toward an absent species is run by a trace,
+// fuel), and a reaction driven toward an absent species (pyrolysis of a fuel
+// with no oxygen too, #1251) is run by a trace,
 // seeding it, and the solve repeated (REFORMING_SEED_FRACTION).
 constexpr int REFORMING_START_PASSES = 3;
 constexpr double REFORMING_PASS_RTOL = 1e-14;
@@ -87,6 +88,10 @@ constexpr int REFORMING_SEED_PASSES = 3;
 // A solved state's element totals (C, H, O) match the input's to this,
 // relative to the largest total, or the solve is not converged (#1262).
 constexpr double REFORMING_ELEMENT_RTOL = 1e-12;
+// The Jacobian of a solution with an absent species that the complete-
+// combustion step feeds is taken with that species at this fraction of the
+// total, equilibrated: the one-sided limit (#1251).
+constexpr double REFORMING_JACOBIAN_TRACE = 1e-30;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the

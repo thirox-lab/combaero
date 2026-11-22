@@ -356,15 +356,13 @@ def test_a_fuel_only_combustor_moves_with_the_air_flow() -> None:
     assert an == pytest.approx(fd, rel=1e-6), (an, fd)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#1251: the equilibrium F steps at the oxygen onset (the hydrocarbon "
-    "interconversion the first oxygen enables); pyrolysis-always flips this",
-)
 def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow() -> None:
-    """The equilibrium leg of the test above: J at exactly zero air flow
-    against the one-sided difference, at a step that resolves it (1e-12 and
-    1e-9 kg/s both, to 1e-3)."""
+    """The equilibrium leg of the test above (#1251): J at exactly zero air
+    flow against the forward one-sided difference (the arriving side). The
+    oxygen carriers are absent there and their reactions left out, so J kept
+    them at 0: 2.260e6 against 2.357e6 K per kg/s. It is now taken at the
+    same state with them at a 1e-30 trace, equilibrated (the one-sided
+    limit); the difference bends from 1e-11 kg/s on (2.317e6 at 1e-9)."""
 
     def burn(ma: float):
         s = [
@@ -375,9 +373,9 @@ def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow() -> None:
 
     r = burn(0.0)
     an = r.dTt_mix_d_stream[0].d_mdot
-    for h in (1e-12, 1e-9):
+    for h in (1e-14, 1e-13, 1e-12):
         fd = (burn(h).Tt_mix - r.Tt_mix) / h
-        assert an == pytest.approx(fd, rel=1e-3), (h, an, fd)
+        assert an == pytest.approx(fd, rel=1e-4), (h, an, fd)
 
 
 @pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])

@@ -3174,12 +3174,25 @@ result = combustion_from_phi(phi=0.8, T=300, P=2e5, fuel="CH4", oxidizer="air")
 
 With `method="equilibrium"`, `combustion_from_streams` raises `RuntimeError`
 where the reforming + WGS equilibrium does not converge (#1262): it returns
-no state that is not an equilibrium. The solve converges over methane with
-oxygen from 1e-30 to 1e-2 and in air from phi 1e-4 to 1e4 (250-900 K, 1-17
-bar), and over lean to very rich draws of six fuels (phi 1e-5 to 3000,
-250-1500 K), except some heptane in air beyond phi 350 (most cold, below
-500 K) and isobutane at phi 1000 and above at 250 K. `combaero.combustion_equilibrium` itself still returns, with
-`converged` set accordingly.
+no state that is not an equilibrium. `combaero.combustion_equilibrium` itself
+still returns, with `converged` set accordingly.
+
+- **Fuel without oxygen pyrolyses** (#1251, the owner's decision of
+  2026-11-22): the hydrocarbons interconvert with H2 as equilibrium implies,
+  also where no oxygen is present, so the equilibrium is continuous at the
+  first trace of oxygen. Pure CH4 at 900 K comes out 891.68 K (8.32 K
+  below its inlet); C3H8 at 300 K comes out 385.52 K (+85.5 K) and at
+  900 K 925.64 K (+25.6 K), each a C/H-only Gibbs minimum; nC7H16 is
+  unchanged, as the most carbon-rich species of the set.
+- **Where the solve converges:** methane with oxygen from 1e-30 to 1e-2
+  and in air from phi 1e-4 to 1e4 (250-900 K, 1-17 bar); lean to very rich
+  draws of six fuels (phi 1e-5 to 3000, 250-1500 K), and fuel with a trace
+  of oxygen from 1e-22 up.
+- **Where it does not:** heptane in air beyond phi 350 in part (most below
+  500 K); isobutane at phi 1000 and above at 250 K; C2H6, C3H8, iC4H10 and
+  a natural-gas blend with oxygen at 3e-24 or less (exactly 0 and 1e-20
+  converge); fuel-only heptane with any trace of oxygen, at every
+  temperature.
 
 ### MixtureState for Network Data
 ```python
