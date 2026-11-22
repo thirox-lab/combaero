@@ -1071,109 +1071,42 @@ static bool element_potential_start(
 // a state reported converged: ethane at phi 2400, 266 K, 4.2 bar had no
 // methane (0.71 at equilibrium) and came out 276 K against 441 K; heptane in
 // air stepped 2.55 K between phi 87.45 and 87.475 as isobutane dropped out.
-// The element potentials of the present species predict each absent one,
-// ln x_j = sum_e a_je lam_e - g_j/RT - ln(P/P0); one predicted above
-// REFORMING_SEED_FRACTION has a positive affinity and is seeded at its
-// predicted amount (at most half of what the present species can give), from
-// them by an element-conserving combination (each in proportion to its
-// amount); a thousandth of it
-// left ln Q 7 off and the Newton from it crawled. Returns whether any was
-// (false: none is missing), or sets missing when one is predicted but cannot
-// be seeded.
-static bool seed_absent_species(std::vector<double> &n, double T, double P,
-                                const std::vector<JointReaction> &rx, bool &missing) {
-  missing = false;
-  std::vector<std::size_t> sp;
-  for (const auto &r : rx) {
-    for (const auto &p : r.nu) {
-      if (std::find(sp.begin(), sp.end(), p.first) == sp.end()) sp.push_back(p.first);
-    }
-  }
+// A reaction with an absent species whose other side is all present has an
+// unbounded driving force toward the absent one (ln Q = -inf there): it is
+// run that way by REFORMING_SEED_FRACTION of the total (at most half of any
+// amount it uses), which seeds the absent species in its own stoichiometry,
+// conserving every element exactly. (Seeding each absent species by a
+// least-norm combination of the present ones lost conservation where an
+// element was a trace: oxygen at 1e-12 left the combination's system with a
+// condition number of 1e12, and H/C moved by 2.8e-5.) Returns whether any
+// was; runnable (if given) receives whether one could still be.
+static bool seed_absent_species(std::vector<double> &n, const std::vector<JointReaction> &rx,
+                                bool *runnable = nullptr) {
   double nt = 0.0;
   for (double v : n) nt += v;
-  auto atoms = [](std::size_t j) {
-    const auto &ms = molecular_structures[j];
-    return std::vector<double>{static_cast<double>(ms.C), static_cast<double>(ms.H),
-                               static_cast<double>(ms.O)};
-  };
-  std::vector<std::size_t> present, absent;
-  std::vector<double> b(3, 0.0);
-  for (std::size_t j : sp) {
-    if (n[j] > 0.0) {
-      present.push_back(j);
-      const auto a = atoms(j);
-      for (std::size_t e = 0; e < 3; ++e) b[e] += a[e] * n[j];
-    } else {
-      absent.push_back(j);
+  bool seeded = false, can = false;
+  for (const auto &r : rx) {
+    bool any_absent = false, lhs = true, rhs = true;
+    for (const auto &p : r.nu) {
+      if (!(n[p.first] > 0.0)) {
+        any_absent = true;
+        if (p.second < 0.0) lhs = false;
+        if (p.second > 0.0) rhs = false;
+      }
     }
-  }
-  if (absent.empty()) return false;
-  std::vector<std::size_t> el;
-  for (std::size_t e = 0; e < 3; ++e) {
-    if (b[e] > 0.0) el.push_back(e);
-  }
-  const std::size_t E = el.size();
-  if (E == 0 || present.size() < E) return false;
-  // Element potentials: least squares mu_j = sum_e a_je lam_e over present j.
-  const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
-  std::vector<double> AtA(E * E, 0.0), Atmu(E, 0.0);
-  for (std::size_t j : present) {
-    const auto a = atoms(j);
-    const double mu = g_over_RT(j, T) + std::log(n[j] / nt) + ln_P;
-    for (std::size_t i = 0; i < E; ++i) {
-      Atmu[i] += a[el[i]] * mu;
-      for (std::size_t k = 0; k < E; ++k) AtA[i * E + k] += a[el[i]] * a[el[k]];
+    if (!any_absent || (!lhs && !rhs)) continue;
+    can = true;
+    if (runnable != nullptr) continue;
+    const double dir = lhs ? 1.0 : -1.0;  // toward the side with the absent species
+    double xi = REFORMING_SEED_FRACTION * nt;
+    for (const auto &p : r.nu) {
+      if (dir * p.second < 0.0) xi = std::min(xi, 0.5 * n[p.first] / std::abs(p.second));
     }
-  }
-  if (!solve_dense(AtA, Atmu, E, 1)) return false;
-  // The seeding combinations change each present species in proportion to its
-  // amount (least norm in sum c_k^2 / n_k): c = D M^T y, M D M^T y = a_j,
-  // D = diag(n_k). Plain least norm moved CO 1e6-fold to make methane.
-  const std::vector<double> w = n;  // D, fixed for every seed below
-  std::vector<double> G(E * E, 0.0);  // M D M^T, M[e][k] = a_k,e over present k
-  for (std::size_t k : present) {
-    const auto a = atoms(k);
-    for (std::size_t i = 0; i < E; ++i) {
-      for (std::size_t l = 0; l < E; ++l) G[i * E + l] += a[el[i]] * a[el[l]] * w[k];
-    }
-  }
-  bool seeded = false;
-  for (std::size_t j : absent) {
-    const auto aj = atoms(j);
-    bool has_el = true;
-    for (std::size_t e = 0; e < 3; ++e) {
-      if (aj[e] > 0.0 && !(b[e] > 0.0)) has_el = false;
-    }
-    if (!has_el) continue;
-    double ln_x = -g_over_RT(j, T) - ln_P;
-    for (std::size_t i = 0; i < E; ++i) ln_x += aj[el[i]] * Atmu[i];
-    if (!(ln_x > std::log(REFORMING_SEED_FRACTION))) continue;
-    // Least-norm c over present k with sum_k c_k a_k = a_j: c = M^T y,
-    // M M^T y = a_j.
-    std::vector<double> y(E);
-    for (std::size_t i = 0; i < E; ++i) y[i] = aj[el[i]];
-    if (!solve_dense(G, y, E, 1)) {
-      missing = true;
-      continue;
-    }
-    double delta = std::exp(std::min(ln_x, 0.0)) * nt;
-    std::vector<std::pair<std::size_t, double>> c;
-    for (std::size_t k : present) {
-      const auto a = atoms(k);
-      double ck = 0.0;
-      for (std::size_t i = 0; i < E; ++i) ck += a[el[i]] * y[i];
-      ck *= w[k];
-      c.emplace_back(k, ck);
-      if (ck > 0.0) delta = std::min(delta, 0.5 * n[k] / ck);
-    }
-    if (!(delta > 0.0)) {
-      missing = true;
-      continue;
-    }
-    for (const auto &kc : c) n[kc.first] -= delta * kc.second;
-    n[j] = delta;
+    if (!(xi > 0.0)) continue;
+    for (const auto &p : r.nu) n[p.first] = std::max(0.0, n[p.first]) + dir * p.second * xi;
     seeded = true;
   }
+  if (runnable != nullptr) *runnable = can;
   return seeded;
 }
 
@@ -1273,12 +1206,33 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     // An absent species with a positive affinity: seed it and solve again;
     // one still predicted after the last pass means not converged.
     if (!conv) break;
-    bool missing = false;
-    const bool seeded = seed_absent_species(n_out, T, P, rx, missing);
-    if (missing) conv = false;
-    if (!seeded) break;
+    if (seed_pass == REFORMING_SEED_PASSES) {
+      bool runnable = false;
+      seed_absent_species(n_out, rx, &runnable);
+      if (runnable) conv = false;  // still driven toward an absent species
+      break;
+    }
+    if (!seed_absent_species(n_out, rx)) break;
     conv = false;
     choose_basis(n_out);
+  }
+  // Elements: every step and seed conserves them; a state that does not, to
+  // round-off of the largest element total, is not a solution (#1262 review).
+  {
+    double b0[3] = {0.0, 0.0, 0.0}, b1[3] = {0.0, 0.0, 0.0};
+    for (std::size_t j = 0; j < n0.size(); ++j) {
+      const auto &ms = molecular_structures[j];
+      const double a[3] = {static_cast<double>(ms.C), static_cast<double>(ms.H),
+                           static_cast<double>(ms.O)};
+      for (std::size_t e = 0; e < 3; ++e) {
+        b0[e] += a[e] * n0[j];
+        b1[e] += a[e] * n_out[j];
+      }
+    }
+    const double bmax = std::max({b0[0], b0[1], b0[2]});
+    for (std::size_t e = 0; e < 3; ++e) {
+      if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * bmax)) conv = false;
+    }
   }
   if (rx_out != nullptr) *rx_out = rx;
   if (active_out != nullptr) *active_out = act;
@@ -1375,7 +1329,40 @@ EquilibriumResult reforming_equilibrium_adiabatic(const State &in) {
   // Solve for adiabatic temperature
   ReformingAdiabaticFun F{in.X, H_mass_target, in.P, cfg};
   bool conv_T = true;
-  const double T_ad = solve_adiabatic_T(F, in.T, conv_T);
+  double T_ad = solve_adiabatic_T(F, in.T, conv_T);
+
+  // conv_T is false when an inner solve at either end of the final bracket
+  // failed (#1262 review: five heavy rich states refused for their bracket
+  // ends): Brent then also bracketed on that end's unconverged energy
+  // residual, and T_ad is off its root by up to 1e-3 K. There, the root is
+  // polished by secant steps on converged inner solves near T_ad, and the
+  // state is converged if the equilibrium converges at it and the energy
+  // balance holds to the bracket's own tolerance.
+  if (!conv_T) {
+    bool c0 = false;
+    double f0 = F.f(T_ad, c0);
+    double slope = F.slope_frozen();
+    double T_prev = T_ad, f_prev = f0;
+    for (int it = 0; it < EQUILIBRIUM_T_POLISH_IT && c0; ++it) {
+      const double tol =
+          4.0 * F.slope_frozen() * EQUILIBRIUM_T_XTOL_REL * std::max(T_ad, EQUILIBRIUM_T_MIN);
+      if (std::abs(f0) <= tol) {
+        conv_T = true;
+        break;
+      }
+      const double T_new = T_ad - f0 / slope;
+      bool c1 = false;
+      const double f1 = F.f(T_new, c1);
+      if (!c1 || !std::isfinite(f1)) break;
+      T_prev = T_ad;
+      f_prev = f0;
+      T_ad = T_new;
+      f0 = f1;
+      c0 = c1;
+      if (T_ad != T_prev) slope = (f0 - f_prev) / (T_ad - T_prev);
+      if (!(slope > 0.0) || !std::isfinite(slope)) slope = F.slope_frozen();
+    }
+  }
 
   // Get equilibrium composition at T_ad
   std::vector<double> n_out;

@@ -3175,9 +3175,10 @@ result = combustion_from_phi(phi=0.8, T=300, P=2e5, fuel="CH4", oxidizer="air")
 With `method="equilibrium"`, `combustion_from_streams` raises `RuntimeError`
 where the reforming + WGS equilibrium does not converge (#1262): it returns
 no state that is not an equilibrium. The solve converges over methane with
-oxygen from 1e-13 to 1e-2 and in air to phi 1e4 (300-900 K, 1-17 bar), and
-over lean to very rich draws of six fuels except heptane and isobutane beyond
-about phi 400. `combaero.combustion_equilibrium` itself still returns, with
+oxygen from 1e-30 to 1e-2 and in air from phi 1e-4 to 1e4 (250-900 K, 1-17
+bar), and over lean to very rich draws of six fuels (phi 1e-5 to 3000,
+250-1500 K), except some heptane in air beyond phi 350 (most cold, below
+500 K) and isobutane at phi 1000 and above at 250 K. `combaero.combustion_equilibrium` itself still returns, with
 `converged` set accordingly.
 
 ### MixtureState for Network Data

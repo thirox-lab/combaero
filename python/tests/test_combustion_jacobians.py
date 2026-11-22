@@ -593,27 +593,55 @@ def _elements(X: np.ndarray) -> np.ndarray:
 
 @pytest.mark.parametrize("seed", range(4))
 def test_the_equilibrium_conserves_the_elements(seed: int) -> None:
-    """C, H and O per mole of inert (N2 + Ar) are those of the complete-
-    combustion products, to 1e-12, over rich, lean and vitiated draws: a
-    seeding combination weighted with amounts changed between seeds broke it
-    by up to 2.7 % (O) while it was written."""
+    """H/C and O/C of the products are those of the complete-combustion
+    products, to 1e-12, over rich, lean and vitiated draws in air and over
+    fuel with a trace of oxygen (no inert to normalise by). Two seedings
+    broke it while #1262 was written: amount weights changed between seeds
+    (O off by 2.7 %), and a least-norm combination with oxygen at 1e-12
+    (H/C 4.0000796 against 4, methane with x_O2 1e-12, 900 K, reported
+    converged)."""
     import random
 
     rng = random.Random(1262 + seed)
-    i_n2 = _cb.species_index_from_name("N2")
-    i_ar = _cb.species_index_from_name("AR")
-    for _ in range(40):
+    for _ in range(60):
         fuel = rng.choice(["CH4", "C2H6", "C3H8", "IC4H10", "NC7H16"])
-        X = _fuel_in_air(fuel, 10 ** rng.uniform(-4, 3), rng.random() < 0.2)
+        if rng.random() < 0.3:
+            x_o2 = 10 ** rng.uniform(-14, -6)
+            X = np.zeros(_cb.num_species())
+            X[_cb.species_index_from_name(fuel)] = 1.0 - x_o2
+            X[_cb.species_index_from_name("O2")] = x_o2
+        else:
+            X = _fuel_in_air(fuel, 10 ** rng.uniform(-4, 3), rng.random() < 0.2)
         T, P = rng.uniform(250.0, 1200.0), 10 ** rng.uniform(4, 6.5)
         r = _cb._core.combustion_equilibrium(T, X, P)
         if not r.converged:
             continue
-        Xb = np.array(_cb.complete_combustion(T, list(X), P).X)
-        Xo = np.array(r.state.X)
-        e_in = _elements(Xb) / (Xb[i_n2] + Xb[i_ar])
-        e_out = _elements(Xo) / (Xo[i_n2] + Xo[i_ar])
-        assert np.abs(e_out - e_in).max() <= 1e-12 * max(1.0, np.abs(e_in).max()), (fuel, T, P)
+        e_in = _elements(np.array(_cb.complete_combustion(T, list(X), P).X))
+        e_out = _elements(np.array(r.state.X))
+        assert e_out[1] / e_out[0] == pytest.approx(e_in[1] / e_in[0], rel=1e-12), (fuel, T, P)
+        assert e_out[2] / e_out[0] == pytest.approx(e_in[2] / e_in[0], rel=1e-10), (fuel, T, P)
+
+
+@pytest.mark.parametrize(
+    ("fuel", "T", "P", "T_ref"),
+    [
+        ("IC4H10", 250.0, 1e6, 250.097995),
+        ("NC5H12", 250.0, 1e5, 309.369096),
+        ("NC7H16", 500.0, 1e6, 511.639831),
+    ],
+)
+def test_a_root_is_not_refused_for_its_bracket_ends(
+    fuel: str, T: float, P: float, T_ref: float
+) -> None:
+    """Heavy fuels at phi 1000: an inner solve at one end of the final
+    adiabatic-T bracket failed, which refused the state although the
+    equilibrium converges at the root; Brent had also bracketed on that end's
+    unconverged energy residual, 1.1 K off at heptane, 500 K (#1262 review).
+    The root is polished on converged inner solves. T_ref: the review's
+    independent Gibbs minimum (HP)."""
+    r = _cb._core.combustion_equilibrium(T, _fuel_in_air(fuel, 1000.0), P)
+    assert r.converged
+    assert pytest.approx(T_ref, abs=1e-4) == r.state.T
 
 
 @pytest.mark.parametrize(

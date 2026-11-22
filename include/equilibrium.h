@@ -40,8 +40,8 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // carriers as differences of larger changes; 201 of 375 trace-oxygen and
 // very rich methane states did not converge, none does now. Likewise WGS is
 // keyed on CO where it is the scarcer carbon oxide (a lean burn with trace
-// fuel), and an absent species the element potentials predict is seeded and
-// the solve repeated (REFORMING_SEED_FRACTION).
+// fuel), and a reaction driven toward an absent species is run by a trace,
+// seeding it, and the solve repeated (REFORMING_SEED_FRACTION).
 constexpr int REFORMING_START_PASSES = 3;
 constexpr double REFORMING_PASS_RTOL = 1e-14;
 constexpr int REFORMING_NEWTON_MAX_IT = 200;
@@ -78,12 +78,15 @@ constexpr double REFORMING_RICH_BASIS_HC_FRACTION = 1e-4;
 // The element-potential start is handed to the Newton polish once its full
 // corrections in ln n are below this, converged or not (#1262).
 constexpr double REFORMING_EP_START_CORRECTION = 1e-6;
-// An absent species of the reactions whose equilibrium mole fraction, from the
-// present species' element potentials, exceeds this is seeded and the solve
-// repeated, up to REFORMING_SEED_PASSES times; one still predicted after them
+// A reaction with an absent species whose other side is present is run
+// toward it by this fraction of the total, seeding it, and the solve
+// repeated, up to REFORMING_SEED_PASSES times; one still runnable after them
 // means not converged (#1262).
-constexpr double REFORMING_SEED_FRACTION = 1e-14;
+constexpr double REFORMING_SEED_FRACTION = 1e-10;
 constexpr int REFORMING_SEED_PASSES = 3;
+// A solved state's element totals (C, H, O) match the input's to this,
+// relative to the largest total, or the solve is not converged (#1262).
+constexpr double REFORMING_ELEMENT_RTOL = 1e-12;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the
@@ -95,6 +98,9 @@ constexpr double EQUILIBRIUM_T_MIN = thermo::T_FLOOR;
 constexpr double EQUILIBRIUM_T_MAX = 4500.0;
 constexpr double EQUILIBRIUM_T_BRACKET_STEP = 100.0;
 constexpr double EQUILIBRIUM_T_XTOL_REL = 1e-14;
+// Secant steps that polish T_ad on converged inner solves where an inner
+// solve at a bracket end failed (#1262).
+constexpr int EQUILIBRIUM_T_POLISH_IT = 20;
 // The WGS extent is converged when |ln Q - ln Kp| is below EQUILIBRIUM_WGS_FTOL
 // or below EQUILIBRIUM_WGS_NOISE_FACTOR times its rounding error (a trace
 // amount at the root carries only eps |n0| / n of relative precision).
