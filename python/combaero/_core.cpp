@@ -829,6 +829,7 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("Cd", &combaero::CrossflowCd::Cd)
       .def_readonly("dCd_dG_ideal", &combaero::CrossflowCd::dCd_dG_ideal)
       .def_readonly("dCd_dG_c", &combaero::CrossflowCd::dCd_dG_c)
+      .def_readonly("dCd_dCd0", &combaero::CrossflowCd::dCd_dCd0)
       .def_readonly("capped", &combaero::CrossflowCd::capped);
   m.def("rogers_hersh_1976_cd", &combaero::rogers_hersh_1976_cd, py::arg("Cd0"),
         py::arg("G_ideal"), py::arg("G_c"), py::arg("suction"),

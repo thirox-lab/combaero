@@ -35,9 +35,12 @@
 //   3. JET crossflow law of an impingement row (Rogers & Hersh 1976, or
 //      Florschuetz, Metzger & Su 1982), which REPLACES the hole's Cd where it
 //      acts. Rogers & Hersh capped: the hole's Cd and its partials hold.
-//      Where the law acts, the Cd's partials are the law's alone (dCd/dG_ideal,
-//      dCd/dG_c); the hole's Cd enters Rogers & Hersh only as its cap. No
-//      drive (G_ideal <= 0) or a capped table: no partials at all.
+//      Where the law acts, the Cd's partials are the law's own (dCd/dG_ideal,
+//      dCd/dG_c) plus the hole's scaled by the law's dCd/dCd0: Rogers & Hersh
+//      joins the hole's Cd over its cap band, where dCd/dCd0 = f - u f' runs
+//      from 0 on the fit to 1 at the cap (#1248); Florschuetz-Metzger-Su joins
+//      its own table's cd0, so its dCd/dCd0 is 0. No drive (G_ideal <= 0) or
+//      a capped table: no partials at all.
 //
 // No physics is derived here: every value and partial is a kernel's, chained.
 

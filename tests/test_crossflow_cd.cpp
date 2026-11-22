@@ -87,6 +87,31 @@ TEST(RogersHersh1976, JoinsTheCapC1) {
   }
 }
 
+TEST(RogersHersh1976, ReportsItsSlopeInTheHolesOwnCd) {
+  // #1248: inside the cap band Cd = Cd0 f(cd / Cd0) moves with Cd0 (the
+  // hole's own Cd, so its Reynolds number and the hole's own flow). Exact 1
+  // where capped, 0 on the fit, the central difference in between.
+  for (const bool suction : {false, true}) {
+    for (double Gi = 1.0; Gi <= 120.0; Gi *= 1.05) {
+      const double cd0 = 0.8;
+      const CrossflowCd r = rogers_hersh_1976_cd(cd0, Gi, kGc, suction);
+      if (r.Cd == 0.0) {
+        continue;
+      }
+      const double h = 1e-6;
+      const double fd = (rogers_hersh_1976_cd(cd0 + h, Gi, kGc, suction).Cd -
+                         rogers_hersh_1976_cd(cd0 - h, Gi, kGc, suction).Cd) /
+                        (2.0 * h);
+      EXPECT_NEAR(r.dCd_dCd0, fd, 1e-7) << Gi << " " << suction;
+      if (r.capped) {
+        EXPECT_EQ(r.dCd_dCd0, 1.0);
+      }
+    }
+  }
+  // On the fit the law does not read Cd0.
+  EXPECT_EQ(rogers_hersh_1976_cd(0.85, 5.0, kGc, false).dCd_dCd0, 0.0);
+}
+
 TEST(RogersHersh1976, NoDriveNoFlow) {
   EXPECT_EQ(rogers_hersh_1976_cd(0.85, 0.0, kGc, false).Cd, 0.0);
   EXPECT_EQ(rogers_hersh_1976_cd(0.85, -1.0, kGc, true).Cd, 0.0);

@@ -1220,7 +1220,9 @@ class _HoleCdChain:
         continue_re_floor: bool = False,
     ) -> dict[str, float]:
         """d(cd)/d(unknown) by name: the crossflow law's own partials where
-        it acts (its Cd replaces the hole's), the hole's otherwise. The
+        it acts (its Cd replaces the hole's), plus the hole's scaled by the
+        law's dCd/dCd0 inside Rogers & Hersh's cap band (#1248), and the
+        hole's otherwise. The
         own-flow column through the discharge chamber rides under
         _DCD_DM_VIA_CHAMBER (see there)."""
         r, ctx = self._evaluate(
@@ -1462,10 +1464,12 @@ class _HoleCdChain:
     ) -> dict[str, float]:
         """C++'s dCd/d(input) mapped onto the network's unknowns: each input's
         derivatives by name, chained. The jet law's own partials where its Cd
-        replaces the hole's (none at all where it is capped or has no drive),
-        the hole's otherwise: the discharge-hole family through the hole
-        Reynolds number and U1/Vi, the ISO metering family through Re_D,
-        'fixed' none; the exit-crossflow term on top.
+        replaces the hole's (none where it has no drive), plus the hole's
+        scaled by the law's dCd/dCd0 (C++: 0 on the fit, f - u df/du in
+        Rogers & Hersh's cap band, #1248); the hole's alone where capped.
+        The hole's: the discharge-hole family through the hole Reynolds
+        number and U1/Vi, the ISO metering family through Re_D, 'fixed'
+        none; the exit-crossflow term on top.
 
         BELOW THE CORRELATION'S Re FLOOR the Cd value is held, so its true
         dCd/dRe is 0 -- in the m_dot column and in the viscosity columns
@@ -1476,10 +1480,25 @@ class _HoleCdChain:
         implicit-function denominator 1 - K dCd/dm of a McGreehan-Schotsch
         panel below Re = 1e4 scaled its whole row by ~0.987 (#760, #801).
         hole_cd_compose applies it."""
-        if r.jet_acts:
-            return self._jet_dcd_by_name(r, ctx.jet) if r.jet_partials else {}
         el = self._el
         out: dict[str, float] = {}
+        if r.jet_acts:
+            # The law's own partials, and the hole's through its dCd/dCd0:
+            # C++ scales the hole's (0 on the fit itself, f - u df/du inside
+            # Rogers & Hersh's cap band, where dropping them left the row's
+            # own-flow denominator and every column 0.8% off, #1248).
+            if r.jet_partials:
+                out = self._jet_dcd_by_name(r, ctx.jet)
+            hole_moves = (
+                r.dCd_dRe,
+                r.dCd_dU1_over_Vi,
+                r.dCd_dRe_D,
+                r.dCd_dG_h,
+                r.dCd_drho_h,
+                r.dCd_drho_m_u_m2,
+            )
+            if not any(float(v) != 0.0 for v in hole_moves):
+                return out
         m = float(state_in.m_dot)
         if ctx.base == "discharge":
             # Through the hole Reynolds number (linear in m_dot, so dRe/dm =
@@ -1489,7 +1508,9 @@ class _HoleCdChain:
             Re = ctx.Re
             dCd_dRe = float(r.dCd_dRe)
             if abs(m) > 1e-12:
-                out[f"{el.id}.m_dot"] = dCd_dRe * Re / abs(m) * (1.0 if m > 0 else -1.0)
+                key = f"{el.id}.m_dot"
+                sgn = 1.0 if m > 0 else -1.0
+                out[key] = out.get(key, 0.0) + dCd_dRe * Re / abs(m) * sgn
                 if el._orifice_geom.d > 0.0:
                     for name, d in self._re_viscosity_dnames(state_in, Re).items():
                         out[name] = out.get(name, 0.0) + dCd_dRe * d
@@ -1503,7 +1524,9 @@ class _HoleCdChain:
             # pipe, |m| <= 1e-12).
             Re_D = ctx.Re
             dCd_dRe = float(r.dCd_dRe_D)
-            out[f"{el.id}.m_dot"] = dCd_dRe * Re_D / abs(m) * (1.0 if m > 0 else -1.0)
+            key = f"{el.id}.m_dot"
+            sgn = 1.0 if m > 0 else -1.0
+            out[key] = out.get(key, 0.0) + dCd_dRe * Re_D / abs(m) * sgn
             if not ctx.mu_fallback:
                 for name, d in self._re_viscosity_dnames(state_in, Re_D).items():
                     out[name] = out.get(name, 0.0) + dCd_dRe * d

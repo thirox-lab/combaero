@@ -71,8 +71,11 @@ CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool su
   if (!validation::is_finite(G_ideal) || !validation::is_finite(G_c)) {
     throw std::invalid_argument("rogers_hersh_1976_cd: G_ideal and G_c must be finite");
   }
+  // Capped, Cd = Cd0: dCd/dCd0 = 1 (#1248).
+  CrossflowCd held = capped(Cd0);
+  held.dCd_dCd0 = 1.0;
   if (!(G_c > 0.0)) {
-    return capped(Cd0);
+    return held;
   }
   if (!(G_ideal > 0.0)) {
     return CrossflowCd{};
@@ -89,7 +92,7 @@ CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool su
   const double w = ROGERS_HERSH_1976_CAP_BAND;
   const double u = cd / Cd0;
   if (u >= 1.0 + w) {
-    return capped(Cd0);
+    return held;
   }
   const double dcd_dq = e * cd / q;
   if (u <= 1.0 - w) {
@@ -98,7 +101,12 @@ CrossflowCd rogers_hersh_1976_cd(double Cd0, double G_ideal, double G_c, bool su
   const double s = u - (1.0 - w);
   const double f = u - s * s / (4.0 * w);
   const double df_du = 1.0 - s / (2.0 * w);
-  return from_q(Cd0 * f, df_du * dcd_dq, q, G_c);
+  // Cd = Cd0 f(u), u = cd / Cd0 with cd independent of Cd0: the hole's own
+  // Cd (its Reynolds number, so the hole's own flow) moves the joined Cd by
+  // f - u df/du (#1248).
+  CrossflowCd out = from_q(Cd0 * f, df_du * dcd_dq, q, G_c);
+  out.dCd_dCd0 = f - u * df_du;
+  return out;
 }
 
 RogersHersh1976Envelope rogers_hersh_1976_envelope(double Vi_over_V_inf, double L_over_D,

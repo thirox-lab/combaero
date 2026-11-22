@@ -77,7 +77,11 @@ struct CrossflowCd {
   double Cd = 0.0;
   double dCd_dG_ideal = 0.0;  // [1/(kg/(m^2 s))]
   double dCd_dG_c = 0.0;      // [1/(kg/(m^2 s))]
-  bool capped = false;        // the crossflow-free Cd holds
+  // d(Cd)/d(Cd0) at fixed (G_ideal, G_c) [-]: 1 where capped, the C1 join's
+  // f - u df/du inside the cap band, 0 on the fit itself (#1248). Rogers &
+  // Hersh only: Florschuetz, Metzger & Su's Cd does not read the caller's.
+  double dCd_dCd0 = 0.0;
+  bool capped = false;  // the crossflow-free Cd holds
 };
 
 // Rogers & Hersh (1976). ``suction``: the hole draws FROM the grazing stream
