@@ -540,7 +540,8 @@ EquilibriumResult combustion_equilibrium(const State& in, bool smooth_phi0 = tru
 
 // With analytic derivatives (#716): one implicit-function solve on the joint
 // extents (reforming per hydrocarbon, WGS; #759) and the adiabatic root; a
-// reaction with an absent species keeps a zero derivative.
+// reaction with an absent species keeps a zero derivative. Throws
+// std::runtime_error where the equilibrium does not converge (#1262).
 struct EquilibriumJacobian {
     State state; double dT_dT_in, dT_dP; std::vector<double> dT_dX;
     std::vector<std::vector<double>> dXout_dX; std::vector<double> dXout_dT_in, dXout_dP;

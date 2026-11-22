@@ -31,6 +31,14 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // at phi >= 2.5 stopped 2000 rounds short, 120-320 K hot). Rounds now only
 // start the Newton solve: up to REFORMING_START_PASSES of them, stopping early
 // once no amount moves by more than REFORMING_PASS_RTOL of the total.
+// Where a hydrocarbon is not a trace, Newton runs in another basis of the
+// same reactions (#1262): that hydrocarbon's reactions with two of the
+// oxygen carriers, keyed on the two scarcer carriers, and every other
+// hydrocarbon's exchange with it. With the oxygen nearly gone the
+// steam-reforming basis left the hydrocarbon interconversions as differences
+// of rows weighted by 1/n_H2O (condition number 2.5e11) and the trace
+// carriers as differences of larger changes; 201 of 375 trace-oxygen and
+// very rich methane states did not converge, none does now.
 constexpr int REFORMING_START_PASSES = 3;
 constexpr double REFORMING_PASS_RTOL = 1e-14;
 constexpr int REFORMING_NEWTON_MAX_IT = 200;
@@ -52,6 +60,14 @@ constexpr double REFORMING_TRACE_FRACTION = 1e-4;
 // round checks it cannot move by more than this of the total, else it is
 // taken and the solve repeated, up to REFORMING_JOINT_RESTARTS times.
 constexpr double REFORMING_JOINT_CHECK_RTOL = 1e-10;
+// The joint solve takes the hydrocarbon-rich basis (the most abundant
+// hydrocarbon's reactions with the oxygen carriers, every other
+// hydrocarbon's exchange with it; the same equilibrium) when that
+// hydrocarbon is at least this fraction of the total (#1262).
+constexpr double REFORMING_RICH_BASIS_HC_FRACTION = 1e-4;
+// The element-potential start is handed to the Newton polish once its full
+// corrections in ln n are below this, converged or not (#1262).
+constexpr double REFORMING_EP_START_CORRECTION = 1e-6;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the
@@ -88,7 +104,9 @@ EquilibriumResult combustion_equilibrium(const State &reactants,
 // solve on the joint extents (reforming per hydrocarbon, WGS; #759) and the
 // adiabatic root, chained through complete_combustion_products_and_jacobian.
 // X is taken unnormalised (chain with a dX that keeps sum X = 1). A reaction
-// with an absent species cannot move and keeps a zero derivative.
+// with an absent species cannot move and keeps a zero derivative. Throws
+// std::runtime_error where the equilibrium does not converge (#1262): the
+// implicit-function derivatives are those of a root only.
 struct EquilibriumJacobian {
     State state;                                // as combustion_equilibrium
     double dT_dT_in = 0.0;

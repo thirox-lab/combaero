@@ -178,8 +178,8 @@ def _halve_orifice_rows(s: NetworkSolver, J: np.ndarray) -> None:
     ("case", "desc"),
     [
         (Case("combustor", 1, 0, 0), "start vector"),
-        # A point #1262 covers: the bug must still be new there.
-        (Case("combustor", 2, 0, 0), "a_in flows 1e-09"),
+        # A point #1241 covers: the bug must still be new there.
+        (Case("combustor", 1, 0, 0), "inj.m_dot = 0"),
     ],
 )
 def test_a_bug_only_in_an_equilibrium_combustor_is_new(case: Case, desc: str) -> None:

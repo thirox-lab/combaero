@@ -333,29 +333,27 @@ def test_a_fuel_only_mix_burns_the_first_oxygen() -> None:
 
 
 def test_a_fuel_only_combustor_moves_with_the_air_flow() -> None:
-    """Combustor kernel, air stream at exactly 0 beside a CH4 stream (#1251,
-    combustor:2 point a_in.m_dot = 0): the air column against the one-sided
-    difference on the arriving side (the solver's convention at m = 0).
-    Complete combustion to 1e-6. Equilibrium only at the sweep's steps: J is
-    the complete chain's, F's slope below the reforming onset (about 1e-12
-    of oxygen); above the onset the reforming + WGS solve on trace steam does
-    not converge (#1262) and the difference depends on the step (1.0e6 at
-    1e-14 kg/s, 2.26e6 at 1e-7), which #1251 keeps open."""
-    Y_air = _Y_AIR
-    for method, h, rel in (("complete", 1e-10, 1e-6), ("equilibrium", 1e-7, 2e-3)):
+    """Complete-combustion kernel, air stream at exactly 0 beside a CH4
+    stream (#1251, combustor:2 point a_in.m_dot = 0): the air column against
+    the one-sided difference on the arriving side (the solver's convention at
+    m = 0), to 1e-6. The equilibrium path is not checked here: since the
+    trace-oxygen solve converges (#1262) its F jumps at the oxygen onset by the
+    hydrocarbon interconversion the first oxygen enables (see
+    test_trace_oxygen_equilibrium_converges), which #1251 keeps open."""
 
-        def burn(ma: float, method: str = method):
-            s = [
-                _cb.MassStream(ma, 300.0, 2.0e5, Y_air),
-                _cb.MassStream(5.76e-4, 300.0, 2.1e5, _Y_CH4),
-            ]
-            return _combustor(s, method)
+    def burn(ma: float):
+        s = [
+            _cb.MassStream(ma, 300.0, 2.0e5, _Y_AIR),
+            _cb.MassStream(5.76e-4, 300.0, 2.1e5, _Y_CH4),
+        ]
+        return _combustor(s, "complete")
 
-        r = burn(0.0)
-        fd = (burn(h).Tt_mix - r.Tt_mix) / h
-        an = r.dTt_mix_d_stream[0].d_mdot
-        assert fd > 1e6
-        assert an == pytest.approx(fd, rel=rel), (method, an, fd)
+    h = 1e-10
+    r = burn(0.0)
+    fd = (burn(h).Tt_mix - r.Tt_mix) / h
+    an = r.dTt_mix_d_stream[0].d_mdot
+    assert fd > 1e6
+    assert an == pytest.approx(fd, rel=1e-6), (an, fd)
 
 
 @pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])
@@ -411,3 +409,77 @@ def test_the_combustor_refuses_a_pressure_other_than_the_mixed_pt() -> None:
         _st.combustor_residuals_and_jacobians(
             bad, float("nan"), pressure_loss=_zero_loss, use_equilibrium=True
         )
+
+
+# --- #1262: the reforming + WGS equilibrium converges with oxygen nearly gone --
+
+_CH4_AIR_PHI = (2.0, 20.0, 100.0, 200.0, 600.0, 1e4)
+
+
+def _fuel_only(x_o2: float) -> np.ndarray:
+    X = np.zeros(_cb.num_species())
+    X[_cb.species_index_from_name("CH4")] = 1.0 - x_o2
+    X[_cb.species_index_from_name("O2")] = x_o2
+    return X
+
+
+@pytest.mark.parametrize("P", [1e5, 2e5, 1.7e6])
+@pytest.mark.parametrize("T", [300.0, 400.0, 500.0, 650.0, 900.0])
+def test_trace_oxygen_equilibrium_converges(T: float, P: float) -> None:
+    """Methane with oxygen from 1e-13 to 1e-2, and methane in air up to phi =
+    1e4: the joint solve converges (#1262). On main 201 of these 375 states
+    did not (ln Q - ln K up to 62), the result was used anyway, and the
+    combustor took the implicit-function Jacobian at a non-root (dT/dP 30 %
+    off at phi = 600, 300 K). The trace oxygen carriers are now keys of a
+    hydrocarbon-rich reaction basis in which the hydrocarbon interconversions
+    hold no oxygen species."""
+    X_air = np.array(_X_AIR)
+    i_c = _cb.species_index_from_name("CH4")
+    c = X_air[_cb.species_index_from_name("O2")] / 2.0
+    states = [
+        _fuel_only(x) for x in (0.0, 1e-13, 1e-12, 3e-12, 1e-11, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2)
+    ]
+    for phi in _CH4_AIR_PHI:
+        Xf = np.zeros(len(X_air))
+        Xf[i_c] = 1.0
+        states.append((X_air + c * phi * Xf) / (1.0 + c * phi))
+    for X in states:
+        r = _cb._core.combustion_equilibrium(T, X, P)
+        assert r.converged, (T, P, X[_cb.species_index_from_name("O2")])
+
+
+def test_trace_oxygen_equilibrium_jacobian_is_exact() -> None:
+    """At a converged trace-oxygen state (methane, x_O2 1e-6, 500 K, 17 bar)
+    the implicit-function dT/dX and dT/dP match central differences: on main
+    the solve did not converge there."""
+    X = _fuel_only(1e-6)
+    ej = _cb._core.combustion_equilibrium_and_jacobian(500.0, X, 1.7e6)
+    i_o2 = _cb.species_index_from_name("O2")
+    i_c = _cb.species_index_from_name("CH4")
+    v = np.zeros(len(X))
+    v[i_o2], v[i_c] = 1.0, -1.0
+    h = 1e-9
+
+    def T_of(Xp: np.ndarray, P: float = 1.7e6) -> float:
+        return _cb._core.combustion_equilibrium_and_jacobian(500.0, Xp, P).state.T
+
+    fd = (T_of(X + h * v) - T_of(X - h * v)) / (2 * h)
+    assert float(np.dot(ej.dT_dX, v)) == pytest.approx(fd, rel=1e-6)
+    fdP = (T_of(X, 1.7e6 * (1 + 1e-6)) - T_of(X, 1.7e6 * (1 - 1e-6))) / (2 * 1.7)
+    assert ej.dT_dP == pytest.approx(fdP, rel=1e-4, abs=1e-12)
+
+
+def test_an_unconverged_equilibrium_is_refused() -> None:
+    """The combustor never takes a state, or its Jacobian, the solve did not
+    converge to (#1262): combustion_equilibrium_and_jacobian raises there,
+    which the network takes as an unphysical probe. Heptane at phi ~ 1400 is
+    one state the solve still misses (hydrogen at 1e-12 is the trace there)."""
+    X_air = np.array(_X_AIR)
+    i_f = _cb.species_index_from_name("NC7H16")
+    c = X_air[_cb.species_index_from_name("O2")] / _cb.oxygen_required_per_mol_fuel(i_f)
+    Xf = np.zeros(len(X_air))
+    Xf[i_f] = 1.0
+    X = (X_air + c * 1380.0 * Xf) / (1.0 + c * 1380.0)
+    assert not _cb._core.combustion_equilibrium(535.0, X, 2.87e6).converged
+    with pytest.raises(RuntimeError, match="did not converge"):
+        _cb._core.combustion_equilibrium_and_jacobian(535.0, X, 2.87e6)
