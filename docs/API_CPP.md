@@ -1243,7 +1243,7 @@ PinFinEfficiency pin_fin_array_efficiency(double h, double k_pin, double D,
                                           double H, double A_f_over_A_t);
 
 PinFinNuResult evaluate_pin_fin_nu(const PinFinNuSet& set, const PinFinGeometry& g,
-                                   double Re_D, double Pr);         // Nu, dNu_dRe
+                                   double Re_D, double Pr);  // Nu, dNu_dRe, dNu_dPr
 PinFinFrictionResult evaluate_pin_fin_friction(const PinFinFrictionSet& set,
                                                const PinFinGeometry& g,
                                                double Re_D);        // f, df_dRe

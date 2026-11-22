@@ -4470,6 +4470,7 @@ g = cb.PinFinGeometry(S_D=2.5, X_D=2.5, H_D=1.0, N_rows=10)   # staggered
 nu = cb.evaluate_pin_fin_nu(cb.metzger_1986_staggered_nu(), g, Re_D=2.0e4, Pr=0.7)
 f = cb.evaluate_pin_fin_friction(cb.metzger_1982_staggered_friction(), g, Re_D=2.0e4)
 nu.Nu, nu.dNu_dRe, nu.extrapolated     # 91.78, 0.00317, False
+nu.dNu_dPr                             # 0.0: Metzger has no Pr term (Chyu's sets do)
 f.f, f.extrapolated                    # 0.0755, False
 
 # VanFossen works in its own D' basis; the result comes back canonical.

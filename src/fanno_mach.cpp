@@ -949,6 +949,22 @@ constexpr double kRayleighZetaStepFrac = 0.02;
 // exit at most 1e-5 Pa. G there is within 3e-7 of Gc either way.
 constexpr double kRayleighZetaFloor = 1e-10;
 constexpr int kRayleighStepCuts = 8;
+// The relative step of the plain central difference the derivatives fall
+// back to where the extrapolated one's marches move zeta too far
+// (rayleigh_raw_flow, #1249): the step all of them took before.
+constexpr double kRayleighPlainStep = 1e-4;
+// The first relative step of the extrapolated difference, unchoked and
+// choked (rayleigh_raw_flow, #1249). Over 480 sampled ducts against a
+// high-order reference, 4e-3 unchoked cut the median error 10-40x against
+// the plain 1e-4 difference; on a choke relation it lost to 5e-4 by up to
+// 30x at the worst points, so a choked duct keeps 5e-4.
+// Below this zeta (min of the march's smallest and exit zeta) the
+// extrapolated difference is not taken at a zeta-cut step below
+// kRayleighPlainStep (rayleigh_raw_flow, #1249): measured over 1e-5..1e-1 it
+// cut the error 10-1000x, below 1e-5 it lost to the plain difference.
+constexpr double kRayleighRichardsonZetaFloor = 1e-5;
+constexpr double kRayleighRichardsonStep = 4e-3;
+constexpr double kRayleighChokedRichardsonStep = 5e-4;
 // A cooled duct's excess can fall through zero and rise again inside one
 // ln-2 bracket of the cold scan (#1167; see rayleigh_raw_flow). Its slope at
 // a bracket end is a backward difference over this step in log G (0.1% of
@@ -1800,11 +1816,18 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   // differences of the fixed march (smooth in every argument):
   //   unchoked  E(G; Pt0, Tt0, Tt_exit, Y) - P_target = 0, E the exit pressure
   //   choked    the choke relation of its mode (see ChokeMode).
-  // Relative steps 1e-4 (truncation ~1e-8): the march rounds at ~1e-15 of P,
-  // which a 1e-5 step amplified to ~1e-7 in every derivative at low drive --
-  // enough to make them depend on the warm start (a deferred Jacobian then
-  // differed from the eager one). At 1e-4 that is <= 1e-8.
-  const double hr = 1e-4;
+  // First relative step of the extrapolated differences (cd below). The
+  // march's exit pressure scatters by up to ~7e-13 of Pt0,
+  // which a small step amplifies in every derivative at low drive: a 1e-5
+  // step made them depend on the warm start (a deferred Jacobian then
+  // differed from the eager one), and even at 1e-4 R_G scattered by up to
+  // 1e-6 at 12 Pa of drive on a 6 mm impingement segment. A plain O(h^2)
+  // difference cannot take a larger step: at 1e-4 its truncation was already
+  // 1.9e-6 in dG/dP_target at an exit Mach of 0.83 on a 30 cm duct (#1249).
+  // Unchoked, the zeta check cuts the step wherever the march is that
+  // nonlinear; a choked relation has no zeta move to cut on and keeps the
+  // smaller step.
+  const double hr = choked ? kRayleighChokedRichardsonStep : kRayleighRichardsonStep;
   // Near the choke the exit pressure is singular in every argument: the exit
   // Mach goes as 1 - sqrt(zeta)/2 with zeta = 1 - 2 theta smooth, so a step
   // that moves zeta by a fair part of itself carries a large truncation error
@@ -1841,9 +1864,35 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
       scale *= std::max(0.5 * kRayleighZetaStepFrac / zeta_move, 1e-3);
     }
   };
+  // Richardson's extrapolation of the central differences at h and h / 2,
+  // (4 D(h/2) - D(h)) / 3, from hr: O(h^4), 1e-10 at the #1249 point. Its
+  // step is cut, as step_cut does, while its marches move zeta too far. A
+  // central difference at that zeta-limited step carries ~(dzeta/zeta)^2 / 8
+  // ~ 1.2e-5 of truncation by construction, which the extrapolation removes
+  // (1.2e-5 -> 3e-8 at zeta 2e-3, exit Mach 0.977 on a 3 m duct). Only
+  // within kRayleighRichardsonZetaFloor of sonic, where the march is singular
+  // and the extrapolation adds rounding and removes no truncation (1.1e-1
+  // against 1.3e-2 at zeta 1.5e-10), is the plain central difference taken
+  // once the cut step falls below kRayleighPlainStep, from that step and
+  // cut by step_cut exactly as before #1249.
+  const bool z0_near_sonic = std::min(z0_min, z0_exit) <= kRayleighRichardsonZetaFloor;
   auto cd = [&](auto&& g, double x0) {
-    return step_cut([&](double scale) {
+    double scale = 1.0;
+    for (int k = 0; k <= kRayleighStepCuts; ++k) {
+      zeta_move = 0.0;
       const double h = scale * hr * std::abs(x0);
+      const double d_full = (g(x0 + h) - g(x0 - h)) / (2.0 * h);
+      const double d_half = (g(x0 + 0.5 * h) - g(x0 - 0.5 * h)) / h;
+      if (zeta_move <= kRayleighZetaStepFrac) {
+        return (4.0 * d_half - d_full) / 3.0;
+      }
+      scale *= std::max(0.5 * kRayleighZetaStepFrac / zeta_move, 1e-3);
+      if (z0_near_sonic && scale * hr < kRayleighPlainStep) {
+        break;
+      }
+    }
+    return step_cut([&](double s) {
+      const double h = s * kRayleighPlainStep * std::abs(x0);
       return (g(x0 + h) - g(x0 - h)) / (2.0 * h);
     });
   };

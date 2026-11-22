@@ -1580,11 +1580,6 @@ FULL_HITS: dict[str, tuple[Hit, ...]] = {
             "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "exact_zero", 1e-01
         ),  # 5.01e-02
     ),
-    "#1254": (
-        Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "perturb", 8e-05),  # 3.51e-05
-        Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "signs", 5e-05),  # 2.22e-05
-        Hit("pin_fin", "ChannelElement 'hot'", "mdot", "ch.m_dot", "x0", 4e-05),  # 1.66e-05
-    ),
 }
 
 
@@ -1628,35 +1623,6 @@ OPEN: tuple[Open, ...] = (
         slow=True,
     ),
     Open(
-        "#1249",
-        "a wall-coupled high-Mach channel's flow row on its outlet chamber's Pt, one gas included",
-        tuple(
-            Hit("hotcold_mild", "ChannelElement 'cch'", "mdot", "cm.Pt", kind, 1e-5)
-            for kind in (
-                "x0",
-                "perturb",
-                "signs",
-                "node_near_zero",
-                "element_near_zero",
-                "exact_zero",
-            )
-        )
-        + (
-            Hit(
-                "hotcold_mild",
-                "ChannelElement 'cch'",
-                "mdot",
-                "cch.m_dot",
-                "element_near_zero",
-                3e-6,
-            ),
-        ),
-        Case("hotcold_mild", 0, 1, 0),
-        "start vector",
-        slow=True,
-        strict=False,
-    ),
-    Open(
         "#1251",
         "an equilibrium combustor whose only oxidizer stream is at exactly zero flow (a "
         "fuel-only mix): on (0, ~1e-12] of oxygen no reforming runs and F's slope is J; "
@@ -1695,15 +1661,6 @@ OPEN: tuple[Open, ...] = (
         (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "element_near_zero", 3e-3),),
         Case("combustor", 2, 0, 0),
         "a_in flows 1e-09",
-    ),
-    Open(
-        "#1254",
-        "a wall-coupled pin-fin channel's flow row on the other channel's flow, one gas, at "
-        "the start vector already",
-        (),
-        Case("pin_fin", 1, 0, 0),
-        "perturbation 0",
-        slow=True,
     ),
 )
 

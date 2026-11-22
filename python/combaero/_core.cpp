@@ -1350,6 +1350,7 @@ PYBIND11_MODULE(_core, m) {
     py::class_<cc::PinFinNuResult>(m, "PinFinNuResult")
         .def_readonly("Nu", &cc::PinFinNuResult::Nu)
         .def_readonly("dNu_dRe", &cc::PinFinNuResult::dNu_dRe)
+        .def_readonly("dNu_dPr", &cc::PinFinNuResult::dNu_dPr)
         .def_readonly("Re_native", &cc::PinFinNuResult::Re_native)
         .def_readonly("extrapolated", &cc::PinFinNuResult::extrapolated);
     py::class_<cc::PinFinFrictionResult>(m, "PinFinFrictionResult")

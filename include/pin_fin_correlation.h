@@ -207,6 +207,7 @@ struct PinFinRatioModifier {
 struct PinFinNuResult {
   double Nu = 0.0;         // canonical Nu_D on the set's surface
   double dNu_dRe = 0.0;    // d Nu_D / d Re_D, analytic, odd in Re
+  double dNu_dPr = 0.0;    // d Nu_D / d Pr at fixed Re_D, analytic (#1254)
   double Re_native = 0.0;  // the Re the set was evaluated at
   bool extrapolated = false;
 };

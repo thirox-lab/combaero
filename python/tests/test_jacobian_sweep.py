@@ -13,6 +13,10 @@ exclusion rules.
   stream into a port: 1.3e-5 on the side stream's column at the start
   vector; a tee with port chambers, two side streams, a leg reversed: 1.3e-4.
   Both points also fail on 24067756.
+* #1249 / #1254 (main 31e5bc68): a wall-coupled high-Mach channel on its
+  outlet chamber's Pt, 1.9e-6 (the Rayleigh kernel's O(h^2) differences);
+  a wall-coupled pin-fin channel on the other channel's flow, 3.5e-5 (the
+  pin-fin surface's proxy dh_dT).
 
 The metric is falsified on its own: a dropped or halved entry, a spurious
 entry where the true partial is 0, a bug only an equilibrium combustor has,
@@ -78,6 +82,15 @@ GUARDS = [
     pytest.param(Case("tee3", 2, 0, 0), "arm0 flows 3e-05", id="1247-mpce-common-small"),
     pytest.param(
         Case("ideal_nport", 2, 1, 0), "jct pattern 0001 ratio 3", id="1250-ideal-no-supplier"
+    ),
+    pytest.param(
+        Case("hotcold_mild", 0, 1, 0),
+        "start vector",
+        id="1249-wall-high-mach-outlet-pt",
+        marks=pytest.mark.slow,
+    ),
+    pytest.param(
+        Case("pin_fin", 1, 0, 0), "perturbation 0", id="1254-pin-fin-wall", marks=pytest.mark.slow
     ),
 ]
 

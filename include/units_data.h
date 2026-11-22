@@ -1758,6 +1758,7 @@ inline constexpr Entry function_units[] = {
     {"PinFinRatioModifier::valid_HD", "-", "-"},
     {"PinFinNuResult::Nu", "-", "-"},
     {"PinFinNuResult::dNu_dRe", "-", "-"},
+    {"PinFinNuResult::dNu_dPr", "-", "-"},
     {"PinFinNuResult::Re_native", "-", "-"},
     {"PinFinNuResult::extrapolated", "-", "-"},
     {"PinFinFrictionResult::f", "-", "-"},

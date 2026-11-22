@@ -605,7 +605,8 @@ constexpr double kMixerHeatMdotFloor = 1e-6;
 // Near-zero band of a mixer's total flow [kg/s]: within |m| <= this, the
 // mixed state is the same arriving-stream mean as outside it, but its
 // partials are 0 (#1232). The mean's own partials grow as 1 / m, and at a
-// near-zero start they sent the first Newton step the wrong way.
+// near-zero start they sent the first Newton step the wrong way. A single
+// stream has no such pole and keeps its partials (#1265).
 constexpr double kMixerNoFlowBand = 1e-12;
 
 // Relative mismatch combustor_residuals_and_jacobians accepts between its P
@@ -640,7 +641,7 @@ constexpr double kSensibleEnthalpyRefT = 298.15;
 // leaving stream beside an arriving one moves nothing (#1232). Over streams
 // of one sign the mean stays within its inputs at any nonzero m; with no flow
 // at all stream 0's state stands in. Within |m| <= kMixerNoFlowBand the
-// partials are 0.
+// partials are 0, except a single stream's (its own state: weight 1).
 // Q [W]: absolute heat transfer rate (positive = heating)
 // fraction [-]: relative to total enthalpy flow (positive = heating)
 MixerResult

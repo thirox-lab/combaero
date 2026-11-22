@@ -651,17 +651,24 @@ class ConvectiveSurface:
         # and the mass flow was taken on the convective area (#456). The
         # smooth side brings its own derivative from the base correlation;
         # both are area-weighted exactly as h is.
-        mdot = self._channel_mdot(rho, velocity, diameter)
-        dh_ribbed_dmdot = (
-            (Re * rib.dSt_dRe + rib.St_r) * rho * abs(velocity) * cp / mdot if mdot else 0.0
-        )
+        # rho |v| / mdot is 1 / A_flow, so the slope is taken without the
+        # flow: at exactly zero flow h_r is linear in |mdot| with the finite
+        # one-sided slope St(0) cp / A_flow, not 0 (#1264).
+        a_flow = self._flow_area if self._flow_area else math.pi / 4.0 * diameter * diameter
+        dh_ribbed_dmdot = (Re * rib.dSt_dRe + rib.St_r) * cp / a_flow
         dh_dmdot = (
             frac_ribbed * dh_ribbed_dmdot + frac_smooth * smooth.dh_dmdot
         ) * self.Nu_multiplier
-        # Temperature sensitivity of the ribbed side is not exposed by the
-        # correlation, so only the smooth side contributes. Recorded rather
-        # than approximated from a stand-in, the same gap the array path had.
-        dh_dT = frac_smooth * smooth.dh_dT * self.Nu_multiplier
+        # dh/dT at fixed flow and P (the convention of every surface's dh_dT):
+        # rho |v| = G is fixed, so the ribbed side h_r = St(Re) G cp moves
+        # with Re = G D / mu through mu, and with cp. The correlation's St has
+        # no Pr term. The ribbed side used to be left out, 72-80% low (#1275).
+        tr = cb.transport_and_dT(T, P, X)
+        dRe_dT = -Re * tr.dmu_dT / mu if mu > 0.0 else 0.0
+        dcp_dT = cp * cb.dcp_dT(T, X) / cs.thermo.cp_mole
+        G_abs = rho * abs(velocity)
+        dh_ribbed_dT = (rib.dSt_dRe * dRe_dT * cp + rib.St_r * dcp_dT) * G_abs
+        dh_dT = (frac_ribbed * dh_ribbed_dT + frac_smooth * smooth.dh_dT) * self.Nu_multiplier
 
         return _RibbedChannelResult(
             dh_dmdot=dh_dmdot,
@@ -834,21 +841,24 @@ class ConvectiveSurface:
         )
 
     def _pin_fin_terms(self, Re: float, Pr: float):
-        """Nu and f (with modifier) at canonical Re_D, and their Re-slopes."""
+        """Nu and f (with modifier) at canonical Re_D, and their Re-slopes;
+        last, Nu's Pr-slope at fixed Re (the modifier is a function of Re
+        alone)."""
         model = self.model
         geom = model.geometry()
         nu = cb.evaluate_pin_fin_nu(model.resolved_nu_set(), geom, Re, Pr)
         fr = cb.evaluate_pin_fin_friction(model.resolved_f_set(), geom, Re)
-        Nu, dNu = nu.Nu, nu.dNu_dRe
+        Nu, dNu, dNu_dPr = nu.Nu, nu.dNu_dRe, nu.dNu_dPr
         f, df = fr.f, fr.df_dRe
         extrapolated = nu.extrapolated or fr.extrapolated
         if model.modifier is not None:
             m = cb.evaluate_pin_fin_modifier(model.modifier, geom, Re)
             Nu, dNu = Nu * m.ratio_Nu, dNu * m.ratio_Nu + Nu * m.dratio_Nu_dRe
+            dNu_dPr *= m.ratio_Nu
             if m.has_f:
                 f, df = f * m.ratio_f, df * m.ratio_f + f * m.dratio_f_dRe
             extrapolated = extrapolated or m.extrapolated
-        return Nu, dNu, f, df, extrapolated
+        return Nu, dNu, f, df, extrapolated, dNu_dPr
 
     def _pin_fin_result(self, T, P, X, velocity, diameter, length, T_hot, heating):
         """Pin-fin array: Metzger et al. (and others) via pin_fin_correlation.h.
@@ -866,9 +876,7 @@ class ConvectiveSurface:
         cross-section, ``rho v pi Dh^2 / 4`` -- the same convention as
         ``channel_smooth``. T_aw and its derivatives are borrowed from the
         smooth correlation, as the impingement paths do; ``dh_dT`` is the
-        smooth result's relative property sensitivity scaled to ``h_eff``, a
-        documented proxy: the pin correlations expose no temperature
-        derivative of their own.
+        array's own, through mu, k and Pr (#1254).
         """
         model = self.model
         D = model.pin_diameter
@@ -884,7 +892,7 @@ class ConvectiveSurface:
         v_max = velocity / amin
         Re = rho * v_max * D / mu if mu > 0.0 else 0.0
 
-        Nu, dNu, f, _, extrapolated = self._pin_fin_terms(Re, Pr)
+        Nu, dNu, f, _, extrapolated, dNu_dPr = self._pin_fin_terms(Re, Pr)
         h_array = Nu * k / D
         dh_array_dRe = dNu * k / D
 
@@ -912,7 +920,21 @@ class ConvectiveSurface:
         mdot = self._channel_mdot(rho, velocity, diameter)
         dRe_dmdot = abs(Re / mdot) if mdot else 0.0
         dh_dmdot = dh_eff_dh * dh_array_dRe * dRe_dmdot * self.Nu_multiplier
-        dh_dT = smooth.dh_dT * (h_eff / smooth.h) * self.Nu_multiplier if smooth.h > 0.0 else 0.0
+        # dh/dT at fixed flow and P, the convention of every surface's dh_dT:
+        # Re = G_max D / mu moves with mu alone, Pr = cp mu / k, and h_array
+        # = Nu k / D with k; the fin efficiency moves with h_array. It was the
+        # smooth correlation's dh_dT scaled by h_eff / h_smooth, 21% low on a
+        # 300 K air array, and through the duct's dT_static/dm it put 0.9% into
+        # the wall-coupled flow partial (#1254).
+        tr = cb.transport_and_dT(T, P, X)
+        dRe_dT = -Re * tr.dmu_dT / mu if mu > 0.0 else 0.0
+        dPr_dT = (
+            Pr * (cb.dcp_dT(T, X) / cs.thermo.cp_mole + tr.dmu_dT / mu - tr.dk_dT / k)
+            if mu > 0.0 and k > 0.0
+            else 0.0
+        )
+        dh_array_dT = ((dNu * dRe_dT + dNu_dPr * dPr_dT) * k + Nu * tr.dk_dT) / D
+        dh_dT = dh_eff_dh * dh_array_dT * self.Nu_multiplier
 
         dP = 2.0 * rho * v_max * abs(v_max) * model.N_rows * f
 
@@ -11489,7 +11511,7 @@ class ChannelElement(NetworkElement):
         a_min = area * cb.pin_fin_amin_over_afrontal(model.geometry())
         Re = m_dot * D / (a_min * mu) if mu > 0.0 else 0.0
 
-        _, _, f, df_dRe, _ = self.surface._pin_fin_terms(Re, 0.7)
+        _, _, f, df_dRe, _, _ = self.surface._pin_fin_terms(Re, 0.7)
         f *= f_mult
         df_dRe *= f_mult
 
