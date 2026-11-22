@@ -402,6 +402,10 @@ def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow(
         for h in (1e-15, 1e-14, 1e-13, 1e-12, 1e-11)
     ]
     assert min(errs) < 1e-3, (fuel, an, errs)
+    # Noise free: the analytic J at an ordinary state an instant later (air
+    # at 1e-18 kg/s, oxygen present) is J(0) to 1e-7 (review 5 measured
+    # 1.2e-8 at worst).
+    assert burn(1e-18).dTt_mix_d_stream[0].d_mdot == pytest.approx(an, rel=1e-7)
 
 
 def test_a_zero_air_heptane_combustor_refuses_rather_than_guess() -> None:
