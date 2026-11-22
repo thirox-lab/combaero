@@ -56,6 +56,8 @@ GUARDS = [
     pytest.param(Case("legacy_tee_ports", 0, 3, 2), "pc flows +-1e-09", id="1238-port-near-zero"),
     pytest.param(Case("tee3", 0, 1, 0), "jct pattern 001 ratio 1", id="mpce-arm-reversed-gases"),
     pytest.param(Case("film", 0, 1, 0), "h pattern 1 ratio 1", id="film-reversed-gases"),
+    pytest.param(Case("tee3", 1, 0, 0), "arm0 flows 1e-09", id="1252-mpce-common-near-zero"),
+    pytest.param(Case("tee3", 2, 0, 0), "arm0 flows 3e-05", id="1247-mpce-common-small"),
 ]
 
 
