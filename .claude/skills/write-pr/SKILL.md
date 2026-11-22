@@ -1,6 +1,6 @@
 ---
 name: write-pr
-description: Use when writing or editing a pull request title or body.
+description: Use when writing or editing a pull request title, body or comment, including an independent review's verdict posted on the PR.
 ---
 
 ### Title Rules
@@ -48,6 +48,21 @@ description: Use when writing or editing a pull request title or body.
   not.
 - A negative result, reported, is a good outcome. Never widen a tolerance, drop
   a case, or tune against the score to make a PR look clean.
+
+### Review-verdict comments
+One comment per independent review round, posted on the PR (the residual,
+Jacobian or default rule in CLAUDE.md), so a later audit of agent mistakes
+finds them on GitHub.
+- **First line:** round, the head SHA reviewed, the verdict (ready / not ready /
+  ship), and how many bugs were confirmed.
+- **Confirmed bugs:** each with its size and a reproducer a reader can rerun
+  (inputs and the call, not a script path), and the fix with its measured result.
+- **Retracted:** claims the reviewer, or the PR body, made and then disproved,
+  and why. They show where a reading went wrong.
+- **Notes, not regressions:** known limits found on the way, with the issue
+  filed for each.
+- **Last line:** the tests run on the head, with their counts.
+- Factual, no @-mentions, no pointers into local paths.
 
 ### High-Risk / Architecture Changes (Exception)
 Expand into an RFC-style write-up -- problem statement, alternatives considered,
