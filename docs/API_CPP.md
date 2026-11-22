@@ -304,6 +304,12 @@ double dcp_R_dT(std::size_t species_idx, double T);
 enum class ThermoModel { NASA9, NASA9_C2 };
 void set_thermo_model(ThermoModel model);
 ThermoModel thermo_model();
+// The active model's non-smooth temperatures: each species' data ends, the
+// high tail's fade end, and the NASA-9 joins (NASA9) or each C2 bridge's
+// T_join -+ half_width (NASA9_C2). Sorted, unique, built once per model and
+// selected by thermo_model() at each call. The static-state quadrature splits
+// its Gauss-Legendre rule there (#1255).
+const std::vector<double>& cp_breakpoints();
 ```
 
 ### Transport Model
