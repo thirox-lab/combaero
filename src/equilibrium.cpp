@@ -607,22 +607,38 @@ struct JointReaction {
 };
 
 // The reactions: reforming of each hydrocarbon (if with_reforming), then WGS.
+// to_co2: reform to CO2 (CnHm + 2n H2O = n CO2 + (2n + m/2) H2) and key WGS
+// on CO instead of CO2, the same reaction space (#1262). Where CO is the
+// scarcer of the two (a lean burn with trace fuel: CO at 4e-12 beside CO2 at
+// 4e-4), it is then a key and steps in ln n; as a non-key it was left as the
+// difference of the hydrocarbon keys' changes, each quantised to its own ulp,
+// a ln Q noise of 1.4e-10 at phi 1e-4, 300 K.
 static std::vector<JointReaction> joint_reactions(const ReformingConfig &cfg,
-                                                  bool with_reforming) {
+                                                  bool with_reforming, bool to_co2 = false) {
   std::vector<JointReaction> rx;
   if (with_reforming) {
     for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
       const double nC = cfg.hc_C[k];
-      const double m = nC + 0.5 * cfg.hc_H[k];
-      rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0},
-                                  {cfg.i_H2O, -nC},
-                                  {cfg.i_CO, nC},
-                                  {cfg.i_H2, m}},
-                                 m - 1.0, 0});
+      const double nH = cfg.hc_H[k];
+      if (to_co2) {
+        rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0},
+                                    {cfg.i_H2O, -2.0 * nC},
+                                    {cfg.i_CO2, nC},
+                                    {cfg.i_H2, 2.0 * nC + 0.5 * nH}},
+                                   nC + 0.5 * nH - 1.0, 0});
+      } else {
+        const double m = nC + 0.5 * nH;
+        rx.push_back(JointReaction{{{cfg.hc_indices[k], -1.0},
+                                    {cfg.i_H2O, -nC},
+                                    {cfg.i_CO, nC},
+                                    {cfg.i_H2, m}},
+                                   m - 1.0, 0});
+      }
     }
   }
   rx.push_back(JointReaction{
-      {{cfg.i_CO, -1.0}, {cfg.i_H2O, -1.0}, {cfg.i_CO2, 1.0}, {cfg.i_H2, 1.0}}, 0.0, 2});
+      {{cfg.i_CO, -1.0}, {cfg.i_H2O, -1.0}, {cfg.i_CO2, 1.0}, {cfg.i_H2, 1.0}}, 0.0,
+      to_co2 ? std::size_t{0} : std::size_t{2}});
   return rx;
 }
 
@@ -884,8 +900,11 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
       if (curved(alpha, n_try)) {
         joint_residual(rx, act, n_try, P, lnK, F_try, nullptr);
         const double f_try = max_abs(F_try);
-        // Sufficient decrease of ||F||: the Newton direction descends it.
-        if (std::isfinite(f_try) && f_try <= (1.0 - 1e-4 * alpha) * fnorm) {
+        // Sufficient decrease of ||F||: the Newton direction descends it. A
+        // step that does not lower ||F|| at all is no progress, also where
+        // alpha is so small that the bound rounds to fnorm itself (it was
+        // taken, 200 times over, at alpha 4.5e-13).
+        if (std::isfinite(f_try) && f_try <= (1.0 - 1e-4 * alpha) * fnorm && f_try < fnorm) {
           accepted = true;
           break;
         }
@@ -893,8 +912,9 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
       alpha *= 0.5;
     }
     if (!accepted) {
-      // Round-off floor (or no descent): converged if within tolerance.
-      return fnorm <= REFORMING_NEWTON_FTOL;
+      // Round-off floor: no step lowers ||F||. Converged if within
+      // REFORMING_NEWTON_FLOOR_FTOL, the floor a trace species leaves.
+      return fnorm <= REFORMING_NEWTON_FLOOR_FTOL;
     }
     n = n_try;
     joint_residual(rx, act, n, P, lnK, F, &J);
@@ -1044,6 +1064,119 @@ static bool element_potential_start(
   return true;
 }
 
+// Absent species of the reactions (#1262). A reaction with an absent species
+// is left out of the Newton solve, and a round cannot make one where CO and
+// H2 are below 1e-12 (the scalar reforming bracket is empty), so a
+// hydrocarbon the equilibrium holds at percent level could stay exactly 0 at
+// a state reported converged: ethane at phi 2400, 266 K, 4.2 bar had no
+// methane (0.71 at equilibrium) and came out 276 K against 441 K; heptane in
+// air stepped 2.55 K between phi 87.45 and 87.475 as isobutane dropped out.
+// The element potentials of the present species predict each absent one,
+// ln x_j = sum_e a_je lam_e - g_j/RT - ln(P/P0); one predicted above
+// REFORMING_SEED_FRACTION has a positive affinity and is seeded at its
+// predicted amount (at most half of what the present species can give), from
+// them by an element-conserving combination (each in proportion to its
+// amount); a thousandth of it
+// left ln Q 7 off and the Newton from it crawled. Returns whether any was
+// (false: none is missing), or sets missing when one is predicted but cannot
+// be seeded.
+static bool seed_absent_species(std::vector<double> &n, double T, double P,
+                                const std::vector<JointReaction> &rx, bool &missing) {
+  missing = false;
+  std::vector<std::size_t> sp;
+  for (const auto &r : rx) {
+    for (const auto &p : r.nu) {
+      if (std::find(sp.begin(), sp.end(), p.first) == sp.end()) sp.push_back(p.first);
+    }
+  }
+  double nt = 0.0;
+  for (double v : n) nt += v;
+  auto atoms = [](std::size_t j) {
+    const auto &ms = molecular_structures[j];
+    return std::vector<double>{static_cast<double>(ms.C), static_cast<double>(ms.H),
+                               static_cast<double>(ms.O)};
+  };
+  std::vector<std::size_t> present, absent;
+  std::vector<double> b(3, 0.0);
+  for (std::size_t j : sp) {
+    if (n[j] > 0.0) {
+      present.push_back(j);
+      const auto a = atoms(j);
+      for (std::size_t e = 0; e < 3; ++e) b[e] += a[e] * n[j];
+    } else {
+      absent.push_back(j);
+    }
+  }
+  if (absent.empty()) return false;
+  std::vector<std::size_t> el;
+  for (std::size_t e = 0; e < 3; ++e) {
+    if (b[e] > 0.0) el.push_back(e);
+  }
+  const std::size_t E = el.size();
+  if (E == 0 || present.size() < E) return false;
+  // Element potentials: least squares mu_j = sum_e a_je lam_e over present j.
+  const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
+  std::vector<double> AtA(E * E, 0.0), Atmu(E, 0.0);
+  for (std::size_t j : present) {
+    const auto a = atoms(j);
+    const double mu = g_over_RT(j, T) + std::log(n[j] / nt) + ln_P;
+    for (std::size_t i = 0; i < E; ++i) {
+      Atmu[i] += a[el[i]] * mu;
+      for (std::size_t k = 0; k < E; ++k) AtA[i * E + k] += a[el[i]] * a[el[k]];
+    }
+  }
+  if (!solve_dense(AtA, Atmu, E, 1)) return false;
+  // The seeding combinations change each present species in proportion to its
+  // amount (least norm in sum c_k^2 / n_k): c = D M^T y, M D M^T y = a_j,
+  // D = diag(n_k). Plain least norm moved CO 1e6-fold to make methane.
+  const std::vector<double> w = n;  // D, fixed for every seed below
+  std::vector<double> G(E * E, 0.0);  // M D M^T, M[e][k] = a_k,e over present k
+  for (std::size_t k : present) {
+    const auto a = atoms(k);
+    for (std::size_t i = 0; i < E; ++i) {
+      for (std::size_t l = 0; l < E; ++l) G[i * E + l] += a[el[i]] * a[el[l]] * w[k];
+    }
+  }
+  bool seeded = false;
+  for (std::size_t j : absent) {
+    const auto aj = atoms(j);
+    bool has_el = true;
+    for (std::size_t e = 0; e < 3; ++e) {
+      if (aj[e] > 0.0 && !(b[e] > 0.0)) has_el = false;
+    }
+    if (!has_el) continue;
+    double ln_x = -g_over_RT(j, T) - ln_P;
+    for (std::size_t i = 0; i < E; ++i) ln_x += aj[el[i]] * Atmu[i];
+    if (!(ln_x > std::log(REFORMING_SEED_FRACTION))) continue;
+    // Least-norm c over present k with sum_k c_k a_k = a_j: c = M^T y,
+    // M M^T y = a_j.
+    std::vector<double> y(E);
+    for (std::size_t i = 0; i < E; ++i) y[i] = aj[el[i]];
+    if (!solve_dense(G, y, E, 1)) {
+      missing = true;
+      continue;
+    }
+    double delta = std::exp(std::min(ln_x, 0.0)) * nt;
+    std::vector<std::pair<std::size_t, double>> c;
+    for (std::size_t k : present) {
+      const auto a = atoms(k);
+      double ck = 0.0;
+      for (std::size_t i = 0; i < E; ++i) ck += a[el[i]] * y[i];
+      ck *= w[k];
+      c.emplace_back(k, ck);
+      if (ck > 0.0) delta = std::min(delta, 0.5 * n[k] / ck);
+    }
+    if (!(delta > 0.0)) {
+      missing = true;
+      continue;
+    }
+    for (const auto &kc : c) n[kc.first] -= delta * kc.second;
+    n[j] = delta;
+    seeded = true;
+  }
+  return seeded;
+}
+
 // Joint reforming + WGS equilibrium at fixed T from n0. Rounds start it
 // (REFORMING_START_PASSES, which also make the species of a reaction that can
 // move present); Newton then solves the reactions whose species are all
@@ -1089,7 +1222,7 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
   // after the element potentials, and a key's own ulp then quantises the
   // others (CO at 5e-18 stepped 1.9e-26 at a time beside steam at 2e-11).
   auto choose_basis = [&](const std::vector<double> &n) {
-    rx = joint_reactions(cfg, with_reforming);
+    rx = joint_reactions(cfg, with_reforming, n[cfg.i_CO] < n[cfg.i_CO2]);
     std::vector<JointReaction> rich;
     if (with_reforming && joint_reactions_rich(cfg, n, rich)) rx = rich;
     lnK.assign(rx.size(), 0.0);
@@ -1099,6 +1232,7 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
 
   bool conv = false;
   std::vector<std::size_t> act;
+  for (int seed_pass = 0; seed_pass <= REFORMING_SEED_PASSES; ++seed_pass) {
   for (int restart = 0; restart <= REFORMING_JOINT_RESTARTS; ++restart) {
     if (restart > 0) choose_basis(n_out);
     act = joint_active(rx, n_out);
@@ -1135,6 +1269,16 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     if (reforming_round_change(n_out, n_round) <= REFORMING_JOINT_CHECK_RTOL) break;
     n_out = n_round;
     conv = false;
+  }
+    // An absent species with a positive affinity: seed it and solve again;
+    // one still predicted after the last pass means not converged.
+    if (!conv) break;
+    bool missing = false;
+    const bool seeded = seed_absent_species(n_out, T, P, rx, missing);
+    if (missing) conv = false;
+    if (!seeded) break;
+    conv = false;
+    choose_basis(n_out);
   }
   if (rx_out != nullptr) *rx_out = rx;
   if (active_out != nullptr) *active_out = act;

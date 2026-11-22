@@ -356,6 +356,30 @@ def test_a_fuel_only_combustor_moves_with_the_air_flow() -> None:
     assert an == pytest.approx(fd, rel=1e-6), (an, fd)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#1251: the equilibrium F steps at the oxygen onset (the hydrocarbon "
+    "interconversion the first oxygen enables); pyrolysis-always flips this",
+)
+def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow() -> None:
+    """The equilibrium leg of the test above: J at exactly zero air flow
+    against the one-sided difference, at a step that resolves it (1e-12 and
+    1e-9 kg/s both, to 1e-3)."""
+
+    def burn(ma: float):
+        s = [
+            _cb.MassStream(ma, 300.0, 2.0e5, _Y_AIR),
+            _cb.MassStream(5.76e-4, 300.0, 2.1e5, _Y_CH4),
+        ]
+        return _combustor(s, "equilibrium")
+
+    r = burn(0.0)
+    an = r.dTt_mix_d_stream[0].d_mdot
+    for h in (1e-12, 1e-9):
+        fd = (burn(h).Tt_mix - r.Tt_mix) / h
+        assert an == pytest.approx(fd, rel=1e-3), (h, an, fd)
+
+
 @pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])
 def test_the_equilibrium_combustor_carries_its_burn_pressure(ma: float) -> None:
     """The equilibrium depends on its pressure, the streams' mixed Pt, which
@@ -427,8 +451,9 @@ def _fuel_only(x_o2: float) -> np.ndarray:
 @pytest.mark.parametrize("T", [300.0, 400.0, 500.0, 650.0, 900.0])
 def test_trace_oxygen_equilibrium_converges(T: float, P: float) -> None:
     """Methane with oxygen from 1e-13 to 1e-2, and methane in air up to phi =
-    1e4: the joint solve converges (#1262). On main 201 of these 375 states
-    did not (ln Q - ln K up to 62), the result was used anyway, and the
+    1e4 (240 states): the joint solve converges (#1262). On main 201 of a
+    375-state grid over the same range did not (ln Q - ln K up to 62), the
+    result was used anyway, and the
     combustor took the implicit-function Jacobian at a non-root (dT/dP 30 %
     off at phi = 600, 300 K). The trace oxygen carriers are now keys of a
     hydrocarbon-rich reaction basis in which the hydrocarbon interconversions
@@ -483,3 +508,124 @@ def test_an_unconverged_equilibrium_is_refused() -> None:
     assert not _cb._core.combustion_equilibrium(535.0, X, 2.87e6).converged
     with pytest.raises(RuntimeError, match="did not converge"):
         _cb._core.combustion_equilibrium_and_jacobian(535.0, X, 2.87e6)
+
+
+def _fuel_in_air(fuel: str, phi: float, vitiated: bool = False) -> np.ndarray:
+    X_air = np.array(_X_AIR)
+    i_f = _cb.species_index_from_name(fuel)
+    c = X_air[_cb.species_index_from_name("O2")] / _cb.oxygen_required_per_mol_fuel(i_f)
+    Xf = np.zeros(len(X_air))
+    Xf[i_f] = 1.0
+    X = (X_air + c * phi * Xf) / (1.0 + c * phi)
+    if vitiated:
+        X = 0.85 * X
+        X[_cb.species_index_from_name("H2O")] += 0.10
+        X[_cb.species_index_from_name("CO2")] += 0.05
+    return X
+
+
+_HC = ("CH4", "C2H6", "C3H8", "IC4H10", "NC5H12", "NC6H14", "NC7H16")
+
+
+@pytest.mark.parametrize(
+    ("fuel", "phi", "T", "P", "vitiated", "T_ref"),
+    [
+        ("C2H6", 2400.0, 266.0, 4.2e5, True, 440.902),
+        ("IC4H10", 200.0, 270.0, 2.7e4, False, 360.239),
+        ("NC7H16", 300.0, 330.0, 1e6, False, 395.844),
+    ],
+)
+def test_an_absent_hydrocarbon_is_seeded(
+    fuel: str, phi: float, T: float, P: float, vitiated: bool, T_ref: float
+) -> None:
+    """A hydrocarbon the equilibrium holds but no reaction could make (every
+    reaction producing it had an absent species, and no round seeds it with CO
+    and H2 below 1e-12) stayed exactly 0 at a state reported converged
+    (#1262 review). Ethane at phi 2400 came out 276.4 K without methane
+    (0.71 at equilibrium). T_ref: an independent element-potential Gibbs
+    minimum on combaero's thermo over every C/H/O species (the review's
+    gibbs_ref.py, 50 digits): 440.9, 360.2, 395.8 K."""
+    r = _cb._core.combustion_equilibrium(T, _fuel_in_air(fuel, phi, vitiated), P)
+    assert r.converged
+    assert pytest.approx(T_ref, abs=0.05) == r.state.T
+    zero = [s for s in _HC if r.state.X[_cb.species_index_from_name(s)] == 0.0]
+    assert not zero
+
+
+def test_rich_heptane_equilibrium_is_continuous_in_phi() -> None:
+    """Heptane in air at 300 K, 1 bar stepped -2.55 K between phi 87.45 and
+    87.475 as isobutane dropped to exactly 0 and was never seeded again
+    (#1262 review). Now T(phi) is smooth there: steps of -0.036 K per 0.025
+    in phi, their differences 2e-5 K (the curvature)."""
+    phis = np.linspace(87.30, 87.55, 11)
+    T = np.array(
+        [
+            _cb._core.combustion_equilibrium(300.0, _fuel_in_air("NC7H16", p), 1e5).state.T
+            for p in phis
+        ]
+    )
+    assert np.abs(np.diff(T)).max() < 0.05, np.diff(T)
+    assert np.abs(np.diff(T, 2)).max() < 1e-4, np.diff(T)
+
+
+def _elements(X: np.ndarray) -> np.ndarray:
+    a = np.zeros(3)
+    for j, x in enumerate(X):
+        st = _cb.species_name(j)
+        if st in ("N2", "AR", "NH3", "O2"):
+            continue
+        counts = {"CO2": (1, 0, 2), "H2O": (0, 2, 1), "CO": (1, 0, 1), "H2": (0, 2, 0)}
+        if st in counts:
+            a += x * np.array(counts[st])
+        else:  # alkanes CnH(2n+2) and isobutane
+            n = {
+                "CH4": 1,
+                "C2H6": 2,
+                "C3H8": 3,
+                "IC4H10": 4,
+                "NC5H12": 5,
+                "NC6H14": 6,
+                "NC7H16": 7,
+            }[st]
+            a += x * np.array((n, 2 * n + 2, 0))
+    return a
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_the_equilibrium_conserves_the_elements(seed: int) -> None:
+    """C, H and O per mole of inert (N2 + Ar) are those of the complete-
+    combustion products, to 1e-12, over rich, lean and vitiated draws: a
+    seeding combination weighted with amounts changed between seeds broke it
+    by up to 2.7 % (O) while it was written."""
+    import random
+
+    rng = random.Random(1262 + seed)
+    i_n2 = _cb.species_index_from_name("N2")
+    i_ar = _cb.species_index_from_name("AR")
+    for _ in range(40):
+        fuel = rng.choice(["CH4", "C2H6", "C3H8", "IC4H10", "NC7H16"])
+        X = _fuel_in_air(fuel, 10 ** rng.uniform(-4, 3), rng.random() < 0.2)
+        T, P = rng.uniform(250.0, 1200.0), 10 ** rng.uniform(4, 6.5)
+        r = _cb._core.combustion_equilibrium(T, X, P)
+        if not r.converged:
+            continue
+        Xb = np.array(_cb.complete_combustion(T, list(X), P).X)
+        Xo = np.array(r.state.X)
+        e_in = _elements(Xb) / (Xb[i_n2] + Xb[i_ar])
+        e_out = _elements(Xo) / (Xo[i_n2] + Xo[i_ar])
+        assert np.abs(e_out - e_in).max() <= 1e-12 * max(1.0, np.abs(e_in).max()), (fuel, T, P)
+
+
+@pytest.mark.parametrize(
+    ("fuel", "phi", "T", "P"),
+    [("CH4", 2e-3, 250.0, 1e5), ("CH4", 1e-4, 300.0, 1e5), ("C3H8", 1e-4, 250.0, 2e6)],
+)
+def test_a_lean_trace_fuel_equilibrium_converges(fuel: str, phi: float, T: float, P: float) -> None:
+    """Very lean and cold: the phi -> 0 smoothing leaves trace fuel (3e-6 CH4
+    at phi 1e-4), and the solve stalled at a ln Q noise of 1.4e-10, CO at 4e-12
+    being the difference of the hydrocarbon keys' changes; on main 178 of 882
+    such states did not converge (#1262 review). WGS is now keyed on CO where
+    CO is the scarcer carbon oxide."""
+    X = _fuel_in_air(fuel, phi)
+    assert _cb._core.combustion_equilibrium(T, X, P).converged
+    _cb._core.combustion_equilibrium_and_jacobian(T, X, P)  # does not raise

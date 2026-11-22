@@ -3172,6 +3172,14 @@ print(f"Adiabatic T: {result.T_ad} K")
 result = combustion_from_phi(phi=0.8, T=300, P=2e5, fuel="CH4", oxidizer="air")
 ```
 
+With `method="equilibrium"`, `combustion_from_streams` raises `RuntimeError`
+where the reforming + WGS equilibrium does not converge (#1262): it returns
+no state that is not an equilibrium. The solve converges over methane with
+oxygen from 1e-13 to 1e-2 and in air to phi 1e4 (300-900 K, 1-17 bar), and
+over lean to very rich draws of six fuels except heptane and isobutane beyond
+about phi 400. `combaero.combustion_equilibrium` itself still returns, with
+`converged` set accordingly.
+
 ### MixtureState for Network Data
 ```python
 import combaero as cb
@@ -3209,6 +3217,13 @@ res_chan = st.channel_residuals_and_jacobian(m_dot, P_tot, P_stat, Tt, Y, P_down
 res_comb = st.combustor_residuals_and_jacobians(streams, P, Q=0.0, fraction=0.0,
                                                 pressure_loss=loss, use_equilibrium=False)
 ```
+
+`adiabatic_T_equilibrium_and_jacobians`,
+`adiabatic_T_equilibrium_and_jacobians_from_streams` and
+`combustor_residuals_and_jacobians(..., use_equilibrium=True)` raise
+`RuntimeError` where the equilibrium does not converge (#1262): their
+derivatives are the implicit function's at a root only. The network takes it
+as an unphysical probe.
 
 The combustor returns a `MixerResult`: the products' total temperature
 `Tt_mix`, `Y_mix` and total pressure `Pt_mix`, with their derivatives per

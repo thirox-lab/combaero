@@ -38,7 +38,10 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // steam-reforming basis left the hydrocarbon interconversions as differences
 // of rows weighted by 1/n_H2O (condition number 2.5e11) and the trace
 // carriers as differences of larger changes; 201 of 375 trace-oxygen and
-// very rich methane states did not converge, none does now.
+// very rich methane states did not converge, none does now. Likewise WGS is
+// keyed on CO where it is the scarcer carbon oxide (a lean burn with trace
+// fuel), and an absent species the element potentials predict is seeded and
+// the solve repeated (REFORMING_SEED_FRACTION).
 constexpr int REFORMING_START_PASSES = 3;
 constexpr double REFORMING_PASS_RTOL = 1e-14;
 constexpr int REFORMING_NEWTON_MAX_IT = 200;
@@ -50,6 +53,13 @@ constexpr int REFORMING_NEWTON_ROUNDS_IT = 50;
 // Converged when max_r |ln Q_r - ln K_r| is below this (then polished to
 // round-off with up to two more steps).
 constexpr double REFORMING_NEWTON_FTOL = 1e-10;
+// Where no step can lower max |ln Q - ln K| any further (its round-off
+// floor), the solve is converged if it is below this (#1262). A non-key trace
+// species is the sum of the keys' changes, each rounded to its key's ulp: a
+// hydrocarbon key at 1e-6 moves hydrogen at 5e-9 in steps of 1e-22, and
+// heptane's 22 H2 in its ln Q left a floor of 1.1e-10 (lean propane, 250 K,
+// 20 bar). 1e-9 in ln Q is 1e-9 relative in the trace amount.
+constexpr double REFORMING_NEWTON_FLOOR_FTOL = 1e-9;
 // A step keeps at least 1 - this of every amount (other than a reaction's own
 // species, which steps in ln n) it reduces.
 constexpr double REFORMING_FRACTION_TO_BOUNDARY = 0.99;
@@ -68,6 +78,12 @@ constexpr double REFORMING_RICH_BASIS_HC_FRACTION = 1e-4;
 // The element-potential start is handed to the Newton polish once its full
 // corrections in ln n are below this, converged or not (#1262).
 constexpr double REFORMING_EP_START_CORRECTION = 1e-6;
+// An absent species of the reactions whose equilibrium mole fraction, from the
+// present species' element potentials, exceeds this is seeded and the solve
+// repeated, up to REFORMING_SEED_PASSES times; one still predicted after them
+// means not converged (#1262).
+constexpr double REFORMING_SEED_FRACTION = 1e-14;
+constexpr int REFORMING_SEED_PASSES = 3;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the
