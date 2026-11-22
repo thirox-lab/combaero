@@ -1469,8 +1469,8 @@ Rowbury2001ExitDensity rowbury_2001_exit_density(double Pt, double Tt, double P,
 // inside DischargeHoleGeometry; dCd/dRe 0 below discharge_cd_re_floor unless
 // continue_re_floor); 2. the opt-in exit crossflow (Rowbury) on Cd0, off at
 // rho_m_u_m2 <= 0; 3. the impingement jet law, which replaces the hole's Cd
-// where it acts (its own partials only; Rogers & Hersh capped: the hole's
-// hold). Partials analytic, by input.
+// where it acts (its own partials, plus the hole's scaled by dCd/dCd0 in
+// Rogers & Hersh's cap band, #1248; Rogers & Hersh capped: the hole's hold). Partials analytic, by input.
 constexpr double HOLE_CD_FIXED_MIN = 1e-4;
 enum class HoleCdBase { Fixed, Metering, Discharge };
 enum class HoleCdJetCrossflow { Off, RogersHersh1976, FlorschuetzMetzgerSu1982 };

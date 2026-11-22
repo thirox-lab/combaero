@@ -1220,7 +1220,9 @@ class _HoleCdChain:
         continue_re_floor: bool = False,
     ) -> dict[str, float]:
         """d(cd)/d(unknown) by name: the crossflow law's own partials where
-        it acts (its Cd replaces the hole's), the hole's otherwise. The
+        it acts (its Cd replaces the hole's), plus the hole's scaled by the
+        law's dCd/dCd0 inside Rogers & Hersh's cap band (#1248), and the
+        hole's otherwise. The
         own-flow column through the discharge chamber rides under
         _DCD_DM_VIA_CHAMBER (see there)."""
         r, ctx = self._evaluate(
