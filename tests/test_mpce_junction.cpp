@@ -21,6 +21,8 @@
 //
 // Issue #271, step 4.4.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <string>
 
@@ -239,4 +241,72 @@ TEST(MpceJunction, APortInsideTheDeadBandLeavesTheAnglesAlone) {
     if (std::abs(banded.residual[i] - fired.residual[i]) > 1.0e3) jumped = true;
   }
   EXPECT_TRUE(jumped) << "the axial reassignment did not change behaviour across the dead band";
+}
+
+// -----------------------------------------------------------------------------
+// The compressible reference head near zero common-port flow (#1252, #1247)
+// -----------------------------------------------------------------------------
+
+namespace {
+
+// A separating tee whose supplier (the common port) carries common_mdot while
+// the collectors keep their flow: the state of the #1252 sweep reproducer
+// (tee3 seed 1, "arm0 flows 1e-09"). K ~ 1/u_com^2 there, so the head
+// q_com ~ u_com^2 has to keep its digits for K q_com to survive.
+combaero::solver::MpceResidualJacobian NearZeroCommon(double common_mdot, double p0) {
+  MpceGeometry geom;
+  geom.area = {7.853981633974484e-05, 7.853981633974484e-05, 4.586227798673709e-05};
+  geom.theta_rad = {0.0, 0.0, M_PI / 3.0};
+  geom.port_sign = {-1.0, 1.0, 1.0};
+  geom.joining_etransfer_alpha = 0.2;
+  geom.gamma = {1.3442185003277807, 1.3442185003277807, 1.3442185003277807};
+  const std::array<double, kMpcePorts> pt = {264611.47157873196, 254866.12676798273,
+                                             264611.47157873196};
+  std::array<double, kMpcePorts> p = pt;
+  p[0] = p0;
+  // Ideal gas at fixed T: rho moves with P as rho/P, which is the drho_dp the
+  // kernel is handed, so a difference in P has to move rho with it.
+  std::array<double, kMpcePorts> rho = {1.0242854005987974 * p0 / pt[0], 0.9865621138724252,
+                                        1.0242854005987971};
+  std::array<double, kMpcePorts> drho{};
+  for (int i = 0; i < kMpcePorts; ++i) drho[i] = rho[i] / p[i];
+  return mpce_residuals_and_jacobian(
+      p, pt, rho, drho, {common_mdot, 0.0010005072145190426, 0.00025012680362976065},
+      245120.7819572335, geom);
+}
+
+} // namespace
+
+TEST(MpceJunction, TheHeadKeepsItsDigitsAtANearlyIdleCommonPort) {
+  // At 1e-9 kg/s, M^2 ~ 1e-15: pow(1 + x, e) - 1 rounded to exactly 0, so
+  // the 85 Pa loss term vanished from F while its dual kept the slope
+  // (J 1.7e11 against an FD of 0). The limit is 0.5 rho (u_c^2 - 2 cos u_c
+  // u_com + u_com^2) > 0, so the term must be there.
+  auto r = NearZeroCommon(1.0e-9, 264611.47157873196);
+  ASSERT_TRUE(r.valid);
+  const double loss = r.residual[1] - (254866.12676798273 - 245120.7819572335);
+  EXPECT_GT(loss, 80.0);
+  EXPECT_LT(loss, 90.0);
+}
+
+TEST(MpceJunction, TheCommonFlowAndPressureColumnsMatchFdNearZeroFlow) {
+  for (double m : {1.0e-9, 3.0e-5, 1.0e-3}) {
+    const double p0 = 264611.47157873196;
+    auto r = NearZeroCommon(m, p0);
+    ASSERT_TRUE(r.valid);
+    const double hm = 1.0e-3 * m;
+    const double hp = 1.0e-4 * p0;
+    auto mp = NearZeroCommon(m + hm, p0);
+    auto mm = NearZeroCommon(m - hm, p0);
+    auto pp = NearZeroCommon(m, p0 + hp);
+    auto pm = NearZeroCommon(m, p0 - hp);
+    for (int i = 0; i < kMpcePorts; ++i) {
+      const double fd_m = (mp.residual[i] - mm.residual[i]) / (2.0 * hm);
+      const double fd_p = (pp.residual[i] - pm.residual[i]) / (2.0 * hp);
+      EXPECT_NEAR(r.jacobian[i][2 * kMpcePorts], fd_m, 1.0e-5 * std::max(1.0, std::abs(fd_m)))
+          << "m " << m << " row " << i;
+      EXPECT_NEAR(r.jacobian[i][0], fd_p, 1.0e-5 * std::max(1.0, std::abs(fd_p)))
+          << "m " << m << " row " << i;
+    }
+  }
 }

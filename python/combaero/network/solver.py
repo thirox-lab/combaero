@@ -3796,6 +3796,15 @@ class NetworkSolver:
                     nr = out.setdefault(idx_Pt_b, {"T": 0.0, "Y": np.zeros(n_species), "Pt": 0.0})
                     nr["T"] += dTt_mix_dQ * sign * dQ_dPt_b
 
+    def _boundary_seed_relay(self, nid: str) -> dict:
+        """A flow boundary's relay from its own state alone: d(Pt)/d(own Pt
+        unknown) = 1, no T or Y sensitivity (its T and Y are fixed)."""
+        out: dict = {}
+        for global_idx in self._unknown_indices.get(nid, []):
+            if self.unknown_names[global_idx].endswith(".Pt"):
+                out[global_idx] = {"T": 0.0, "Y": np.zeros(self._n_species), "Pt": 1.0}
+        return out
+
     def _propagate_pass(
         self,
         x: np.ndarray,
@@ -3819,6 +3828,16 @@ class NetworkSolver:
         def up(n: str) -> dict:
             if n in done and n != current[0]:
                 return relay[n]
+            node_n = self.network.nodes.get(n)  # None for a film/Rayleigh key
+            if node_n is not None and node_n.is_flow_boundary and n not in done:
+                # A flow boundary read ahead of its order gives its OWN state,
+                # not the previous pass's (_get_node_state_with_prev): its
+                # fixed T and Y, its pressures from x. Its sensitivities are
+                # those of that state -- the own-unknown seeds -- never the
+                # mix of a reversed stream it derives later in the pass. A
+                # borrowed mix put 1.85e12 on a splitter outlet's row where
+                # the residual has no such dependence (#1253).
+                return self._boundary_seed_relay(n)
             self._relay_borrowed.add(n)
             return prev_relay.get(n, {})
 
@@ -3860,14 +3879,7 @@ class NetworkSolver:
                 if not with_relay:
                     continue
                 # Seed relay for boundary's own unknowns
-                node_indices = self._unknown_indices.get(nid, [])
-                unknown_names = self.unknown_names
-                for global_idx in node_indices:
-                    name = unknown_names[global_idx]
-                    if name.endswith(".Pt"):
-                        relay[nid].setdefault(
-                            global_idx, {"T": 0.0, "Y": np.zeros(self._n_species), "Pt": 0.0}
-                        )["Pt"] = 1.0
+                relay[nid] = self._boundary_seed_relay(nid)
                 continue
 
             # stream_info: (state, elem, src_nid) - one entry per upstream stream.
