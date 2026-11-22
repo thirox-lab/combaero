@@ -447,6 +447,43 @@ ThermoModel thermo_model() {
   return static_cast<ThermoModel>(g_thermo_model.load(std::memory_order_relaxed));
 }
 
+namespace {
+// The breakpoints of one model (cp_breakpoints): every species' data ends and
+// its high tail's fade end, and the NASA-9 joins (NASA9) or the C2 bridges'
+// window edges (NASA9_C2). Sorted, unique, > 0 K.
+std::vector<double> model_breakpoints(bool c2) {
+  std::vector<double> out;
+  for (std::size_t i = 0; i < nasa_coeffs.size(); ++i) {
+    const SpeciesTails& st = species_tails()[i];
+    out.push_back(st.T_lo);
+    out.push_back(st.T_hi);
+    out.push_back(st.hi.T_end);
+    if (c2) {
+      for (const auto& b : c2_bridges[i]) {
+        out.push_back(b.T_join - b.half_width);
+        out.push_back(b.T_join + b.half_width);
+      }
+    } else {
+      for (const auto& iv : nasa_coeffs[i].intervals) {
+        out.push_back(iv.T_min);
+        out.push_back(iv.T_max);
+      }
+    }
+  }
+  std::sort(out.begin(), out.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  out.erase(std::remove_if(out.begin(), out.end(), [](double t) { return !(t > 0.0); }),
+            out.end());
+  return out;
+}
+}  // namespace
+
+const std::vector<double>& cp_breakpoints() {
+  static const std::vector<double> nasa9 = model_breakpoints(false);
+  static const std::vector<double> c2 = model_breakpoints(true);
+  return thermo_model() == ThermoModel::NASA9_C2 ? c2 : nasa9;
+}
+
 double cp_R(std::size_t species_idx, double T) {
   if (species_idx >= species_names.size()) {
     throw std::out_of_range("cp_R: species index out of bounds");

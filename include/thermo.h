@@ -133,6 +133,13 @@ double species_molar_mass_from_name(const std::string& name);
 enum class ThermoModel { NASA9, NASA9_C2 };
 void set_thermo_model(ThermoModel model);
 ThermoModel thermo_model();
+// Every T [K] where some species' cp is not smooth under the active model (a
+// jump in cp or in one of its first three derivatives): each species' data
+// ends (200 K; 6000 or 20000 K), its high tail's fade end, and the NASA-9
+// joins (NASA9) or the C2 bridges' window edges, T_join -+ half_width
+// (NASA9_C2). Sorted, unique. A Gauss-Legendre rule over T splits there, or
+// misses the integral by more than its slope can follow (#1255).
+const std::vector<double>& cp_breakpoints();
 
 // NASA polynomial evaluations (dimensionless), with the tails beyond the data
 // (thermo::TAIL_FRACTION_LOW/HIGH) under either model.

@@ -487,3 +487,57 @@ TEST(EjectorJacobians, ElementResidualsMatchCentralDifferenceWithHuangAnchors) {
     }
   }
 }
+
+TEST(EjectorJacobians, ElementGasPartialsMatchCentralDifference) {
+  // d_dgamma and d_dr_gas (#1246): gamma and R are the secondary port gas's,
+  // which moves with the flows when a leg reverses, so the element carries
+  // its rows' partials in both. A central difference in gamma moves the
+  // nozzle-exit Mach M_p1 too (the bisection's root), so this also checks
+  // its implicit derivative. Every regime, both anchor families, and a
+  // reversed secondary (ms < 0: omega's C1 floor, whose level moves with the
+  // choked flow, hence with gamma and R).
+  const double A_t = 3.14e-5, A_e = 1.0e-4, A_mix = 8.0e-4, A_s = A_mix - A_e;
+  const EjectorGeometry geom{A_e / A_t, A_mix / A_t};
+  const double ep = 0.95, es = 0.85, rec = 0.9, eps = 1e-3;
+  const double sc_lo = 0.90, sc_hi = 0.999, ss_lo = 0.98, ss_hi = 1.02;
+  struct Case {
+    const char* id;
+    double u[9];
+  };
+  const Case cases[] = {
+      {"jetpump", {0.0051, 0.030, 0.0351, 105000.0, 305.0, 100000.0, 295.0, 100500.0, 99000.0}},
+      {"jetpump_reversed", {0.0051, -0.010, -0.0049, 105000.0, 305.0, 100000.0, 295.0, 100500.0,
+                            99000.0}},
+      {"critical", {0.44, 0.13, 0.57, 700000.0, 440.0, 22850.0, 280.0, 30000.0, 100000.0}},
+      {"subcritical", {0.44, 0.20, 0.64, 700000.0, 440.0, 22850.0, 280.0, 52000.0, 60000.0}},
+      {"beyond_pb0", {0.44, 0.05, 0.49, 700000.0, 440.0, 22850.0, 280.0, 200000.0, 60000.0}},
+      {"choked_reversed", {0.44, -0.07, 0.37, 700000.0, 440.0, 22850.0, 280.0, 40000.0,
+                           100000.0}},
+  };
+  for (const auto closure : {EjectorAnchorClosure::kracik_dvorak, EjectorAnchorClosure::huang1999}) {
+    for (const auto& c : cases) {
+      auto rj_at = [&](double gamma, double r_gas) {
+        return ejector_element_residuals_and_jacobian(
+            c.u[0], c.u[1], c.u[2], c.u[3], c.u[4], c.u[5], c.u[6], c.u[7], c.u[8], geom, A_t,
+            A_e, A_s, gamma, r_gas, ep, es, rec, eps, sc_lo, sc_hi, ss_lo, ss_hi, closure);
+      };
+      const double g = 1.37, R = 291.0;
+      const auto rj = rj_at(g, R);
+      const double hg = 1e-6 * g, hr = 1e-6 * R;
+      const auto gp = rj_at(g + hg, R), gm = rj_at(g - hg, R);
+      const auto rp = rj_at(g, R + hr), rm = rj_at(g, R - hr);
+      for (int row = 0; row < 4; ++row) {
+        const double cd_g = (gp.residuals[row] - gm.residuals[row]) / (2 * hg);
+        const double cd_r = (rp.residuals[row] - rm.residuals[row]) / (2 * hr);
+        // On the scale of the row's own terms (|R_i| and the gamma / R
+        // columns times their values), as the element's other checks.
+        const double scale = std::abs(rj.residuals[row]) + std::abs(cd_g) * g +
+                             std::abs(cd_r) * R + 1e-9;
+        EXPECT_NEAR(rj.d_dgamma[row] * g, cd_g * g, 1e-6 * scale)
+            << c.id << " closure " << static_cast<int>(closure) << " row " << row << " gamma";
+        EXPECT_NEAR(rj.d_dr_gas[row] * R, cd_r * R, 1e-6 * scale)
+            << c.id << " closure " << static_cast<int>(closure) << " row " << row << " r_gas";
+      }
+    }
+  }
+}

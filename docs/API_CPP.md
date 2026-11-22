@@ -304,6 +304,12 @@ double dcp_R_dT(std::size_t species_idx, double T);
 enum class ThermoModel { NASA9, NASA9_C2 };
 void set_thermo_model(ThermoModel model);
 ThermoModel thermo_model();
+// The active model's non-smooth temperatures: each species' data ends, the
+// high tail's fade end, and the NASA-9 joins (NASA9) or each C2 bridge's
+// T_join -+ half_width (NASA9_C2). Sorted, unique, built once per model and
+// selected by thermo_model() at each call. The static-state quadrature splits
+// its Gauss-Legendre rule there (#1255).
+const std::vector<double>& cp_breakpoints();
 ```
 
 ### Transport Model
@@ -1591,7 +1597,10 @@ EjectorCriticalPressureJacobian ejector_sudden_expansion_dead_head_and_jacobian(
     double p_g, double t_g, double p_e, double t_e, const EjectorGeometry& geom,
     double gamma, double r_gas, double recovery_efficiency);
 // The whole element (4 rows, Jacobian over its nine unknowns) takes the pair
-// as its last argument, default huang1999.
+// as its last argument, default huang1999. Beside `jacobian[4][9]` it returns
+// each row's partials in the gas, `d_dgamma[4]` and `d_dr_gas[4]`: gamma and
+// r_gas are the secondary port gas's, which moves with the flows, and the
+// EjectorElement chains them onto that node's T0 and composition (#1246).
 EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
     /* ... flows, port states, geometry, gamma, r_gas, efficiencies, blend
        windows ... */, EjectorAnchorClosure anchor_closure = EjectorAnchorClosure::huang1999);

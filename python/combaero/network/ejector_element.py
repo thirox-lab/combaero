@@ -107,18 +107,16 @@ practice of the base ``MultiPortChamberBase`` and ``TeeJunctionElement``.
 ``residuals()`` here is only the relabeling shim: physical-flow signs and
 mapping the nine Jacobian seeds to solver column names.
 (``combaero.network._ejector_huang1999`` remains the Python validation
-reference the C++ is kept 1:1 with.) The C++ Jacobian is exact w.r.t. the
-nine Newton unknowns holding ``gamma`` and ``r_gas`` FROZEN. Here
-``gamma = choke_plane_gamma(secondary.Tt, ...)`` is a weak function of a
-Newton unknown and ``r_gas`` depends only on composition (not a solved
-unknown), so the element Jacobian is exact in the explicit (Pt, Tt)
-dependence and drops only the tiny implicit ``d gamma / d Tt`` term -- a
-standard frozen-property Jacobian. ``gamma`` is recomputed fresh every
-residual call, so the converged root is still exact; only the Newton step
-uses a slightly approximate slope. This matches the reference data's own
-convention (``generate_reference.py`` treats gamma as a separate Jacobian
-input, so its d/dt_e central-difference targets also hold gamma fixed).
-``choke_plane_gamma`` therefore stays in Python.
+reference the C++ is kept 1:1 with.) ``gamma = choke_plane_gamma(
+secondary.Tt, secondary.X)`` and ``r_gas`` are the secondary port gas's, and
+that gas moves with the flows: a reversed leg delivers the ejector's own mix
+to the port chamber, a side stream changes it, and its T0 moves the
+choke-plane gamma even for one gas. The C++ therefore also returns each
+row's partials in gamma and r_gas (``d_dgamma``, ``d_dr_gas``, through
+M_p1's implicit derivative too), and ``residuals()`` chains them onto the
+secondary node's ``.Tt`` and ``.Y[k]`` keys, which the solver relays
+(``choke_plane_gamma_and_jacobian``; #1246). Until then they were held
+frozen, a 0.9 % miss on the flow row with the secondary reversed.
 """
 
 from __future__ import annotations
@@ -174,6 +172,28 @@ def choke_plane_gamma(t_e: float, x: Any, *, iterations: int = 12) -> float:
         t_sy = t_e / ((gamma + 1.0) / 2.0)
         gamma = _real_gamma(t_sy, x)
     return gamma
+
+
+def choke_plane_gamma_and_jacobian(
+    t_e: float, x: Any, *, iterations: int = 12
+) -> tuple[float, float, list[float]]:
+    """``choke_plane_gamma`` with its partials in T_e and in the MASS
+    fractions (#1246).
+
+    gamma = G(T_sy, X) with T_sy = 2 T_e / (gamma + 1), G = cp / cv from
+    the C++ EOS (``isentropic_expansion_coefficient_dT_dY`` gives G's
+    partials at T_sy). Differentiating the fixed point,
+    dgamma (1 + G_T 2 T_e / (gamma + 1)^2) = G_T 2 / (gamma + 1) dT_e + G_Y dY.
+    The iteration contracts by |G_T| 2 T_e / (gamma + 1)^2 ~ 1e-2 a step, so
+    after 12 steps the value is the fixed point to rounding and these are
+    the partials of the value returned.
+    """
+    gamma = choke_plane_gamma(t_e, x, iterations=iterations)
+    gp1 = gamma + 1.0
+    g_t, g_y = cb.isentropic_expansion_coefficient_dT_dY(2.0 * t_e / gp1, x)
+    g_t = float(g_t)
+    den = 1.0 + g_t * 2.0 * t_e / (gp1 * gp1)
+    return gamma, g_t * 2.0 / gp1 / den, [float(v) / den for v in g_y]
 
 
 class EjectorElement(MultiPortChamberBase):
@@ -768,10 +788,9 @@ class EjectorElement(MultiPortChamberBase):
             return self._incompressible_residuals(states, P_jct, port_mdots)
         primary, secondary, outlet = states
 
-        # gamma/r_gas: frozen coefficients (see module docstring). Recomputed
-        # each call so the converged root is exact; the closure Jacobians hold
-        # both fixed (drops only the tiny implicit d(gamma)/d(Tt) term).
-        gamma = choke_plane_gamma(secondary.Tt, secondary.X)
+        # gamma/r_gas: the secondary port gas's (see module docstring), with
+        # their partials in that node's T0 and composition, chained below.
+        gamma, dg_dT, dg_dY = choke_plane_gamma_and_jacobian(secondary.Tt, secondary.X)
         r_gas = float(cb.specific_gas_constant(secondary.X))
         arn = self.area_ratio_nozzle
         arm = self.area_ratio_mix
@@ -846,7 +865,44 @@ class EjectorElement(MultiPortChamberBase):
                 if g != 0.0:
                     cols[name] = cols.get(name, 0.0) + coeff * g
             jac[row] = cols
+        self._chain_gas(jac, rj, secondary, dg_dT, dg_dY)
         return (list(rj.residuals), jac)
+
+    def _chain_gas(
+        self,
+        jac: dict[int, dict[str, float]],
+        rj: Any,
+        secondary: NetworkMixtureState,
+        dg_dT: float,
+        dg_dY: list[float],
+    ) -> None:
+        """The kernel's d/d(gamma) and d/d(r_gas), chained onto the secondary
+        node's T0 and composition (#1246). gamma and R are that port gas's,
+        and it moves with the flows: a reversed leg delivers the ejector's
+        own mix to the port chamber, a side stream changes it. Held frozen
+        they put the flow row 0.9 % off its FD with the secondary reversed
+        (ejector:2/v1/s0). The solver relays ``.Tt`` and ``.Y[k]`` keys; a
+        node whose gas does not move has no relay and the entries drop."""
+        dR = [float(v) for v in rj.d_dr_gas]
+        dg = [float(v) for v in rj.d_dgamma]
+        if not any(dR) and not any(dg):
+            return
+        node = self.secondary_node
+        dR_dY = cb.specific_gas_constant_dY(secondary.X) if any(dR) else None
+        for row in range(4):
+            if dR[row] == 0.0 and dg[row] == 0.0:
+                continue
+            cols = jac[row]
+            if dg[row] != 0.0 and dg_dT != 0.0:
+                key = f"{node}.Tt"
+                cols[key] = cols.get(key, 0.0) + dg[row] * dg_dT
+            for k, gy in enumerate(dg_dY):
+                d = dg[row] * gy
+                if dR_dY is not None:
+                    d += dR[row] * float(dR_dY[k])
+                if d != 0.0:
+                    key = f"{node}.Y[{k}]"
+                    cols[key] = cols.get(key, 0.0) + d
 
     def _incompressible_residuals(
         self,

@@ -37,25 +37,19 @@
 // + provenance: validation/ejector/OPERATING_REGIMES_DESIGN.md.
 //
 // Jacobian scope. The critical-mode scalar closures expose derivatives w.r.t.
-// the 4 thermodynamic inputs (p_g, t_g, p_e, t_e) only -- the Newton-solved
-// unknowns for the choked-plateau path; gamma, r_gas, geometry, and
-// recovery_efficiency are frozen element parameters (deliberate scope
-// boundary, not an oversight -- validation/ejector/data/
-// huang1999_reference_data.h separately carries central-difference targets
-// for those too, for a possible future design-sensitivity extension). The
-// operating-regime closures additionally carry the P_py / omega / m_dot
-// partials the extended element needs, and the whole-element function returns
-// the full Jacobian w.r.t. all nine element unknowns.
+// the 4 thermodynamic inputs (p_g, t_g, p_e, t_e); geometry and
+// recovery_efficiency are element parameters. The operating-regime closures
+// additionally carry the P_py / omega / m_dot partials the extended element
+// needs, and the whole-element function returns the full Jacobian w.r.t. all
+// nine element unknowns AND each row's partials in gamma and r_gas: those are
+// the secondary port gas's, which moves with the flows (#1246). The closures
+// are written once against DualN (src/ejector.cpp), gamma and r_gas duals too.
 //
-// Key simplification that makes every critical-mode derivative below exact
-// analytic chain rule (no implicit/root-finding differentiation needed there):
-// the one internal root-find (ejector_mach_from_area_ratio_supersonic, a
+// The one internal root-find (ejector_mach_from_area_ratio_supersonic, a
 // bisection for the primary nozzle-exit Mach number M_p1) depends ONLY on
-// area_ratio_nozzle and gamma -- neither a Newton-solved unknown here -- so
-// M_p1 has a PROVABLY exact zero derivative w.r.t. p_g, t_g, p_e, t_e.  It
-// is computed once (bisection, same as Python) and then treated as a
-// precomputed constant throughout the rest of the (otherwise fully
-// closed-form) chain.
+// area_ratio_nozzle and gamma, so M_p1 has an exact zero derivative w.r.t.
+// p_g, t_g, p_e, t_e, and its gamma-partial is the implicit function
+// theorem's on A/A*(M_p1, gamma) = area_ratio_nozzle (zero when clamped).
 //
 // Input validation (#769). Every function below throws std::invalid_argument
 // (Python ValueError) for non-finite input and for parameters outside their
@@ -206,8 +200,9 @@ struct EjectorCDNozzleJacobian {
 
 // C-D nozzle mass flow with its analytic Jacobian w.r.t. the three inputs that
 // are Newton-solved unknowns for EjectorElement (Pt, Tt = the primary
-// stagnation state, p_static_down = P_py). gamma/r_gas/geometry/eta are frozen
-// parameters. The dmdot_dp0/dmdot_dt0 fields are d/dPt and d/dTt.
+// stagnation state, p_static_down = P_py). gamma/r_gas/geometry/eta are held
+// constant here (the whole element takes the gamma and r_gas partials too,
+// #1246). The dmdot_dp0/dmdot_dt0 fields are d/dPt and d/dTt.
 // The secondary entrained flux reuses this with area_throat = area_exit = A_s.
 EjectorCDNozzleJacobian ejector_cd_nozzle_mass_flow_and_jacobian(
     double Pt, double Tt, double p_static_down, double area_throat,
@@ -325,7 +320,7 @@ double ejector_huang_mixing_coefficient(double area_ratio_mix);
 // temp_mixed_stagnation_k = the mixed stagnation T, lambda/mach_mixed = the
 // post-shock state.
 //
-// Method: Analytical Chain Rule (Dual4, same M_p1 treatment as
+// Method: Analytical Chain Rule (DualN, same M_p1 treatment as
 // ejector_entrainment_ratio).
 EjectorCriticalPressureJacobian ejector_huang_critical_back_pressure_and_jacobian(
     double p_g, double t_g, double p_e, double t_e, const EjectorGeometry& geom, double gamma,
@@ -340,7 +335,7 @@ EjectorCriticalPressureJacobian ejector_huang_critical_back_pressure_and_jacobia
 // sudden_expansion_dead_head in _ejector_huang1999.py. t_e does not enter
 // (zero partial). Result fields as ejector_dead_head_back_pressure_and_jacobian.
 //
-// Method: Analytical Chain Rule (Dual4).
+// Method: Analytical Chain Rule (DualN).
 EjectorCriticalPressureJacobian ejector_sudden_expansion_dead_head_and_jacobian(
     double p_g, double t_g, double p_e, double t_e, const EjectorGeometry& geom, double gamma,
     double r_gas, double recovery_efficiency);
@@ -369,9 +364,16 @@ EjectorCriticalPressureJacobian ejector_sudden_expansion_dead_head_and_jacobian(
 //   6 t_e       secondary stagnation temperature Tt_secondary
 //   7 p_out     outlet-node stagnation pressure Pt_outlet
 //   8 p_py      the owned unknown, repurposed as the mixing-plane static P_py
+// and, beside `jacobian`, each row's partials in the gas: d_dgamma and
+// d_dr_gas. gamma and r_gas are the secondary port's, and its gas moves with
+// the flows (a reversed leg delivers the ejector's own mix there, a side
+// stream changes it), so the element chains these onto that node's T0 and
+// composition (#1246).
 struct EjectorElementResidualJacobian {
   std::array<double, 4> residuals;               // R0..R3
   std::array<std::array<double, 9>, 4> jacobian; // jacobian[row][seed]
+  std::array<double, 4> d_dgamma{};              // dR_row / dgamma
+  std::array<double, 4> d_dr_gas{};              // dR_row / dr_gas [per J/(kg K)]
   // ejector_nozzle_exit_mach's out_of_range at (area_ratio_nozzle, gamma):
   // nonzero when the nozzle-exit Mach the closures use is a clamped bracket
   // end (#945).

@@ -1859,8 +1859,9 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
   // closures expose Jacobians w.r.t. the 4 thermodynamic inputs (p_g, t_g,
   // p_e, t_e); the operating-regime closures add the P_py / omega / m_dot
   // partials, and ejector_element_residuals_and_jacobian returns the whole
-  // 4-row element system w.r.t. all nine unknowns. gamma, r_gas, geometry and
-  // recovery_efficiency are frozen coefficients here. Area ratios are passed
+  // 4-row element system w.r.t. all nine unknowns, plus its rows' partials in
+  // gamma and r_gas (#1246). Geometry and recovery_efficiency are parameters
+  // here. Area ratios are passed
   // as plain doubles (a lambda builds the internal EjectorGeometry), keeping
   // the Python call flat like the other solver bindings.
   py::class_<solver::EjectorEntrainmentResult>(
@@ -2092,6 +2093,10 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "(mp, ms, mdot_out, p_g, t_g, p_e, t_e, p_out, p_py).")
       .def_readonly("residuals", &solver::EjectorElementResidualJacobian::residuals)
       .def_readonly("jacobian", &solver::EjectorElementResidualJacobian::jacobian)
+      .def_readonly("d_dgamma", &solver::EjectorElementResidualJacobian::d_dgamma,
+                    "dR_row/dgamma per row: gamma is the secondary port gas's (#1246).")
+      .def_readonly("d_dr_gas", &solver::EjectorElementResidualJacobian::d_dr_gas,
+                    "dR_row/dr_gas per row [per J/(kg K)]: the secondary port gas's R.")
       .def_readonly("nozzle_exit_mach_out_of_range",
                     &solver::EjectorElementResidualJacobian::nozzle_exit_mach_out_of_range,
                     "Nonzero when the nozzle-exit Mach M_p1 is a clamped bracket end:\n"
@@ -2136,7 +2141,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "Whole-element 4-row ejector (f, J) across all three operating regimes.\n"
       "anchor_closure: 'huang1999' (default) or 'kracik_dvorak', the (P_c*, P_b0)\n"
       "pair of the plateau end and the droop's far end.\n\n"
-      "Returns: EjectorElementResidualJacobian (residuals[4] + jacobian[4][9])");
+      "Returns: EjectorElementResidualJacobian (residuals[4] + jacobian[4][9],\n"
+      "d_dgamma[4], d_dr_gas[4])");
 
   py::class_<solver::EjectorJetPumpIncompressibleResult>(
       m, "EjectorJetPumpIncompressibleResult",

@@ -110,6 +110,83 @@ void check_window(const char* who, double lo, double hi, const char* what) {
 
 } // namespace
 
+// -----------------------------------------------------------------------------
+// The closures, written once against DualN<N> (include/dual_number.h).
+//
+// Every closure below takes its inputs as duals, gamma and r_gas included, so
+// one implementation serves both callers: the public *_and_jacobian functions
+// seed (p_g, t_g, p_e, t_e) (or their own inputs) and hold gamma and r_gas
+// constant, and the whole element seeds gamma and r_gas too (#1246). gamma and
+// R are the secondary port's, and that port's gas moves with the flows when a
+// leg reverses or a side stream feeds the port chamber, so the element's rows
+// need their partials in both.
+//
+// Value parity. The closures were written against two dual types: DualN for
+// the operating-regime closures and a fixed-seed Dual4 for the critical path,
+// whose quotient was a * (1 / b). The critical-path closures keep that
+// quotient through ddiv4 below, every expression keeps its operand order, and
+// a gamma-only expression the earlier code wrote in doubles, where the
+// compiler may fuse a * b + c, keeps that double form for its value
+// (revalue). DualN's quotient of two duals is the exact a / b the double one
+// was. With the C-D nozzle's exit Mach in its cancellation-free form
+// (cd_nozzle_forward) the only exception, the element's residuals and every
+// closure value are the earlier code's bit for bit (measured at 3000 random
+// element states, #1246).
+// -----------------------------------------------------------------------------
+namespace {
+
+// The critical path's quotient: a * (1 / b) (see "Value parity" above).
+template <int N> DualN<N> ddiv4(const DualN<N>& a, const DualN<N>& b) { return a * (1.0 / b); }
+template <int N> DualN<N> ddiv4(double a, const DualN<N>& b) {
+  return DualN<N>::constant(a) * (1.0 / b);
+}
+
+// a with its value replaced by v: the value of a gamma-only expression the
+// earlier code evaluated in doubles, where the compiler may fuse a * b + c
+// (and so round it differently from the dual operators), with the dual's
+// partials (see "Value parity" above).
+template <int N> DualN<N> revalue(DualN<N> a, double v) {
+  a.v = v;
+  return a;
+}
+
+// a^b with both a dual: d(a^b) = b a^(b-1) da + a^b ln(a) db. The value is
+// std::pow's, as for a double exponent.
+template <int N> DualN<N> dpow_dd(const DualN<N>& a, const DualN<N>& b) {
+  DualN<N> r;
+  r.v = std::pow(a.v, b.v);
+  const double da = b.v * std::pow(a.v, b.v - 1.0);
+  const double db = r.v * std::log(a.v);
+  for (int i = 0; i < N; ++i) r.d[i] = a.d[i] * da + b.d[i] * db;
+  return r;
+}
+
+// dpos_floor with a dual floor eps: a for a >= eps, eps^2 / (2 eps - a)
+// below, whose eps-partial is 2 eps (eps - a) / (2 eps - a)^2.
+template <int N> DualN<N> dpos_floor_dd(const DualN<N>& a, const DualN<N>& eps) {
+  if (a.v >= eps.v) {
+    return a;
+  }
+  DualN<N> r;
+  const double den = 2.0 * eps.v - a.v;
+  r.v = eps.v * eps.v / den;
+  const double da = r.v / den;
+  const double de = 2.0 * eps.v * (eps.v - a.v) / (den * den);
+  for (int i = 0; i < N; ++i) r.d[i] = a.d[i] * da + eps.d[i] * de;
+  return r;
+}
+
+template <int N> DualN<N> area_over_astar_d(const DualN<N>& mach, const DualN<N>& gamma) {
+  const DualN<N> gm1 = gamma - 1.0;
+  const DualN<N> gp1 = gamma + 1.0;
+  return (1.0 / mach) *
+         dpow_dd((2.0 / gp1) * (1.0 + 0.5 * gm1 * mach * mach), gp1 / (2.0 * gm1));
+}
+
+} // namespace
+
+// The bisection's own A/A*, in doubles: area_over_astar_d is the same
+// expression, for its partials (nozzle_exit_mach_d).
 static double ejector_area_over_astar_raw(double mach, double gamma) {
   double gm1 = gamma - 1.0;
   double gp1 = gamma + 1.0;
@@ -120,9 +197,7 @@ static double ejector_area_over_astar_raw(double mach, double gamma) {
 // Supersonic root of A/A* = area_ratio by bisection on the Mach bracket
 // [kSupersonicMachLo, kSupersonicMachHi]. An area ratio outside the bracket's
 // image has no root there: the bisection then ends on the bracket end
-// (clamp), and out_of_range says which side (#945). The Mach is a constant
-// in every Newton unknown, so the clamped value's derivative (zero) is the
-// one the element's chain already uses.
+// (clamp), and out_of_range says which side (#945).
 static EjectorNozzleExitMach ejector_nozzle_exit_mach_raw(double area_ratio, double gamma) {
   double lo = ejector::kSupersonicMachLo;
   double hi = ejector::kSupersonicMachHi;
@@ -148,12 +223,44 @@ static double ejector_mach_from_area_ratio_supersonic_raw(double area_ratio, dou
   return ejector_nozzle_exit_mach_raw(area_ratio, gamma).mach;
 }
 
+namespace {
+
+// M_p1 as a dual: the bisection's root, constant in every input but gamma.
+// In range, A/A*(M_p1, gamma) = area_ratio gives dM_p1/dgamma =
+// -(dA/dgamma) / (dA/dM) (implicit function theorem; dA/dM > 0 for M > 1);
+// the bisection resolves the root to rounding (200 halvings), so this is the
+// derivative of the value used. A clamped M_p1 is the bracket end, a constant.
+template <int N>
+DualN<N> nozzle_exit_mach_d(double area_ratio, const DualN<N>& gamma) {
+  const EjectorNozzleExitMach m = ejector_nozzle_exit_mach_raw(area_ratio, gamma.v);
+  DualN<N> r = DualN<N>::constant(m.mach);
+  if (m.out_of_range != 0) {
+    return r;
+  }
+  using D2 = DualN<2>;
+  const D2 a = area_over_astar_d(D2::seed(m.mach, 0), D2::seed(gamma.v, 1));
+  const double k = -a.d[1] / a.d[0];
+  for (int i = 0; i < N; ++i) r.d[i] = k * gamma.d[i];
+  return r;
+}
+
+template <int N>
+DualN<N> choked_mass_flow_d(const DualN<N>& Pt, const DualN<N>& Tt, double area_throat,
+                            const DualN<N>& gamma, const DualN<N>& r_gas, double eta) {
+  const DualN<N> gm1 = gamma - 1.0;
+  const DualN<N> gp1 = gamma + 1.0;
+  const DualN<N> choke_const = dsqrt(gamma / r_gas * dpow_dd(2.0 / gp1, gp1 / gm1));
+  return (Pt * area_throat / dsqrt(Tt)) * choke_const * std::sqrt(eta);
+}
+
+} // namespace
+
 static double ejector_choked_mass_flow_raw(double Pt, double Tt, double area_throat,
                                 double gamma, double r_gas, double eta) {
-  double gm1 = gamma - 1.0;
-  double gp1 = gamma + 1.0;
-  double choke_const = std::sqrt(gamma / r_gas * std::pow(2.0 / gp1, gp1 / gm1));
-  return (Pt * area_throat / std::sqrt(Tt)) * choke_const * std::sqrt(eta);
+  using D1 = DualN<1>;
+  return choked_mass_flow_d(D1::constant(Pt), D1::constant(Tt), area_throat,
+                            D1::constant(gamma), D1::constant(r_gas), eta)
+      .v;
 }
 
 static std::tuple<double, double, double>
@@ -177,7 +284,11 @@ double cd_nozzle_forward(double p_up, double Tt, double p_down, double area_thro
   if (r < 1.0) {
     double gm1 = gamma - 1.0;
     double gp1 = gamma + 1.0;
-    double mach = std::sqrt(2.0 / gm1 * (std::pow(r, -gm1 / gamma) - 1.0));
+    // r^(-(g-1)/g) - 1 as expm1(-(g-1)/g log1p(x)), x = (p_down - p_up) / p_up:
+    // the pow form cancels as r -> 1, a relative error ~ eps / (1 - r) in M^2
+    // (1.5e-7 at 1 - r = 1e-9), and so in the flow and its P_py slope.
+    const double x = (p_down - p_up) / p_up;
+    double mach = std::sqrt(2.0 / gm1 * std::expm1(-gm1 / gamma * std::log1p(x)));
     // Below the critical ratio the throat is choked: hold the exit flux at
     // its sonic maximum (flux'(M = 1) = 0, so C1). The supersonic-exit flux
     // FALLS with M and dipped under the cap at deep expansion (r < 0.16 at
@@ -224,23 +335,17 @@ double ejector_q_lambda(double lam, double gamma) {
   return std::pow(1.0 - (gm1 / gp1) * lam * lam, 1.0 / gm1) * std::pow(gp1 / 2.0, 1.0 / gm1) * lam;
 }
 
-// The generic forward-mode dual used below (DualN<N>) now lives in
-// include/dual_number.h, so the junction closure can share one implementation
-// rather than a second copy (issue #271). The fixed 4-seed Dual4 above is
-// deliberately left here: it backs the validated critical-mode path.
+namespace {
 
-static EjectorCDNozzleJacobian ejector_cd_nozzle_mass_flow_and_jacobian_raw(
-    double Pt_val, double Tt_val, double p_py_val, double area_throat,
-    double area_exit, double gamma, double r_gas, double eta, double eps_frac) {
-  // Seeds: 0 = p0 (Pt), 1 = t0 (Tt), 2 = p_py.
-  using D = DualN<3>;
-  D p0 = D::seed(Pt_val, 0);
-  D t0 = D::seed(Tt_val, 1);
-  D p_py = D::seed(p_py_val, 2);
-
-  double gm1 = gamma - 1.0;
-  double gp1 = gamma + 1.0;
-  double choke_const = std::sqrt(gamma / r_gas * std::pow(2.0 / gp1, gp1 / gm1));
+// The C-D nozzle (R0's primary, and the jet pump's secondary flux) in duals.
+template <int N>
+DualN<N> cd_nozzle_d(const DualN<N>& p0, const DualN<N>& t0, const DualN<N>& p_py,
+                     double area_throat, double area_exit, const DualN<N>& gamma,
+                     const DualN<N>& r_gas, double eta, double eps_frac) {
+  using D = DualN<N>;
+  const D gm1 = gamma - 1.0;
+  const D gp1 = gamma + 1.0;
+  const D choke_const = dsqrt(gamma / r_gas * dpow_dd(2.0 / gp1, gp1 / gm1));
   auto cap_of = [&](const D& p_up) {
     return (choke_const * area_throat * std::sqrt(eta)) * p_up / dsqrt(t0);
   };
@@ -250,28 +355,39 @@ static EjectorCDNozzleJacobian ejector_cd_nozzle_mass_flow_and_jacobian_raw(
     D cap = cap_of(p_up);
     D exit_flux = D::constant(0.0);
     if (p_down.v < p_up.v) {
-      D r = p_down / p_up;
-      D mach_sq = (2.0 / gm1) * (dpow(r, -gm1 / gamma) - 1.0);
+      // Cancellation-free as r = p_down / p_up -> 1 (see cd_nozzle_forward).
+      D x = (p_down - p_up) / p_up;
+      D mach_sq = (2.0 / gm1) * dexpm1((-gm1 / gamma) * dlog1p(x));
       D mach = dsqrt(mach_sq);
       if (mach.v > 1.0) mach = D::constant(1.0); // choked: see ejector_cd_nozzle_mass_flow
-      D flux = mach * dpow(1.0 + 0.5 * gm1 * mach * mach, -gp1 / (2.0 * gm1));
-      exit_flux = (area_exit * std::sqrt(gamma / r_gas) * std::sqrt(eta)) * p_up / dsqrt(t0) * flux;
+      D flux = mach * dpow_dd(1.0 + 0.5 * gm1 * mach * mach, -gp1 / (2.0 * gm1));
+      exit_flux = (area_exit * dsqrt(gamma / r_gas) * std::sqrt(eta)) * p_up / dsqrt(t0) * flux;
     }
     D eps = eps_frac * cap;
     D diff = exit_flux - cap;
     return 0.5 * (exit_flux + cap - dsqrt(diff * diff + eps * eps));
   };
 
-  D mdot = D::constant(0.0);
-  if (p_py_val <= Pt_val) {
-    mdot = forward(p0, p_py);
-  } else {
-    // Reverse flow above the supply (#619), continuous at P_py = p0: see
-    // ejector_cd_nozzle_mass_flow.
-    D cap = cap_of(p0);
-    D eps = eps_frac * cap;
-    mdot = -forward(p_py, p0) - (dsqrt(cap * cap + eps * eps) - cap);
+  if (p_py.v <= p0.v) {
+    return forward(p0, p_py);
   }
+  // Reverse flow above the supply (#619), continuous at P_py = p0: see
+  // ejector_cd_nozzle_mass_flow.
+  D cap = cap_of(p0);
+  D eps = eps_frac * cap;
+  return -forward(p_py, p0) - (dsqrt(cap * cap + eps * eps) - cap);
+}
+
+} // namespace
+
+static EjectorCDNozzleJacobian ejector_cd_nozzle_mass_flow_and_jacobian_raw(
+    double Pt_val, double Tt_val, double p_py_val, double area_throat,
+    double area_exit, double gamma, double r_gas, double eta, double eps_frac) {
+  // Seeds: 0 = p0 (Pt), 1 = t0 (Tt), 2 = p_py.
+  using D = DualN<3>;
+  const D mdot = cd_nozzle_d(D::seed(Pt_val, 0), D::seed(Tt_val, 1), D::seed(p_py_val, 2),
+                             area_throat, area_exit, D::constant(gamma), D::constant(r_gas), eta,
+                             eps_frac);
   return {mdot.v, mdot.d[0], mdot.d[1], mdot.d[2]};
 }
 
@@ -327,22 +443,19 @@ EjectorCDExitStaticJacobian ejector_cd_nozzle_exit_static_and_jacobian(
   return {p_py, inv, -j.dmdot_dp0 * inv, -j.dmdot_dt0 * inv, 0};
 }
 
-static EjectorJetPumpDischargeJacobian ejector_jetpump_discharge_and_jacobian_raw(
-    double p_g_val, double t_g_val, double p_e_val, double t_e_val,
-    double p_py_val, double omega_val, double gamma, double recovery_efficiency,
-    double eta_primary, double eta_secondary) {
-  // Seeds: 0=p_g, 1=t_g, 2=p_e, 3=t_e, 4=p_py, 5=omega.
-  using D = DualN<6>;
-  D p_g = D::seed(p_g_val, 0);
-  D t_g = D::seed(t_g_val, 1);
-  D p_e = D::seed(p_e_val, 2);
-  D t_e = D::seed(t_e_val, 3);
-  D p_py = D::seed(p_py_val, 4);
-  D gam = D::seed(omega_val, 5);
+namespace {
 
-  double gm1 = gamma - 1.0;
-  double gp1 = gamma + 1.0;
-  double k = gm1 / gamma;
+// The jet pump's mixed-flow stagnation pressure (lossless, recovery applied
+// by the caller). gamma is a dual; r_gas cancels (lambda and q are
+// dimensionless).
+template <int N>
+DualN<N> jetpump_discharge_d(DualN<N> p_g, const DualN<N>& t_g, DualN<N> p_e,
+                             const DualN<N>& t_e, const DualN<N>& p_py, const DualN<N>& omega,
+                             const DualN<N>& gamma, double eta_primary, double eta_secondary) {
+  using D = DualN<N>;
+  const D gm1 = gamma - 1.0;
+  const D gp1 = gamma + 1.0;
+  const D k = gm1 / gamma;
 
   // Both streams expand isentropically to the common mixing static P_py:
   // lambda = sqrt((g+1)/(g-1) * (1 - (P_py/P0)^((g-1)/g))). Subsonic (< 1).
@@ -357,15 +470,15 @@ static EjectorJetPumpDischargeJacobian ejector_jetpump_discharge_and_jacobian_ra
   constexpr double kLambdaSqFloor = 1e-8;
   auto lambda_of = [&](const D& p0) {
     const D r = dpos_floor(p_py / p0, kRatioFloor);
-    return dsqrt(dpos_floor((gp1 / gm1) * (1.0 - dpow(r, k)), kLambdaSqFloor));
+    return dsqrt(dpos_floor((gp1 / gm1) * (1.0 - dpow_dd(r, k)), kLambdaSqFloor));
   };
   // The velocities the nozzles deliver (#588): lambda = sqrt(eta) lambda_is,
   // each stream at the stagnation pressure that velocity implies at P_py,
   // p0 = p_supply pi(lambda_is) / pi(lambda) (= P_py / pi(lambda) in the
   // domain; = p_supply exactly at eta = 1, floors included).
-  const double kpi = gamma / gm1;
+  const D kpi = gamma / gm1;
   auto pi_of = [&](const D& lam) {
-    return dpow(dpos_floor(1.0 - (gm1 / gp1) * lam * lam, kRatioFloor), kpi);
+    return dpow_dd(dpos_floor(1.0 - (gm1 / gp1) * lam * lam, kRatioFloor), kpi);
   };
   const D lambda1_is = lambda_of(p_g);
   const D lambda2_is = lambda_of(p_e);
@@ -377,7 +490,7 @@ static EjectorJetPumpDischargeJacobian ejector_jetpump_discharge_and_jacobian_ra
   if (eta_secondary != 1.0) {
     p_e = p_e * pi_of(lambda2_is) / pi_of(lambda2);
   }
-  gam = dpos_floor(gam, kRatioFloor);
+  const D gam = dpos_floor(omega, kRatioFloor);
   D theta21 = t_e / t_g;
 
   // Kracik & Dvorak mixing (their Eqs. 7-13), identical to the critical path's
@@ -390,147 +503,251 @@ static EjectorJetPumpDischargeJacobian ejector_jetpump_discharge_and_jacobian_ra
   // z3 >= 2 analytically; the floor only catches rounding at z3 = 2.
   D lambda3 = 2.0 / (z3 + dsqrt(dpos_floor(z3 * z3 - 4.0, kRatioFloor)));
 
-  double k7 = std::pow(gp1 / 2.0, 1.0 / gm1);
+  const D k7 = dpow_dd(gp1 / 2.0, 1.0 / gm1);
   auto q_of = [&](const D& lam) {
-    return dpow(dpos_floor(1.0 - (gm1 / gp1) * lam * lam, kRatioFloor), 1.0 / gm1) * k7 * lam;
+    return dpow_dd(dpos_floor(1.0 - (gm1 / gp1) * lam * lam, kRatioFloor), 1.0 / gm1) * k7 * lam;
   };
   D q1 = q_of(lambda1);
   D q2 = q_of(lambda2);
   D q3 = q_of(lambda3);
 
-  D p03 = p_g * dsqrt((1.0 + gam) * (1.0 + gam * theta21)) /
-          (1.0 + (p_g / p_e) * gam * dsqrt(theta21) * q1 / q2) * q1 / q3;
+  return p_g * dsqrt((1.0 + gam) * (1.0 + gam * theta21)) /
+         (1.0 + (p_g / p_e) * gam * dsqrt(theta21) * q1 / q2) * q1 / q3;
+}
+
+} // namespace
+
+static EjectorJetPumpDischargeJacobian ejector_jetpump_discharge_and_jacobian_raw(
+    double p_g_val, double t_g_val, double p_e_val, double t_e_val,
+    double p_py_val, double omega_val, double gamma, double recovery_efficiency,
+    double eta_primary, double eta_secondary) {
+  // Seeds: 0=p_g, 1=t_g, 2=p_e, 3=t_e, 4=p_py, 5=omega.
+  using D = DualN<6>;
+  const D p03 = jetpump_discharge_d(D::seed(p_g_val, 0), D::seed(t_g_val, 1), D::seed(p_e_val, 2),
+                                    D::seed(t_e_val, 3), D::seed(p_py_val, 4),
+                                    D::seed(omega_val, 5), D::constant(gamma), eta_primary,
+                                    eta_secondary);
   D out = recovery_efficiency * p03;
   return {out.v, out.d[0], out.d[1], out.d[2], out.d[3], out.d[4], out.d[5]};
 }
 
-// -----------------------------------------------------------------------------
-// Forward-mode dual number carrying a value plus its 4 partial derivatives
-// w.r.t. (p_g, t_g, p_e, t_e). Every operator below implements the textbook
-// analytic differentiation rule (sum/product/quotient/chain rule) -- this is
-// bookkeeping for hand-derived-and-sympy-cross-checked analytic derivatives
-// (see scripts/derive_ejector_jacobian.py), not automatic differentiation
-// via a library and not finite differences. Writing the physics chain in
-// terms of Dual4 lets this mirror _ejector_huang1999.py's Python almost
-// line-for-line while the compiler enforces correct chain-rule composition
-// at every step, rather than 80+ individually hand-tracked partials.
-// -----------------------------------------------------------------------------
 namespace {
-
-struct Dual4 {
-  double v = 0.0;
-  double dpg = 0.0, dtg = 0.0, dpe = 0.0, dte = 0.0;
-
-  static Dual4 constant(double c) { return Dual4{c, 0.0, 0.0, 0.0, 0.0}; }
-};
-
-Dual4 operator+(const Dual4& a, const Dual4& b) {
-  return {a.v + b.v, a.dpg + b.dpg, a.dtg + b.dtg, a.dpe + b.dpe, a.dte + b.dte};
-}
-Dual4 operator+(const Dual4& a, double c) { return {a.v + c, a.dpg, a.dtg, a.dpe, a.dte}; }
-Dual4 operator+(double c, const Dual4& a) { return a + c; }
-
-Dual4 operator-(const Dual4& a, double c) { return {a.v - c, a.dpg, a.dtg, a.dpe, a.dte}; }
-Dual4 operator-(const Dual4& a, const Dual4& b) {
-  return {a.v - b.v, a.dpg - b.dpg, a.dtg - b.dtg, a.dpe - b.dpe, a.dte - b.dte};
-}
-Dual4 operator-(double c, const Dual4& a) { return {c - a.v, -a.dpg, -a.dtg, -a.dpe, -a.dte}; }
-
-Dual4 operator*(const Dual4& a, const Dual4& b) {
-  return {a.v * b.v, a.dpg * b.v + a.v * b.dpg, a.dtg * b.v + a.v * b.dtg,
-          a.dpe * b.v + a.v * b.dpe, a.dte * b.v + a.v * b.dte};
-}
-Dual4 operator*(const Dual4& a, double c) { return {a.v * c, a.dpg * c, a.dtg * c, a.dpe * c, a.dte * c}; }
-Dual4 operator*(double c, const Dual4& a) { return a * c; }
-
-Dual4 operator/(const Dual4& a, const Dual4& b) {
-  double inv = 1.0 / b.v;
-  double inv2 = inv * inv;
-  return {a.v * inv, (a.dpg * b.v - a.v * b.dpg) * inv2, (a.dtg * b.v - a.v * b.dtg) * inv2,
-          (a.dpe * b.v - a.v * b.dpe) * inv2, (a.dte * b.v - a.v * b.dte) * inv2};
-}
-Dual4 operator/(const Dual4& a, double c) { return a * (1.0 / c); }
-Dual4 operator/(double c, const Dual4& a) { return Dual4::constant(c) / a; }
-
-Dual4 dsqrt(const Dual4& a) {
-  double v = std::sqrt(a.v);
-  double coef = 0.5 / v;
-  return {v, a.dpg * coef, a.dtg * coef, a.dpe * coef, a.dte * coef};
-}
-
-// x^c for a CONSTANT real exponent c. Every exponent in this chain is a
-// function of gamma alone (a fixed parameter here, not a Newton unknown),
-// so this covers every power in the chain -- no Dual4^Dual4 is ever needed.
-Dual4 dpow(const Dual4& a, double c) {
-  double v = std::pow(a.v, c);
-  double coef = c * std::pow(a.v, c - 1.0);
-  return {v, a.dpg * coef, a.dtg * coef, a.dpe * coef, a.dte * coef};
-}
-
-// C1 positive floor (dpos_floor in dual_number.h, for Dual4): exact for
-// a >= eps, eps^2 / (2 eps - a) below. Keeps the critical closure finite when
-// a probe puts it outside its domain (#481).
-Dual4 dpos_floor4(const Dual4& a, double eps) {
-  if (a.v >= eps) {
-    return a;
-  }
-  const double den = 2.0 * eps - a.v;
-  const double slope = eps * eps / (den * den);
-  return {eps * eps / den, a.dpg * slope, a.dtg * slope, a.dpe * slope, a.dte * slope};
-}
 
 // Out of the critical closure's domain -- the secondary's choke pressure at or
 // above the primary's nozzle exit pressure (M_py^2 <= 0), or a primary core
 // that fills the mixing area (A_sy <= 0) -- the arguments continue through
-// dpos_floor4: exact wherever the closure is defined. The former hard switch
+// dpos_floor: exact wherever the closure is defined. The former hard switch
 // M_py = 0 there divided by zero (A_py = inf) and the blended element residual
 // went NaN.
 constexpr double kMachSqFloor = 1e-8;
 constexpr double kAreaFloorFrac = 1e-6;  // of the mixing area ratio
+
+// The critical y-y state (Huang 1999 Eqs. 1-8): the primary's nozzle-exit
+// Mach M_p1 (Eq. 2, a bisection in gamma alone), the entrained flow choked at
+// y-y (M_sy = 1) at the common pressure P_py = P_sy, the primary core's Mach
+// there (Eq. 4 inverted) and the areas (Eqs. 5, 8). One chain for the
+// entrainment ratio and both anchor families.
+template <int N> struct YYState {
+  DualN<N> mach_p1, p_py, mach_py, area_py, area_sy, omega;
+};
+
+// fused_exit_factor: Huang's anchor took the nozzle-exit factor
+// 1 + (g - 1)/2 M_p1^2 in doubles, the entrainment ratio and Kracik &
+// Dvorak's in duals; each keeps its own rounding (revalue).
+template <int N>
+YYState<N> critical_yy_state(const DualN<N>& p_g, const DualN<N>& t_g, const DualN<N>& p_e,
+                             const DualN<N>& t_e, const EjectorGeometry& geom,
+                             const DualN<N>& gamma, bool fused_exit_factor = false) {
+  using D = DualN<N>;
+  const D gm1 = gamma - 1.0;
+  const D gp1 = gamma + 1.0;
+  const D g_over_gm1 = gamma / gm1;
+  YYState<N> s;
+  s.mach_p1 = nozzle_exit_mach_d(geom.area_ratio_nozzle, gamma);
+  D exit_factor = 1.0 + 0.5 * gm1 * s.mach_p1 * s.mach_p1;
+  if (fused_exit_factor) {
+    const double gm1v = gm1.v;
+    const double mach_p1 = s.mach_p1.v;
+    exit_factor = revalue(exit_factor, 1.0 + 0.5 * gm1v * mach_p1 * mach_p1);
+  }
+  const D p_p1 = ddiv4(p_g, dpow_dd(exit_factor, g_over_gm1));
+  s.p_py = ddiv4(p_e, dpow_dd(gp1 / 2.0, g_over_gm1));
+  const D core = exit_factor * dpow_dd(ddiv4(s.p_py, p_p1), -gm1 / gamma);
+  s.mach_py = dsqrt(dpos_floor(ddiv4(core - 1.0, 0.5 * gm1), kMachSqFloor));
+  s.area_py = ejector::phi_p * ddiv4(1.0, s.mach_py) *
+              dpow_dd(2.0 / gp1 * (1.0 + 0.5 * gm1 * s.mach_py * s.mach_py), gp1 / (2.0 * gm1));
+  s.area_sy = dpos_floor(geom.area_ratio_mix - s.area_py, kAreaFloorFrac * geom.area_ratio_mix);
+  s.omega = ddiv4(p_e, p_g) * s.area_sy * dsqrt(ddiv4(t_g, t_e)) *
+            std::sqrt(ejector::eta_s / ejector::eta_p);
+  return s;
+}
+
+// Kracik & Dvorak's mixing closure from the critical y-y state, mixed at the
+// critical entrainment ratio (P_c*) or at zero entrainment (the dead-head
+// P_b0, their gam = 0): ONE chain, so the two anchors of the subcritical droop
+// cannot drift apart (1:1 with _yy_lambda_state + _mixed_flow_stagnation).
+// Lossless p03; t03 and lambda3 for the result's value fields.
+template <int N> struct MixedStagnation {
+  DualN<N> p03, t03, lambda3;
+};
+
+template <int N>
+MixedStagnation<N> mixed_stagnation_from_yy_d(const DualN<N>& p_g, const DualN<N>& t_g,
+                                              const DualN<N>& p_e, const DualN<N>& t_e,
+                                              const EjectorGeometry& geom, const DualN<N>& gamma,
+                                              const DualN<N>& r_gas, bool dead_head) {
+  using D = DualN<N>;
+  const D gm1 = gamma - 1.0;
+  const D gp1 = gamma + 1.0;
+  const YYState<N> s = critical_yy_state(p_g, t_g, p_e, t_e, geom, gamma);
+
+  // Static temperatures and velocities at y-y (Huang Eqs. 9-10, 13-14).
+  D t_py = ddiv4(t_g, 1.0 + 0.5 * gm1 * s.mach_py * s.mach_py);
+  D t_sy = ddiv4(t_e, gp1 / 2.0);
+  D v_py = s.mach_py * dsqrt(gamma * r_gas * t_py);
+  D v_sy = dsqrt(gamma * r_gas * t_sy); // M_sy = 1
+
+  D c1_star = dsqrt(2.0 * gamma / gp1 * r_gas * t_g);
+  D c2_star = dsqrt(2.0 * gamma / gp1 * r_gas * t_e);
+  D lambda1 = ddiv4(v_py, c1_star);
+  D lambda2 = ddiv4(v_sy, c2_star); // == 1 identically (M_sy = 1); kept computed for value parity
+
+  D theta21 = ddiv4(t_e, t_g);
+  D gam = dead_head ? D::constant(0.0) : s.omega;
+
+  D z1 = lambda1 + ddiv4(1.0, lambda1);
+  D z2 = lambda2 + ddiv4(1.0, lambda2);
+  D z3 = ddiv4(z1 + gam * dsqrt(theta21) * z2, dsqrt((1.0 + gam) * (1.0 + gam * theta21)));
+  // Subsonic root (Eq. 12) in the cancellation-free form 2/(z3 + sqrt(z3^2-4)).
+  D lambda3 = ddiv4(2.0, z3 + dsqrt(dpos_floor(z3 * z3 - 4.0, 1e-12)));
+
+  const D k7 = dpow_dd(gp1 / 2.0, 1.0 / gm1);
+  auto q_of = [&](const D& lam) {
+    D term = dpos_floor(1.0 - (gm1 / gp1) * lam * lam, 1e-12);
+    return dpow_dd(term, 1.0 / gm1) * k7 * lam;
+  };
+  D q1 = q_of(lambda1);
+  D q2 = q_of(lambda2); // == 1 identically (lambda2 == 1)
+  D q3 = q_of(lambda3);
+
+  // Mixed flow's stagnation pressure and temperature after mixing (Eqs. 7, 11).
+  MixedStagnation<N> out;
+  out.p03 = ddiv4(ddiv4(p_g * dsqrt((1.0 + gam) * (1.0 + gam * theta21)),
+                        1.0 + ddiv4(ddiv4(p_g, p_e) * gam * dsqrt(theta21) * q1, q2)) *
+                      q1,
+                  q3);
+  out.t03 = ddiv4(t_g * (1.0 + gam * theta21), 1.0 + gam);
+  out.lambda3 = lambda3;
+  return out;
+}
+
+// Huang 1999's printed P_c* chain from the critical y-y state (see the
+// header): constant-pressure mixing with phi_m, energy, a normal shock in the
+// mixed flow C2 through M_m = 1, an isentropic diffuser.
+template <int N> struct HuangCritical {
+  DualN<N> p_c, t03, mach3_sq;
+};
+
+template <int N>
+HuangCritical<N> huang_critical_d(const DualN<N>& p_g, const DualN<N>& t_g, const DualN<N>& p_e,
+                                  const DualN<N>& t_e, const EjectorGeometry& geom,
+                                  const DualN<N>& gamma, const DualN<N>& r_gas,
+                                  double phi_m) {
+  using D = DualN<N>;
+  const D gm1 = gamma - 1.0;
+  const D gp1 = gamma + 1.0;
+  const YYState<N> s = critical_yy_state(p_g, t_g, p_e, t_e, geom, gamma, true);
+
+  // Static temperatures and velocities at y-y (Huang Eqs. 9-10, 13-14).
+  D t_py = ddiv4(t_g, 1.0 + 0.5 * gm1 * s.mach_py * s.mach_py);
+  D t_sy = ddiv4(t_e, gp1 / 2.0);
+  D v_py = s.mach_py * dsqrt(gamma * r_gas * t_py);
+  D v_sy = dsqrt(gamma * r_gas * t_sy);  // M_sy = 1
+
+  // Constant-pressure mixing with phi_m (Eq. 11) and energy (Eq. 12).
+  D v_m = ddiv4(phi_m * (v_py + s.omega * v_sy), 1.0 + s.omega);
+  const D cp = gamma * r_gas / gm1;
+  D t03 = ddiv4(t_g + s.omega * t_e, 1.0 + s.omega);
+  D t_m = dpos_floor(t03 - ddiv4(0.5 * v_m * v_m, cp), 1e-6 * t03.v);
+  D mach_m_sq = ddiv4(v_m * v_m, gamma * r_gas * t_m);
+
+  // Normal shock in the mixed flow (Eqs. 16-17), C2 through M_m = 1.
+  D p3 = s.p_py;
+  D mach3_sq = mach_m_sq;
+  if (mach_m_sq.v > 1.0) {
+    p3 = s.p_py * (1.0 + 2.0 * gamma / gp1 * (mach_m_sq - 1.0));
+    mach3_sq = ddiv4(1.0 + 0.5 * gm1 * mach_m_sq, gamma * mach_m_sq - 0.5 * gm1);
+  }
+  // Isentropic diffuser (Eq. 18).
+  HuangCritical<N> out;
+  out.p_c = p3 * dpow_dd(1.0 + 0.5 * gm1 * mach3_sq, gamma / gm1);
+  out.t03 = t03;
+  out.mach3_sq = mach3_sq;
+  return out;
+}
+
+// The sudden-expansion dead head P_b0 (see the header); t_e does not enter.
+template <int N> struct SuddenExpansion {
+  DualN<N> p_b0, x;
+};
+
+template <int N>
+SuddenExpansion<N> sudden_expansion_dead_head_d(const DualN<N>& p_g, const DualN<N>& t_g,
+                                                const DualN<N>& p_e, const EjectorGeometry& geom,
+                                                const DualN<N>& gamma, const DualN<N>& r_gas) {
+  using D = DualN<N>;
+  const D gm1 = gamma - 1.0;
+  const D gp1 = gamma + 1.0;
+  const D k = 0.5 * gm1;
+  const double a1 = geom.area_ratio_nozzle;
+  const double a3 = geom.area_ratio_mix;
+
+  const D mach_p1 = nozzle_exit_mach_d(a1, gamma);
+  // The two gamma-only factors keep the rounding of their double form.
+  const double kv = k.v;
+  const double gv = gamma.v;
+  const double mv = mach_p1.v;
+  D p_p1 = ddiv4(p_g, revalue(dpow_dd(1.0 + k * mach_p1 * mach_p1, gamma / gm1),
+                              std::pow(1.0 + kv * mv * mv, gv / gm1.v)));
+  // Choked primary mass flow per unit throat area (isentropic).
+  D m = p_g * dsqrt(ddiv4(gamma, r_gas * t_g)) * dpow_dd(2.0 / gp1, gp1 / (2.0 * gm1));
+  D impulse = p_p1 * revalue(a1 * (1.0 + gamma * mach_p1 * mach_p1), a1 * (1.0 + gv * mv * mv)) +
+              p_e * (a3 - a1);
+  D phi = ddiv4(impulse, m * dsqrt(ddiv4(r_gas * t_g, gamma)));
+  // Subsonic root of (k Phi^2 - g^2) X^2 + (Phi^2 - 2g) X - 1 = 0, X = M^2.
+  D b = phi * phi - 2.0 * gamma;
+  D d = dpos_floor(b * b + 4.0 * (k * phi * phi - gamma * gamma),
+                   ejector::dead_head_discriminant_floor);
+  D x = ddiv4(2.0, b + dsqrt(d));
+  D t3 = ddiv4(t_g, 1.0 + k * x);
+  D p3 = ddiv4(m * dsqrt(ddiv4(r_gas * t3, gamma)), a3 * dsqrt(x));
+  SuddenExpansion<N> out;
+  out.p_b0 = p3 * dpow_dd(1.0 + k * x, gamma / gm1);
+  out.x = x;
+  return out;
+}
+
+// The public critical-path closures seed (p_g, t_g, p_e, t_e) and hold gamma
+// and r_gas constant.
+using D4 = DualN<4>;
+struct Seeds4 {
+  D4 p_g, t_g, p_e, t_e;
+};
+Seeds4 seeds4(double p_g, double t_g, double p_e, double t_e) {
+  return {D4::seed(p_g, 0), D4::seed(t_g, 1), D4::seed(p_e, 2), D4::seed(t_e, 3)};
+}
 
 } // namespace
 
 static EjectorEntrainmentJacobian ejector_entrainment_ratio_and_jacobian_raw(
     double p_g_val, double t_g_val, double p_e_val, double t_e_val,
     const EjectorGeometry& geom, double gamma) {
-  double gm1 = gamma - 1.0;
-  double gp1 = gamma + 1.0;
-  double g_over_gm1 = gamma / gm1;
-
-  Dual4 p_g{p_g_val, 1.0, 0.0, 0.0, 0.0};
-  Dual4 t_g{t_g_val, 0.0, 1.0, 0.0, 0.0};
-  Dual4 p_e{p_e_val, 0.0, 0.0, 1.0, 0.0};
-  Dual4 t_e{t_e_val, 0.0, 0.0, 0.0, 1.0};
-
-  // Primary flow: nozzle-exit Mach (Eq. 2) -- exact zero derivative w.r.t.
-  // p_g/t_g/p_e/t_e, see include/ejector.h's header comment.
-  double mach_p1_val = ejector_mach_from_area_ratio_supersonic_raw(geom.area_ratio_nozzle, gamma);
-  Dual4 mach_p1 = Dual4::constant(mach_p1_val);
-
-  Dual4 p_p1 = p_g / dpow(1.0 + 0.5 * gm1 * mach_p1 * mach_p1, g_over_gm1);
-
-  // Entrained flow chokes at y-y (M_sy = 1); pressure matching P_py = P_sy.
-  double k2 = std::pow(gp1 / 2.0, g_over_gm1);
-  Dual4 p_sy = p_e / k2;
-  Dual4 p_py = p_sy;
-
-  // Invert Eq. 4 for the primary-core Mach at y-y.
-  Dual4 core = (1.0 + 0.5 * gm1 * mach_p1 * mach_p1) * dpow(p_py / p_p1, -gm1 / gamma);
-  Dual4 mach_py_sq = (core - 1.0) / (0.5 * gm1);
-  Dual4 mach_py = dsqrt(dpos_floor4(mach_py_sq, kMachSqFloor));
-
-  // Areas at y-y (Eqs. 5, 8).
-  Dual4 area_py =
-      ejector::phi_p * (1.0 / mach_py) *
-      dpow(2.0 / gp1 * (1.0 + 0.5 * gm1 * mach_py * mach_py), gp1 / (2.0 * gm1));
-  Dual4 area_sy = dpos_floor4(geom.area_ratio_mix - area_py, kAreaFloorFrac * geom.area_ratio_mix);
-
-  Dual4 omega = (p_e / p_g) * area_sy * dsqrt(t_g / t_e) * std::sqrt(ejector::eta_s / ejector::eta_p);
-
+  const Seeds4 u = seeds4(p_g_val, t_g_val, p_e_val, t_e_val);
+  const YYState<4> s = critical_yy_state(u.p_g, u.t_g, u.p_e, u.t_e, geom, D4::constant(gamma));
   EjectorEntrainmentResult value{
-      omega.v,       mach_p1.v, mach_py.v, area_py.v, area_sy.v, p_py.v,
+      s.omega.v, s.mach_p1.v, s.mach_py.v, s.area_py.v, s.area_sy.v, s.p_py.v,
   };
-  return {value, omega.dpg, omega.dtg, omega.dpe, omega.dte};
+  return {value, s.omega.d[0], s.omega.d[1], s.omega.d[2], s.omega.d[3]};
 }
 
 EjectorEntrainmentResult ejector_entrainment_ratio(double p_g, double t_g, double p_e,
@@ -541,86 +758,24 @@ EjectorEntrainmentResult ejector_entrainment_ratio(double p_g, double t_g, doubl
 
 namespace {
 
-// Kracik & Dvorak's mixing closure from the critical y-y state, mixed at the
-// critical entrainment ratio (P_c*) or at zero entrainment (the dead-head
-// P_b0, their gam = 0): ONE chain, so the two anchors of the subcritical droop
-// cannot drift apart (1:1 with _yy_lambda_state + _mixed_flow_stagnation).
 EjectorCriticalPressureJacobian mixed_stagnation_from_yy(
     double p_g_val, double t_g_val, double p_e_val, double t_e_val,
     const EjectorGeometry& geom, double gamma, double r_gas, double recovery_efficiency,
     bool dead_head) {
-  double gm1 = gamma - 1.0;
-  double gp1 = gamma + 1.0;
-  double g_over_gm1 = gamma / gm1;
-
-  Dual4 p_g{p_g_val, 1.0, 0.0, 0.0, 0.0};
-  Dual4 t_g{t_g_val, 0.0, 1.0, 0.0, 0.0};
-  Dual4 p_e{p_e_val, 0.0, 0.0, 1.0, 0.0};
-  Dual4 t_e{t_e_val, 0.0, 0.0, 0.0, 1.0};
-
-  double mach_p1_val = ejector_mach_from_area_ratio_supersonic_raw(geom.area_ratio_nozzle, gamma);
-  Dual4 mach_p1 = Dual4::constant(mach_p1_val);
-
-  Dual4 p_p1 = p_g / dpow(1.0 + 0.5 * gm1 * mach_p1 * mach_p1, g_over_gm1);
-  double k2 = std::pow(gp1 / 2.0, g_over_gm1);
-  Dual4 p_sy = p_e / k2;
-  Dual4 p_py = p_sy;
-
-  Dual4 core = (1.0 + 0.5 * gm1 * mach_p1 * mach_p1) * dpow(p_py / p_p1, -gm1 / gamma);
-  Dual4 mach_py_sq = (core - 1.0) / (0.5 * gm1);
-  Dual4 mach_py = dsqrt(dpos_floor4(mach_py_sq, kMachSqFloor));
-
-  Dual4 area_py =
-      ejector::phi_p * (1.0 / mach_py) *
-      dpow(2.0 / gp1 * (1.0 + 0.5 * gm1 * mach_py * mach_py), gp1 / (2.0 * gm1));
-  Dual4 area_sy = dpos_floor4(geom.area_ratio_mix - area_py, kAreaFloorFrac * geom.area_ratio_mix);
-
-  Dual4 omega = (p_e / p_g) * area_sy * dsqrt(t_g / t_e) * std::sqrt(ejector::eta_s / ejector::eta_p);
-
-  // Static temperatures and velocities at y-y (Huang Eqs. 9-10, 13-14).
-  Dual4 t_py = t_g / (1.0 + 0.5 * gm1 * mach_py * mach_py);
-  Dual4 t_sy = t_e / (gp1 / 2.0);
-  Dual4 v_py = mach_py * dsqrt(gamma * r_gas * t_py);
-  Dual4 v_sy = dsqrt(gamma * r_gas * t_sy); // M_sy = 1
-
-  Dual4 c1_star = dsqrt(2.0 * gamma / gp1 * r_gas * t_g);
-  Dual4 c2_star = dsqrt(2.0 * gamma / gp1 * r_gas * t_e);
-  Dual4 lambda1 = v_py / c1_star;
-  Dual4 lambda2 = v_sy / c2_star; // == 1 identically (M_sy = 1); kept computed for value parity
-
-  Dual4 theta21 = t_e / t_g;
-  Dual4 gam = dead_head ? Dual4::constant(0.0) : omega;
-
-  Dual4 z1 = lambda1 + 1.0 / lambda1;
-  Dual4 z2 = lambda2 + 1.0 / lambda2;
-  Dual4 z3 = (z1 + gam * dsqrt(theta21) * z2) / dsqrt((1.0 + gam) * (1.0 + gam * theta21));
-  // Subsonic root (Eq. 12) in the cancellation-free form 2/(z3 + sqrt(z3^2-4)).
-  Dual4 lambda3 = 2.0 / (z3 + dsqrt(dpos_floor4(z3 * z3 - 4.0, 1e-12)));
-
-  double gm1_local = gm1;
-  double gp1_local = gp1;
-  double k7 = std::pow(gp1_local / 2.0, 1.0 / gm1_local);
-  auto q_of = [&](const Dual4& lam) {
-    Dual4 term = dpos_floor4(1.0 - (gm1_local / gp1_local) * lam * lam, 1e-12);
-    return dpow(term, 1.0 / gm1_local) * k7 * lam;
-  };
-  Dual4 q1 = q_of(lambda1);
-  Dual4 q2 = q_of(lambda2); // == 1 identically (lambda2 == 1)
-  Dual4 q3 = q_of(lambda3);
-
-  // Mixed flow's stagnation pressure and temperature after mixing (Eqs. 7, 11).
-  Dual4 p03 = p_g * dsqrt((1.0 + gam) * (1.0 + gam * theta21)) /
-              (1.0 + (p_g / p_e) * gam * dsqrt(theta21) * q1 / q2) * q1 / q3;
-  Dual4 t03 = t_g * (1.0 + gam * theta21) / (1.0 + gam);
-
-  double mach3_sq = 2.0 * lambda3.v * lambda3.v / (gp1 - gm1 * lambda3.v * lambda3.v);
+  const Seeds4 u = seeds4(p_g_val, t_g_val, p_e_val, t_e_val);
+  const MixedStagnation<4> m = mixed_stagnation_from_yy_d(
+      u.p_g, u.t_g, u.p_e, u.t_e, geom, D4::constant(gamma), D4::constant(r_gas), dead_head);
+  const double gm1 = gamma - 1.0;
+  const double gp1 = gamma + 1.0;
+  const double l3 = m.lambda3.v;
+  double mach3_sq = 2.0 * l3 * l3 / (gp1 - gm1 * l3 * l3);
   double mach3 = std::sqrt(mach3_sq);
 
   EjectorCriticalPressureResult value{
-      recovery_efficiency * p03.v, p03.v, t03.v, lambda3.v, mach3,
+      recovery_efficiency * m.p03.v, m.p03.v, m.t03.v, l3, mach3,
   };
-  return {value, recovery_efficiency * p03.dpg, recovery_efficiency * p03.dtg,
-          recovery_efficiency * p03.dpe, recovery_efficiency * p03.dte};
+  return {value, recovery_efficiency * m.p03.d[0], recovery_efficiency * m.p03.d[1],
+          recovery_efficiency * m.p03.d[2], recovery_efficiency * m.p03.d[3]};
 }
 
 } // namespace
@@ -639,43 +794,6 @@ static EjectorCriticalPressureJacobian ejector_dead_head_back_pressure_and_jacob
                                   true);
 }
 
-namespace {
-
-// The critical y-y state (Huang Eqs. 1-8), as Dual4 in (p_g, t_g, p_e, t_e):
-// the same chain ejector_entrainment_ratio_and_jacobian and
-// mixed_stagnation_from_yy evaluate.
-struct YYState4 {
-  Dual4 p_g, t_g, p_e, t_e;
-  Dual4 p_py, mach_py, omega;
-};
-
-YYState4 critical_yy_state4(double p_g_val, double t_g_val, double p_e_val, double t_e_val,
-                            const EjectorGeometry& geom, double gamma) {
-  const double gm1 = gamma - 1.0;
-  const double gp1 = gamma + 1.0;
-  const double g_over_gm1 = gamma / gm1;
-  YYState4 s;
-  s.p_g = Dual4{p_g_val, 1.0, 0.0, 0.0, 0.0};
-  s.t_g = Dual4{t_g_val, 0.0, 1.0, 0.0, 0.0};
-  s.p_e = Dual4{p_e_val, 0.0, 0.0, 1.0, 0.0};
-  s.t_e = Dual4{t_e_val, 0.0, 0.0, 0.0, 1.0};
-  const double mach_p1 = ejector_mach_from_area_ratio_supersonic_raw(geom.area_ratio_nozzle, gamma);
-  const double exit_factor = 1.0 + 0.5 * gm1 * mach_p1 * mach_p1;
-  Dual4 p_p1 = s.p_g / std::pow(exit_factor, g_over_gm1);
-  s.p_py = s.p_e / std::pow(gp1 / 2.0, g_over_gm1);
-  Dual4 core = exit_factor * dpow(s.p_py / p_p1, -gm1 / gamma);
-  s.mach_py = dsqrt(dpos_floor4((core - 1.0) / (0.5 * gm1), kMachSqFloor));
-  Dual4 area_py = ejector::phi_p * (1.0 / s.mach_py) *
-                  dpow(2.0 / gp1 * (1.0 + 0.5 * gm1 * s.mach_py * s.mach_py), gp1 / (2.0 * gm1));
-  Dual4 area_sy =
-      dpos_floor4(geom.area_ratio_mix - area_py, kAreaFloorFrac * geom.area_ratio_mix);
-  s.omega = (s.p_e / s.p_g) * area_sy * dsqrt(s.t_g / s.t_e) *
-            std::sqrt(ejector::eta_s / ejector::eta_p);
-  return s;
-}
-
-} // namespace
-
 static double ejector_huang_mixing_coefficient_raw(double area_ratio_mix) {
   if (area_ratio_mix > ejector::phi_m_upper_area_ratio) {
     return ejector::phi_m_large;
@@ -689,74 +807,34 @@ static EjectorCriticalPressureJacobian ejector_huang_critical_back_pressure_and_
     double gamma, double r_gas, double recovery_efficiency) {
   const double gm1 = gamma - 1.0;
   const double gp1 = gamma + 1.0;
-  YYState4 s = critical_yy_state4(p_g_val, t_g_val, p_e_val, t_e_val, geom, gamma);
-
-  // Static temperatures and velocities at y-y (Huang Eqs. 9-10, 13-14).
-  Dual4 t_py = s.t_g / (1.0 + 0.5 * gm1 * s.mach_py * s.mach_py);
-  Dual4 t_sy = s.t_e / (gp1 / 2.0);
-  Dual4 v_py = s.mach_py * dsqrt(gamma * r_gas * t_py);
-  Dual4 v_sy = dsqrt(gamma * r_gas * t_sy);  // M_sy = 1
-
-  // Constant-pressure mixing with phi_m (Eq. 11) and energy (Eq. 12).
-  const double phi_m = ejector_huang_mixing_coefficient_raw(geom.area_ratio_mix);
-  Dual4 v_m = phi_m * (v_py + s.omega * v_sy) / (1.0 + s.omega);
-  const double cp = gamma * r_gas / gm1;
-  Dual4 t03 = (s.t_g + s.omega * s.t_e) / (1.0 + s.omega);
-  Dual4 t_m = dpos_floor4(t03 - 0.5 * v_m * v_m / cp, 1e-6 * t03.v);
-  Dual4 mach_m_sq = v_m * v_m / (gamma * r_gas * t_m);
-
-  // Normal shock in the mixed flow (Eqs. 16-17), C2 through M_m = 1.
-  Dual4 p3 = s.p_py;
-  Dual4 mach3_sq = mach_m_sq;
-  if (mach_m_sq.v > 1.0) {
-    p3 = s.p_py * (1.0 + 2.0 * gamma / gp1 * (mach_m_sq - 1.0));
-    mach3_sq = (1.0 + 0.5 * gm1 * mach_m_sq) / (gamma * mach_m_sq - 0.5 * gm1);
-  }
-  // Isentropic diffuser (Eq. 18).
-  Dual4 p_c = p3 * dpow(1.0 + 0.5 * gm1 * mach3_sq, gamma / gm1);
-
-  const double lambda3 = std::sqrt(gp1 * mach3_sq.v / (2.0 + gm1 * mach3_sq.v));
+  const Seeds4 u = seeds4(p_g_val, t_g_val, p_e_val, t_e_val);
+  const HuangCritical<4> h =
+      huang_critical_d(u.p_g, u.t_g, u.p_e, u.t_e, geom, D4::constant(gamma),
+                       D4::constant(r_gas), ejector_huang_mixing_coefficient_raw(geom.area_ratio_mix));
+  const double mach3_sq = h.mach3_sq.v;
+  const double lambda3 = std::sqrt(gp1 * mach3_sq / (2.0 + gm1 * mach3_sq));
   EjectorCriticalPressureResult value{
-      recovery_efficiency * p_c.v, p_c.v, t03.v, lambda3, std::sqrt(mach3_sq.v),
+      recovery_efficiency * h.p_c.v, h.p_c.v, h.t03.v, lambda3, std::sqrt(mach3_sq),
   };
-  return {value, recovery_efficiency * p_c.dpg, recovery_efficiency * p_c.dtg,
-          recovery_efficiency * p_c.dpe, recovery_efficiency * p_c.dte};
+  return {value, recovery_efficiency * h.p_c.d[0], recovery_efficiency * h.p_c.d[1],
+          recovery_efficiency * h.p_c.d[2], recovery_efficiency * h.p_c.d[3]};
 }
 
 static EjectorCriticalPressureJacobian ejector_sudden_expansion_dead_head_and_jacobian_raw(
     double p_g_val, double t_g_val, double p_e_val, double t_e_val, const EjectorGeometry& geom,
     double gamma, double r_gas, double recovery_efficiency) {
-  (void)t_e_val;  // the secondary is dead-headed
   const double gm1 = gamma - 1.0;
   const double gp1 = gamma + 1.0;
-  const double k = 0.5 * gm1;
-  const double a1 = geom.area_ratio_nozzle;
-  const double a3 = geom.area_ratio_mix;
-  Dual4 p_g{p_g_val, 1.0, 0.0, 0.0, 0.0};
-  Dual4 t_g{t_g_val, 0.0, 1.0, 0.0, 0.0};
-  Dual4 p_e{p_e_val, 0.0, 0.0, 1.0, 0.0};
-
-  const double mach_p1 = ejector_mach_from_area_ratio_supersonic_raw(a1, gamma);
-  Dual4 p_p1 = p_g / std::pow(1.0 + k * mach_p1 * mach_p1, gamma / gm1);
-  // Choked primary mass flow per unit throat area (isentropic).
-  Dual4 m = p_g * dsqrt(gamma / (r_gas * t_g)) * std::pow(2.0 / gp1, gp1 / (2.0 * gm1));
-  Dual4 impulse = p_p1 * (a1 * (1.0 + gamma * mach_p1 * mach_p1)) + p_e * (a3 - a1);
-  Dual4 phi = impulse / (m * dsqrt(r_gas * t_g / gamma));
-  // Subsonic root of (k Phi^2 - g^2) X^2 + (Phi^2 - 2g) X - 1 = 0, X = M^2.
-  Dual4 b = phi * phi - 2.0 * gamma;
-  Dual4 d = dpos_floor4(b * b + 4.0 * (k * phi * phi - gamma * gamma),
-                        ejector::dead_head_discriminant_floor);
-  Dual4 x = 2.0 / (b + dsqrt(d));
-  Dual4 t3 = t_g / (1.0 + k * x);
-  Dual4 p3 = m * dsqrt(r_gas * t3 / gamma) / (a3 * dsqrt(x));
-  Dual4 p_b0 = p3 * dpow(1.0 + k * x, gamma / gm1);
-
-  const double lambda3 = std::sqrt(gp1 * x.v / (2.0 + gm1 * x.v));
+  const Seeds4 u = seeds4(p_g_val, t_g_val, p_e_val, t_e_val);
+  const SuddenExpansion<4> e = sudden_expansion_dead_head_d(
+      u.p_g, u.t_g, u.p_e, geom, D4::constant(gamma), D4::constant(r_gas));
+  const double x = e.x.v;
+  const double lambda3 = std::sqrt(gp1 * x / (2.0 + gm1 * x));
   EjectorCriticalPressureResult value{
-      recovery_efficiency * p_b0.v, p_b0.v, t_g.v, lambda3, std::sqrt(x.v),
+      recovery_efficiency * e.p_b0.v, e.p_b0.v, t_g_val, lambda3, std::sqrt(x),
   };
-  return {value, recovery_efficiency * p_b0.dpg, recovery_efficiency * p_b0.dtg,
-          recovery_efficiency * p_b0.dpe, recovery_efficiency * p_b0.dte};
+  return {value, recovery_efficiency * e.p_b0.d[0], recovery_efficiency * e.p_b0.d[1],
+          recovery_efficiency * e.p_b0.d[2], recovery_efficiency * e.p_b0.d[3]};
 }
 
 EjectorCriticalPressureResult ejector_critical_back_pressure(
@@ -771,10 +849,10 @@ EjectorCriticalPressureResult ejector_critical_back_pressure(
 // Whole-element (f, J): the 4-row operating-regime residual system.
 //
 // A transliteration of EjectorElement.residuals() (ejector_element.py): the
-// scalar closures above are chained into a forward-mode DualN<9> exactly as the
-// Python `_chain` wraps each closure's (value, partials), then blended by the
-// two smootherstep weights. Kept in 1:1 correspondence so the two can be
-// cross-validated (tests/test_ejector_jacobians.cpp FD-checks this directly).
+// closures above evaluated on the element's DualN<11> (the nine unknowns,
+// gamma and r_gas), blended by the two smootherstep weights. Kept in 1:1
+// correspondence so the two can be cross-validated
+// (tests/test_ejector_jacobians.cpp FD-checks this directly).
 // -----------------------------------------------------------------------------
 namespace {
 
@@ -832,10 +910,11 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
   if (!validation::is_finite_nonnegative(eps_frac)) refuse(who, "eps_frac must be finite and >= 0");
   check_window(who, s_choke_lo, s_choke_hi, "need finite s_choke_lo < s_choke_hi");
   check_window(who, s_sub_lo, s_sub_hi, "need finite s_sub_lo < s_sub_hi");
-  using D = DualN<9>;
+  using D = DualN<11>;
   const bool huang = anchor_closure == EjectorAnchorClosure::huang1999;
 
-  // Seed the nine Newton unknowns (see header for the index convention).
+  // Seed the nine Newton unknowns and the gas (see header for the index
+  // convention).
   const D mp = D::seed(mp_v, 0);
   const D ms = D::seed(ms_v, 1);
   const D mdot_out = D::seed(mo_v, 2);
@@ -845,18 +924,16 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
   const D t_e = D::seed(t_e_v, 6);
   const D p_out = D::seed(p_out_v, 7);
   const D p_py = D::seed(p_py_v, 8); // owned unknown == mixing-plane static
+  const D gam = D::seed(gamma, 9);
+  const D rg = D::seed(r_gas, 10);
 
   // s_choke = smootherstep(mp / cap), cap = choked_mass_flow(Pt_p).
-  auto [cap_v, dcap_dp0, dcap_dt0] =
-      ejector_choked_mass_flow_and_jacobian_raw(p_g_v, t_g_v, area_throat, gamma, r_gas, eta_primary);
-  D cap = ejector_chain<9>(cap_v, {{dcap_dp0, p_g}, {dcap_dt0, t_g}});
-  D s = ejector_smootherstep<9>(mp / cap, s_choke_lo, s_choke_hi);
+  const D cap = choked_mass_flow_d(p_g, t_g, area_throat, gam, rg, eta_primary);
+  D s = ejector_smootherstep<11>(mp / cap, s_choke_lo, s_choke_hi);
 
   // R0: primary C-D nozzle (choked/unchoked via the closure's own smooth-min).
-  auto cd = ejector_cd_nozzle_mass_flow_and_jacobian_raw(
-      p_g_v, t_g_v, p_py_v, area_throat, area_nozzle_exit, gamma, r_gas, eta_primary, eps_frac);
-  D cd_d = ejector_chain<9>(
-      cd.mdot, {{cd.dmdot_dp0, p_g}, {cd.dmdot_dt0, t_g}, {cd.dmdot_dp_py, p_py}});
+  const D cd_d =
+      cd_nozzle_d(p_g, t_g, p_py, area_throat, area_nozzle_exit, gam, rg, eta_primary, eps_frac);
   D r0 = mp - cd_d;
 
   // Blend the critical (choked-primary) and jet-pump (unchoked) closures by
@@ -868,9 +945,10 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
   // with the flat endpoint).
   // ACTUAL ratio for the discharge (R1 pins ms itself). A probe can drive
   // either flow to zero or reverse it: both are floored C1 at 1e-9 of the
-  // choked flow, so omega stays finite and positive (#481).
-  const double m_floor = 1e-9 * cap.v;
-  D omega_eff = dpos_floor(ms, m_floor) / dpos_floor(mp, m_floor);
+  // choked flow, so omega stays finite and positive (#481). The floor moves
+  // with the choked flow, and so with every input of it.
+  const D m_floor = 1e-9 * cap;
+  D omega_eff = dpos_floor_dd(ms, m_floor) / dpos_floor_dd(mp, m_floor);
   const bool crit_active = s.v > 0.0;
   const bool jet_active = s.v < 1.0;
 
@@ -884,38 +962,21 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
   D p03_dead = D::constant(0.0);
   D s_b0 = D::constant(1.0);
   if (crit_active) {
-    auto entr = ejector_entrainment_ratio_and_jacobian_raw(p_g_v, t_g_v, p_e_v, t_e_v, geom, gamma);
-    omega_crit = ejector_chain<9>(entr.value.omega,
-                                  {{entr.domega_dp_g, p_g},
-                                   {entr.domega_dt_g, t_g},
-                                   {entr.domega_dp_e, p_e},
-                                   {entr.domega_dt_e, t_e}});
-    auto pc = huang ? ejector_huang_critical_back_pressure_and_jacobian_raw(
-                          p_g_v, t_g_v, p_e_v, t_e_v, geom, gamma, r_gas, 1.0)
-                    : ejector_critical_back_pressure_and_jacobian_raw(p_g_v, t_g_v, p_e_v, t_e_v,
-                                                                  geom, gamma, r_gas, 1.0);
-    p03_crit = ejector_chain<9>(pc.value.p_mixed_stagnation_pa,
-                                {{pc.dpc_dp_g, p_g},
-                                 {pc.dpc_dt_g, t_g},
-                                 {pc.dpc_dp_e, p_e},
-                                 {pc.dpc_dt_e, t_e}});
-    s_sub = ejector_smootherstep<9>(p_out / (recovery_efficiency * p03_crit), s_sub_lo, s_sub_hi);
+    omega_crit = critical_yy_state(p_g, t_g, p_e, t_e, geom, gam).omega;
+    p03_crit = huang ? huang_critical_d(p_g, t_g, p_e, t_e, geom, gam, rg,
+                                        ejector_huang_mixing_coefficient_raw(geom.area_ratio_mix))
+                           .p_c
+                     : mixed_stagnation_from_yy_d(p_g, t_g, p_e, t_e, geom, gam, rg, false).p03;
+    s_sub = ejector_smootherstep<11>(p_out / (recovery_efficiency * p03_crit), s_sub_lo, s_sub_hi);
 
     // The droop needs a window P_b0 > P_c*; it collapses in the M_py < 1
     // corner (an unchoked primary, the jet pump's). d fades the droop out
     // there, back to the plateau-and-pin-at-P_c* form, continuously: P_b0
     // depends on Newton unknowns, so a hard switch would be a jump in F.
-    auto pb = huang ? ejector_sudden_expansion_dead_head_and_jacobian_raw(
-                          p_g_v, t_g_v, p_e_v, t_e_v, geom, gamma, r_gas, 1.0)
-                    : ejector_dead_head_back_pressure_and_jacobian_raw(p_g_v, t_g_v, p_e_v, t_e_v,
-                                                                   geom, gamma, r_gas, 1.0);
-    D p03_b0 = ejector_chain<9>(pb.value.p_mixed_stagnation_pa,
-                                {{pb.dpc_dp_g, p_g},
-                                 {pb.dpc_dt_g, t_g},
-                                 {pb.dpc_dp_e, p_e},
-                                 {pb.dpc_dt_e, t_e}});
+    const D p03_b0 = huang ? sudden_expansion_dead_head_d(p_g, t_g, p_e, geom, gam, rg).p_b0
+                           : mixed_stagnation_from_yy_d(p_g, t_g, p_e, t_e, geom, gam, rg, true).p03;
     D window = (p03_b0 - p03_crit) / p03_crit;
-    D d = ejector_smootherstep<9>(window, kDroopWindowLo, kDroopWindowHi);
+    D d = ejector_smootherstep<11>(window, kDroopWindowLo, kDroopWindowHi);
     D s_b0_live = D::constant(0.0);
     D omega_sub = omega_crit;
     if (d.v > 0.0) {
@@ -923,8 +984,8 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
       // window >= kDroopWindowLo keeps the division bounded.
       omega_sub = omega_crit * (recovery_efficiency * p03_b0 - p_out) /
                   (recovery_efficiency * (p03_b0 - p03_crit));
-      s_b0_live = ejector_smootherstep<9>(p_out / (recovery_efficiency * p03_b0), s_sub_lo,
-                                          s_sub_hi);
+      s_b0_live = ejector_smootherstep<11>(p_out / (recovery_efficiency * p03_b0), s_sub_lo,
+                                           s_sub_hi);
     }
     // Plateau below P_c* exactly (s_sub = 0), the chord above it: critical
     // results are unchanged, unlike a smooth-min, which shaves omega_crit.
@@ -936,21 +997,10 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
   D ms_sec = D::constant(0.0);
   D p03_jet = D::constant(0.0);
   if (jet_active) {
-    auto sec = ejector_cd_nozzle_mass_flow_and_jacobian_raw(
-        p_e_v, t_e_v, p_py_v, area_secondary, area_secondary, gamma, r_gas, eta_secondary,
-        eps_frac);
-    ms_sec = ejector_chain<9>(
-        sec.mdot, {{sec.dmdot_dp0, p_e}, {sec.dmdot_dt0, t_e}, {sec.dmdot_dp_py, p_py}});
-    auto jp = ejector_jetpump_discharge_and_jacobian_raw(
-        p_g_v, t_g_v, p_e_v, t_e_v, p_py_v, omega_eff.v, gamma, 1.0, eta_primary,
-        eta_secondary);
-    p03_jet = ejector_chain<9>(jp.p03,
-                               {{jp.dp03_dp_g, p_g},
-                                {jp.dp03_dt_g, t_g},
-                                {jp.dp03_dp_e, p_e},
-                                {jp.dp03_dt_e, t_e},
-                                {jp.dp03_dp_py, p_py},
-                                {jp.dp03_domega, omega_eff}});
+    ms_sec = cd_nozzle_d(p_e, t_e, p_py, area_secondary, area_secondary, gam, rg, eta_secondary,
+                         eps_frac);
+    p03_jet = jetpump_discharge_d(p_g, t_g, p_e, t_e, p_py, omega_eff, gam, eta_primary,
+                                  eta_secondary);
   }
 
   // R1: blended entrainment  ms = s*omega_crit*mp + (1-s)*ms_sec.
@@ -981,6 +1031,8 @@ EjectorElementResidualJacobian ejector_element_residuals_and_jacobian(
   for (int i = 0; i < 4; ++i) {
     out.residuals[i] = rows[i].v;
     for (int j = 0; j < 9; ++j) out.jacobian[i][j] = rows[i].d[j];
+    out.d_dgamma[i] = rows[i].d[9];
+    out.d_dr_gas[i] = rows[i].d[10];
   }
   return out;
 }
