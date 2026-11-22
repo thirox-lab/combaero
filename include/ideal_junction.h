@@ -187,10 +187,25 @@ inline IdealJunctionResult ideal_junction_residuals_and_jacobian(
   D Vy = D::constant(0.0);
   for (int i = 0; i < n; ++i) {
     // s = smooth step 0 -> 1 across m = 0; s(m) + s(-m) = 1, so
-    // w_out - w_in = m exactly and both vanish at m = 0.
-    S[i] = (M[i] / dsqrt(M[i] * M[i] + eps2) + 1.0) * 0.5;
+    // w_out - w_in = m and both vanish at m = 0. With r = sqrt(m^2 + eps^2),
+    // s = (r + m) / (2 r) and 1 - s = (r - m) / (2 r). The side whose
+    // difference cancels (r - m for m > 0, r + m for m < 0; |m| >> eps away
+    // from reversal) is formed as eps^2 / (r +- m), the same function to
+    // round-off. Formed as m s - m, a receiver's w_in kept only
+    // 1e-16 / (eps/m)^2 of its digits (4e-9 .. 2.4e-8 relative at
+    // eps/m ~ 1e-4) and, with no supplier, V's numerator and denominator are
+    // all such weights: 1e-10 of noise in a 1e5 Pa row, read by a finite
+    // difference as a Jacobian miss (#1250).
+    const D r = dsqrt(M[i] * M[i] + eps2);
+    const D inv_2r = 0.5 / r;
+    if (M[i].v >= 0.0) {
+      S[i] = (r + M[i]) * inv_2r;
+      w_in[i] = -M[i] * (eps2 / (r + M[i])) * inv_2r;
+    } else {
+      S[i] = (eps2 / (r - M[i])) * inv_2r;
+      w_in[i] = -M[i] * (r - M[i]) * inv_2r;
+    }
     w_out[i] = M[i] * S[i];
-    w_in[i] = w_out[i] - M[i];
     const double cx = std::cos(geom.axis_rad[i]);
     const double cy = std::sin(geom.axis_rad[i]);
     w_in_sum = w_in_sum + w_in[i];

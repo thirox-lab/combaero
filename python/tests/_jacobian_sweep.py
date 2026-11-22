@@ -1787,15 +1787,6 @@ OPEN: tuple[Open, ...] = (
         strict=False,
     ),
     Open(
-        "#1250",
-        "IdealMomentumTeeElement with an outlet arm reversed",
-        (Hit("ideal_nport", "IdealMomentumTeeElement 'jct'", "p", "co1.m_dot", "signs", 3e-6),),
-        Case("ideal_nport", 2, 1, 0),
-        "jct pattern 0001 ratio 3",
-        slow=True,
-        strict=False,
-    ),
-    Open(
         "#1251",
         "a combustor whose only oxidizer stream is at exactly zero flow (a fuel-only mix), "
         "complete and equilibrium: J -17.95 against FD 155.6 on combustor:2",
