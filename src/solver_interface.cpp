@@ -774,7 +774,17 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
   // slope is dropped. The heat per unit flow takes |m|. Reversing every
   // stream of one sign gives the same state bit for bit (#1224).
   const bool averaged = mdot_tot != 0.0;
-  const bool with_partials = std::abs(mdot_tot) > kMixerNoFlowBand;
+  // A single stream has no difference q_i - q to divide by m: its mixed
+  // state is its own (plus the heat, which fades C1 to none at zero flow),
+  // so its partials are bounded down to zero flow and kept in the band. A
+  // wall-heated duct's own exit state is such a mix; zeroed, it dropped the
+  // exit Tt's 1:1 move with the duct's feed at exactly zero flow (#1265).
+  const bool one_stream = n_streams == 1;
+  const bool with_partials = std::abs(mdot_tot) > kMixerNoFlowBand || one_stream;
+  // The weight m_i / m and 1 / m of the partials below. With no flow at all
+  // (one stream, m = 0) the stream's own state stands in, weight 1, and
+  // every difference q_i - q_ref is exactly 0, so 1 / m is never needed.
+  const double inv_m = averaged ? 1.0 / mdot_tot : 0.0;
   if (averaged) {
     for (std::size_t k = 0; k < n_species; ++k) {
       Y_mix[k] /= mdot_tot;
@@ -901,19 +911,20 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
 
     // A stream outside the mix (leaving while another arrives) moves nothing.
     if (with_partials && in_mix[i]) {
+      const double w = averaged ? streams[i].m_dot * inv_m : 1.0;
       // P_total sensitivities
       dT_jac.d_Pt = 0.0;
-      dP_jac.d_Pt = streams[i].m_dot / mdot_tot;
-      dP_jac.d_mdot = (streams[i].Pt - Pt_diff_ref) / mdot_tot;
+      dP_jac.d_Pt = w;
+      dP_jac.d_mdot = (streams[i].Pt - Pt_diff_ref) * inv_m;
       dP_jac.d_Tt = 0.0;
 
       // d(Tt_mix)/d(T_i)
       // Base contribution
-      double dT_base_dT = (streams[i].m_dot * cp_stream[i]) / (mdot_tot * cp_mix);
+      double dT_base_dT = w * cp_stream[i] / cp_mix;
 
       // Fraction contribution: d(fraction * (h_mix_base - h_ref))/d(T_i)
       // = fraction * (mdot_i / mdot_tot) * cp_i  (h_ref does not move with T)
-      double dT_frac_dT = (fraction * streams[i].m_dot * cp_stream[i]) / (mdot_tot * cp_mix);
+      double dT_frac_dT = fraction * w * cp_stream[i] / cp_mix;
 
       dT_jac.d_Tt = dT_base_dT + dT_frac_dT;
 
@@ -927,18 +938,17 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
         y_sum += hk_mix[k] * (streams[i].Y[k] - Y_diff_ref[k]);
         ref_sum += href_k[k] * (streams[i].Y[k] - Y_diff_ref[k]);
       }
-      double dh_mix_dmdot = ((1.0 + fraction) * h_diff - fraction * ref_sum) / mdot_tot;
+      double dh_mix_dmdot = ((1.0 + fraction) * h_diff - fraction * ref_sum) * inv_m;
 
       // Q contribution: d(Q phi)/d(mdot_i) = Q phi'
       double dh_Q_dmdot = Q * dphi_Q;
 
-      dT_jac.d_mdot = (dh_mix_dmdot + dh_Q_dmdot - y_sum / mdot_tot) / cp_mix;
+      dT_jac.d_mdot = (dh_mix_dmdot + dh_Q_dmdot - y_sum * inv_m) / cp_mix;
 
       // d(Tt_mix)/d(Y_i,k): h_base moves by w hk_i, h_ref by w (href_k - h_ref)
       // and the normalised composition by w (e_k - Y), w = m_i / m; the last
       // shifts T at fixed h by -w (hk_mix - h_mix) -- the FINAL h_mix, which
       // the base-only form (h_mix_base) got wrong whenever Q or f was set.
-      const double w = streams[i].m_dot / mdot_tot;
       for (std::size_t k = 0; k < n_species; ++k) {
         dT_jac.d_Y[k] = w *
                         ((1.0 + fraction) * hk_mass[i][k] - fraction * (href_k[k] - h_ref) -
@@ -950,12 +960,12 @@ mixer_from_streams_and_jacobians(const std::vector<Stream> &streams,
       for (std::size_t k = 0; k < n_species; ++k) {
         StreamJacobian &dY_jac_k = res.dY_mix_d_stream[k][i];
         dY_jac_k.d_Y.resize(n_species);
-        dY_jac_k.d_mdot = (streams[i].Y[k] - Y_diff_ref[k]) / mdot_tot;
+        dY_jac_k.d_mdot = (streams[i].Y[k] - Y_diff_ref[k]) * inv_m;
         dY_jac_k.d_Tt = 0.0;
         dY_jac_k.d_Pt = 0.0;
         for (std::size_t j = 0; j < n_species; ++j) {
             double delta = (k == j) ? 1.0 : 0.0;
-            dY_jac_k.d_Y[j] = (streams[i].m_dot / mdot_tot) * (delta - Y_mix[k]);
+            dY_jac_k.d_Y[j] = w * (delta - Y_mix[k]);
         }
       }
     } else {

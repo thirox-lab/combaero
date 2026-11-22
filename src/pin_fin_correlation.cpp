@@ -233,6 +233,12 @@ PinFinNuResult evaluate_pin_fin_nu(const PinFinNuSet &set,
 
   out.Nu = N.v / r;
   out.dNu_dRe = N.d * s / r * dx_dRe;
+  // Nu is linear in smooth_pr(Pr)^Pr_exp: dNu/dPr = Nu Pr_exp sp'(Pr) / sp(Pr).
+  if (set.Pr_exp != 0.0) {
+    const double sp = smooth_pr(Pr);
+    const double dsp = 0.5 * (1.0 + Pr / std::sqrt(Pr * Pr + PR_EPS * PR_EPS));
+    out.dNu_dPr = sp > 0.0 ? out.Nu * set.Pr_exp * dsp / sp : 0.0;
+  }
   out.Re_native = s * Re_D;
   out.extrapolated =
       !geo_ok || geom.arrangement != set.arrangement ||
