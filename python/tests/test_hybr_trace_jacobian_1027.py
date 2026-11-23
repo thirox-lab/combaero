@@ -10,13 +10,12 @@ overflowed, the dogleg step and the trust radius went NaN, and evaluations
 49-56 were all NaN until hybr gave up ("not making good progress").
 
 The test runs effusion 103, the other seed #1027 found. A far path like
-this is round-off sensitive: by #1198, 105 had left it (with the trace flush
-removed, hybr proposed no NaN iterate there, before and after #1198), and
-#1198's 1e-16 Jacobian change cut its run below the old 48-evaluation
-precondition. On 103, without the flush, hybr's 25th evaluation is the first
-NaN, 8 of 32 in all, before and after #1198; with it, 0 of 53. Re-check the
-seed (flush removed, it must still go NaN) whenever this test's precondition
-trips.
+this is round-off sensitive: by #1198, 105 had left it, and when #1223 moved
+the test to 103, 103 without the flush went NaN from its 25th evaluation (8
+of 32). At 2aa860fd it no longer does: without the flush, 103's primary hybr
+runs 46 evaluations, none NaN (with it, 53), and no effusion seed 0-199 goes
+NaN (#1298). So this test does not currently bind to the flush; it guards
+the finite-iterate property until a binding case replaces it.
 """
 
 from __future__ import annotations
@@ -45,8 +44,8 @@ def test_primary_hybr_never_proposes_a_non_finite_iterate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Effusion 103 cold: the primary hybr attempt sees only finite iterates
-    (without the trace flush: 8 of its 32 evaluations NaN, the first at
-    evaluation 25).
+    (when #1223 chose the seed, without the trace flush 8 of its 32
+    evaluations were NaN; see the module docstring and #1298).
 
     No wall-clock dependence (#1118): the solver's budgets and stall
     handover read the clock, and a loaded machine ended the primary attempt
@@ -75,8 +74,12 @@ def test_primary_hybr_never_proposes_a_non_finite_iterate(
             hybr_x.append(np.array(x, copy=True))
             return fun(x)
 
-        real_root(f, x0, method=method, **kw)
-        raise _PrimaryHybrDone
+        # From a finally, so an exception inside hybr also ends the solve
+        # (chained) instead of leaving it to run unbudgeted on the frozen clock.
+        try:
+            real_root(f, x0, method=method, **kw)
+        finally:
+            raise _PrimaryHybrDone
 
     monkeypatch.setattr(solver_mod, "root", traced_root)
     t_frozen = solver_mod.time.time()
