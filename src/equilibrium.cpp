@@ -935,14 +935,25 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
           for (const auto &p : r.nu) out[p.first] += p.second * xi;
           continue;
         }
-        double nk_new = nk * std::exp(d / nk);
+        // The key's change, n_k expm1(d / n_k), and the extent from it
+        // directly: from the difference n_new - n_k the extent was quantised
+        // to ulp(n_k), and the other species with it. Methane at 2.8e-6 moved
+        // trace H2 (7e-12, four per methane) by 2.3e-10 of itself per ulp, a
+        // ln Q floor of 1.0e-9 in heptane's row (22 H2), above
+        // REFORMING_NEWTON_FLOOR_FTOL: very lean burns below 245 K were
+        // refused (#1285).
+        double dk = nk * std::expm1(d / nk);
         if (d > 0.0) {
           const double ln_cap = std::log(REFORMING_TRACE_FRACTION * nt);
-          nk_new = std::max(nk + d, std::exp(std::min(std::log(nk) + d / nk, ln_cap)));
+          dk = std::max(d, nk * std::expm1(std::min(d / nk, ln_cap - std::log(nk))));
         }
-        const double xi = (nk_new - nk) / kp.second;
+        const double xi = dk / kp.second;
         for (const auto &p : r.nu) out[p.first] += p.second * xi;
-        out[kp.first] = nk_new;
+        // The key itself from exp where it falls steeply: n_k + dk cancels
+        // there (its relative error grows as eps e^(-d / n_k)), and a trace
+        // e^300 off would close by only e^-37 per step.
+        out[kp.first] =
+            d / nk < REFORMING_LOG_KEY_EXP_BELOW ? nk * std::exp(d / nk) : nk + dk;
       }
       for (std::size_t j = 0; j < n.size(); ++j) {
         if (!is_key[j] && !(out[j] >= (1.0 - REFORMING_FRACTION_TO_BOUNDARY) * n[j])) {
@@ -1041,7 +1052,7 @@ static bool element_potential_start(
   const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
   const double SIZE = 18.420681;  // RP-1311: ln(1e8), a trace species
   bool done = false;
-  double last_corr = std::numeric_limits<double>::infinity();
+  double last_weighted = std::numeric_limits<double>::infinity();
   for (int it = 0; it < REFORMING_NEWTON_MAX_IT && !done; ++it) {
     const double N = std::exp(lnN);
     std::vector<double> nq(S), mu(S);
@@ -1088,13 +1099,54 @@ static bool element_potential_start(
     lnN += lam * dlnN;
     if (!std::isfinite(lnN)) return false;
     done = lam == 1.0 && std::max(dmax, std::abs(dlnN)) < 1e-9;
-    last_corr = lam == 1.0 ? std::max(dmax, std::abs(dlnN)) : last_corr;
+    if (lam == 1.0) {
+      double w = std::abs(dlnN);
+      for (std::size_t q = 0; q < S; ++q) w = std::max(w, nq[q] * std::abs(dl[q]) / N);
+      last_weighted = w;
+    }
   }
   // Only a start for the Newton polish, which decides convergence: with one
   // element nearly absent (oxygen at 1e-11 in methane) the corrections stall
   // at a 1e-8 noise in ln n above the 1e-9 bound, from a start already that
   // close (#1262).
-  if (!done && !(last_corr < REFORMING_EP_START_CORRECTION)) return false;
+  // A trace far below the others can keep a correction noise above the bound
+  // (1e-6 in ln n, about 1e-6 of a species 1e-20 of the total: lean methane at
+  // 192 K, 77 bar; #1285); RP-1311's own test weights each by its amount,
+  // n_j |d ln n_j| / N (Eq. 3.5), and below REFORMING_EP_START_CORRECTION
+  // that hands over too.
+  // The weighted correction is never above the full one (n_j / N <= 1), so
+  // it alone decides the handover.
+  if (!done && !(last_weighted < REFORMING_EP_START_CORRECTION)) {
+    return false;
+  }
+  // The corrections stop near 1e-10 of each amount, so the amounts balance
+  // the elements only to that; the write-back below takes each non-key as n
+  // plus the extents' changes, which then carries the whole imbalance, and a
+  // trace came back negative (H2 at 4.7e-17 as -5e-17 beside methane at 3e-7
+  // in a lean ethane burn at 155 K; #1285). The amounts are first balanced
+  // to rounding: n_j exp(sum_e a_ej lambda_e), lambda by Newton (the element
+  // equations alone), which keeps every amount positive. A sum of S terms can
+  // leave about S eps, so the loop may end on its step cap instead of
+  // REFORMING_EP_BALANCE_RTOL; the element check after Newton decides.
+  for (int it = 0; it < REFORMING_EP_BALANCE_IT; ++it) {
+    std::vector<double> Jl(E * E, 0.0), rl(E, 0.0);
+    bool balanced = true;
+    for (std::size_t k = 0; k < E; ++k) {
+      double bk = 0.0;
+      for (std::size_t q = 0; q < S; ++q) {
+        const double akq = aj[q][el[k]] * std::exp(lnn[q]);
+        bk += akq;
+        for (std::size_t i = 0; i < E; ++i) Jl[k * E + i] += akq * aj[q][el[i]];
+      }
+      rl[k] = b[el[k]] - bk;
+      if (!(std::abs(rl[k]) <= REFORMING_EP_BALANCE_RTOL * b[el[k]])) balanced = false;
+    }
+    if (balanced) break;
+    if (!solve_dense(Jl, rl, E, 1)) return false;
+    for (std::size_t q = 0; q < S; ++q) {
+      for (std::size_t k = 0; k < E; ++k) lnn[q] += aj[q][el[k]] * rl[k];
+    }
+  }
   if (rebase) {
     std::vector<double> n_gm = n;
     for (std::size_t q = 0; q < S; ++q) n_gm[sp[q]] = std::exp(lnn[q]);
@@ -1274,7 +1326,8 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     choose_basis(n_out);
   }
   // Elements: every step and seed conserves them; a state that does not, to
-  // round-off of the largest element total, is not a solution (#1262 review).
+  // round-off of each element's own total, is not a solution (#1262 review,
+  // #1285 review).
   {
     double b0[3] = {0.0, 0.0, 0.0}, b1[3] = {0.0, 0.0, 0.0};
     for (std::size_t j = 0; j < n0.size(); ++j) {
@@ -1286,9 +1339,8 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
         b1[e] += a[e] * n_out[j];
       }
     }
-    const double bmax = std::max({b0[0], b0[1], b0[2]});
     for (std::size_t e = 0; e < 3; ++e) {
-      if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * bmax)) conv = false;
+      if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * b0[e])) conv = false;
     }
   }
   if (rx_out != nullptr) *rx_out = rx;

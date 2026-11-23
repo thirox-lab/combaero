@@ -81,14 +81,25 @@ constexpr double REFORMING_RICH_BASIS_HC_FRACTION = 1e-4;
 // The element-potential start is handed to the Newton polish once its full
 // corrections in ln n are below this, converged or not (#1262).
 constexpr double REFORMING_EP_START_CORRECTION = 1e-6;
+// Before its write-back as extents, the element-potential start's amounts are
+// balanced to this of each element's total, by up to this many Newton steps
+// on the element equations alone (#1285).
+constexpr double REFORMING_EP_BALANCE_RTOL = 1e-15;
+constexpr int REFORMING_EP_BALANCE_IT = 10;
+// A log-stepping key falling by more than this many times its amount in one
+// step is taken from exp(d / n_k), not n_k plus its extent, which cancels
+// there (#1285).
+constexpr double REFORMING_LOG_KEY_EXP_BELOW = -1.0;
 // A reaction with an absent species whose other side is present is run
 // toward it by this fraction of the total, seeding it, and the solve
 // repeated, up to REFORMING_SEED_PASSES times; one still runnable after them
 // means not converged (#1262).
 constexpr double REFORMING_SEED_FRACTION = 1e-10;
 constexpr int REFORMING_SEED_PASSES = 3;
-// A solved state's element totals (C, H, O) match the input's to this,
-// relative to the largest total, or the solve is not converged (#1262).
+// A solved state's element totals (C, H, O) match the input's to this, each
+// relative to its own total, or the solve is not converged (#1262). Relative
+// to the largest total, it allowed about 1e-5 of hydrogen's own at phi 1e-7
+// (#1285 review).
 constexpr double REFORMING_ELEMENT_RTOL = 1e-12;
 // The Jacobian of a solution with an absent species that the complete-
 // combustion step feeds is taken with that species at a trace of the total,

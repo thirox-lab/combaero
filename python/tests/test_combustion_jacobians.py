@@ -408,14 +408,23 @@ def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow(
     assert burn(1e-18).dTt_mix_d_stream[0].d_mdot == pytest.approx(an, rel=1e-7)
 
 
-def test_a_zero_air_heptane_combustor_refuses_rather_than_guess() -> None:
-    """Heptane alone at exactly zero air: no trace state converges for the
-    one-sided derivative (fuel-only heptane with trace oxygen does not
-    converge, #1262), so the Jacobian is refused, never the no-trace one."""
+def test_a_zero_air_heptane_combustor_takes_the_arriving_side() -> None:
+    """Heptane alone at exactly zero air: no trace state converged for the
+    one-sided derivative, so the Jacobian was refused. Since #1285 one does,
+    and J is the forward one-sided difference: 1.99e6 K per kg/s, to 6e-9 at
+    1e-11 kg/s (at 1e-15 the difference is round-off limited, 3e-5: T moves
+    2e-9 K). Not checked an instant later: heptane with oxygen near 1e-15
+    still does not converge everywhere (#1287)."""
     Yf = _fuel_Y({"NC7H16": 1.0})
-    s = [_cb.MassStream(0.0, 300.0, 2e5, _Y_AIR), _cb.MassStream(5.76e-4, 300.0, 2.1e5, Yf)]
-    with pytest.raises(RuntimeError, match="no converged trace state"):
-        _combustor(s, "equilibrium")
+
+    def burn(ma: float):
+        s = [_cb.MassStream(ma, 300.0, 2e5, _Y_AIR), _cb.MassStream(5.76e-4, 300.0, 2.1e5, Yf)]
+        return _combustor(s, "equilibrium")
+
+    r = burn(0.0)
+    an = r.dTt_mix_d_stream[0].d_mdot
+    h = 1e-11
+    assert (burn(h).Tt_mix - r.Tt_mix) / h == pytest.approx(an, rel=1e-6)
 
 
 @pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])
@@ -535,14 +544,15 @@ def test_trace_oxygen_equilibrium_jacobian_is_exact() -> None:
 def test_an_unconverged_equilibrium_is_refused() -> None:
     """The combustor never takes a state, or its Jacobian, the solve did not
     converge to (#1262): combustion_equilibrium_and_jacobian raises there,
-    which the network takes as an unphysical probe. Very lean methane below
-    250 K is one state the solve still misses (#1285); heptane at phi 1380,
-    the state this used before, converges since H2 is exchanged with two
-    hydrocarbons in pyrolysis."""
-    X = _fuel_in_air("CH4", 3.119e-4)
-    assert not _cb._core.combustion_equilibrium(208.5, X, 1.03e6).converged
+    which the network takes as an unphysical probe. Heptane with a 1e-20 trace
+    of air is one state the solve still misses (#1287); very lean methane at
+    208.5 K, the state this used before, converges since #1285."""
+    X = np.zeros(_cb.num_species())
+    X[_cb.species_index_from_name("NC7H16")] = 1.0
+    X = (1.0 - 1e-20) * X + 1e-20 * np.array(_X_AIR)
+    assert not _cb._core.combustion_equilibrium(300.0, X, 2e5).converged
     with pytest.raises(RuntimeError, match="did not converge"):
-        _cb._core.combustion_equilibrium_and_jacobian(208.5, X, 1.03e6)
+        _cb._core.combustion_equilibrium_and_jacobian(300.0, X, 2e5)
 
 
 def _fuel_in_air(fuel: str, phi: float, vitiated: bool = False) -> np.ndarray:
@@ -706,6 +716,53 @@ def test_a_pyrolysis_equilibrium_converges_beside_its_neighbours(
         assert r.converged, (fuel, k)
         Ts.append(r.state.T)
     assert max(Ts) - min(Ts) < 1e-6
+
+
+@pytest.mark.parametrize(
+    ("fuel", "phi", "T", "P"),
+    [
+        ("CH4", 3.119e-4, 208.5, 1.03e6),
+        ("C2H6", 5.692e-6, 155.4, 7.62e6),
+        ("NC7H16", 1.732e-6, 150.8, 5.06e5),
+    ],
+)
+def test_a_cold_lean_equilibrium_converges_beside_its_neighbours(
+    fuel: str, phi: float, T: float, P: float
+) -> None:
+    """Very lean and below 245 K (#1285); each state was refused. Methane:
+    a log-stepping key's extent came from n_new - n_k, quantised to ulp(n_k)
+    -- methane at 2.8e-6 moved trace H2 (7e-12) by 2.3e-10 of itself per ulp,
+    a ln Q floor of 1.0e-9 in heptane's row. Ethane and heptane: the
+    element-potential start balanced the elements only to its corrections'
+    1e-10, and the write-back put the imbalance on trace H2, which came back
+    negative (-5e-17 for a Gibbs 4.7e-17); the amounts are now balanced
+    to rounding first. Each state and its inlet-T neighbours converge, and the
+    Jacobian is not refused."""
+    X = _fuel_in_air(fuel, phi)
+    for k in range(-3, 4):
+        Tk = T * (1.0 + k * 1e-12)
+        assert _cb._core.combustion_equilibrium(Tk, X, P).converged, (fuel, k)
+    _cb._core.combustion_equilibrium_and_jacobian(T, X, P)  # does not raise
+
+
+def test_a_cold_lean_start_hands_over_by_its_weighted_correction() -> None:
+    """Lean methane at 192 K and 77 bar (#1285): the element-potential start's
+    full correction stalls near 1e-6 in ln n on a trace 1e-20 of the total,
+    so it was refused; RP-1311's amount-weighted correction hands it over to
+    Newton. The state and its inlet-T neighbours converge."""
+    X = np.zeros(_cb.num_species())
+    for name, x in [
+        ("N2", 0.780581271258258),
+        ("O2", 0.2094413118962667),
+        ("AR", 0.009297394752435705),
+        ("CO2", 0.0003998879463413207),
+        ("CH4", 0.0002801341466982642),
+    ]:
+        X[_cb.species_index_from_name(name)] = x
+    T, P = 191.84428109441228, 7721279.747576745
+    for k in range(-3, 4):
+        assert _cb._core.combustion_equilibrium(T * (1.0 + k * 1e-12), X, P).converged, k
+    _cb._core.combustion_equilibrium_and_jacobian(T, X, P)  # does not raise
 
 
 @pytest.mark.parametrize(
