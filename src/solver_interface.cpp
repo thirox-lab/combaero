@@ -1435,29 +1435,21 @@ MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double 
 }  // namespace
 
 MixerResult combustor_residuals_and_jacobians(
-    const std::vector<Stream> &streams, double P, double Q, double fraction,
+    const std::vector<Stream> &streams, double Q, double fraction,
     const PressureLossCorrelation &pressure_loss, bool use_equilibrium) {
 
   // 1. Get unburned mixture state (T_in, P_in)
   MixerResult mix_in = mixer_from_streams_and_jacobians(streams);
   double T_in = mix_in.Tt_mix;
-  // P must be that mix's Pt: the stream partials below (P_out's, and the
-  // equilibrium's through dP/d(stream)) are those of mix_in.Pt_mix, so any
-  // other P would carry them wrongly (dT/dPt_fuel 1.3e-4 against an FD of 0
-  // with P = 1e5 beside a mixed Pt of 2.03e5).
-  // A non-finite P or stream Pt keeps main's message ("finite and positive",
-  // raised downstream before); only a finite P that differs from the mix is the
-  // caller's contract error.
-  if (!std::isfinite(P) || !std::isfinite(mix_in.Pt_mix)) {
+  // The burn's pressure is that mix's Pt (#1272): the stream partials below
+  // (P_out's, and the equilibrium's through dP/d(stream)) are those of
+  // mix_in.Pt_mix, so no other P would carry them rightly (dT/dPt_fuel
+  // 1.3e-4 against an FD of 0 with P = 1e5 beside a mixed Pt of 2.03e5).
+  if (!std::isfinite(mix_in.Pt_mix)) {
     throw std::invalid_argument(
         "combustor_residuals_and_jacobians: pressure must be finite and positive");
   }
-  if (!(std::abs(P - mix_in.Pt_mix) <=
-        kCombustorPressureMatchRtol * std::max(std::abs(mix_in.Pt_mix), 1.0))) {
-    throw std::invalid_argument(
-        "combustor_residuals_and_jacobians: P must be the streams' mixed Pt "
-        "(mixer_from_streams_and_jacobians(streams).Pt_mix)");
-  }
+  const double P = mix_in.Pt_mix;
 
   // 2. Get burned state (T_ad, Y_products) including all stream jacobians.
   // P is the streams' mixed total pressure (mix_in.Pt_mix, which the P_out

@@ -5047,13 +5047,10 @@ class CombustorNode(NetworkNode):
         # Combustor only: mixing + combustion, NO pressure loss (that's on the edge).
         try:
             # The burn's pressure is the streams' mixed Pt, the mean over the
-            # arriving streams the kernel mixes (#1232); the kernel chains its
-            # partials (#1244). The signed mean over every stream, as before,
-            # left the inputs' range with a stream reversed and had no Jacobian.
-            P_ref = float(_solver_tools.mixer_from_streams_and_jacobians(streams).Pt_mix)
+            # arriving streams the kernel mixes (#1232), which the kernel takes
+            # itself and chains its partials through (#1244, #1272).
             mix_res = _solver_tools.combustor_residuals_and_jacobians(
                 streams,
-                P_ref,
                 Q=Q_total,
                 fraction=fraction_total,
                 pressure_loss=_zero_loss,

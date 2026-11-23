@@ -3225,10 +3225,10 @@ from combaero import _solver_tools as st
 res_ori = st.orifice_residuals_and_jacobian(m_dot, P_tot, P_stat, Tt, Y, P_down, Cd, area)
 res_chan = st.channel_residuals_and_jacobian(m_dot, P_tot, P_stat, Tt, Y, P_down, L, D, roughness, correlation,
                                              f_multiplier=1.0, exit_head_lost=False)  # True adds the exit head (#588)
-# Mix and burn streams (cb.MassStream), Q [W] and 'fraction' after combustion;
-# P must be the streams' mixed Pt (st.mixer_from_streams_and_jacobians(streams).Pt_mix;
-# ValueError otherwise), whose stream partials the result carries (#1244)
-res_comb = st.combustor_residuals_and_jacobians(streams, P, Q=0.0, fraction=0.0,
+# Mix and burn streams (cb.MassStream), Q [W] and 'fraction' after combustion,
+# at the streams' mixed Pt (st.mixer_from_streams_and_jacobians(streams).Pt_mix),
+# whose stream partials the result carries (#1244); keyword-only after streams
+res_comb = st.combustor_residuals_and_jacobians(streams, Q=0.0, fraction=0.0,
                                                 pressure_loss=loss, use_equilibrium=False)
 ```
 
