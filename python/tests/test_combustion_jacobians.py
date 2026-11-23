@@ -469,14 +469,17 @@ def test_the_combustor_burns_at_the_mixed_pt_and_takes_no_pressure() -> None:
     them wrongly (dT/dPt_fuel 1.3e-4 against an FD of 0 at P = 1e5 beside a
     mixed 2.03e5; #1244 review). The kernel takes the mixed Pt itself
     (#1272): its burn is the equilibrium at that pressure, and a call still
-    passing a P positionally raises rather than taking it as Q."""
+    passing a P positionally raises rather than taking it as Q. The burn is
+    rich, so its equilibrium depends on the pressure it is taken at."""
     s = [
-        _cb.MassStream(0.05, 650.0, 2.0e5, _Y_AIR),
-        _cb.MassStream(1e-3, 300.0, 2.1e5, _Y_CH4),
+        _cb.MassStream(3e-5, 650.0, 2.0e5, _Y_AIR),
+        _cb.MassStream(5.376e-4, 300.0, 2.1e5, _Y_CH4),
     ]
     mix = _st.mixer_from_streams_and_jacobians(s)
     res = _combustor(s, "equilibrium")
     ref = _st.adiabatic_T_equilibrium_and_jacobians_from_streams(s, mix.Pt_mix)
+    other = _st.adiabatic_T_equilibrium_and_jacobians_from_streams(s, 1.0e5)
+    assert other.Tt_mix != ref.Tt_mix  # the pressure matters here
     assert res.Tt_mix == ref.Tt_mix
     assert res.Pt_mix == mix.Pt_mix
     with pytest.raises(TypeError):

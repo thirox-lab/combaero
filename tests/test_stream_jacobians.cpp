@@ -764,7 +764,9 @@ TEST(CombustorEquilibriumTest, StructureAndStreamJacobian_mdot) {
 
 TEST(CombustorPressureLossJacobianTest, burns_at_the_mixed_Pt) {
     // The stream partials are those of the mixed Pt (#1244 review), so the
-    // kernel takes it itself (#1272): its burn is the equilibrium there.
+    // kernel takes it itself (#1272). Pt_mix (no loss) pins that pressure;
+    // at this lean burn the equilibrium T barely depends on P, so the T check
+    // only pins the call path (the Python test checks a rich burn).
     auto streams = std::vector<solver::Stream>{
         make_air_stream(2.0, 600.0, 2.0e5),
         make_fuel_stream(0.06, 300.0, 2.1e5),
