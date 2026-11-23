@@ -199,7 +199,9 @@ ThermoState thermo_state(double T, double P, const std::vector<double>& X, doubl
 // Compute all thermodynamic and transport properties at once
 CompleteState complete_state(double T, double P, const std::vector<double>& X, double P_ref = 101325.0);
 
-// Derivatives of thermodynamic properties with respect to temperature
+// Derivatives of thermodynamic properties with respect to temperature, on the
+// molar basis (#1279): dh/dT = cp [J/(mol*K)], ds/dT = cp/T [J/(mol*K^2)],
+// dcp/dT [J/(mol*K^2)].
 double dh_dT(double T, const std::vector<double>& X);
 double ds_dT(double T, const std::vector<double>& X);
 double dcp_dT(double T, const std::vector<double>& X);

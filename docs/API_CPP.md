@@ -221,6 +221,7 @@ CompleteState complete_state(double T, double P, const std::vector<double>& X, d
 
 ### Derivatives
 ```cpp
+// Molar basis: dh/dT = cp [J/(mol*K)], ds/dT = cp/T [J/(mol*K^2)], dcp/dT [J/(mol*K^2)].
 double dh_dT(double T, const std::vector<double>& X);
 double ds_dT(double T, const std::vector<double>& X);
 double dcp_dT(double T, const std::vector<double>& X);

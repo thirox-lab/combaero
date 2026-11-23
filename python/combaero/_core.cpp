@@ -3542,7 +3542,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         return dh_dT(T, X);
       },
       py::arg("T"), py::arg("X"),
-      "Mass enthalpy derivative dh/dT [J/(kg*K)] at temperature T and composition X.");
+      "Molar enthalpy derivative dh/dT [J/(mol*K)], the molar cp, at temperature T and "
+      "composition X.");
 
   m.def(
       "ds_dT",
@@ -3552,7 +3553,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         return ds_dT(T, X);
       },
       py::arg("T"), py::arg("X"),
-      "Mass entropy derivative ds/dT [J/(kg*K^2)] at temperature T and composition X.");
+      "Molar entropy derivative ds/dT [J/(mol*K^2)], cp/T, at temperature T and "
+      "composition X.");
 
   m.def(
       "dcp_dT",
@@ -3562,7 +3564,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         return dcp_dT(T, X);
       },
       py::arg("T"), py::arg("X"),
-      "Mass specific heat derivative dcp/dT [J/(kg*K^2)] at temperature T and composition X.");
+      "Molar specific heat derivative dcp/dT [J/(mol*K^2)] at temperature T and "
+      "composition X.");
 
   m.def(
       "dg_over_RT_dT",
