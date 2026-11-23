@@ -61,6 +61,12 @@ constexpr double REFORMING_NEWTON_FTOL = 1e-10;
 // heptane's 22 H2 in its ln Q left a floor of 1.1e-10 (lean propane, 250 K,
 // 20 bar). 1e-9 in ln Q is 1e-9 relative in the trace amount.
 constexpr double REFORMING_NEWTON_FLOOR_FTOL = 1e-9;
+// Below about 1e-308 an amount is subnormal and holds fewer digits: one ulp
+// of steam at 4e-315 is 1.2e-9 of it, 8.5e-9 in the ln Q of a row with 7 of
+// it (heptane with 1e-20 of air, 300 K; #1287). Where no step lowers ||F||,
+// a row is also accepted within this many such ulp steps of its amounts,
+// sum_j |nu_j| ulp(n_j) / n_j, which is about 1e-14 for normal amounts.
+constexpr double REFORMING_NEWTON_ULP_FLOOR_STEPS = 2.0;
 // A step keeps at least 1 - this of every amount (other than a reaction's own
 // species, which steps in ln n) it reduces.
 constexpr double REFORMING_FRACTION_TO_BOUNDARY = 0.99;
@@ -90,6 +96,10 @@ constexpr int REFORMING_EP_BALANCE_IT = 10;
 // step is taken from exp(d / n_k), not n_k plus its extent, which cancels
 // there (#1285).
 constexpr double REFORMING_LOG_KEY_EXP_BELOW = -1.0;
+// The element-potential start's component species are chosen by amount,
+// each independent of those before it: its formula's remainder after
+// elimination against theirs exceeds this (formulas are small integers).
+constexpr double REFORMING_EP_COMPONENT_RANK_TOL = 1e-9;
 // A reaction with an absent species whose other side is present is run
 // toward it by this fraction of the total, seeding it, and the solve
 // repeated, up to REFORMING_SEED_PASSES times; one still runnable after them

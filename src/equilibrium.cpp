@@ -867,6 +867,29 @@ static double max_abs(const std::vector<double> &v) {
 // (1 - REFORMING_FRACTION_TO_BOUNDARY) of its current value, and backtracks
 // until ||F|| falls. Converged when max |F| <= REFORMING_NEWTON_FTOL, after
 // which up to two more steps take it to round-off.
+// The scale s = 1/sqrt(J_aa) of a reaction whose key is so small (below
+// about 1e-308, subnormal: steam at 4e-315 beside heptane with 1e-20 of air,
+// #1287) that its nu_k^2 / n_k term of J_aa overflows to inf. A key is in its
+// own reaction only, so the inf is on the diagonal alone, and the finite form
+//   s = sqrt(n_k) / sqrt(J'),  J' = nu_k^2 + n_k R,
+// R the rest of J_aa, gives the same scale; s / n_k = 1 / sqrt(n_k J') is the
+// factor the key's own 1/n_k terms take. The scaled diagonal is 1.
+static double subnormal_key_scale(const JointReaction &r, const std::vector<double> &n,
+                                  double nt, double *s_over_nk = nullptr) {
+  const auto &kp = r.nu[r.key];
+  double R = -r.dn * r.dn / nt;
+  for (const auto &p : r.nu) {
+    if (p.first != kp.first) R += p.second * p.second / n[p.first];
+  }
+  const double nk = n[kp.first];
+  const double Jp = kp.second * kp.second + nk * R;
+  // sqrt(n_k) is a normal number (about 1e-159): n_k / J' and n_k J' are
+  // not formed, as they would be further below 1e-308, with fewer digits.
+  const double rk = std::sqrt(nk), rJ = std::sqrt(Jp);
+  if (s_over_nk != nullptr) *s_over_nk = 1.0 / (rk * rJ);
+  return rk / rJ;
+}
+
 static bool joint_newton(std::vector<double> &n, double P, const std::vector<JointReaction> &rx,
                          const std::vector<std::size_t> &act, const std::vector<double> &lnK,
                          int max_it) {
@@ -884,9 +907,19 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
     }
     std::vector<double> s(m);
     for (std::size_t a = 0; a < m; ++a) s[a] = 1.0 / std::sqrt(std::max(J[a * m + a], 1e-300));
+    // A subnormal key's J_aa is inf (subnormal_key_scale).
+    std::vector<bool> inf_diag(m, false);
+    for (std::size_t a = 0; a < m; ++a) {
+      if (std::isfinite(J[a * m + a])) continue;
+      inf_diag[a] = true;
+      double nt_a = 0.0;
+      for (double v : n) nt_a += v;
+      s[a] = subnormal_key_scale(rx[act[a]], n, nt_a);
+    }
     std::vector<double> A(m * m), dx(m);
     for (std::size_t a = 0; a < m; ++a) {
       for (std::size_t b = 0; b < m; ++b) A[a * m + b] = s[a] * J[a * m + b] * s[b];
+      if (inf_diag[a]) A[a * m + a] = 1.0;
       dx[a] = -s[a] * F[a];
     }
     if (!solve_dense(A, dx, m, 1)) return polish > 0;
@@ -980,9 +1013,20 @@ static bool joint_newton(std::vector<double> &n, double P, const std::vector<Joi
       alpha *= 0.5;
     }
     if (!accepted) {
-      // Round-off floor: no step lowers ||F||. Converged if within
-      // REFORMING_NEWTON_FLOOR_FTOL, the floor a trace species leaves.
-      return fnorm <= REFORMING_NEWTON_FLOOR_FTOL;
+      // Round-off floor: no step lowers ||F||. Converged if each row is
+      // within REFORMING_NEWTON_FLOOR_FTOL, the floor a trace species leaves,
+      // plus REFORMING_NEWTON_ULP_FLOOR_STEPS ulp steps of its amounts (a
+      // subnormal one holds fewer digits; #1287).
+      for (std::size_t a = 0; a < m; ++a) {
+        double floor_a = REFORMING_NEWTON_FLOOR_FTOL;
+        for (const auto &p : rx[act[a]].nu) {
+          const double v = n[p.first];
+          const double ulp = std::nextafter(v, std::numeric_limits<double>::infinity()) - v;
+          floor_a += REFORMING_NEWTON_ULP_FLOOR_STEPS * std::abs(p.second) * ulp / v;
+        }
+        if (!(std::abs(F[a]) <= floor_a)) return false;
+      }
+      return true;
     }
     n = n_try;
     joint_residual(rx, act, n, P, lnK, F, &J);
@@ -1038,6 +1082,88 @@ static bool element_potential_start(
     if (b[e] > 0.0) el.push_back(e);
   }
   const std::size_t E = el.size();
+  // The element equations in a basis of component species (#1287): with
+  // heptane the only major species of a fuel with 1e-20 of air, every element
+  // row is dominated by it (C, H and the total moles in a ratio 7 : 16 : 1),
+  // and the traces' share of each row, the only thing that sets their
+  // distribution, is below the rounding of its sum; their corrections did
+  // not converge, the steam of the oxygen row came back 1e10 times its
+  // element's total, and hexane, the trace that holds the excess hydrogen,
+  // was missed. As Smith and Missen's component (stoichiometric)
+  // formulation, the E most abundant species that are independent are the
+  // components, C their formula matrix, and each formula is replaced by
+  // a''_q = adj(C) a_q -- a linear map, so the same element constraints and
+  // the same equilibrium. Formulas are small integers, so each component's
+  // a'' is det(C) e_k exactly: a major species contributes exactly nothing to
+  // a trace component's row, whose sums (and right-hand side, summed per
+  // species) keep their own relative precision. The components are re-chosen
+  // as the amounts move.
+  std::vector<double> n_init(S);
+  for (std::size_t q = 0; q < S; ++q) n_init[q] = n[sp[q]];
+  std::vector<std::vector<double>> ap(S, std::vector<double>(E, 0.0));
+  std::vector<double> bp(E, 0.0), bscale(E, 0.0);
+  std::vector<std::size_t> comp;
+  auto choose_components = [&](const std::vector<double> &lnv) -> bool {
+    std::vector<std::size_t> order(S);
+    for (std::size_t q = 0; q < S; ++q) order[q] = q;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](std::size_t x, std::size_t y) { return lnv[x] > lnv[y]; });
+    std::vector<std::size_t> c;
+    std::vector<std::vector<double>> red;  // the components' reduced formulas
+    for (std::size_t q : order) {
+      if (c.size() == E) break;
+      std::vector<double> v(E);
+      for (std::size_t k = 0; k < E; ++k) v[k] = aj[q][el[k]];
+      for (const auto &w : red) {
+        std::size_t pk = 0;
+        for (std::size_t k = 1; k < E; ++k) {
+          if (std::abs(w[k]) > std::abs(w[pk])) pk = k;
+        }
+        const double f = v[pk] / w[pk];
+        for (std::size_t k = 0; k < E; ++k) v[k] -= f * w[k];
+      }
+      double vmax = 0.0;
+      for (double x : v) vmax = std::max(vmax, std::abs(x));
+      if (vmax > REFORMING_EP_COMPONENT_RANK_TOL) {
+        red.push_back(v);
+        c.push_back(q);
+      }
+    }
+    if (c.size() < E) return false;
+    if (c == comp) return true;
+    comp = c;
+    // C[i][k]: element el[i] of component k, embedded in a 3 x 3 identity for
+    // E < 3 (the E x E block of adj(diag(C, I)) is adj(C)), so one cofactor
+    // form serves every E: adj(C)[i][k] = cofactor C_ki.
+    double C3[9] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+    for (std::size_t i = 0; i < E; ++i) {
+      for (std::size_t k = 0; k < E; ++k) C3[i * 3 + k] = aj[comp[k]][el[i]];
+    }
+    std::vector<double> adj(E * E, 0.0);
+    for (std::size_t i = 0; i < E; ++i) {
+      for (std::size_t k = 0; k < E; ++k) {
+        const std::size_t r0 = (k + 1) % 3, r1 = (k + 2) % 3;
+        const std::size_t c0 = (i + 1) % 3, c1 = (i + 2) % 3;
+        adj[i * E + k] = C3[r0 * 3 + c0] * C3[r1 * 3 + c1] - C3[r0 * 3 + c1] * C3[r1 * 3 + c0];
+      }
+    }
+    for (std::size_t q = 0; q < S; ++q) {
+      for (std::size_t i = 0; i < E; ++i) {
+        double v = 0.0;
+        for (std::size_t k = 0; k < E; ++k) v += adj[i * E + k] * aj[q][el[k]];
+        ap[q][i] = v;
+      }
+    }
+    for (std::size_t i = 0; i < E; ++i) {
+      bp[i] = 0.0;
+      bscale[i] = 0.0;
+      for (std::size_t q = 0; q < S; ++q) {
+        bp[i] += ap[q][i] * n_init[q];
+        bscale[i] += std::abs(ap[q][i]) * n_init[q];
+      }
+    }
+    return true;
+  };
   std::vector<double> lnn(S), g(S);
   for (std::size_t q = 0; q < S; ++q) {
     lnn[q] = std::log(n[sp[q]]);
@@ -1054,6 +1180,7 @@ static bool element_potential_start(
   bool done = false;
   double last_weighted = std::numeric_limits<double>::infinity();
   for (int it = 0; it < REFORMING_NEWTON_MAX_IT && !done; ++it) {
+    if (!choose_components(lnn)) return false;
     const double N = std::exp(lnN);
     std::vector<double> nq(S), mu(S);
     double sum_n = 0.0;
@@ -1067,26 +1194,38 @@ static bool element_potential_start(
     for (std::size_t k = 0; k < E; ++k) {
       double ak_n = 0.0;
       for (std::size_t q = 0; q < S; ++q) {
-        const double akq = aj[q][el[k]] * nq[q];
-        for (std::size_t i = 0; i < E; ++i) A[k * M + i] += akq * aj[q][el[i]];
+        const double akq = ap[q][k] * nq[q];
+        for (std::size_t i = 0; i < E; ++i) A[k * M + i] += akq * ap[q][i];
         ak_n += akq;
         r[k] += akq * mu[q];
       }
       A[k * M + E] = ak_n;
       A[E * M + k] = ak_n;
-      r[k] += b[el[k]] - ak_n;
+      r[k] += bp[k] - ak_n;
     }
     A[E * M + E] = sum_n - N;
     r[E] = N - n_inert - sum_n;
     for (std::size_t q = 0; q < S; ++q) r[E] += nq[q] * mu[q];
+    // Symmetric diagonal scaling: a trace component's row is some 1e-20 of a
+    // major one's.
+    std::vector<double> D(M, 1.0);
+    for (std::size_t k = 0; k < E; ++k) {
+      if (A[k * M + k] > 0.0) D[k] = 1.0 / std::sqrt(A[k * M + k]);
+    }
+    D[E] = 1.0 / std::sqrt(N);
+    for (std::size_t i = 0; i < M; ++i) {
+      for (std::size_t k = 0; k < M; ++k) A[i * M + k] *= D[i] * D[k];
+      r[i] *= D[i];
+    }
     if (!solve_dense(A, r, M, 1)) return false;
+    for (std::size_t i = 0; i < M; ++i) r[i] *= D[i];
     const double dlnN = r[E];
     std::vector<double> dl(S);
     double lam1 = 5.0 * std::abs(dlnN), dmax = 0.0;
     double lam2 = 1.0;
     for (std::size_t q = 0; q < S; ++q) {
       dl[q] = -mu[q] + dlnN;
-      for (std::size_t i = 0; i < E; ++i) dl[q] += aj[q][el[i]] * r[i];
+      for (std::size_t i = 0; i < E; ++i) dl[q] += ap[q][i] * r[i];
       dmax = std::max(dmax, std::abs(dl[q]));
       if (lnn[q] - lnN > -SIZE) {
         lam1 = std::max(lam1, std::abs(dl[q]));
@@ -1124,8 +1263,9 @@ static bool element_potential_start(
   // plus the extents' changes, which then carries the whole imbalance, and a
   // trace came back negative (H2 at 4.7e-17 as -5e-17 beside methane at 3e-7
   // in a lean ethane burn at 155 K; #1285). The amounts are first balanced
-  // to rounding: n_j exp(sum_e a_ej lambda_e), lambda by Newton (the element
-  // equations alone), which keeps every amount positive. A sum of S terms can
+  // to rounding: n_j exp(sum_e a''_ej lambda_e), lambda by Newton (the
+  // element equations alone, in the components' basis, each row to its own
+  // sum of |a''| n), which keeps every amount positive. A sum of S terms can
   // leave about S eps, so the loop may end on its step cap instead of
   // REFORMING_EP_BALANCE_RTOL; the element check after Newton decides.
   for (int it = 0; it < REFORMING_EP_BALANCE_IT; ++it) {
@@ -1134,17 +1274,17 @@ static bool element_potential_start(
     for (std::size_t k = 0; k < E; ++k) {
       double bk = 0.0;
       for (std::size_t q = 0; q < S; ++q) {
-        const double akq = aj[q][el[k]] * std::exp(lnn[q]);
+        const double akq = ap[q][k] * std::exp(lnn[q]);
         bk += akq;
-        for (std::size_t i = 0; i < E; ++i) Jl[k * E + i] += akq * aj[q][el[i]];
+        for (std::size_t i = 0; i < E; ++i) Jl[k * E + i] += akq * ap[q][i];
       }
-      rl[k] = b[el[k]] - bk;
-      if (!(std::abs(rl[k]) <= REFORMING_EP_BALANCE_RTOL * b[el[k]])) balanced = false;
+      rl[k] = bp[k] - bk;
+      if (!(std::abs(rl[k]) <= REFORMING_EP_BALANCE_RTOL * bscale[k])) balanced = false;
     }
     if (balanced) break;
     if (!solve_dense(Jl, rl, E, 1)) return false;
     for (std::size_t q = 0; q < S; ++q) {
-      for (std::size_t k = 0; k < E; ++k) lnn[q] += aj[q][el[k]] * rl[k];
+      for (std::size_t k = 0; k < E; ++k) lnn[q] += ap[q][k] * rl[k];
     }
   }
   if (rebase) {
@@ -1679,11 +1819,24 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
     }
     // Scaled symmetrically (s_a = 1/sqrt(J_aa)): a trace species' rows carry
     // 1/n_j, up to 1e30 at the Jacobian's trace state above.
+    // A subnormal key (subnormal_key_scale) has J_aa = inf and an inf
+    // -nu_k / n_k on its own column of the right-hand side; both are taken
+    // scaled, from the finite forms.
     std::vector<double> sc(m);
     for (std::size_t a = 0; a < m; ++a) sc[a] = 1.0 / std::sqrt(std::max(J[a * m + a], 1e-300));
     for (std::size_t a = 0; a < m; ++a) {
-      for (std::size_t b = 0; b < m; ++b) J[a * m + b] *= sc[a] * sc[b];
+      const bool inf_diag = !std::isfinite(J[a * m + a]);
+      double s_over_nk = 0.0;
+      if (inf_diag) sc[a] = subnormal_key_scale(rx[act[a]], nv, nt_sol, &s_over_nk);
       for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+      if (inf_diag) {
+        const auto &kp = rx[act[a]].nu[rx[act[a]].key];
+        dxi[a * N + kp.first] = sc[a] * rx[act[a]].dn / nt_sol - kp.second * s_over_nk;
+      }
+    }
+    for (std::size_t a = 0; a < m; ++a) {
+      for (std::size_t b = 0; b < m; ++b) J[a * m + b] *= sc[a] * sc[b];
+      if (!std::isfinite(J[a * m + a])) J[a * m + a] = 1.0;
     }
     solve_dense(J, dxi, m, N);
     for (std::size_t a = 0; a < m; ++a) {
