@@ -4006,9 +4006,8 @@ ch = ChannelElement("te", "A", "B", length=0.125, diameter=0.009,
 - **Known gaps:**
   - `T_aw` is borrowed from the smooth correlation, as the impingement
     paths do.
-  - `dh_dT` is the smooth result's relative property sensitivity scaled to
-    `h`; the pin correlations expose no temperature derivative of their
-    own.
+  - `dh_dT` is the array's own, at fixed flow and P: through viscosity (in
+    Re), Pr and conductivity, with `PinFinNuResult.dNu_dPr` (#1254).
 
 ### Impingement-Cooled Walls (jet-plate arrays)
 
