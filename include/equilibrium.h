@@ -42,7 +42,13 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // keyed on CO where it is the scarcer carbon oxide (a lean burn with trace
 // fuel), and a reaction driven toward an absent species (pyrolysis of a fuel
 // with no oxygen too, #1251) is run by a trace,
-// seeding it, and the solve repeated (REFORMING_SEED_FRACTION).
+// seeding it, and the solve repeated (REFORMING_SEED_FRACTION). Where a
+// species is a non-key of that basis (n plus the extents' changes) and
+// scarcer than any species of a component basis -- the most abundant
+// independent species as components, each other species keying its own
+// formation from them -- the component basis is taken (#1288): H2 or CO fuel
+// with a hydrocarbon, cold, left CO2, steam or H2 at 1e-20 to 1e-63 a
+// non-key, and it came back negative.
 constexpr int REFORMING_START_PASSES = 3;
 constexpr double REFORMING_PASS_RTOL = 1e-14;
 constexpr int REFORMING_NEWTON_MAX_IT = 200;

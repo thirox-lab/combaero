@@ -770,6 +770,123 @@ static bool joint_reactions_rich(const ReformingConfig &cfg, const std::vector<d
   return true;
 }
 
+static bool solve_dense(std::vector<double> A, std::vector<double> &B, std::size_t m,
+                        std::size_t k);
+
+// The same reaction space in a component basis (#1288; Smith and Missen's
+// stoichiometric formulation): the most abundant species that are
+// independent in their elements are the components, and every other species
+// of the joint solve keys its own formation from them. Each non-key amount
+// is n plus the extents' changes, and cancels where it is far below them;
+// here the non-keys are the components, the most abundant species there can
+// be, so every scarce species is a key and steps in ln n. False if the
+// present species do not span the present elements.
+static bool joint_reactions_components(const ReformingConfig &cfg,
+                                       const std::vector<double> &n,
+                                       std::vector<JointReaction> &rx) {
+  std::vector<std::size_t> pool = cfg.hc_indices;
+  for (std::size_t j : {cfg.i_H2O, cfg.i_CO, cfg.i_CO2, cfg.i_H2}) pool.push_back(j);
+  auto formula = [](std::size_t j) {
+    const auto &ms = molecular_structures[j];
+    return std::vector<double>{static_cast<double>(ms.C), static_cast<double>(ms.H),
+                               static_cast<double>(ms.O)};
+  };
+  double b[3] = {0.0, 0.0, 0.0};
+  for (std::size_t j : pool) {
+    const auto a = formula(j);
+    for (std::size_t e = 0; e < 3; ++e) b[e] += a[e] * n[j];
+  }
+  std::vector<std::size_t> el;
+  for (std::size_t e = 0; e < 3; ++e) {
+    if (b[e] > 0.0) el.push_back(e);
+  }
+  const std::size_t E = el.size();
+  if (E == 0) return false;
+  auto reduced = [&](std::size_t j) {
+    const auto a = formula(j);
+    std::vector<double> v(E);
+    for (std::size_t k = 0; k < E; ++k) v[k] = a[el[k]];
+    return v;
+  };
+  auto spans_present = [&](std::size_t j) {
+    const auto a = formula(j);
+    for (std::size_t e = 0; e < 3; ++e) {
+      if (a[e] > 0.0 && !(b[e] > 0.0)) return false;
+    }
+    return true;
+  };
+  std::vector<std::size_t> order;
+  for (std::size_t j : pool) {
+    if (n[j] > 0.0) order.push_back(j);
+  }
+  std::stable_sort(order.begin(), order.end(),
+                   [&](std::size_t x, std::size_t y) { return n[x] > n[y]; });
+  std::vector<std::size_t> comp;
+  std::vector<std::vector<double>> red;
+  for (std::size_t j : order) {
+    if (comp.size() == E) break;
+    std::vector<double> v = reduced(j);
+    for (const auto &w : red) {
+      std::size_t pk = 0;
+      for (std::size_t k = 1; k < E; ++k) {
+        if (std::abs(w[k]) > std::abs(w[pk])) pk = k;
+      }
+      const double f = v[pk] / w[pk];
+      for (std::size_t k = 0; k < E; ++k) v[k] -= f * w[k];
+    }
+    double vmax = 0.0;
+    for (double x : v) vmax = std::max(vmax, std::abs(x));
+    if (vmax > REFORMING_EP_COMPONENT_RANK_TOL) {
+      comp.push_back(j);
+      red.push_back(v);
+    }
+  }
+  if (comp.size() < E) return false;
+  // C^T nu = a_j: column c of C^T is component c's formula.
+  std::vector<double> Ct(E * E);
+  for (std::size_t c = 0; c < E; ++c) {
+    const auto v = reduced(comp[c]);
+    for (std::size_t k = 0; k < E; ++k) Ct[k * E + c] = v[k];
+  }
+  rx.clear();
+  for (std::size_t j : pool) {
+    if (std::find(comp.begin(), comp.end(), j) != comp.end() || !spans_present(j)) continue;
+    std::vector<double> nu = reduced(j);
+    if (!solve_dense(Ct, nu, E, 1)) return false;
+    JointReaction r;
+    r.nu.push_back({j, -1.0});
+    r.dn = -1.0;
+    r.key = 0;
+    for (std::size_t c = 0; c < E; ++c) {
+      // Formulas are small integers: a coefficient within rounding of zero
+      // is none (the others are kept as solved, fractions included, so the
+      // reaction conserves the elements).
+      const double v = nu[c];
+      if (std::abs(v) <= REFORMING_EP_COMPONENT_RANK_TOL) continue;
+      r.nu.push_back({comp[c], v});
+      r.dn += v;
+    }
+    rx.push_back(r);
+  }
+  return true;
+}
+
+// The smallest present amount that is no reaction's key: the species that
+// cancels first as the difference of the extents' changes.
+static double joint_min_nonkey(const std::vector<JointReaction> &rx,
+                               const std::vector<double> &n) {
+  std::vector<bool> key(n.size(), false), in(n.size(), false);
+  for (const auto &r : rx) {
+    key[r.nu[r.key].first] = true;
+    for (const auto &p : r.nu) in[p.first] = true;
+  }
+  double m = std::numeric_limits<double>::infinity();
+  for (std::size_t j = 0; j < n.size(); ++j) {
+    if (in[j] && !key[j] && n[j] > 0.0) m = std::min(m, n[j]);
+  }
+  return m;
+}
+
 // ln K_r(T) = -sum_j nu_rj g_j/RT.
 static double joint_lnK(const JointReaction &r, double T) {
   double d = 0.0;
@@ -1407,6 +1524,20 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     rx = joint_reactions(cfg, with_reforming, n[cfg.i_CO] < n[cfg.i_CO2]);
     std::vector<JointReaction> rich;
     if (with_reforming && joint_reactions_rich(cfg, n, rich)) rx = rich;
+    if (with_reforming) {
+      // Then the component basis where its scarcest non-key is more
+      // abundant than this one's (#1288): a non-key far below the extents'
+      // changes cancels, and the element potentials' state came back with it
+      // negative. H2 fuel with a trace of CH4 at 300 K methanates to CO2 at
+      // 2e-30 beside CH4 at 3e-5, CO2 a non-key of the steam-reforming basis
+      // (written back as -1e-21); CO fuel with 0.4 % methane at 250 K leaves
+      // H2 at 1e-22, a non-key of the rich basis (-4e-19).
+      std::vector<JointReaction> comp;
+      if (joint_reactions_components(cfg, n, comp) &&
+          joint_min_nonkey(comp, n) > joint_min_nonkey(rx, n)) {
+        rx = comp;
+      }
+    }
     lnK.assign(rx.size(), 0.0);
     for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
   };
