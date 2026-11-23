@@ -413,8 +413,10 @@ def test_a_zero_air_heptane_combustor_takes_the_arriving_side() -> None:
     one-sided derivative, so the Jacobian was refused. Since #1285 one does,
     and J is the forward one-sided difference: 1.99e6 K per kg/s, to 6e-9 at
     1e-11 kg/s (at 1e-15 the difference is round-off limited, 3e-5: T moves
-    2e-9 K). Not checked an instant later: heptane with oxygen near 1e-15
-    still does not converge everywhere (#1287)."""
+    2e-9 K). An instant later (#1287) it is the same J: with air at 1e-18
+    kg/s, and at 1e-24 kg/s, where steam is subnormal (1.3e-318) and its
+    row's scale is taken in a finite form (4.7e-6 off before sqrt(n_k) was
+    kept apart from n_k / J')."""
     Yf = _fuel_Y({"NC7H16": 1.0})
 
     def burn(ma: float):
@@ -425,6 +427,8 @@ def test_a_zero_air_heptane_combustor_takes_the_arriving_side() -> None:
     an = r.dTt_mix_d_stream[0].d_mdot
     h = 1e-11
     assert (burn(h).Tt_mix - r.Tt_mix) / h == pytest.approx(an, rel=1e-6)
+    for ma in (1e-18, 1e-24):
+        assert burn(ma).dTt_mix_d_stream[0].d_mdot == pytest.approx(an, rel=1e-12), ma
 
 
 @pytest.mark.parametrize("ma", [3e-5, 1e-3, 0.05])
@@ -544,12 +548,13 @@ def test_trace_oxygen_equilibrium_jacobian_is_exact() -> None:
 def test_an_unconverged_equilibrium_is_refused() -> None:
     """The combustor never takes a state, or its Jacobian, the solve did not
     converge to (#1262): combustion_equilibrium_and_jacobian raises there,
-    which the network takes as an unphysical probe. Heptane with a 1e-20 trace
-    of air is one state the solve still misses (#1287); very lean methane at
-    208.5 K, the state this used before, converges since #1285."""
+    which the network takes as an unphysical probe. Heptane with a 1e-22 trace
+    of air is one state the solve still misses: its steam lies below the
+    smallest double (#1290). Very lean methane at 208.5 K (#1285) and heptane
+    with 1e-20 of air (#1287), the states this used before, converge."""
     X = np.zeros(_cb.num_species())
     X[_cb.species_index_from_name("NC7H16")] = 1.0
-    X = (1.0 - 1e-20) * X + 1e-20 * np.array(_X_AIR)
+    X = (1.0 - 1e-22) * X + 1e-22 * np.array(_X_AIR)
     assert not _cb._core.combustion_equilibrium(300.0, X, 2e5).converged
     with pytest.raises(RuntimeError, match="did not converge"):
         _cb._core.combustion_equilibrium_and_jacobian(300.0, X, 2e5)
@@ -743,6 +748,30 @@ def test_a_cold_lean_equilibrium_converges_beside_its_neighbours(
         Tk = T * (1.0 + k * 1e-12)
         assert _cb._core.combustion_equilibrium(Tk, X, P).converged, (fuel, k)
     _cb._core.combustion_equilibrium_and_jacobian(T, X, P)  # does not raise
+
+
+@pytest.mark.parametrize("x_air", [1e-20, 1e-18, 1e-16, 1e-14, 1e-12])
+def test_heptane_with_a_trace_of_air_converges(x_air: float) -> None:
+    """Heptane with a trace of air (#1287): with heptane the only major
+    species, the element-potential start's rows were dominated by it and the
+    traces' share fell below rounding; from 1e-18 down the start is solved in
+    a basis of component species, so a trace component's row holds its own
+    precision. At 1e-20 steam is subnormal (4e-315): its row's Jacobian scale
+    is taken in a finite form, and its residual floor counts the digits it
+    holds. Each state converges. T stays within 500 K per unit air fraction
+    of the zero-air T (about 400 K is measured), which binds from 1e-13 up;
+    below that it is within T's rounding (6e-14 K), so only convergence is
+    checked there."""
+    i = _cb.species_index_from_name("NC7H16")
+    X0 = np.zeros(_cb.num_species())
+    X0[i] = 1.0
+    X = (1.0 - x_air) * X0 + x_air * np.array(_X_AIR)
+    for T in (250.0, 300.0, 500.0, 650.0, 900.0):
+        for P in (2e5, 2e6):
+            r = _cb._core.combustion_equilibrium(T, X, P)
+            assert r.converged, (T, P)
+            T0 = _cb._core.combustion_equilibrium(T, X0, P).state.T
+            assert abs(r.state.T - T0) <= 500.0 * x_air + 1e-12, (T, P)
 
 
 def test_a_cold_lean_start_hands_over_by_its_weighted_correction() -> None:
