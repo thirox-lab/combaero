@@ -909,3 +909,31 @@ def test_h2_or_co_fuel_trace_hydrocarbon_jacobian_matches_central_differences(
             - _cb._core.combustion_equilibrium(T, Xm, P).state.T
         ) / (2.0 * h)
         assert abs(J - fd) <= 1e-5 * abs(fd), (rel, J, fd)
+
+
+@pytest.mark.parametrize(("x_co", "T", "P"), [(0.01291, 300.0, 1e5), (0.05, 600.0, 2e5)])
+def test_pure_co_fuel_in_dry_lean_air_has_its_jacobian(x_co: float, T: float, P: float) -> None:
+    """Pure CO fuel in dry, lean air (#1293): the burn holds CO2 and none of
+    CO, H2 or steam, and only steam is fed (from the inlet's H2O and H2). With
+    steam and CO2 alone the shift can run neither forward (no CO) nor back (no
+    H2), so every trace solve converged with it still left out and the
+    Jacobian was refused (74 of 348 such states). Such a reaction stays left
+    out an instant later, and the derivatives with its extent at zero are
+    exact: each column matches a second-order forward difference."""
+    X = (1.0 - x_co) * np.array(_X_AIR)
+    X[_cb.species_index_from_name("CO")] += x_co
+    jac = _cb._core.combustion_equilibrium_and_jacobian(T, X, P)
+    T0 = jac.state.T
+    scale = max(abs(v) for v in jac.dT_dX)
+    for name in ("H2O", "H2", "CO", "O2", "CO2", "N2"):
+        k = _cb.species_index_from_name(name)
+        h = 1e-7 * max(X[k], 1e-3)
+        Xp, Xq = X.copy(), X.copy()
+        Xp[k] += h
+        Xq[k] += 2.0 * h
+        fd = (
+            4.0 * _cb._core.combustion_equilibrium(T, Xp, P).state.T
+            - 3.0 * T0
+            - _cb._core.combustion_equilibrium(T, Xq, P).state.T
+        ) / (2.0 * h)
+        assert abs(jac.dT_dX[k] - fd) <= 1e-4 * scale, (name, jac.dT_dX[k], fd)

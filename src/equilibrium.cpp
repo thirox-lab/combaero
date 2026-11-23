@@ -1915,6 +1915,30 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
         }
       }
       if (!got) {
+        // A left-out reaction that cannot run either way with the fed species
+        // seeded (an absent species on each side) stays left out an instant
+        // later: the fed species stays as fed, and the derivatives above,
+        // with its extent held at zero, are exact. Pure CO fuel in dry, lean
+        // air (#1293): the burn holds CO2 and none of CO, H2 or steam, and
+        // only steam is fed (from the inlet's H2O and H2); with steam and CO2
+        // alone the shift runs neither forward (no CO) nor back (no H2), so
+        // every trace solve converged with it still left out, and was refused.
+        std::vector<double> n0v = n0;
+        for (std::size_t j = 0; j < ns; ++j) {
+          if (n0v_fed[j]) n0v[j] += REFORMING_JACOBIAN_TRACE * nt0;
+        }
+        bool runnable = false;
+        for (std::size_t r = 0; r < rx.size() && !runnable; ++r) {
+          if (std::find(act.begin(), act.end(), r) != act.end()) continue;
+          bool fwd = true, bwd = true;
+          for (const auto &p : rx[r].nu) {
+            if (!(n0v[p.first] > 0.0)) (p.second < 0.0 ? fwd : bwd) = false;
+          }
+          runnable = fwd || bwd;
+        }
+        got = !runnable;
+      }
+      if (!got) {
         throw std::runtime_error(
             "combustion_equilibrium_and_jacobian: no converged trace state for the one-sided "
             "derivative at an absent fed species (T_in = " +
