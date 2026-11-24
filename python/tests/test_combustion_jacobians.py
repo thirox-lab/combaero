@@ -909,3 +909,70 @@ def test_h2_or_co_fuel_trace_hydrocarbon_jacobian_matches_central_differences(
             - _cb._core.combustion_equilibrium(T, Xm, P).state.T
         ) / (2.0 * h)
         assert abs(J - fd) <= 1e-5 * abs(fd), (rel, J, fd)
+
+
+@pytest.mark.parametrize(
+    ("fuel", "x_f", "T", "P", "air"),
+    [
+        ("CO", 0.01291, 300.0, 1e5, "dry"),
+        ("CO", 0.05, 600.0, 2e5, "dry"),
+        ("H2", 0.02, 500.0, 5e5, "o2n2"),
+    ],
+)
+def test_a_lean_burn_without_steam_or_co2_has_its_jacobian(
+    fuel: str, x_f: float, T: float, P: float, air: str
+) -> None:
+    """A lean burn lacking steam or CO2, with only that carrier fed (#1293).
+    Pure CO fuel in dry air holds CO2 and none of CO, H2 or steam, and only
+    steam is fed (from any hydrogen in the inlet); H2 in O2/N2 has steam and
+    only CO2 fed. The shift can then run neither forward (no CO) nor back (no
+    H2), so every trace solve converged with it still left out and the
+    Jacobian was refused (74 of 348 dry, lean CO states). Its extent is boxed
+    at zero an instant later, and the derivatives with it held there are
+    exact: each column matches a second-order forward difference to 1e-5 of
+    itself, and dT/dP (0) and dT/dT_in match theirs."""
+    if air == "dry":
+        ox = np.array(_X_AIR)
+    else:
+        ox = np.zeros(_cb.num_species())
+        ox[_cb.species_index_from_name("O2")] = 0.21
+        ox[_cb.species_index_from_name("N2")] = 0.79
+    X = (1.0 - x_f) * ox
+    X[_cb.species_index_from_name(fuel)] += x_f
+    jac = _cb._core.combustion_equilibrium_and_jacobian(T, X, P)
+    T0 = jac.state.T
+    scale = max(abs(v) for v in jac.dT_dX)
+    for name in ("H2O", "H2", "CO", "O2", "CO2", "N2"):
+        k = _cb.species_index_from_name(name)
+        if X[k] > 0.0:  # present: central
+            h = 1e-3 * X[k]
+            Xp, Xm = X.copy(), X.copy()
+            Xp[k] += h
+            Xm[k] -= h
+            fd = (
+                _cb._core.combustion_equilibrium(T, Xp, P).state.T
+                - _cb._core.combustion_equilibrium(T, Xm, P).state.T
+            ) / (2.0 * h)
+        else:  # absent: second-order forward, the one-sided slope
+            h = 1e-6
+            Xp, Xq = X.copy(), X.copy()
+            Xp[k] += h
+            Xq[k] += 2.0 * h
+            fd = (
+                4.0 * _cb._core.combustion_equilibrium(T, Xp, P).state.T
+                - 3.0 * T0
+                - _cb._core.combustion_equilibrium(T, Xq, P).state.T
+            ) / (2.0 * h)
+        assert abs(jac.dT_dX[k] - fd) <= 1e-5 * abs(fd) + 1e-9 * scale, (name, jac.dT_dX[k], fd)
+    hP = 1e-6 * P
+    fd_P = (
+        _cb._core.combustion_equilibrium(T, X, P + hP).state.T
+        - _cb._core.combustion_equilibrium(T, X, P - hP).state.T
+    ) / (2.0 * hP)
+    assert abs(jac.dT_dP - fd_P) <= 1e-9, (jac.dT_dP, fd_P)
+    hT = 1e-4
+    fd_T = (
+        _cb._core.combustion_equilibrium(T + hT, X, P).state.T
+        - _cb._core.combustion_equilibrium(T - hT, X, P).state.T
+    ) / (2.0 * hT)
+    assert abs(jac.dT_dT_in - fd_T) <= 1e-7, (jac.dT_dT_in, fd_T)
