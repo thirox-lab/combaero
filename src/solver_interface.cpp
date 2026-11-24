@@ -1493,9 +1493,20 @@ MixerResult combustor_residuals_and_jacobians(
   // Compute X_products from Y_products for the context
   std::vector<double> X_products = mass_to_mole(res.Y_mix);
 
+  // The loss sees the flow the combustor burns (#1239): the total of the
+  // streams in the mix, the one the mixer above weights and spreads Q over.
+  // The signed sum of all streams shrank toward zero, or changed sign, while
+  // gas still arrived beside a leaving stream. The network solver points
+  // each stream it hands a node by its flow's sign, so there the two totals
+  // agree (#1301 is the one known exception); this keeps a direct caller
+  // consistent.
+  const std::vector<bool> in_mix = streams_in_mix(streams);
   double mdot_total = 0.0;
-  for (const auto &s : streams)
-    mdot_total += s.m_dot;
+  for (std::size_t i = 0; i < streams.size(); ++i) {
+    if (in_mix[i]) {
+      mdot_total += streams[i].m_dot;
+    }
+  }
 
   PressureLossContext ctx{
       reactant_state,

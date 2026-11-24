@@ -474,6 +474,8 @@ struct PressureLossContext {
     double theta;                           // T_ad / T_in - 1
     double mdot_fuel, mdot_air, mdot_total; // 0 in the phi-based call
 };
+// mdot_total: the arriving streams' total, the flow the combustor mixes and
+// burns (#1239); a leaving stream is not in it.
 
 using PressureLossCorrelation = std::function<std::tuple<double, double>(const PressureLossContext &)>;
 ```

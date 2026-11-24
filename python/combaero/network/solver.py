@@ -3857,7 +3857,12 @@ class NetworkSolver:
 
             # Elements delivering INTO nid by the sign of their flow (#481). A
             # junction with a reversed port delivers by the sign of its port
-            # flows instead, below (#517).
+            # flows instead, below (#517). So no stream handed to a node is
+            # negative (#1239): a node's signed inflow sum is its arriving
+            # total and its throughput. Exceptions: an inline
+            # MassFlowBoundary's own stream, which only its own node takes,
+            # and a junction port fed by a legacy tee, which has no index of
+            # its own to reverse by (#1301).
             rev_jct = getattr(self, "_rev_junctions", {})
             up_elems = [
                 e

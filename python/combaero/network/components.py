@@ -5005,7 +5005,10 @@ class CombustorNode(NetworkNode):
     ) -> tuple[float, list[float], Any]:
         """Derived T and Y for a combustor (Reaction + Mixing + energy boundaries)."""
 
-        # Store total mass flow and unburned temperature for use in diagnostics
+        # Store total mass flow and unburned temperature for use in diagnostics.
+        # The streams all arrive (the solver points them by sign, #1239;
+        # #1301 is the one known exception), so this is the flow the kernel
+        # burns and the exit flow alike.
         self._total_m_dot = sum(s.m_dot for s in upstream_states) if upstream_states else 1.0
         # T_unburned is the ENTHALPY-mixed reactant temperature (#718), the
         # same mix the C++ combustor context defines theta with; a mass-weighted
