@@ -7,6 +7,7 @@
 #include "../include/thermo.h"
 #include "../include/transport.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <tuple>
@@ -367,10 +368,10 @@ TEST(FannoCreepingFlow1216, RayleighSubFloorPartialsAtEqualTt) {
                                      "haaland", 1.0, -1.0, {}, false)
              .G) /
         (2.0 * hT);
-    EXPECT_NEAR(r0.dG_dTt0, fd_T0, 2e-3 * std::max(std::abs(fd_T0), 1e-9))
-        << "exit_total=" << exit_total;
-    EXPECT_NEAR(r0.dG_dTt_exit, fd_Te, 2e-3 * std::max(std::abs(fd_Te), 1e-9))
-        << "exit_total=" << exit_total;
+    const double dT_scale =
+        std::max({std::abs(r0.dG_dTt0), std::abs(r0.dG_dTt_exit), 1e-9});
+    EXPECT_NEAR(r0.dG_dTt0, fd_T0, 1e-3 * dT_scale) << "exit_total=" << exit_total;
+    EXPECT_NEAR(r0.dG_dTt_exit, fd_Te, 1e-3 * dT_scale) << "exit_total=" << exit_total;
 
     // Continuity of both temperature partials across Tt_exit = Tt0 +- eps
     // (including across c_acc = 0 when exit_total = true). Scale by the
@@ -381,8 +382,6 @@ TEST(FannoCreepingFlow1216, RayleighSubFloorPartialsAtEqualTt) {
         Pt0, Tt0, Tt0 - eps, X, P_target, exit_total, L, D, 0.0, "haaland");
     const FannoChannelFlow r_hi = fanno_rayleigh_channel_flow(
         Pt0, Tt0, Tt0 + eps, X, P_target, exit_total, L, D, 0.0, "haaland");
-    const double dT_scale =
-        std::max({std::abs(r0.dG_dTt0), std::abs(r0.dG_dTt_exit), 1e-9});
     EXPECT_NEAR(r0.dG_dTt0, r_lo.dG_dTt0, 1e-5 * dT_scale) << "exit_total=" << exit_total;
     EXPECT_NEAR(r0.dG_dTt0, r_hi.dG_dTt0, 1e-5 * dT_scale) << "exit_total=" << exit_total;
     EXPECT_NEAR(r0.dG_dTt_exit, r_lo.dG_dTt_exit, 1e-5 * dT_scale)
