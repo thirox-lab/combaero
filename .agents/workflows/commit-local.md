@@ -1,52 +1,36 @@
 ---
-description: Run style checks, units sync validation, commit with message file. Do not push.
+description: Run the checks and make a signed local commit in the task's worktree. Do not push.
 ---
 
-// turbo-all
-This workflow automates the commit process with comprehensive checks and message handling.
+Follow CLAUDE.md ("Working Practice", "Hard Rules"). This workflow is the command sequence only.
 
 ## Steps
 
-### 1. Check for old commit message files
-```bash
-./scripts/check-commit-msg.sh
-```
-Note: If a `COMMIT_MSG.md` exists, review it and delete if stale, or keep to reuse it.
+### 1. Work in the task's worktree
+All commands run in `.claude/worktrees/<name>`, never in the primary checkout. Use the worktree's `.venv` (see CLAUDE.md).
 
-### 2. Run Python formatting and linting
+### 2. Format and lint
 ```bash
-uv run ruff format python/
-uv run ruff check --fix python/
-```
-
-### 3. Run Frontend formatting and linting (Biome)
-```bash
-cd gui/frontend && npm run format && cd ../..
-```
-
-### 4. Check for units synchronization (Mandatory)
-```bash
-uv run pytest python/tests/test_units_sync.py
-```
-
-### 5. Check for non-ASCII characters in C++ source
-```bash
+./scripts/check-python-style.sh --fix
 ./scripts/check-source-style.sh
 ```
+Run `./scripts/check-gui-style.sh` too when `gui/` changed.
 
-### 6. Stage and run pre-commit hooks
+### 3. Units sync and changelog
 ```bash
-git add -A
-uv run pre-commit run --all-files
-git add -A
+uv run pytest python/tests/test_units_sync.py
+uv run scripts/changelog.py check
 ```
+A user-visible change needs a `changelog.d/<id>.<category>.md` fragment. Never edit `CHANGELOG.md` directly.
 
-### 7. Create commit message file
-Create a file named `COMMIT_MSG.md` in the project root with your commit message.
-Follow conventional commit format: `type: brief description`.
-
-### 8. Commit and cleanup
+### 4. Stage the files you changed, by name
 ```bash
-git commit -F COMMIT_MSG.md
-rm COMMIT_MSG.md
+git add <file> <file> ...
 ```
+Never `git add -A`: a worktree can hold build outputs and scratch files.
+
+### 5. Write the message to a file under the worktree's `tmp/` and commit signed
+```bash
+git commit -S -F tmp/commit_msg.txt
+```
+The pre-commit hooks run here. Never `--no-verify`. The message ends with your agent's `Co-Authored-By:` trailer (see GEMINI.md or AGENTS.md).

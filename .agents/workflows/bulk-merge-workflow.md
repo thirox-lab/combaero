@@ -1,5 +1,7 @@
 # Bulk Merge Safe Updates Workflow
 
+**Only when the owner asks for a Dependabot round.** It merges PRs, which agents otherwise never do (CLAUDE.md, "Releases and Dependencies").
+
 This workflow automates the consolidation of verified Dependabot updates into the `main` branch. It ensures that only "green" and "safe" (minor/patch/grouped) updates are merged, significantly reducing manual overhead.
 
 ## Prerequisites

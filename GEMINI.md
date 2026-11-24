@@ -1,87 +1,39 @@
-# CombAero AI/Agent Development Guide
+# CombAero -- Gemini (Antigravity) Instructions
 
-This document outlines the hard rules, coding styles, and project conventions for AI agents (like Gemini, Claude, or Cursor) working on the CombAero project. **These rules must be strictly followed.**
+**[CLAUDE.md](CLAUDE.md) is authoritative for every agent. Read it first, in full, and follow it.** Its hard rules, architecture, working practice, style and git workflow all apply to you unchanged. This file lists only what differs for Gemini. It does not restate CLAUDE.md, so the two cannot drift apart. If a rule here seems to conflict with CLAUDE.md, CLAUDE.md wins; raise the conflict with the owner.
 
-## 1. Hard Rules & Constraints
+A user-level `~/.gemini/GEMINI.md` may carry general defaults (for example a C++ standard or a plan-first rule). In this repo, CLAUDE.md overrides them: the C++ standard is C++17.
 
-*   **No system Python installs:** Agents **must never** install packages into the system Python or use global `pip`.
-*   **Virtual Environment Only:** Always use the project-local virtual environment. `uv` handles this automatically. If you must use a shell, use `uv run` or ensure `.venv` is activated.
-*   **Do not bypass checks:** Never bypass Git pre-commit hooks or GitHub Actions runner checks. All code must pass these checks cleanly.
-*   **Auto-generated files:** Do not manually edit auto-generated files. They will be overwritten. Use the designated scripts to regenerate them.
-*   **Cross-Platform CI Strictness:** GitHub Actions runs compilation and tests across macOS, Windows, and Linux. Ensure all standard library includes (e.g. `<cmath>`, `<vector>`) are explicitly defined. Code that compiles natively on macOS may still fail on Linux/Windows due to stricter compiler requirements.
-*   **API Documentation Synchronization**: If you add, remove, or modify any function signature, struct, property getter/setter, or unit, you **must autonomously** update `include/units_data.h` and the relevant API reference ([API_CPP.md](docs/API_CPP.md) or [API_PYTHON.md](docs/API_PYTHON.md)) to stay in sync. Do not wait for a specific user request to do this.
-*   **CHANGELOG Maintenance**: `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with Semantic Versioning. Every user-visible change (new feature, bug fix, breaking change) must get an entry under the `[Unreleased]` section in the same commit, using the appropriate sub-heading (Added / Changed / Fixed / Removed). At release time the maintainer promotes `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`.
-*   **Documentation Hygiene**: Active references (API, build, workflow, schemas) live in `docs/`. Keep technical reports and design records in `docs/archive/`, and keep core guides focused and high-signal — a doc points at the file that owns a fact rather than transcribing it. Copyrighted third-party documents (papers, scans, figure crops) live in `sources/`, which is never committed (#846).
-*   **Unit Sync Enforcement:** The project strictly enforces that **all** exported Python API elements (functions, class methods/properties) have a corresponding metadata entry in `include/units_data.h`. This is enforced by `python/tests/test_units_sync.py`. If you add a new Python submodule, utility function without physical units, or a structural enum, you **must** add it to the `IGNORE_LIST` in `test_units_sync.py` to prevent CI failures. Conversely, if you add a calculation, you MUST map it in `units_data.h`.
-*   **Solver (f, J) Tuple Rule:** Any code calculation intended to be consumed by the global network solver must expose a dedicated fast-path PyBind11 C++ API returning `std::tuple<double, double>` representing `(value, derivative)`. Mathematical analytical derivatives should be prioritized via the chain-rule for algebraic variables; finite differences should be permanently wrapped and sandboxed inside C++ instead of exposing the noise directly to Python.
-*   **Define Once (Physics Constants):** Never use "magic numbers" for physics coefficients (e.g., empirical correlation constants like 3.7 or 1.11 in the Haaland equation) directly inside `.cpp` files. They must be explicitly defined once as `constexpr` variables inside a conceptually related `namespace` block within the public header (e.g., `include/friction.h`). All subsequent C++ methods, including analytical solver Jacobians, must re-use these centralized header definitions.
-## 2. Coding Style
+## Skills
 
-### C++ (Modern C++17)
+The repo's skills live in `.claude/skills/<name>/SKILL.md`. Read the one that applies and follow it as written:
+- `write-pr`: every PR title and body.
+- `model-provenance`: every physics, correlation, solver or Jacobian change.
 
-*   **Standard:** Use C++17 features (the project baseline).
-*   **Memory Management:** Prefer smart pointers (`std::unique_ptr`, `std::shared_ptr`) over raw pointers. Never use `new` or `delete` manually. Be strictly RAII compliant.
-*   **Header Hygiene:** Use `#pragma once` in all header files. Keep includes sorted and minimal (include what you use).
-*   **Type Safety:** Use `auto` for complex iterator types, but keep variable types explicit where it aids readability.
-*   **Comments:** Use line comments (`//`) only. Block comments (`/* ... */`) are flagged by the style checker.
-*   **Math Constants:** Use `math_constants.h` instead of macros like `M_PI` to ensure MSVC (Windows) does not fail compilation due to missing definitions.
-*   **Encoding:** Only ASCII characters are allowed outside of strings and comments.
+## Attribution
 
-### Python (Type-Safe & Clean)
+- End every commit message with a trailer: `Co-Authored-By: Gemini (Antigravity) <noreply@google.com>`.
+- End every PR body with: `Generated with Antigravity (Gemini)`.
+- Label every PR and issue you open as `agent:gemini`, plus its type and area labels (see CLAUDE.md, "Labels").
 
-*   **Type Hinting:** Mandatory type annotations for all function signatures (arguments and return types). Avoid `Any` unless absolutely necessary.
-*   **Modern Typing:** Use the `|` operator for unions (e.g., `str | None`) instead of `Union` or `Optional` (project targets Python 3.12).
-*   **Explicit Returns:** Always include `-> None` for functions that do not return a value.
-*   **LBYL (Look Before You Leap):** Proactively check conditions rather than relying on `try/except` for control flow.
-*   **Formatting/Linting:** The project uses `ruff` for both linting and formatting. Ensure code complies by running the formatters locally.
-*   **Encoding:** Strictly no non-ASCII characters allowed anywhere in Python files (including docstrings and comments).
+## Limits when running unattended (auto mode, headless `agy -p`)
 
-## 3. Auto-Generated Files & Scripts
+- **Never merge, never queue, never push to `main`.** The owner queues. Never use `gh pr merge`.
+- **Never rewrite a branch that is under review** (no amend, no force-push). Answer a review with new commits. A rebase onto a moved base is allowed when the owner or the reviewer asks for it.
+- **Never edit agent configuration:** `CLAUDE.md`, this file, `AGENTS.md`, `.claude/`, `.agents/`, or any settings file. Propose a change to the owner instead.
+- **Never run `agy` with `--dangerously-skip-permissions`.**
+- **Stop at a decision that is the owner's** (an architecture change, a changed default, a disputed review finding) and say so in the PR or issue.
 
-Several critical files in this project are auto-generated. **Do not modify the targets directly.** Modify the source data or generation script, then run the proper updater.
+## Working with Claude (reviews and pings)
 
-### Units Documentation (`docs/UNITS.md`)
-*   **Source:** `include/units_data.h`
-*   **Action:** If fixing a unit description or adding a section, modify the C++ header, then run `uv run scripts/generate_units_md.py` to regenerate the markdown.
+Claude reviews your PRs before the owner queues them.
+- **GitHub is the record.** Reviews, replies and findings go on the PR or issue as comments. In a review reply, give each finding one line: fixed (commit plus evidence), disputed (reason) or deferred (issue number).
+- **A ping only wakes the other side.** When something is ready for Claude (a PR opened, a review addressed, a question), append one JSON line to `tmp/agent-inbox/claude.jsonl` in the main checkout (`/Users/thiemo/Projects/combaero/tmp/agent-inbox/claude.jsonl`) with a single shell command:
 
-### Thermodynamic & Transport Data (`include/thermo_transport_data.h`)
-*   **Source:** NASA CEA output text files and Cantera YAML mechanisms (external), combined into a local JSON cache.
-*   **Generator Directory:** `thermo_data_generator/`
-*   **Action:** To update the C++ thermo data header, use the scripts inside `thermo_data_generator/` (e.g., `generate_thermo_data.py`). See `thermo_data_generator/README.md` for the exact multi-step process.
+  ```bash
+  printf '%s\n' '{"from":"gemini","ts":"2026-11-24T20:00:00Z","pr":1303,"issue":null,"event":"review-addressed","head":"a857ff8b","note":"one line"}' >> /Users/thiemo/Projects/combaero/tmp/agent-inbox/claude.jsonl
+  ```
 
-## 4. Environment & Tooling Usage
-
-### The Virtual Environment (`.venv`)
-The root `.venv` is the single source of truth for all Python operations in this repository:
-*   Building the C++ Python wheel binding (`scikit-build-core`)
-*   Running C++/Python tests via `pytest`
-*   Running the thermo data generators
-*   Code style checks (`ruff`, `mypy`) via `./scripts/check-python-style.sh`
-
-**To ensure the environment is correct:**
-```bash
-./scripts/bootstrap.sh
-# Then use uv run for any command
-uv run <command>
-```
-
-### Script Execution and Verification
-Before committing code, verify it locally using the provided scripts:
-
-*   **Check C++ Style:** `./scripts/check-source-style.sh`
-*   **Check Python Style (and format):** `./scripts/check-python-style.sh --fix`
-*   **Run Clang-Tidy:** `./scripts/run-clang-tidy.sh` (requires a CMake build directory with `compile_commands.json`)
-*   **Run Test Suites:**
-    *   C++: `cd build && ctest`
-    *   Python: `uv run pytest python/tests`
-    *   Cantera Validation: `CANTERA_DATA="$PWD/cantera_validation_tests" uv run --project cantera_validation_tests pytest -v`
-*   **Verify GUI wheel before publishing:** `./scripts/test-pypi-wheel.sh` — builds the frontend + Python wheel, inspects the wheel to confirm `frontend/dist/assets/` is bundled, then installs in a clean venv and smoke-tests that JS assets are served with the correct MIME type (not `text/html`). The CI `publish-gui.yml` runs an equivalent check automatically, but run this locally before tagging a release. Pass `--skip-frontend` to reuse an existing `gui/frontend/dist/`.
-
-### Version Synchronization
-When updating tool versions or Python targets, ensure the following files remain synchronized:
-1.  `.python-version`
-2.  `ruff.toml` (`target-version`)
-3.  `.github/workflows/ci.yml`
-4.  `.github/workflows/validation-tests.yml`
-5.  `.pre-commit-config.yaml`
-6.  `Makefile` and the `.sh` scripts in `scripts/`
+  `event` is one of `pr-opened`, `review-addressed`, `question`, `blocked`, `test`. Append only; never rewrite or truncate the file.
+- **Claude pings you back** by resuming your conversation (`agy -r <id> -p ...`).
+- **Questions that need the owner** go to the owner, not to Claude.

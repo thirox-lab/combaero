@@ -22,7 +22,10 @@ description: Use when writing or editing a pull request title, body or comment, 
   the worktree is archived. If what is there is key, summarise it in the text
   (the numbers, the reproducer's inputs); if not, omit it. The same holds for
   review-verdict comments.
-- End with the required attribution footer.
+- End with the required attribution footer: the authoring agent's own footer
+  (Gemini's is in GEMINI.md).
+- Label the PR: one type, at least one area, and the author's `agent:` label
+  (CLAUDE.md, "Labels"). The same applies to issues.
 
 ### Standard PR Body Structure
 1. **Summary:** 1-3 bullet points on *what* changed and *why*.
