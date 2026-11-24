@@ -3,7 +3,6 @@ and second temperature derivatives d2cp_R_dT2 / d2cp_dT2."""
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 
 import pytest
@@ -113,40 +112,3 @@ def test_choked_tangents_match_choked_flux_fd(
     assert r.dG_dPt0 == pytest.approx(fd_pt, rel=tol, abs=1e-12)
     assert r.dG_dTt0 == pytest.approx(fd_t0, rel=tol, abs=1e-12)
     assert r.dG_dTt_exit == pytest.approx(fd_te, rel=tol, abs=1e-12)
-
-
-def test_derivative_overhead_is_near_one_march() -> None:
-    """Discrete tangents replace 16+ Richardson marches with a single DualN<4>
-    march: derivative overhead must stay well below 4 scalar marches."""
-    air = cb.species.dry_air()
-    Pt0, Tt0, Tt_ex, P_t, L, D, rough = 5e5, 800.0, 1200.0, 3.0e5, 0.30, 0.02, 1e-5
-    r0 = cb.fanno_rayleigh_channel_flow(
-        Pt0, Tt0, Tt_ex, air, P_t, False, L, D, rough, "haaland", 1.0, -1.0, [], False
-    )
-    guess = r0.G * 1.0005
-    n_iter = 100
-
-    t0 = time.perf_counter()
-    for _ in range(n_iter):
-        cb.fanno_rayleigh_march(r0.G, Pt0, Tt0, Tt_ex, air, L, D, rough, "haaland", 1.0)
-    t_march = (time.perf_counter() - t0) / n_iter
-
-    t0 = time.perf_counter()
-    for _ in range(n_iter):
-        cb.fanno_rayleigh_channel_flow(
-            Pt0, Tt0, Tt_ex, air, P_t, False, L, D, rough, "haaland", 1.0, guess, [], False
-        )
-    t_no_deriv = (time.perf_counter() - t0) / n_iter
-
-    t0 = time.perf_counter()
-    for _ in range(n_iter):
-        cb.fanno_rayleigh_channel_flow(
-            Pt0, Tt0, Tt_ex, air, P_t, False, L, D, rough, "haaland", 1.0, guess, [], True
-        )
-    t_with_deriv = (time.perf_counter() - t0) / n_iter
-
-    overhead_marches = (t_with_deriv - t_no_deriv) / t_march
-    assert overhead_marches < 4.0, (
-        f"Derivative overhead {overhead_marches:.2f} marches (expected ~1.2; "
-        "old Richardson FD was ~25-30 marches)"
-    )

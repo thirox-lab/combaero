@@ -186,7 +186,8 @@ TEST(FannoRayleighTangents1276, ChokedTangentsMatchFiniteDifferencesAllModes) {
 TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
   const auto air = dry_air();
   // Low drive (1.5 Pa on 2 bar): eager (cold) and warm-started tangents must
-  // match cleanly with no FD cancellation scatter.
+  // match cleanly with no FD cancellation scatter, and agree with resolved
+  // march FD of E(G, Pt0, Tt0, Tt_exit).
   const double Pt0 = 2e5;
   const double P_target = Pt0 - 1.5;
   const FannoChannelFlow cold = fanno_rayleigh_channel_flow(
@@ -200,27 +201,60 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
   EXPECT_NEAR(cold.dG_dTt0, warm.dG_dTt0, 1e-8 * std::abs(cold.dG_dTt0));
   EXPECT_NEAR(cold.dG_dTt_exit, warm.dG_dTt_exit, 1e-8 * std::abs(cold.dG_dTt_exit));
 
-  // Extreme near-choke (zeta ~ 1.5e-5 and 1.5e-7): tangents stay finite,
-  // properly signed, and agree with tiny-step FD of E(G, Pt0, Tt0, Tt_exit).
+  auto E_ld = [&](double Gx, double Ptx, double T0x, double Tex) {
+    return fanno_rayleigh_march(Gx, Ptx, T0x, Tex, air, 0.05, 0.01, 1e-5, "haaland", 1.0).P_exit;
+  };
+  const double E_ld_G = richardson_fd([&](double v) { return E_ld(v, Pt0, 600.0, 750.0); }, cold.G,
+                                      5e-3 * cold.G);
+  const double E_ld_Pt = richardson_fd([&](double v) { return E_ld(cold.G, v, 600.0, 750.0); }, Pt0,
+                                       5e-3 * Pt0);
+  const double E_ld_T0 = richardson_fd([&](double v) { return E_ld(cold.G, Pt0, v, 750.0); }, 600.0,
+                                       5e-3 * 600.0);
+  const double E_ld_Te = richardson_fd([&](double v) { return E_ld(cold.G, Pt0, 600.0, v); }, 750.0,
+                                       5e-3 * 750.0);
+  EXPECT_NEAR(cold.dG_dP_target, 1.0 / E_ld_G, 1e-6 * std::abs(1.0 / E_ld_G));
+  EXPECT_NEAR(cold.dG_dPt0, -E_ld_Pt / E_ld_G, 1e-6 * std::abs(E_ld_Pt / E_ld_G));
+  EXPECT_NEAR(cold.dG_dTt0, -E_ld_T0 / E_ld_G, 1e-5 * std::abs(E_ld_T0 / E_ld_G));
+  EXPECT_NEAR(cold.dG_dTt_exit, -E_ld_Te / E_ld_G, 1e-6 * std::abs(E_ld_Te / E_ld_G));
+
+  // Near-choke: check both a cleanly resolved point (1 - G/Gc = 1e-4, step 1e-6
+  // well above round-off and below sonic curvature, agreeing to < 1e-8) and an
+  // extreme near-choke point (1 - G/Gc = 1e-6, step 3e-8 on the FD minimum).
   const double Gc =
       fanno_rayleigh_choked_mass_flux(5e5, 800.0, 1200.0, air, 0.30, 0.02, 1e-5, "haaland", 1.0);
-  const FannoRayleighMarch m_nc = fanno_rayleigh_march(Gc * (1.0 - 1e-6), 5e5, 800.0, 1200.0, air,
-                                                       0.30, 0.02, 1e-5, "haaland", 1.0);
-  const FannoChannelFlow r_nc = fanno_rayleigh_channel_flow(
-      5e5, 800.0, 1200.0, air, m_nc.P_exit, false, 0.30, 0.02, 1e-5, "haaland", 1.0, -1.0, {},
-      true);
-  ASSERT_FALSE(r_nc.choked);
-  EXPECT_LT(r_nc.dG_dP_target, 0.0);
-  EXPECT_GT(r_nc.dG_dPt0, 0.0);
   auto E_nc = [&](double Gx, double Ptx, double T0x, double Tex) {
     return fanno_rayleigh_march(Gx, Ptx, T0x, Tex, air, 0.30, 0.02, 1e-5, "haaland", 1.0).P_exit;
   };
-  const double E_G = richardson_fd([&](double v) { return E_nc(v, 5e5, 800.0, 1200.0); }, r_nc.G,
-                                   1e-8 * r_nc.G);
-  const double E_Pt = richardson_fd([&](double v) { return E_nc(r_nc.G, v, 800.0, 1200.0); }, 5e5,
-                                    1e-8 * 5e5);
-  EXPECT_NEAR(r_nc.dG_dP_target, 1.0 / E_G, 1e-6 * std::abs(1.0 / E_G));
-  EXPECT_NEAR(r_nc.dG_dPt0, -E_Pt / E_G, 1e-6 * std::abs(E_Pt / E_G));
+  {
+    const FannoRayleighMarch m_nc = fanno_rayleigh_march(Gc * (1.0 - 1e-4), 5e5, 800.0, 1200.0, air,
+                                                         0.30, 0.02, 1e-5, "haaland", 1.0);
+    const FannoChannelFlow r_nc = fanno_rayleigh_channel_flow(
+        5e5, 800.0, 1200.0, air, m_nc.P_exit, false, 0.30, 0.02, 1e-5, "haaland", 1.0, -1.0, {},
+        true);
+    ASSERT_FALSE(r_nc.choked);
+    const double E_G =
+        richardson_fd([&](double v) { return E_nc(v, 5e5, 800.0, 1200.0); }, r_nc.G, 1e-6 * r_nc.G);
+    const double E_Pt =
+        richardson_fd([&](double v) { return E_nc(r_nc.G, v, 800.0, 1200.0); }, 5e5, 1e-6 * 5e5);
+    EXPECT_NEAR(r_nc.dG_dP_target, 1.0 / E_G, 1e-7 * std::abs(1.0 / E_G));
+    EXPECT_NEAR(r_nc.dG_dPt0, -E_Pt / E_G, 1e-7 * std::abs(E_Pt / E_G));
+  }
+  {
+    const FannoRayleighMarch m_nc = fanno_rayleigh_march(Gc * (1.0 - 1e-6), 5e5, 800.0, 1200.0, air,
+                                                         0.30, 0.02, 1e-5, "haaland", 1.0);
+    const FannoChannelFlow r_nc = fanno_rayleigh_channel_flow(
+        5e5, 800.0, 1200.0, air, m_nc.P_exit, false, 0.30, 0.02, 1e-5, "haaland", 1.0, -1.0, {},
+        true);
+    ASSERT_FALSE(r_nc.choked);
+    EXPECT_LT(r_nc.dG_dP_target, 0.0);
+    EXPECT_GT(r_nc.dG_dPt0, 0.0);
+    const double E_G =
+        richardson_fd([&](double v) { return E_nc(v, 5e5, 800.0, 1200.0); }, r_nc.G, 3e-8 * r_nc.G);
+    const double E_Pt =
+        richardson_fd([&](double v) { return E_nc(r_nc.G, v, 800.0, 1200.0); }, 5e5, 3e-8 * 5e5);
+    EXPECT_NEAR(r_nc.dG_dP_target, 1.0 / E_G, 1e-6 * std::abs(1.0 / E_G));
+    EXPECT_NEAR(r_nc.dG_dPt0, -E_Pt / E_G, 1e-6 * std::abs(E_Pt / E_G));
+  }
 }
 
 TEST(FannoRayleighTangents1276, CompositionDirectionsMatchFD) {

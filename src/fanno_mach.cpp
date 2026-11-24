@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -1818,6 +1819,21 @@ struct RayleighDuct {
   mutable double T_hint = -1.0;
 };
 
+// Forward-mode discrete tangent of the fixed 32-step RK4 march (#1276).
+// Single DualN<4> instantiation across unchoked and kExit paths (kThroat keeps
+// its smooth G* re-solve):
+//   seed 0: G,  seed 1: Pt0,  seed 2: Tt0,  seed 3: Tt_exit.
+using Dual4 = solver::DualN<4>;
+
+Dual4 lift_dual(double val, double slope, const Dual4& arg) {
+  Dual4 r;
+  r.v = val;
+  for (int i = 0; i < 4; ++i) {
+    r.d[i] = slope * arg.d[i];
+  }
+  return r;
+}
+
 // M^2 from theta without cancellation; theta >= 1/2 (a probe past sonic) is
 // evaluated at M = 1, so the march -- and the choke test -- continue
 // smoothly through it.
@@ -1825,33 +1841,127 @@ double mach2_of_theta(double theta) {
   return 2.0 * theta / (1.0 + std::sqrt(std::max(1.0 - 2.0 * theta, 0.0)));
 }
 
+// M^2(theta) = 2 theta / (1 + sqrt(1 - 2 theta)) with exact derivative
+// d(M^2)/dtheta = 1 / sqrt(1 - 2 theta). For theta >= 1/2 (including the exact
+// sonic start theta = Dual4::constant(0.5) of back_theta_inlet_dual), returns
+// Dual4::constant(1.0) to match std::min(mach2_of_theta(theta), 1.0) without
+// 0 * inf = NaN.
+Dual4 mach2_of_theta_dual(const Dual4& theta) {
+  const double disc = 1.0 - 2.0 * theta.v;
+  if (!(disc > 0.0)) {
+    return Dual4::constant(1.0);
+  }
+  const double s = std::sqrt(disc);
+  Dual4 r;
+  r.v = 2.0 * theta.v / (1.0 + s);
+  const double coef = 1.0 / s;
+  for (int i = 0; i < 4; ++i) {
+    r.d[i] = theta.d[i] * coef;
+  }
+  return r;
+}
+
+// Single-source dtheta/dx = -(1/2) dzeta/dx templated over Scalar (double for
+// primal marches, Dual4 for exact forward-mode discrete tangents).
+template <typename Scalar>
+Scalar rayleigh_dtheta_dx_impl(const Scalar& theta, const Scalar& Tt, const Scalar& dTt_dx,
+                               const Scalar& G_val, const RayleighDuct& d) {
+  constexpr bool kIsDual = !std::is_same_v<Scalar, double>;
+  const std::vector<double>& X = *d.X;
+  auto val_of = [](const Scalar& x) -> double {
+    if constexpr (kIsDual) {
+      return x.v;
+    } else {
+      return x;
+    }
+  };
+  auto sqrt_of = [](const Scalar& x) -> Scalar {
+    if constexpr (kIsDual) {
+      return solver::dsqrt(x);
+    } else {
+      return std::sqrt(x);
+    }
+  };
+
+  Scalar M2;
+  if constexpr (kIsDual) {
+    M2 = mach2_of_theta_dual(theta);
+    if (!(M2.v > 0.0)) {
+      return Dual4::constant(0.0);
+    }
+  } else {
+    M2 = std::min(mach2_of_theta(theta), 1.0);
+    if (!(M2 > 0.0)) {
+      return 0.0;
+    }
+  }
+  const Scalar M = sqrt_of(M2);
+  const double T_v = static_T(val_of(Tt), val_of(M), X, d.T_hint);
+  d.T_hint = T_v;
+
+  const double R = specific_gas_constant(X);
+  const double cpT_v = cp_mass(T_v, X);
+  const double cpTt_v = cp_mass(val_of(Tt), X);
+  const double a2_v = sound_speed_sq(T_v, X);
+  const double da2_v = sound_speed_sq_dT(T_v, X);
+
+  Scalar T, a2, da2, cpT, cpTt;
+  if constexpr (kIsDual) {
+    const double inv_mw = 1000.0 / mwmix(X);
+    const double dcpT_v = dcp_dT(T_v, X) * inv_mw;
+    const double dcpTt_v = dcp_dT(Tt.v, X) * inv_mw;
+    const double d2a2_v = sound_speed_sq_d2T(T_v, X);
+    // Implicit derivative of h(T) + 0.5 * M^2 * a^2(T) - h(Tt) = 0.
+    const double k_v = cpT_v + 0.5 * M2.v * da2_v;
+    T.v = T_v;
+    for (int i = 0; i < 4; ++i) {
+      T.d[i] = (cpTt_v * Tt.d[i] - 0.5 * a2_v * M2.d[i]) / k_v;
+    }
+    a2 = lift_dual(a2_v, da2_v, T);
+    da2 = lift_dual(da2_v, d2a2_v, T);
+    cpT = lift_dual(cpT_v, dcpT_v, T);
+    cpTt = lift_dual(cpTt_v, dcpTt_v, Tt);
+  } else {
+    T = T_v;
+    a2 = a2_v;
+    da2 = da2_v;
+    cpT = cpT_v;
+    cpTt = cpTt_v;
+  }
+
+  const Scalar a = sqrt_of(a2);
+  const Scalar a_T = 0.5 * da2 / a;
+  const Scalar cv = cpT - R;
+  const Scalar k = cpT + 0.5 * M2 * da2;
+  const Scalar u = M * a;
+
+  Scalar f;
+  if constexpr (kIsDual) {
+    f = Dual4::constant(d.fmult);
+  } else {
+    f = d.fmult;
+  }
+  if (*d.model != "fixed") {
+    const double P_v = d.G * R * T_v / val_of(u);
+    if constexpr (kIsDual) {
+      const TransportDerivatives tr = transport_and_dT(T_v, P_v, X);
+      const Dual4 mu = lift_dual(tr.mu, tr.dmu_dT, T);
+      const Dual4 Re = G_val * d.D / mu;
+      const auto [f0, df_dRe] = solver::friction_and_jacobian(*d.model, Re.v, d.rough / d.D).result;
+      f = lift_dual(f0 * d.fmult, df_dRe * d.fmult, Re);
+    } else {
+      f = friction(G_val * d.D / viscosity(T_v, P_v, X), d.rough / d.D, *d.model, d.fmult);
+    }
+  }
+
+  const Scalar gamma = cpT / cv;
+  const Scalar C = (cpTt / k) * (R / u + M * a_T * (1.0 - 1.0 / (gamma * M2)));
+  return 2.0 * k * M2 * M * (f * u / (2.0 * d.D) + C * dTt_dx) / (a * cv);
+}
+
 // dtheta/dx at (theta, Tt) = -(1/2) dzeta/dx.
 double rayleigh_dtheta_dx(double theta, double Tt, double dTt_dx, const RayleighDuct& d) {
-  const std::vector<double>& X = *d.X;
-  const double M2 = std::min(mach2_of_theta(theta), 1.0);
-  if (!(M2 > 0.0)) {
-    return 0.0;
-  }
-  const double M = std::sqrt(M2);
-  const double T = static_T(Tt, M, X, d.T_hint);
-  d.T_hint = T;
-  const double R = specific_gas_constant(X);
-  const double a2 = sound_speed_sq(T, X);
-  const double a = std::sqrt(a2);
-  const double da2 = sound_speed_sq_dT(T, X);
-  const double a_T = 0.5 * da2 / a;
-  const double cpT = cp_mass(T, X);
-  const double cv = cpT - R;
-  const double k = cpT + 0.5 * M2 * da2;
-  const double u = M * a;
-  double f = d.fmult;
-  if (*d.model != "fixed") {
-    const double P = d.G * R * T / u;
-    f = friction(d.G * d.D / viscosity(T, P, X), d.rough / d.D, *d.model, d.fmult);
-  }
-  const double gamma = cpT / cv;
-  const double C = cp_mass(Tt, X) / k * (R / u + M * a_T * (1.0 - 1.0 / (gamma * M2)));
-  return 2.0 * k * M2 * M * (f * u / (2.0 * d.D) + C * dTt_dx) / (a * cv);
+  return rayleigh_dtheta_dx_impl<double>(theta, Tt, dTt_dx, d.G, d);
 }
 
 struct MarchEnd {
@@ -1966,40 +2076,6 @@ double inlet_theta(double Pt0, double Tt0, double G, const std::vector<double>& 
   return M * M - 0.5 * M * M * M * M;
 }
 
-// Forward-mode discrete tangent of the fixed 32-step RK4 march (#1276).
-// Single DualN<4> instantiation across unchoked, kExit and kThroat paths:
-//   seed 0: G,  seed 1: Pt0,  seed 2: Tt0,  seed 3: Tt_exit.
-using Dual4 = solver::DualN<4>;
-
-Dual4 lift_dual(double val, double slope, const Dual4& arg) {
-  Dual4 r;
-  r.v = val;
-  for (int i = 0; i < 4; ++i) {
-    r.d[i] = slope * arg.d[i];
-  }
-  return r;
-}
-
-// M^2(theta) = 2 theta / (1 + sqrt(1 - 2 theta)) with exact derivative
-// d(M^2)/dtheta = 1 / sqrt(1 - 2 theta). For theta >= 1/2 (including the exact
-// sonic start theta = Dual4::constant(0.5) of back_theta_inlet_dual), returns
-// Dual4::constant(1.0) to match std::min(mach2_of_theta(theta), 1.0) without
-// 0 * inf = NaN.
-Dual4 mach2_of_theta_dual(const Dual4& theta) {
-  const double disc = 1.0 - 2.0 * theta.v;
-  if (!(disc > 0.0)) {
-    return Dual4::constant(1.0);
-  }
-  const double s = std::sqrt(disc);
-  Dual4 r;
-  r.v = 2.0 * theta.v / (1.0 + s);
-  const double coef = 1.0 / s;
-  for (int i = 0; i < 4; ++i) {
-    r.d[i] = theta.d[i] * coef;
-  }
-  return r;
-}
-
 // theta_inlet(G, Pt0, Tt0) with exact implicit derivatives from
 // isentropic_flux(Pt0, Tt0, M_in, X) = G.
 Dual4 inlet_theta_dual(double Pt0, double Tt0, double G, const std::vector<double>& X) {
@@ -2023,56 +2099,7 @@ Dual4 inlet_theta_dual(double Pt0, double Tt0, double G, const std::vector<doubl
 // Exact tangent of rayleigh_dtheta_dx with respect to (G, Pt0, Tt0, Tt_exit).
 Dual4 rayleigh_dtheta_dx_dual(const Dual4& theta, const Dual4& Tt, const Dual4& dTt_dx,
                               const Dual4& G_dual, const RayleighDuct& d) {
-  const std::vector<double>& X = *d.X;
-  const Dual4 M2 = mach2_of_theta_dual(theta);
-  if (!(M2.v > 0.0)) {
-    return Dual4::constant(0.0);
-  }
-  const Dual4 M = solver::dsqrt(M2);
-  const double T_v = static_T(Tt.v, M.v, X, d.T_hint);
-  d.T_hint = T_v;
-
-  const double R = specific_gas_constant(X);
-  const double inv_mw = 1000.0 / mwmix(X);
-  const double cpT_v = cp_mass(T_v, X);
-  const double dcpT_v = dcp_dT(T_v, X) * inv_mw;
-  const double cpTt_v = cp_mass(Tt.v, X);
-  const double dcpTt_v = dcp_dT(Tt.v, X) * inv_mw;
-  const double a2_v = sound_speed_sq(T_v, X);
-  const double da2_v = sound_speed_sq_dT(T_v, X);
-  const double d2a2_v = sound_speed_sq_d2T(T_v, X);
-
-  // Implicit derivative of h(T) + 0.5 * M^2 * a^2(T) - h(Tt) = 0.
-  const double k_v = cpT_v + 0.5 * M2.v * da2_v;
-  Dual4 T;
-  T.v = T_v;
-  for (int i = 0; i < 4; ++i) {
-    T.d[i] = (cpTt_v * Tt.d[i] - 0.5 * a2_v * M2.d[i]) / k_v;
-  }
-
-  const Dual4 a2 = lift_dual(a2_v, da2_v, T);
-  const Dual4 da2 = lift_dual(da2_v, d2a2_v, T);
-  const Dual4 a = solver::dsqrt(a2);
-  const Dual4 a_T = 0.5 * da2 / a;
-  const Dual4 cpT = lift_dual(cpT_v, dcpT_v, T);
-  const Dual4 cv = cpT - R;
-  const Dual4 k = cpT + 0.5 * M2 * da2;
-  const Dual4 u = M * a;
-
-  Dual4 f = Dual4::constant(d.fmult);
-  if (*d.model != "fixed") {
-    const double P_v = d.G * R * T_v / u.v;
-    const TransportDerivatives tr = transport_and_dT(T_v, P_v, X);
-    const Dual4 mu = lift_dual(tr.mu, tr.dmu_dT, T);
-    const Dual4 Re = G_dual * d.D / mu;
-    const auto [f0, df_dRe] = solver::friction_and_jacobian(*d.model, Re.v, d.rough / d.D).result;
-    f = lift_dual(f0 * d.fmult, df_dRe * d.fmult, Re);
-  }
-
-  const Dual4 gamma = cpT / cv;
-  const Dual4 cpTt = lift_dual(cpTt_v, dcpTt_v, Tt);
-  const Dual4 C = (cpTt / k) * (R / u + M * a_T * (1.0 - 1.0 / (gamma * M2)));
-  return 2.0 * k * M2 * M * (f * u / (2.0 * d.D) + C * dTt_dx) / (a * cv);
+  return rayleigh_dtheta_dx_impl<Dual4>(theta, Tt, dTt_dx, G_dual, d);
 }
 
 // Forward RK4 march in Dual4 returning exit theta with exact partials in
