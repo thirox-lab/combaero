@@ -16,10 +16,12 @@
 using namespace combaero;
 
 // ---------------------------------------------------------------------------
-// #1216: Compressible ducts at creeping flow must recover Hagen-Poiseuille
-// (to the laminar blend's 1 - w(0)) across all L/D, pressures and exit
-// coupling modes, with C1 continuity of G and all Jacobian partials across
-// kFannoFlowDriveFloor.
+// #1216: Compressible ducts at creeping flow recover Hagen-Poiseuille (to the
+// laminar blend's 1 - w(0)) whenever the incompressible floor-drop fraction
+// chi = dp_inc(at.G) / kFannoFlowDriveFloor >= kFannoLowMachDropHi (satisfied
+// by every unchoked real-gas duct), with continuous value and Jacobian handoff
+// across kFannoFlowDriveFloor away from pre-existing compressible branch flips
+// (#1307).
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -297,7 +299,9 @@ TEST(FannoCreepingFlow1216, SubFloorPartialsMatchFiniteDifferences) {
               EXPECT_NEAR(r.dG_dTt_exit / fd_Te, 1.0, 5e-4)
                   << "L=" << L << " drive=" << drive << " et=" << exit_total;
             }
-            const double hy = 1e-4;
+            // Step 1e-3 sits cleanly on the FD plateau (1e-4 sits in round-off
+            // on heated exit_total ducts under MSVC where ratio dipped to 0.987).
+            const double hy = 1e-3;
             std::vector<double> Yp = Y, Ym = Y;
             Yp[k_o2] += hy;
             Ym[k_o2] -= hy;
@@ -525,46 +529,219 @@ TEST(FannoCreepingFlow1216, StrictlyMonotoneAndBoundedForShortAndChokedDucts) {
     }
   }
 
-  // Case 3: inside the C2 smoothstep window r in (1.25, 2.00) (L = 2.8e-5 m,
-  // D = 0.028 m, Pt0 = 1e5 Pa, exit_total = true where r ~ 1.85 and choked so
-  // sigma = 0), partials including dw/dr * dr/dtheta must match finite
-  // differences to 1e-4.
+  // Case 3: smoothstep window chi = dp_inc(at.G) / kFannoFlowDriveFloor in
+  // [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25].
+  // Covered in full by SonicDropSmoothstepWindowBoundAndContinuous below.
+}
+
+TEST(FannoCreepingFlow1216, CooledSubFloorPartialsMatchFiniteDifferences) {
+  // Cooled exit_total Rayleigh ducts have large d(sigma)/dtheta at the 1 Pa
+  // floor (e.g. Pt0 = 1e5, 400 -> 330 K, L/D = 10 has sigma ~ 1.52 and
+  // dsigma/dTt0 ~ +1.55e-2, dsigma/dTt_exit ~ -3.09e-2). Dropping ds/dtheta
+  // causes an 89% wrong-sign error in dG/dTt0 at drive = 0.5 Pa.
+  const std::vector<double> X = dry_air();
+  const std::vector<double> Y = mole_to_mass(X);
+  const std::size_t k_o2 = species_index_from_name("O2");
+  std::vector<double> v_o2(num_species(), 0.0);
+  v_o2[k_o2] = 1.0;
+  const std::vector<std::vector<double>> dirs = {v_o2};
+
+  struct Case {
+    double Pt0;
+    double Tt0;
+    double Tt_exit;
+    double L;
+    double D;
+    double drive;
+  };
+  const std::vector<Case> cases = {
+      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.3},
+      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.5},
+      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.7},
+      {1.0e5, 400.0, 300.0, 0.10, 0.01, 0.5},
+      {1.0e5, 1500.0, 900.0, 0.01, 0.01, 0.5},
+  };
+
+  for (const Case& c : cases) {
+    const double Pb = c.Pt0 - c.drive;
+    auto eval_G = [&](double p0, double t0, double te, const std::vector<double>& xk, double pb) {
+      return fanno_rayleigh_channel_flow(p0, t0, te, xk, pb, true, c.L, c.D, 0.0, "haaland", 1.0,
+                                         -1.0, {}, false)
+          .G;
+    };
+    const FannoChannelFlow r = fanno_rayleigh_channel_flow(
+        c.Pt0, c.Tt0, c.Tt_exit, X, Pb, true, c.L, c.D, 0.0, "haaland", 1.0, -1.0, dirs, true);
+
+    // Resolved Richardson-extrapolated central FDs (4*D(h/2) - D(h)) / 3
+    auto richardson = [](auto&& f, double h) {
+      const double d1 = (f(h) - f(-h)) / (2.0 * h);
+      const double d2 = (f(0.5 * h) - f(-0.5 * h)) / h;
+      return (4.0 * d2 - d1) / 3.0;
+    };
+
+    const double hp = 2e-4;
+    const double fd_P =
+        richardson([&](double d) { return eval_G(c.Pt0, c.Tt0, c.Tt_exit, X, Pb + d); }, hp);
+    const double fd_Pt =
+        richardson([&](double d) { return eval_G(c.Pt0 + d, c.Tt0, c.Tt_exit, X, Pb); }, hp);
+    const double hT = 0.1;
+    const double fd_T0 =
+        richardson([&](double d) { return eval_G(c.Pt0, c.Tt0 + d, c.Tt_exit, X, Pb); }, hT);
+    const double fd_Te =
+        richardson([&](double d) { return eval_G(c.Pt0, c.Tt0, c.Tt_exit + d, X, Pb); }, hT);
+    const double hy = 2e-3;
+    const double fd_Y = richardson(
+        [&](double d) {
+          std::vector<double> Yk = Y;
+          Yk[k_o2] += d;
+          return eval_G(c.Pt0, c.Tt0, c.Tt_exit, mass_to_mole(Yk), Pb);
+        },
+        hy);
+
+    EXPECT_NEAR(r.dG_dP_target / fd_P, 1.0, 1e-4)
+        << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
+    EXPECT_NEAR(r.dG_dPt0 / fd_Pt, 1.0, 5e-4)
+        << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
+    EXPECT_NEAR(r.dG_dTt0 / fd_T0, 1.0, 1e-2)
+        << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
+    EXPECT_NEAR(r.dG_dTt_exit / fd_Te, 1.0, 5e-3)
+        << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
+    EXPECT_NEAR(r.dG_ddir[0] / fd_Y, 1.0, 1e-2)
+        << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
+  }
+}
+
+TEST(FannoCreepingFlow1216, SonicDropSmoothstepWindowBoundAndContinuous) {
+  // Verifies the gas-dynamics-derived sub-floor choking smoothstep window
+  //   chi = dp_inc(at.G) / kFannoFlowDriveFloor in [kFannoLowMachDropLo=0.125, kFannoLowMachDropHi=0.25]
+  // (below the exact Fanno sonic limit (2/(gamma+1))^((gamma+1)/(gamma-1)) = 0.3349
+  // for gamma = 1.4) fails if the window is removed, moved lower/higher, or replaced
+  // by a hard switch.
+  const std::vector<double> X = dry_air();
+  const double Pt0 = 1.0e5;
+  const double Tt0 = 300.0;
+  const double D = 0.028;
+  const double floor = kFannoFlowDriveFloor;
+  const double drive = 0.4;
+  const double t = drive / floor;
+
+  // Helper: pure odd cubic value and zero-drive slope at (Pt0, Tt0, L, D).
+  auto odd_cubic_ref = [&](double L, double d_eval) {
+    const FannoChannelFlow at =
+        fanno_channel_flow(Pt0, Tt0, X, Pt0 - floor, true, L, D, 0.0, "haaland");
+    const double sigma = std::clamp(-at.dG_dP_target * floor / at.G, 0.0, kDriveFloorSigmaMax);
+    const DriveFloorCubic c = drive_floor_cubic(d_eval / floor, sigma);
+    return std::make_pair(at.G * c.h, at.G * c.dh / floor);
+  };
+
+  // 1. Below chi = 0.125 (L = 1e-9 m has chi ~ 1.2e-5; L = 1e-5 m has chi ~ 0.118):
+  //    must equal the pure odd cubic (fails if window is removed or moved lower).
   {
-    const double L_mid = 2.8e-5;
-    const double D_mid = 0.028;
-    const double Tt0 = 300.0;
-    const double drive = 0.4;
+    const double P_target = Pt0 - drive;
+    const double dp_actual = Pt0 - P_target;
+    for (const double L_lo : {1.0e-9, 1.0e-5}) {
+      const auto [G_cub, dG0_cub] = odd_cubic_ref(L_lo, dp_actual);
+      const auto [G_cub0, slope0_cub] = odd_cubic_ref(L_lo, 0.0);
+      (void)G_cub0;
+      const FannoChannelFlow r =
+          fanno_channel_flow(Pt0, Tt0, X, P_target, true, L_lo, D, 0.0, "haaland");
+      const FannoChannelFlow r0 =
+          fanno_channel_flow(Pt0, Tt0, X, Pt0, true, L_lo, D, 0.0, "haaland");
+      EXPECT_NEAR(r.G / G_cub, 1.0, 1e-12) << "L=" << L_lo;
+      EXPECT_NEAR(-r0.dG_dP_target / slope0_cub, 1.0, 1e-12) << "L=" << L_lo;
+      EXPECT_GT(dG0_cub, 0.0);
+    }
+  }
+
+  // 2. Inside chi in (0.125, 0.25) (L = 1.5e-5 m has chi ~ 0.177):
+  //    G lies strictly between pure odd cubic and pure viscous rational cubic
+  //    (fails if replaced by a hard switch or moved out of [0.125, 0.25]),
+  //    and all partials including dw/dchi * dchi/dtheta match FD to 1e-4.
+  {
+    const double L_mid = 1.5e-5;
     const double Pb = Pt0 - drive;
     const FannoChannelFlow r =
-        fanno_channel_flow(Pt0, Tt0, X, Pb, true, L_mid, D_mid, 0.0, "haaland");
+        fanno_channel_flow(Pt0, Tt0, X, Pb, true, L_mid, D, 0.0, "haaland");
+    const auto [G_cub, unused_s] = odd_cubic_ref(L_mid, Pt0 - Pb);
+    (void)unused_s;
+    const FannoChannelFlow at =
+        fanno_channel_flow(Pt0, Tt0, X, Pt0 - floor, true, L_mid, D, 0.0, "haaland");
+    EXPECT_GT(r.G, G_cub + 0.05 * (at.G - G_cub));
+    EXPECT_LT(r.G, at.G - 0.05 * (at.G - G_cub));
+
     const double hp = 1e-4;
     const double fd_P =
-        (fanno_channel_flow(Pt0, Tt0, X, Pb + hp, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
-                            {}, false)
+        (fanno_channel_flow(Pt0, Tt0, X, Pb + hp, true, L_mid, D, 0.0, "haaland", 1.0, -1.0, {},
+                            false)
              .G -
-         fanno_channel_flow(Pt0, Tt0, X, Pb - hp, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
-                            {}, false)
+         fanno_channel_flow(Pt0, Tt0, X, Pb - hp, true, L_mid, D, 0.0, "haaland", 1.0, -1.0, {},
+                            false)
              .G) /
         (2.0 * hp);
     const double fd_Pt =
-        (fanno_channel_flow(Pt0 + hp, Tt0, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
-                            {}, false)
+        (fanno_channel_flow(Pt0 + hp, Tt0, X, Pb, true, L_mid, D, 0.0, "haaland", 1.0, -1.0, {},
+                            false)
              .G -
-         fanno_channel_flow(Pt0 - hp, Tt0, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
-                            {}, false)
+         fanno_channel_flow(Pt0 - hp, Tt0, X, Pb, true, L_mid, D, 0.0, "haaland", 1.0, -1.0, {},
+                            false)
              .G) /
         (2.0 * hp);
     const double hT = 1e-3 * Tt0;
     const double fd_T0 =
-        (fanno_channel_flow(Pt0, Tt0 + hT, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
-                            {}, false)
+        (fanno_channel_flow(Pt0, Tt0 + hT, X, Pb, true, L_mid, D, 0.0, "haaland", 1.0, -1.0, {},
+                            false)
              .G -
-         fanno_channel_flow(Pt0, Tt0 - hT, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
-                            {}, false)
+         fanno_channel_flow(Pt0, Tt0 - hT, X, Pb, true, L_mid, D, 0.0, "haaland", 1.0, -1.0, {},
+                            false)
              .G) /
         (2.0 * hT);
     EXPECT_NEAR(r.dG_dP_target / fd_P, 1.0, 1e-4);
     EXPECT_NEAR(r.dG_dPt0 / fd_Pt, 1.0, 5e-4);
     EXPECT_NEAR(r.dG_dTt0 / fd_T0, 1.0, 1e-4);
+  }
+
+  // 3. Continuity across chi = 0.125 and chi = 0.25: stepping L in 2% increments
+  //    from L = 1e-5 m (chi ~ 0.118) to 3e-5 m (chi ~ 0.35) produces no jump
+  //    larger than 5% of at.G (a hard switch jumps by ~35% of at.G in one step).
+  {
+    const FannoChannelFlow at_ref =
+        fanno_channel_flow(Pt0, Tt0, X, Pt0 - floor, true, 1.5e-5, D, 0.0, "haaland");
+    double prev_G =
+        fanno_channel_flow(Pt0, Tt0, X, Pt0 - drive, true, 1.0e-5, D, 0.0, "haaland").G;
+    for (int k = 1; k <= 56; ++k) {
+      const double L_k = 1.0e-5 * std::pow(1.02, k);
+      const double G_k =
+          fanno_channel_flow(Pt0, Tt0, X, Pt0 - drive, true, L_k, D, 0.0, "haaland").G;
+      EXPECT_LT(std::abs(G_k - prev_G), 0.05 * at_ref.G) << "jump at L=" << L_k;
+      prev_G = G_k;
+    }
+  }
+
+  // 4. Above chi = 0.25: unchoked short exit_total ducts (L = 3.0e-5 m at D = 0.028 m
+  //    with chi ~ 0.35; 1 bar L/D = 1e-3 with chi ~ 0.40; 1 bar L/D = 1e-2 with
+  //    chi ~ 0.92; 1 kPa L/D = 1 with chi ~ 1.0) must recover exact Hagen-Poiseuille
+  //    as drive -> 0 (fails if window is moved higher above chi = 0.35).
+  struct ShortCase {
+    double P0;
+    double L;
+    double D_c;
+  };
+  const std::vector<ShortCase> short_cases = {
+      {1.0e5, 3.0e-5, 0.028},
+      {1.0e5, 1.0e-5, 0.01},
+      {1.0e5, 1.0e-4, 0.01},
+      {1.0e3, 1.0e-2, 0.01},
+  };
+  for (const ShortCase& sc : short_cases) {
+    // Use tiny drive well below dp_inert so dynamic/turbulent head is negligible,
+    // and evaluate hp_flux at dp_actual = P0 - (P0 - dp) to avoid float64 ULP bias.
+    const double dp = 1e-9;
+    const double P_target = sc.P0 - dp;
+    const double dp_actual = sc.P0 - P_target;
+    const double g_hp = hp_flux(sc.P0, Tt0, X, dp_actual, sc.L, sc.D_c, "haaland");
+    const FannoChannelFlow r =
+        fanno_channel_flow(sc.P0, Tt0, X, P_target, true, sc.L, sc.D_c, 0.0, "haaland");
+    EXPECT_NEAR(r.G / g_hp, 1.0, 1e-4)
+        << "Pt0=" << sc.P0 << " L=" << sc.L << " D=" << sc.D_c << " t=" << t;
   }
 }

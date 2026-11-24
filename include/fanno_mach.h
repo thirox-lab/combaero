@@ -119,22 +119,30 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 // recovered there, not lost (see "Drive conventions" in docs/API_PYTHON.md).
 //
 // Below kFannoFlowDriveFloor of drive (Pt0 - P_target):
+//   - out.choked is always false below the floor (G < at.G and dG/dP_target < 0).
 //   - For every registered viscous friction model with f_multiplier > 0, the
 //     duct solves the low-Mach viscous/inertial momentum balance directly in
 //     drive (using a C1 unconditionally-monotone continuation for negative
 //     cooling acceleration so it never folds or loses Pt0 - P precision,
-//     recovering Hagen-Poiseuille as drive -> 0 across all L/D, pressures, and
-//     heating/cooling regimes, #1216) and hands off C1 to the compressible
-//     kernel at kFannoFlowDriveFloor via a shape-preserving rational cubic
+//     recovering Hagen-Poiseuille as drive -> 0 whenever the incompressible
+//     pressure drop at the floor flux satisfies dp_inc(at.G) / floor >=
+//     kFannoLowMachDropHi, #1216) and hands off C1 to the compressible kernel
+//     at kFannoFlowDriveFloor via a shape-preserving rational cubic
 //     y(u) = P(u) / Q(u) on u = low.G / low_1.G (strictly monotone and bounded
-//     in [0, at.G] for all r = low_1.G / at.G > 0 and s >= 0, with C1
-//     continuity of value and all partials at drive = kFannoFlowDriveFloor).
-//     When the incompressible floor flux overshoots the compressible sonic
-//     limit (r = low_1.G / at.G in [kFannoLowMachRatioLo, kFannoLowMachRatioHi],
-//     e.g. vanishingly short L -> 0 or f_multiplier -> 0 ducts whose viscous
-//     transition collapses far below 1 Pa), a C2 quintic smoothstep blends
-//     smoothly into the odd cubic of flow_drive_floor.h so the f_multiplier -> 0
-//     and L -> 0 limits are regular and continuous.
+//     in [0, at.G] for all r = low_1.G / at.G > 0 and s >= 0, with exact
+//     floor-slope derivatives ds/dtheta via Schwartz mixed partials so value
+//     and all five partials match FD in the blend interior and hand off
+//     continuously at drive = kFannoFlowDriveFloor away from pre-existing
+//     compressible branch flips such as #1307).
+//     When vanishing length (L -> 0) or f_multiplier -> 0 chokes the duct well
+//     below kFannoFlowDriveFloor, the incompressible floor drop fraction
+//     chi = dp_inc(at.G) / kFannoFlowDriveFloor falls below the exact Fanno
+//     sonic limit (2 / (gamma + 1))^((gamma + 1) / (gamma - 1)) in [0.316, 0.368]
+//     (0.3349 for air, gamma = 1.4). Across the binary octave below all real-gas
+//     sonic limits [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25],
+//     a C2 quintic smoothstep blends smoothly into the odd cubic of
+//     flow_drive_floor.h so sub-floor choked ducts do not compress their entire
+//     ramp into a stiff boundary layer and L -> 0 / f_multiplier -> 0 stay regular.
 //   - For fixed/frictionless ducts (model == "fixed" or f_multiplier <= 0,
 //     where the laminar slope is infinite at zero drive), the flux is blended
 //     C1 into the odd cubic of flow_drive_floor.h.
@@ -166,17 +174,34 @@ struct FannoChannelFlow {
 // low-Mach viscous closure (#1216) or odd-cubic floor (flow_drive_floor.h).
 constexpr double kFannoFlowDriveFloor = 1.0;
 
-// C2 smoothstep window on r = low_1.G / at.G (incompressible-to-compressible
-// mass-flux ratio at kFannoFlowDriveFloor) blending the viscous rational cubic
-// into the odd-cubic floor when compressible choking caps at.G well below
-// low_1.G (vanishingly short L -> 0 or f_multiplier -> 0 ducts).
-//   r <= 1.25: subsonic regime (M <= ~0.55 for gamma = 1.4, and all cooled
-//              exit_total ducts where r <= 1): weight = 1 (pure viscous HP).
-//   r >= 2.00: deeply choked plateau (low_1.G >= 2 * G_sonic, viscous knee
-//              collapsed far below 1 Pa): weight = 0 (pure odd cubic, matching
-//              the f_multiplier = 0 limit continuously).
-constexpr double kFannoLowMachRatioLo = 1.25;
-constexpr double kFannoLowMachRatioHi = 2.00;
+// C2 smoothstep window on chi = dp_inc(at.G) / kFannoFlowDriveFloor, the ratio
+// of the incompressible pressure drop required to pass the floor flux at.G to
+// the 1 Pa drive floor:
+//   - For any unchoked Fanno duct of a real gas (gamma in [1, 5/3]), the exact
+//     sonic-limit ratio is (2 / (gamma + 1))^((gamma + 1) / (gamma - 1)) in
+//     [0.316, 0.368] (0.3349 for air, gamma = 1.4), strictly above 0.25.
+//   - chi >= 0.25: every unchoked duct (and every Rayleigh-cooled duct choked
+//     by negative acceleration) takes weight = 1 (pure viscous rational cubic,
+//     recovering exact Hagen-Poiseuille as drive -> 0).
+//   - chi <= 0.125: one binary octave lower, ducts already choked deep inside
+//     [0, 1 Pa] (e.g. L = 1 um bleed segments, L = 1 nm bypass lead-ins, or
+//     f_multiplier -> 0) take weight = 0 (pure odd cubic, preventing a stiff
+//     sub-floor choking boundary layer).
+constexpr double kFannoLowMachDropLo = 0.125;
+constexpr double kFannoLowMachDropHi = 0.25;
+
+// Optimal finite-difference steps for floor log-slope derivatives d(sigma)/dtheta
+// at drive = kFannoFlowDriveFloor:
+//   - kFannoFloorSigmaDriveStep: 4-point O(h^4) central-difference step fraction
+//     around kFannoFlowDriveFloor for Schwartz mixed partials
+//     d/dtheta (dG/ddrive) = d/ddrive (dG/dtheta). For the compressible kernel's
+//     ~2e-6 relative derivative noise in Pt0/Tt0/Tt_exit and O(10^2) fifth-
+//     derivative curvature near cooling/transition bends, h4* ~ (15/4 * eps / M5)^(1/5)
+//     ~ 0.03 cancels O(h^2) curvature without amplifying root-rounding noise.
+//   - kFannoFloorSigmaDirScale: multiplier on kFannoDirStep (1e-5 -> 1e-3) for
+//     direct directional differentiation of sigma(X) without raw_flow d_ddir noise.
+constexpr double kFannoFloorSigmaDriveStep = 0.03;
+constexpr double kFannoFloorSigmaDirScale = 100.0;
 
 FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<double>& X,
                                     double P_target, bool exit_total, double L, double D,

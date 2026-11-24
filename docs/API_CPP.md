@@ -804,14 +804,17 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // pressure if exit_total, else its exit static -- with dG/dPt0, dG/dTt0,
 // dG/dP_target. Monotone in P_target, saturating exactly at the choked flux
 // (choked = true, dG/dP_target = 0); 0 at or below zero drive. Below
-// kFannoFlowDriveFloor = 1 Pa, registered viscous friction models solve the
-// low-Mach viscous/inertial balance directly in drive (recovering exact
-// Hagen-Poiseuille as drive -> 0 across all L/D, pressures and thermal regimes)
+// kFannoFlowDriveFloor = 1 Pa, out.choked is always false (G < at.G and
+// dG/dP_target < 0). Registered viscous friction models solve the low-Mach
+// viscous/inertial balance directly in drive (recovering exact Hagen-Poiseuille
+// as drive -> 0 whenever chi = dp_inc(at.G) / kFannoFlowDriveFloor >=
+// kFannoLowMachDropHi = 0.25, which holds for every unchoked real-gas duct
+// since the Fanno sonic limit (2/(gamma+1))^((gamma+1)/(gamma-1)) >= 0.316)
 // and hand off C1 to the floor state via a shape-preserving rational cubic
-// (#1216), blending smoothly over r = low_1.G / at.G in
-// [kFannoLowMachRatioLo = 1.25, kFannoLowMachRatioHi = 2.00] into the odd cubic
-// of flow_drive_floor.h when compressible choking caps the 1 Pa flux well below
-// the incompressible one; fixed/frictionless ducts use the odd cubic directly.
+// (#1216), blending smoothly over chi in [kFannoLowMachDropLo = 0.125,
+// kFannoLowMachDropHi = 0.25] into the odd cubic of flow_drive_floor.h when
+// vanishing length (L -> 0) or f_multiplier -> 0 chokes the duct deep below
+// 1 Pa; fixed/frictionless ducts use the odd cubic directly.
 // At exactly zero drive G = 0 with the branch's finite slope in dG/dP_target
 // and dG/dPt0 (#1209), where M_in and M_exit are re-evaluated at the blended G
 // (#1017) and M_exit_root keeps the floor root's exit Mach (the warm start for
