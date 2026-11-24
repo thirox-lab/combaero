@@ -446,6 +446,8 @@ friction_and_jacobian_petukhov(double Re);
 // based on a string tag matching FrictionModelLiteral from Python.
 //
 // tag must be one of: "haaland", "serghides", "colebrook", "petukhov"
+// (Registry::available_friction_models). An unknown tag throws
+// std::invalid_argument (#1213).
 //
 // Returns:
 //   tuple(f, d_f_d_Re)

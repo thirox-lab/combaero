@@ -388,13 +388,10 @@ friction_and_jacobian_petukhov(double Re) {
 
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian(const std::string &tag, double Re, double e_D) {
-  if (Registry::get().has_friction_model(tag)) {
-    return Registry::get().get_friction_model(tag)(Re, e_D);
-  }
-  return {{0.0, 0.0},
-          CorrelationValidity::INVALID,
-          "friction_and_jacobian: unknown tag '" + tag +
-              "'. Must be a registered friction model."};
+  // An unknown tag throws (#1213), as Registry::get_friction_model and
+  // friction_f_re_at_zero do. Every consumer reads .result, so the INVALID
+  // {0, 0} this returned made a typo a frictionless duct that solved.
+  return Registry::get().get_friction_model(tag)(Re, e_D);
 }
 
 double laminar_blend_f_re_at_zero() {
