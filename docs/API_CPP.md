@@ -811,10 +811,12 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // kFannoLowMachDropHi = 0.25, which holds for every unchoked real-gas duct
 // since the Fanno sonic limit (2/(gamma+1))^((gamma+1)/(gamma-1)) >= 0.316)
 // and hand off C1 to the floor state via a shape-preserving rational cubic
-// (#1216), blending smoothly over chi in [kFannoLowMachDropLo = 0.125,
-// kFannoLowMachDropHi = 0.25] into the odd cubic of flow_drive_floor.h when
-// vanishing length (L -> 0) or f_multiplier -> 0 chokes the duct deep below
-// 1 Pa; fixed/frictionless ducts use the odd cubic directly.
+// (#1216), blending smoothly across a chosen binary octave inside the derived
+// sonic bound (chi in [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25])
+// into the odd cubic of flow_drive_floor.h when vanishing length (L -> 0) or
+// f_multiplier -> 0 chokes the duct deep below 1 Pa; fixed/frictionless ducts
+// use the odd cubic directly. Note: adiabatic static-exit sub-floor dG_ddir
+// inherits raw_flow's pre-existing 1 Pa d_ddir cancellation noise.
 // At exactly zero drive G = 0 with the branch's finite slope in dG/dP_target
 // and dG/dPt0 (#1209), where M_in and M_exit are re-evaluated at the blended G
 // (#1017) and M_exit_root keeps the floor root's exit Mach (the warm start for

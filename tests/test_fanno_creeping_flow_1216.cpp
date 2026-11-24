@@ -553,13 +553,22 @@ TEST(FannoCreepingFlow1216, CooledSubFloorPartialsMatchFiniteDifferences) {
     double L;
     double D;
     double drive;
+    double tol_P;
+    double tol_Pt;
+    double tol_T0;
+    double tol_Te;
+    double tol_Y;
   };
+  // Per-case tolerances tightened to ~3-10x above the measured error floor
+  // (e.g. 400 -> 330 K at 0.3/0.5/0.7 Pa: eT0 = 6.9e-5/5.8e-4/7.4e-4,
+  // eTe = 9.0e-5/2.0e-4/2.4e-4, eY = 2.5e-3/4.3e-3/4.9e-3; 400 -> 300 K:
+  // eT0 = 8.7e-6, eTe = 1.2e-5, eY = 1.9e-4; 1500 -> 900 K: < 1e-7).
   const std::vector<Case> cases = {
-      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.3},
-      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.5},
-      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.7},
-      {1.0e5, 400.0, 300.0, 0.10, 0.01, 0.5},
-      {1.0e5, 1500.0, 900.0, 0.01, 0.01, 0.5},
+      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.3, 1e-5, 5e-4, 1.0e-3, 1.0e-3, 8.0e-3},
+      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.5, 1e-5, 5e-4, 2.5e-3, 1.5e-3, 8.0e-3},
+      {1.0e5, 400.0, 330.0, 0.10, 0.01, 0.7, 1e-5, 5e-4, 2.5e-3, 1.5e-3, 8.0e-3},
+      {1.0e5, 400.0, 300.0, 0.10, 0.01, 0.5, 1e-5, 1e-4, 2.0e-4, 2.0e-4, 2.0e-3},
+      {1.0e5, 1500.0, 900.0, 0.01, 0.01, 0.5, 1e-5, 1e-5, 1.0e-6, 1.0e-6, 1.0e-5},
   };
 
   for (const Case& c : cases) {
@@ -600,25 +609,26 @@ TEST(FannoCreepingFlow1216, CooledSubFloorPartialsMatchFiniteDifferences) {
         },
         hy);
 
-    EXPECT_NEAR(r.dG_dP_target / fd_P, 1.0, 1e-4)
+    EXPECT_NEAR(r.dG_dP_target / fd_P, 1.0, c.tol_P)
         << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
-    EXPECT_NEAR(r.dG_dPt0 / fd_Pt, 1.0, 5e-4)
+    EXPECT_NEAR(r.dG_dPt0 / fd_Pt, 1.0, c.tol_Pt)
         << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
-    EXPECT_NEAR(r.dG_dTt0 / fd_T0, 1.0, 1e-2)
+    EXPECT_NEAR(r.dG_dTt0 / fd_T0, 1.0, c.tol_T0)
         << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
-    EXPECT_NEAR(r.dG_dTt_exit / fd_Te, 1.0, 5e-3)
+    EXPECT_NEAR(r.dG_dTt_exit / fd_Te, 1.0, c.tol_Te)
         << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
-    EXPECT_NEAR(r.dG_ddir[0] / fd_Y, 1.0, 1e-2)
+    EXPECT_NEAR(r.dG_ddir[0] / fd_Y, 1.0, c.tol_Y)
         << "T=" << c.Tt0 << "->" << c.Tt_exit << " drive=" << c.drive;
   }
 }
 
 TEST(FannoCreepingFlow1216, SonicDropSmoothstepWindowBoundAndContinuous) {
-  // Verifies the gas-dynamics-derived sub-floor choking smoothstep window
+  // Pins the chosen binary-octave smoothstep window inside the derived Fanno
+  // sonic bound ((2/(gamma+1))^((gamma+1)/(gamma-1)) >= 0.316 for real gases,
+  // 0.3349 for gamma = 1.4):
   //   chi = dp_inc(at.G) / kFannoFlowDriveFloor in [kFannoLowMachDropLo=0.125, kFannoLowMachDropHi=0.25]
-  // (below the exact Fanno sonic limit (2/(gamma+1))^((gamma+1)/(gamma-1)) = 0.3349
-  // for gamma = 1.4) fails if the window is removed, moved lower/higher, or replaced
-  // by a hard switch.
+  // Fails if the chosen window is removed, moved lower/higher, or replaced by
+  // a hard switch.
   const std::vector<double> X = dry_air();
   const double Pt0 = 1.0e5;
   const double Tt0 = 300.0;

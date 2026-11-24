@@ -32,9 +32,10 @@ takes its own level, between two bounds:
   Neville-Richardson column ``R2`` on the same ``D`` ladder (zero extra
   residual evaluations) only if its 3-window spread is strictly tighter, and
   if still above ``UNRESOLVED`` at the bottom of the 2x halving ladder
-  inserts geometric midpoints (``sqrt(2)`` step ratio) around the unresolved
-  step window so a 3-window fits inside the narrow sweet spot between a
-  ~1e-3 Pa zero-crossing / transition knee and IEEE-754 pressure round-off;
+  evaluates a separate finer 1.5x geometric ladder around the unresolved step
+  window (fitting a 3-window into a 2.25x span without perturbing already-
+  resolved rows in the same column) and adopts it per unresolved row only when
+  its 3-window spread is strictly tighter;
 * below, round-off: the ladder never steps below ``P_STEP_FLOOR |P|`` (or
   ``P_SUBFLOOR_STEP_FLOOR |P|`` for a sub-floor duct row).
 
@@ -376,27 +377,25 @@ class _Column:
             if self.can_extend(floor_frac):
                 self._add(max(self.h[-1] / 2.0, lo))
 
-    def refine_around(self, target_steps: list[float]) -> bool:
-        """Insert geometric midpoints (sqrt(2) step ratio) for intervals
-        bracketing ``target_steps``, keeping levels sorted by decreasing h.
-        Returns True if any new level was added."""
-        mids: set[float] = set()
-        h_arr = np.array(self.h)
-        for h_t in target_steps:
-            k_near = int(np.argmin(np.abs(h_arr - h_t)))
-            for k in range(max(0, k_near - 2), min(len(self.h) - 1, k_near + 2)):
-                if self.h[k] / self.h[k + 1] > 1.6:
-                    mids.add(float(np.sqrt(self.h[k] * self.h[k + 1])))
-        if not mids:
-            return False
-        for hm in sorted(mids, reverse=True):
-            self._add(hm)
-        order = sorted(range(len(self.h)), key=lambda idx: self.h[idx], reverse=True)
-        self.h = [self.h[idx] for idx in order]
-        self.D = [self.D[idx] for idx in order]
-        self.dp = [self.dp[idx] for idx in order]
-        self.dm = [self.dm[idx] for idx in order]
-        return True
+    def refined_subfloor_column(
+        self, target_steps: list[float], floor_frac: float, ratio: float = 1.5
+    ) -> _Column | None:
+        """Build a separate geometric ladder with finer step ``ratio`` (1.5x)
+        around ``target_steps`` down to ``floor_frac |x_j|``. A 3-window spans
+        ``ratio^2 = 2.25x`` instead of ``4x`` without mixing uneven step ratios
+        or touching already-resolved rows in the primary 2x column."""
+        lo = floor_frac * abs(self.x[self.j])
+        hi = min(self.h[0], max(target_steps) * 8.0)
+        if not (hi > lo * ratio**3):
+            return None
+        col_r = _Column.__new__(_Column)
+        col_r.s, col_r.x, col_r.j = self.s, self.x, self.j
+        col_r.h, col_r.D, col_r.dp, col_r.dm = [], [], [], []
+        hk = hi
+        while hk >= lo * (1.0 - 1e-12):
+            col_r._add(hk)
+            hk /= ratio
+        return col_r if len(col_r.h) >= 4 else None
 
     def select(
         self,
@@ -586,24 +585,38 @@ def fd_jacobian(
             )
             floor_frac = P_SUBFLOOR_STEP_FLOOR if need_subfloor else P_STEP_FLOOR
             if not col.can_extend(floor_frac):
-                # Sub-floor duct rows sitting near ~1e-3 Pa can have a narrow
-                # sweet spot between a zero-drive curvature knee and IEEE-754
-                # pressure round-off where a 2x halving 3-window spans 8x-16x.
-                # Refine unresolved sub-floor intervals once with sqrt(2)
-                # geometric midpoints (reading only F's own spread, never J).
+                # Sub-floor duct rows pushed below P_STEP_FLOOR (e.g. drive ~
+                # 1e-3 Pa) sit in a narrow sweet spot between a zero-drive
+                # curvature knee and IEEE-754 pressure round-off where a 2x
+                # halving 3-window (4x span) straddles the knee. For those rows
+                # only, evaluate a separate 1.5x geometric ladder (2.25x
+                # 3-window span) and adopt it per row only when its 3-window
+                # spread is strictly tighter (reading only F's spread, never J,
+                # and never touching resolved or above-P_STEP_FLOOR rows).
                 xj_abs = abs(x[j])
-                unresolved_steps = [
-                    float(step[i])
+                unresolved_rows = [
+                    i
                     for i in range(m)
                     if more[i]
                     and row_el[i] in d0
                     and any(abs(d) < cb.FANNO_FLOW_DRIVE_FLOOR for d in d0[row_el[i]])
                     and scale[i] > 0.0
                     and not (e[i] * xj_abs / scale[i] <= UNRESOLVED)
-                    and step[i] > 0.0
+                    and 0.0 < step[i] <= P_STEP_FLOOR * xj_abs
                 ]
-                if unresolved_steps and col.refine_around(unresolved_steps):
-                    val, step, e, why, more = col.select(d0, row_el, scale)
+                unresolved_steps = [float(step[i]) for i in unresolved_rows]
+                if unresolved_steps:
+                    col_r = col.refined_subfloor_column(unresolved_steps, floor_frac)
+                    if col_r is not None:
+                        val_r, step_r, e_r, why_r, _ = col_r.select(d0, row_el, scale)
+                        for i in unresolved_rows:
+                            if np.isfinite(e_r[i]) and (not np.isfinite(e[i]) or e_r[i] < e[i]):
+                                val[i], step[i], e[i], why[i] = (
+                                    val_r[i],
+                                    step_r[i],
+                                    e_r[i],
+                                    why_r[i],
+                                )
                 break
             col.extend(floor_frac)
         cols[:, j], steps[:, j], est[:, j] = val, step, e

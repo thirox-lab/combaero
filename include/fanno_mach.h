@@ -129,17 +129,20 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 //     kFannoLowMachDropHi, #1216) and hands off C1 to the compressible kernel
 //     at kFannoFlowDriveFloor via a shape-preserving rational cubic
 //     y(u) = P(u) / Q(u) on u = low.G / low_1.G (strictly monotone and bounded
-//     in [0, at.G] for all r = low_1.G / at.G > 0 and s >= 0, with exact
-//     floor-slope derivatives ds/dtheta via Schwartz mixed partials so value
-//     and all five partials match FD in the blend interior and hand off
-//     continuously at drive = kFannoFlowDriveFloor away from pre-existing
-//     compressible branch flips such as #1307).
+//     in [0, at.G] for all r = low_1.G / at.G > 0 and s >= 0, with floor-slope
+//     derivatives ds/dtheta via internal central FDs so value and partials
+//     hand off continuously at drive = kFannoFlowDriveFloor away from
+//     pre-existing compressible branch flips such as #1307; note that on
+//     adiabatic static-exit ducts at low Mach (e.g. Pt0 = 2e5 Pa, Tt0 = 400 K,
+//     L = 0.5 m, D = 0.01 m), raw_flow's pre-existing 1 Pa d_ddir cancellation
+//     noise (+8.5e-5 / 1.28x at 1.000 Pa) is inherited proportionally into
+//     sub-floor dG_ddir (analytic/FD = 0.967, 0.923, 1.93 at 0.3, 0.5, 0.9 Pa)).
 //     When vanishing length (L -> 0) or f_multiplier -> 0 chokes the duct well
 //     below kFannoFlowDriveFloor, the incompressible floor drop fraction
 //     chi = dp_inc(at.G) / kFannoFlowDriveFloor falls below the exact Fanno
 //     sonic limit (2 / (gamma + 1))^((gamma + 1) / (gamma - 1)) in [0.316, 0.368]
-//     (0.3349 for air, gamma = 1.4). Across the binary octave below all real-gas
-//     sonic limits [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25],
+//     (0.3349 for air, gamma = 1.4). Across the chosen binary octave inside that
+//     derived bound [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25],
 //     a C2 quintic smoothstep blends smoothly into the odd cubic of
 //     flow_drive_floor.h so sub-floor choked ducts do not compress their entire
 //     ramp into a stiff boundary layer and L -> 0 / f_multiplier -> 0 stay regular.
@@ -179,14 +182,14 @@ constexpr double kFannoFlowDriveFloor = 1.0;
 // the 1 Pa drive floor:
 //   - For any unchoked Fanno duct of a real gas (gamma in [1, 5/3]), the exact
 //     sonic-limit ratio is (2 / (gamma + 1))^((gamma + 1) / (gamma - 1)) in
-//     [0.316, 0.368] (0.3349 for air, gamma = 1.4), strictly above 0.25.
-//   - chi >= 0.25: every unchoked duct (and every Rayleigh-cooled duct choked
-//     by negative acceleration) takes weight = 1 (pure viscous rational cubic,
-//     recovering exact Hagen-Poiseuille as drive -> 0).
-//   - chi <= 0.125: one binary octave lower, ducts already choked deep inside
-//     [0, 1 Pa] (e.g. L = 1 um bleed segments, L = 1 nm bypass lead-ins, or
-//     f_multiplier -> 0) take weight = 0 (pure odd cubic, preventing a stiff
-//     sub-floor choking boundary layer).
+//     [0.316, 0.368] (0.3349 for air, gamma = 1.4).
+//   - The binary octave [0.125, 0.25] is a chosen window strictly inside that
+//     derived sonic bound (upper edge 0.25 < 0.316 so every unchoked real-gas
+//     duct and Rayleigh-cooled duct choked by negative acceleration takes
+//     weight = 1, recovering exact Hagen-Poiseuille as drive -> 0; lower edge
+//     0.125 puts deeply sub-floor choked ducts such as L = 1 um bleed segments,
+//     L = 1 nm bypass lead-ins, or f_multiplier -> 0 on weight = 0, pure odd
+//     cubic, preventing a stiff sub-floor choking boundary layer).
 constexpr double kFannoLowMachDropLo = 0.125;
 constexpr double kFannoLowMachDropHi = 0.25;
 

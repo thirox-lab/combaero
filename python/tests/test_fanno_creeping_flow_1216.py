@@ -150,3 +150,40 @@ def test_value_and_jacobians_continuous_across_drive_floor(heated: bool, exit_to
     if heated:
         assert lo.dG_dTt_exit == pytest.approx(hi.dG_dTt_exit, rel=1.0e-4)
     assert lo.dG_ddir[0] == pytest.approx(at.dG_ddir[0], rel=1.0e-6)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Known limit: adiabatic static-exit raw_flow at 1 Pa carries pre-existing "
+        "d_ddir low-Mach cancellation noise (+8.5e-5 / 1.28x at 1.000 Pa on "
+        "Pt0=2e5, Tt0=400 K, L=0.5 m, D=0.01 m), which the C1 sub-floor handoff "
+        "inherits proportionally (analytic/FD = 0.967, 0.923, 1.93 at 0.3, 0.5, 0.9 Pa)."
+    ),
+)
+@pytest.mark.parametrize("drive", [0.3, 0.5, 0.9])
+def test_adiabatic_static_exit_subfloor_dY_known_raw_flow_limit(drive: float) -> None:
+    """Pins the known adiabatic static-exit sub-floor dY limit inherited from
+    raw_flow's 1 Pa d_ddir cancellation noise (will XPASS-fail once fixed)."""
+    pt0 = 2.0e5
+    tt0 = 400.0
+    length = 0.5
+    k_o2 = cb.species_index_from_name("O2")
+    v_o2 = [float(i == k_o2) for i in range(cb.num_species())]
+    pb = pt0 - drive
+    r = cb.fanno_channel_flow(
+        pt0, tt0, X_AIR, pb, False, length, D, 0.0, "haaland", 1.0, -1.0, [v_o2], True
+    )
+    hy = 1.0e-3
+    yp = list(Y_AIR)
+    ym = list(Y_AIR)
+    yp[k_o2] += hy
+    ym[k_o2] -= hy
+    gp = cb.fanno_channel_flow(
+        pt0, tt0, cb.mass_to_mole(yp), pb, False, length, D, 0.0, "haaland", 1.0, -1.0, [], False
+    ).G
+    gm = cb.fanno_channel_flow(
+        pt0, tt0, cb.mass_to_mole(ym), pb, False, length, D, 0.0, "haaland", 1.0, -1.0, [], False
+    ).G
+    fd_y = (gp - gm) / (2.0 * hy)
+    assert r.dG_ddir[0] / fd_y == pytest.approx(1.0, rel=1.0e-2)
