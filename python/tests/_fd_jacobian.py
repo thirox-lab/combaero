@@ -377,25 +377,60 @@ class _Column:
             if self.can_extend(floor_frac):
                 self._add(max(self.h[-1] / 2.0, lo))
 
-    def refined_subfloor_column(
-        self, target_steps: list[float], floor_frac: float, ratio: float = 1.5
-    ) -> _Column | None:
-        """Build a separate geometric ladder with finer step ``ratio`` (1.5x)
-        around ``target_steps`` down to ``floor_frac |x_j|``. A 3-window spans
-        ``ratio^2 = 2.25x`` instead of ``4x`` without mixing uneven step ratios
-        or touching already-resolved rows in the primary 2x column."""
-        lo = floor_frac * abs(self.x[self.j])
-        hi = min(self.h[0], max(target_steps) * 8.0)
-        if not (hi > lo * ratio**3):
+    def subfloor_poly_richardson(
+        self,
+        row: int,
+        el: str,
+        d0_el: list[float],
+        floor_frac: float,
+        n_pts: int = 11,
+    ) -> tuple[float, float, float] | None:
+        """Weighted even-polynomial Richardson fit ``D(h) = a0 + a2 h^2 + a4 h^4``
+        for a single unresolved sub-floor duct row pushed below ``P_STEP_FLOOR``.
+
+        A sub-floor duct with tiny drive ``d`` on high pressure ``P`` has a
+        narrow sweet spot ``[0.10 d, min(0.65 d, P_STEP_FLOOR |P|)]`` between
+        drive-reversal curvature and IEEE-754 pressure round-off
+        ``eps_mach * P / h``. Discrete 2x or 1.5x 3-windows either straddle
+        that span or depend on grid phase. Fitting ``a0 + a2 h^2 + a4 h^4`` by
+        weighted least squares (weights ``w = h``, inverse to ``O(1/h)``
+        round-off) on ``n_pts`` log-spaced steps inside ``[h_lo, h_hi]`` is
+        grid-phase-independent, eliminates ``O(h^2)`` and ``O(h^4)``
+        truncation, and self-estimates ``2 * se(a0)`` from ``F`` alone.
+        """
+        pos_drives = [abs(d) for d in d0_el if 0.0 < abs(d) < cb.FANNO_FLOW_DRIVE_FLOOR]
+        if not pos_drives:
             return None
-        col_r = _Column.__new__(_Column)
-        col_r.s, col_r.x, col_r.j = self.s, self.x, self.j
-        col_r.h, col_r.D, col_r.dp, col_r.dm = [], [], [], []
-        hk = hi
-        while hk >= lo * (1.0 - 1e-12):
-            col_r._add(hk)
-            hk /= ratio
-        return col_r if len(col_r.h) >= 4 else None
+        drive = min(pos_drives)
+        xj = abs(self.x[self.j])
+        h_hi = min(0.65 * drive, P_STEP_FLOOR * xj, self.h[0])
+        h_lo = max(0.10 * drive, 2.0 * floor_frac * xj)
+        if not (h_hi > 2.0 * h_lo):
+            return None
+        hs_safe: list[float] = []
+        Ds_safe: list[float] = []
+        for hk in np.geomspace(h_hi, h_lo, n_pts):
+            xp, xm = self.x.copy(), self.x.copy()
+            xp[self.j] += float(hk)
+            xm[self.j] -= float(hk)
+            (Fp, dp), (Fm, dm) = _evaluate(self.s, xp), _evaluate(self.s, xm)
+            if _safe(d0_el, dp.get(el), dm.get(el)):
+                hs_safe.append(float(hk))
+                Ds_safe.append(float((Fp[row] - Fm[row]) / (xp[self.j] - xm[self.j])))
+        if len(hs_safe) < 6:
+            return None
+        hs = np.array(hs_safe, dtype=float)
+        Ds = np.array(Ds_safe, dtype=float)
+        u = (hs / h_hi) ** 2
+        w = hs / h_hi
+        Aw = np.column_stack([np.ones_like(u), u, u**2]) * w[:, None]
+        coef, *_ = np.linalg.lstsq(Aw, Ds * w, rcond=None)
+        resid = Ds * w - Aw @ coef
+        dof = len(hs_safe) - 3
+        s2 = float(np.dot(resid, resid)) / dof
+        cov00 = float(np.linalg.pinv(Aw.T @ Aw)[0, 0])
+        est = 2.0 * float(np.sqrt(max(s2 * cov00, 0.0)))
+        return float(coef[0]), float(np.median(hs)), est
 
     def select(
         self,
@@ -586,37 +621,31 @@ def fd_jacobian(
             floor_frac = P_SUBFLOOR_STEP_FLOOR if need_subfloor else P_STEP_FLOOR
             if not col.can_extend(floor_frac):
                 # Sub-floor duct rows pushed below P_STEP_FLOOR (e.g. drive ~
-                # 1e-3 Pa) sit in a narrow sweet spot between a zero-drive
-                # curvature knee and IEEE-754 pressure round-off where a 2x
-                # halving 3-window (4x span) straddles the knee. For those rows
-                # only, evaluate a separate 1.5x geometric ladder (2.25x
-                # 3-window span) and adopt it per row only when its 3-window
-                # spread is strictly tighter (reading only F's spread, never J,
-                # and never touching resolved or above-P_STEP_FLOOR rows).
+                # 1e-3 Pa) sit in a narrow ~4x sweet spot between drive
+                # curvature and IEEE-754 pressure round-off where discrete 2x
+                # or 1.5x 3-windows straddle the knee or depend on grid phase.
+                # For those rows only, fit a weighted even-polynomial
+                # Richardson curve D(h) = a0 + a2 h^2 + a4 h^4 inside the row's
+                # sub-floor window and adopt it only when its self-estimated
+                # error (2 * se from F residuals, never reading J) is strictly
+                # tighter than the primary 2x column's spread.
                 xj_abs = abs(x[j])
-                unresolved_rows = [
-                    i
-                    for i in range(m)
-                    if more[i]
-                    and row_el[i] in d0
-                    and any(abs(d) < cb.FANNO_FLOW_DRIVE_FLOOR for d in d0[row_el[i]])
-                    and scale[i] > 0.0
-                    and not (e[i] * xj_abs / scale[i] <= UNRESOLVED)
-                    and 0.0 < step[i] <= P_STEP_FLOOR * xj_abs
-                ]
-                unresolved_steps = [float(step[i]) for i in unresolved_rows]
-                if unresolved_steps:
-                    col_r = col.refined_subfloor_column(unresolved_steps, floor_frac)
-                    if col_r is not None:
-                        val_r, step_r, e_r, why_r, _ = col_r.select(d0, row_el, scale)
-                        for i in unresolved_rows:
-                            if np.isfinite(e_r[i]) and (not np.isfinite(e[i]) or e_r[i] < e[i]):
-                                val[i], step[i], e[i], why[i] = (
-                                    val_r[i],
-                                    step_r[i],
-                                    e_r[i],
-                                    why_r[i],
-                                )
+                for i in range(m):
+                    el = row_el[i]
+                    if (
+                        more[i]
+                        and el is not None
+                        and el in d0
+                        and any(abs(d) < cb.FANNO_FLOW_DRIVE_FLOOR for d in d0[el])
+                        and scale[i] > 0.0
+                        and not (e[i] * xj_abs / scale[i] <= UNRESOLVED)
+                        and 0.0 < step[i] <= P_STEP_FLOOR * xj_abs
+                    ):
+                        fit = col.subfloor_poly_richardson(i, el, d0[el], floor_frac)
+                        if fit is not None:
+                            v_p, s_p, e_p = fit
+                            if np.isfinite(e_p) and (not np.isfinite(e[i]) or e_p < e[i]):
+                                val[i], step[i], e[i], why[i] = v_p, s_p, e_p, "subfloor-poly"
                 break
             col.extend(floor_frac)
         cols[:, j], steps[:, j], est[:, j] = val, step, e
