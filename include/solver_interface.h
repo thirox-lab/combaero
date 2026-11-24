@@ -467,7 +467,12 @@ double friction_f_re_at_zero(const std::string &tag);
 // Regularized Darcy friction product F_Re(Re) = f(Re) * Re and its derivative
 // d(F_Re)/dRe without the laminar branch's re_floor, so F_Re(0) equals
 // friction_f_re_at_zero(tag) and both value and slope are finite and smooth
-// for all Re >= 0 (#1216). Returns {0.0, 0.0} for an unknown tag.
+// for all Re >= 0 (#1216). Dispatches through Registry; returns {0.0, 0.0}
+// for an unknown tag.
+std::tuple<double, double> friction_f_re_and_jacobian_haaland(double Re, double e_D);
+std::tuple<double, double> friction_f_re_and_jacobian_serghides(double Re, double e_D);
+std::tuple<double, double> friction_f_re_and_jacobian_colebrook(double Re, double e_D);
+std::tuple<double, double> friction_f_re_and_jacobian_petukhov(double Re);
 std::tuple<double, double> friction_f_re_and_jacobian(const std::string &tag,
                                                       double Re, double e_D);
 

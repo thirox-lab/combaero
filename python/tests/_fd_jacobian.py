@@ -21,11 +21,18 @@ takes its own level, between two bounds:
   (``FANNO_FLOW_DRIVE_FLOOR``; the flux is C1 there, so G'' jumps), its
   stencil moves the drive by at most ``FLOOR_MARGIN`` of its distance to the
   floor and by at most 1 / ``DRIVE_DIVISOR`` of the drive itself (of the
-  floor, inside it). Such a row curves on the Pa scale, which the pressure
-  unknowns do not show (#1157: s2x's drive 1.06 Pa, the old gap-capped step
-  straddled the joint and read 3.8e-3). The row takes the largest allowed
-  level: its curvature scale is known;
-* below, round-off: the ladder never steps below ``P_STEP_FLOOR |P|``.
+  floor, inside it). Above the floor, the row's curvature scale is its drive,
+  so it takes the largest allowed level (#1157: s2x's drive 1.06 Pa, the old
+  gap-capped step straddled the joint and read 3.8e-3). Below the floor
+  (#1216), a creeping duct's real laminar-to-turbulent curvature scale can be
+  orders of magnitude below 1 Pa (e.g. ~1e-3 Pa), so sub-floor duct rows use
+  adaptive ``_pick`` like non-duct rows, may extend down to
+  ``P_SUBFLOOR_STEP_FLOOR |P|`` (``5e-10 |P|``), and when the 4th-order
+  Richardson spread remains above ``UNRESOLVED`` may take the 6th-order
+  Neville-Richardson column ``R2`` on the same ``D`` ladder (zero extra
+  residual evaluations) only if its 3-window spread is strictly tighter;
+* below, round-off: the ladder never steps below ``P_STEP_FLOOR |P|`` (or
+  ``P_SUBFLOOR_STEP_FLOOR |P|`` for a sub-floor duct row).
 
 Any other row takes the tightest window of three consecutive levels
 (``_pick``): its spread estimates the error (truncation shows as a trend,

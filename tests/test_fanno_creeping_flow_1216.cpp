@@ -71,7 +71,8 @@ TEST(FannoCreepingFlow1216, HagenPoiseuilleLimitAcrossLengthRatiosAndModels) {
   const double P_target = Pt0 - 1e-9;
   const double dp_actual = Pt0 - P_target;
 
-  for (const std::string& model : {"haaland", "serghides", "colebrook", "petukhov"}) {
+  const std::vector<std::string> models = {"haaland", "serghides", "colebrook", "petukhov"};
+  for (const std::string& model : models) {
     for (const double L_D : {1.0, 10.0, 100.0, 1000.0}) {
       const double L = L_D * D;
       const double g_hp = hp_flux(Pt0, Tt0, X, dp_actual, L, D, model);
@@ -327,4 +328,244 @@ TEST(FannoCreepingFlow1216, FixedFrictionKeepsOddCubicFallbackAndContinuity) {
   EXPECT_EQ(z.G, 0.0);
   EXPECT_GT(-z.dG_dP_target, 0.0);
   EXPECT_TRUE(std::isfinite(z.dG_dP_target));
+}
+
+TEST(FannoCreepingFlow1216, RayleighSubFloorPartialsAtEqualTt) {
+  // Independent Tt0 and Tt_exit partials of fanno_rayleigh_channel_flow must
+  // match finite differences and remain continuous at Tt_exit == Tt0 (where
+  // fanno_channel_flow ties them together).
+  const std::vector<double> X = dry_air();
+  const double Pt0 = 2.0e5;
+  const double Tt0 = 400.0;
+  const double L = 0.05;
+  const double D = 0.01;
+  const double drive = 0.3;
+  const double P_target = Pt0 - drive;
+  const double hT = 1e-4 * Tt0;
+
+  for (const bool exit_total : {false, true}) {
+    const FannoChannelFlow r0 = fanno_rayleigh_channel_flow(
+        Pt0, Tt0, Tt0, X, P_target, exit_total, L, D, 0.0, "haaland");
+    const FannoChannelFlow f0 =
+        fanno_channel_flow(Pt0, Tt0, X, P_target, exit_total, L, D, 0.0, "haaland");
+    EXPECT_NEAR(r0.dG_dTt0 + r0.dG_dTt_exit, f0.dG_dTt0,
+                1e-5 * std::max(std::abs(f0.dG_dTt0), 1e-9))
+        << "exit_total=" << exit_total;
+    const double fd_T0 =
+        (fanno_rayleigh_channel_flow(Pt0, Tt0 + hT, Tt0, X, P_target, exit_total, L, D, 0.0,
+                                     "haaland", 1.0, -1.0, {}, false)
+             .G -
+         fanno_rayleigh_channel_flow(Pt0, Tt0 - hT, Tt0, X, P_target, exit_total, L, D, 0.0,
+                                     "haaland", 1.0, -1.0, {}, false)
+             .G) /
+        (2.0 * hT);
+    const double fd_Te =
+        (fanno_rayleigh_channel_flow(Pt0, Tt0, Tt0 + hT, X, P_target, exit_total, L, D, 0.0,
+                                     "haaland", 1.0, -1.0, {}, false)
+             .G -
+         fanno_rayleigh_channel_flow(Pt0, Tt0, Tt0 - hT, X, P_target, exit_total, L, D, 0.0,
+                                     "haaland", 1.0, -1.0, {}, false)
+             .G) /
+        (2.0 * hT);
+    EXPECT_NEAR(r0.dG_dTt0, fd_T0, 2e-3 * std::max(std::abs(fd_T0), 1e-9))
+        << "exit_total=" << exit_total;
+    EXPECT_NEAR(r0.dG_dTt_exit, fd_Te, 2e-3 * std::max(std::abs(fd_Te), 1e-9))
+        << "exit_total=" << exit_total;
+
+    // Continuity of both temperature partials across Tt_exit = Tt0 +- eps
+    // (including across c_acc = 0 when exit_total = true). Scale by the
+    // channel's temperature-derivative scale since dG_dTt0 sits near a zero
+    // crossing at exit_total = false.
+    const double eps = 1e-5;
+    const FannoChannelFlow r_lo = fanno_rayleigh_channel_flow(
+        Pt0, Tt0, Tt0 - eps, X, P_target, exit_total, L, D, 0.0, "haaland");
+    const FannoChannelFlow r_hi = fanno_rayleigh_channel_flow(
+        Pt0, Tt0, Tt0 + eps, X, P_target, exit_total, L, D, 0.0, "haaland");
+    const double dT_scale =
+        std::max({std::abs(r0.dG_dTt0), std::abs(r0.dG_dTt_exit), 1e-9});
+    EXPECT_NEAR(r0.dG_dTt0, r_lo.dG_dTt0, 1e-5 * dT_scale) << "exit_total=" << exit_total;
+    EXPECT_NEAR(r0.dG_dTt0, r_hi.dG_dTt0, 1e-5 * dT_scale) << "exit_total=" << exit_total;
+    EXPECT_NEAR(r0.dG_dTt_exit, r_lo.dG_dTt_exit, 1e-5 * dT_scale)
+        << "exit_total=" << exit_total;
+    EXPECT_NEAR(r0.dG_dTt_exit, r_hi.dG_dTt_exit, 1e-5 * dT_scale)
+        << "exit_total=" << exit_total;
+  }
+}
+
+TEST(FannoCreepingFlow1216, NoDiscontinuityAcrossCooledOrLowPressureStates) {
+  const std::vector<double> X = dry_air();
+
+  // Reproducer A: cooled exit_total duct (L/D = 1) stepping across 389.148 K
+  // must stay smooth (no guard flip discontinuity).
+  {
+    const double Pt0 = 1.0e5;
+    const double Tt0 = 400.0;
+    const double L = 0.01;
+    const double D = 0.01;
+    const double P_target = Pt0 - 0.5;
+    const double Tte_lo = 389.148;
+    const double Tte_hi = 389.149;
+    const FannoChannelFlow r_lo =
+        fanno_rayleigh_channel_flow(Pt0, Tt0, Tte_lo, X, P_target, true, L, D, 0.0, "haaland");
+    const FannoChannelFlow r_hi =
+        fanno_rayleigh_channel_flow(Pt0, Tt0, Tte_hi, X, P_target, true, L, D, 0.0, "haaland");
+    EXPECT_GT(r_lo.G, 0.0);
+    EXPECT_GT(r_hi.G, 0.0);
+    EXPECT_FALSE(r_lo.choked);
+    EXPECT_FALSE(r_hi.choked);
+    EXPECT_NEAR(r_lo.G / r_hi.G, 1.0, 5e-3);
+  }
+
+  // Reproducer B: low-pressure adiabatic duct (Pt0 ~ 10 Pa) must stay smooth
+  // with no threshold jump where M_ex(1 Pa) ~ 0.05.
+  {
+    const double Tt0 = 300.0;
+    const double L = 0.01;
+    const double D = 0.01;
+    const double Pt_lo = 10.000;
+    const double Pt_hi = 10.006;
+    const FannoChannelFlow r_lo =
+        fanno_channel_flow(Pt_lo, Tt0, X, Pt_lo - 0.5, false, L, D, 0.0, "haaland");
+    const FannoChannelFlow r_hi =
+        fanno_channel_flow(Pt_hi, Tt0, X, Pt_hi - 0.5, false, L, D, 0.0, "haaland");
+    EXPECT_NEAR(r_lo.G / r_hi.G, 1.0, 2e-3);
+  }
+
+  // Reproducer C: cooled exit_total duct (L/D = 10) near 271.9 K must stay
+  // strictly positive and smooth.
+  {
+    const double Pt0 = 1.0e5;
+    const double Tt0 = 400.0;
+    const double L = 0.10;
+    const double D = 0.01;
+    const double P_target = Pt0 - 0.5;
+    const FannoChannelFlow r_a =
+        fanno_rayleigh_channel_flow(Pt0, Tt0, 272.0, X, P_target, true, L, D, 0.0, "haaland");
+    const FannoChannelFlow r_b =
+        fanno_rayleigh_channel_flow(Pt0, Tt0, 271.9, X, P_target, true, L, D, 0.0, "haaland");
+    EXPECT_GT(r_a.G, 0.0);
+    EXPECT_GT(r_b.G, 0.0);
+    EXPECT_FALSE(r_a.choked);
+    EXPECT_FALSE(r_b.choked);
+  }
+}
+
+TEST(FannoCreepingFlow1216, CooledExitTotalCreepingFlowMatchesHagenPoiseuille) {
+  // Strongly cooled exit_total ducts (1500 -> 900 K, L/D = 1 and 10) whose
+  // 1 Pa floor state chokes still recover exact variable-property
+  // Hagen-Poiseuille as drive -> 0, with choked = false below the floor.
+  const std::vector<double> X = dry_air();
+  const double Pt0 = 1.0e5;
+  const double Tt0 = 1500.0;
+  const double Tt_exit = 900.0;
+  const double D = 0.01;
+  const double P_target = Pt0 - 1e-9;
+  const double dp_actual = Pt0 - P_target;
+  const double R = specific_gas_constant(X);
+  const double f_re_0 = solver::friction_f_re_at_zero("haaland");
+
+  // Midpoint rule (1000 panels) for exact integral_0^1 mu(Tt(xi)) * Tt(xi) dxi.
+  double integral = 0.0;
+  constexpr int kN = 1000;
+  for (int i = 0; i < kN; ++i) {
+    const double xi = (static_cast<double>(i) + 0.5) / kN;
+    const double Tt = (1.0 - xi) * Tt0 + xi * Tt_exit;
+    integral += viscosity(Tt, Pt0, X) * Tt / kN;
+  }
+
+  for (const double L_D : {1.0, 10.0}) {
+    const double L = L_D * D;
+    const double g_hp = (2.0 * Pt0 * D * D * dp_actual) / (f_re_0 * L * R * integral);
+    const FannoChannelFlow r = fanno_rayleigh_channel_flow(
+        Pt0, Tt0, Tt_exit, X, P_target, true, L, D, 0.0, "haaland");
+    EXPECT_FALSE(r.choked) << "L/D=" << L_D;
+    EXPECT_NEAR(r.G / g_hp, 1.0, 1e-5) << "L/D=" << L_D;
+  }
+}
+
+TEST(FannoCreepingFlow1216, StrictlyMonotoneAndBoundedForShortAndChokedDucts) {
+  // Vanishingly short ducts (L = 1e-9 m, exit_total = true) and strongly
+  // cooled exit_total ducts (1500 -> 900 K) where low_1.G >> at.G must remain
+  // strictly increasing and bounded by at.G across [0, floor].
+  const std::vector<double> X = dry_air();
+  const double Pt0 = 1.0e5;
+  const double floor = kFannoFlowDriveFloor;
+  const double drives[] = {0.0, 1e-9, 1e-6, 1e-4, 1e-2, 0.1, 0.3, 0.5, 0.8, 0.99, floor};
+
+  // Case 1: vanishingly short adiabatic exit_total duct (L = 1e-9 m, D = 0.028 m)
+  {
+    const FannoChannelFlow at =
+        fanno_channel_flow(Pt0, 300.0, X, Pt0 - floor, true, 1e-9, 0.028, 0.0, "haaland");
+    double prev_G = -1.0;
+    for (const double d : drives) {
+      const FannoChannelFlow r =
+          fanno_channel_flow(Pt0, 300.0, X, Pt0 - d, true, 1e-9, 0.028, 0.0, "haaland");
+      EXPECT_GT(r.G, prev_G) << "short duct d=" << d;
+      EXPECT_LE(r.G, at.G * (1.0 + 1e-12)) << "short duct d=" << d;
+      if (d < floor) {
+        EXPECT_GT(-r.dG_dP_target, 0.0) << "short duct d=" << d;
+      }
+      prev_G = r.G;
+    }
+  }
+
+  // Case 2: strongly cooled exit_total duct (1500 -> 900 K, L/D = 1)
+  {
+    const FannoChannelFlow at = fanno_rayleigh_channel_flow(
+        Pt0, 1500.0, 900.0, X, Pt0 - floor, true, 0.01, 0.01, 0.0, "haaland");
+    double prev_G = -1.0;
+    for (const double d : drives) {
+      const FannoChannelFlow r = fanno_rayleigh_channel_flow(
+          Pt0, 1500.0, 900.0, X, Pt0 - d, true, 0.01, 0.01, 0.0, "haaland");
+      EXPECT_GT(r.G, prev_G) << "cooled duct d=" << d;
+      EXPECT_LE(r.G, at.G * (1.0 + 1e-12)) << "cooled duct d=" << d;
+      if (d < floor) {
+        EXPECT_GT(-r.dG_dP_target, 0.0) << "cooled duct d=" << d;
+      }
+      prev_G = r.G;
+    }
+  }
+
+  // Case 3: inside the C2 smoothstep window r in (1.25, 2.00) (L = 2.8e-5 m,
+  // D = 0.028 m, Pt0 = 1e5 Pa, exit_total = true where r ~ 1.85 and choked so
+  // sigma = 0), partials including dw/dr * dr/dtheta must match finite
+  // differences to 1e-4.
+  {
+    const double L_mid = 2.8e-5;
+    const double D_mid = 0.028;
+    const double Tt0 = 300.0;
+    const double drive = 0.4;
+    const double Pb = Pt0 - drive;
+    const FannoChannelFlow r =
+        fanno_channel_flow(Pt0, Tt0, X, Pb, true, L_mid, D_mid, 0.0, "haaland");
+    const double hp = 1e-4;
+    const double fd_P =
+        (fanno_channel_flow(Pt0, Tt0, X, Pb + hp, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
+                            {}, false)
+             .G -
+         fanno_channel_flow(Pt0, Tt0, X, Pb - hp, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
+                            {}, false)
+             .G) /
+        (2.0 * hp);
+    const double fd_Pt =
+        (fanno_channel_flow(Pt0 + hp, Tt0, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
+                            {}, false)
+             .G -
+         fanno_channel_flow(Pt0 - hp, Tt0, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
+                            {}, false)
+             .G) /
+        (2.0 * hp);
+    const double hT = 1e-3 * Tt0;
+    const double fd_T0 =
+        (fanno_channel_flow(Pt0, Tt0 + hT, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
+                            {}, false)
+             .G -
+         fanno_channel_flow(Pt0, Tt0 - hT, X, Pb, true, L_mid, D_mid, 0.0, "haaland", 1.0, -1.0,
+                            {}, false)
+             .G) /
+        (2.0 * hT);
+    EXPECT_NEAR(r.dG_dP_target / fd_P, 1.0, 1e-4);
+    EXPECT_NEAR(r.dG_dPt0 / fd_Pt, 1.0, 5e-4);
+    EXPECT_NEAR(r.dG_dTt0 / fd_T0, 1.0, 1e-4);
+  }
 }

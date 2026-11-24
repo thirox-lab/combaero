@@ -256,9 +256,11 @@ static std::tuple<double, double> f_turb_and_dRe_haaland(double Re, double e_D) 
   const double dU_darg = haaland::coeff_outer / (M_LN10 * arg);
   const double darg_dRe_eff = -haaland::coeff_reynolds / (Re_eff * Re_eff);
   const double dRe_eff_dRe = Re / Re_eff;
-  const double dU_dRe = dU_darg * darg_dRe_eff * dRe_eff_dRe;
+  const double darg_dRe = darg_dRe_eff * dRe_eff_dRe;
+  const double dU_dRe = dU_darg * darg_dRe;
   const double f_turb = 1.0 / (inv_sqrt_f * inv_sqrt_f);
-  const double df_turb_dRe = (-2.0 / (inv_sqrt_f * inv_sqrt_f * inv_sqrt_f)) * dU_dRe;
+  const double df_turb_dU = -2.0 / (inv_sqrt_f * inv_sqrt_f * inv_sqrt_f);
+  const double df_turb_dRe = df_turb_dU * dU_dRe;
   return {f_turb, df_turb_dRe};
 }
 
@@ -379,23 +381,30 @@ double friction_f_re_at_zero(const std::string &tag) {
   return Registry::get().friction_f_re_at_zero(tag);
 }
 
+std::tuple<double, double> friction_f_re_and_jacobian_haaland(double Re, double e_D) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_haaland(Re, e_D);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_serghides(double Re, double e_D) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_serghides(Re, e_D);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_colebrook(double Re, double e_D) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_colebrook(Re, e_D);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_petukhov(double Re) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_petukhov(Re);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
 std::tuple<double, double> friction_f_re_and_jacobian(const std::string &tag,
                                                       double Re, double e_D) {
-  if (tag == "haaland") {
-    const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_haaland(Re, e_D);
-    return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
-  }
-  if (tag == "serghides") {
-    const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_serghides(Re, e_D);
-    return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
-  }
-  if (tag == "colebrook") {
-    const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_colebrook(Re, e_D);
-    return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
-  }
-  if (tag == "petukhov") {
-    const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_petukhov(Re);
-    return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+  if (Registry::get().has_friction_model(tag)) {
+    return Registry::get().get_friction_f_re_model(tag)(Re, e_D);
   }
   return {0.0, 0.0};
 }

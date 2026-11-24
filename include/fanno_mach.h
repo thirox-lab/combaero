@@ -119,17 +119,25 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 // recovered there, not lost (see "Drive conventions" in docs/API_PYTHON.md).
 //
 // Below kFannoFlowDriveFloor of drive (Pt0 - P_target):
-//   - For viscous friction models (model != "fixed", f_multiplier > 0) where
-//     the floor state is unchoked and low-Mach, the duct solves the exact
-//     low-Mach viscous/inertial momentum balance directly in drive (no Pt0 - P
-//     cancellation, recovering Hagen-Poiseuille as drive -> 0 across all L/D
-//     and pressures, #1216) and hands off C1 to the compressible kernel at
-//     kFannoFlowDriveFloor via an O(M^2) cubic multiplier m(t) whose partials
-//     match the compressible kernel's continuously at t = 1.
-//   - For fixed/frictionless ducts (whose slope is infinite at zero drive) or
-//     where the floor state is not low-Mach (e.g. choked or cooled fold below
-//     the floor), the flux is blended C1 into the odd cubic of
-//     flow_drive_floor.h.
+//   - For every registered viscous friction model with f_multiplier > 0, the
+//     duct solves the low-Mach viscous/inertial momentum balance directly in
+//     drive (using a C1 unconditionally-monotone continuation for negative
+//     cooling acceleration so it never folds or loses Pt0 - P precision,
+//     recovering Hagen-Poiseuille as drive -> 0 across all L/D, pressures, and
+//     heating/cooling regimes, #1216) and hands off C1 to the compressible
+//     kernel at kFannoFlowDriveFloor via a shape-preserving rational cubic
+//     y(u) = P(u) / Q(u) on u = low.G / low_1.G (strictly monotone and bounded
+//     in [0, at.G] for all r = low_1.G / at.G > 0 and s >= 0, with C1
+//     continuity of value and all partials at drive = kFannoFlowDriveFloor).
+//     When the incompressible floor flux overshoots the compressible sonic
+//     limit (r = low_1.G / at.G in [kFannoLowMachRatioLo, kFannoLowMachRatioHi],
+//     e.g. vanishingly short L -> 0 or f_multiplier -> 0 ducts whose viscous
+//     transition collapses far below 1 Pa), a C2 quintic smoothstep blends
+//     smoothly into the odd cubic of flow_drive_floor.h so the f_multiplier -> 0
+//     and L -> 0 limits are regular and continuous.
+//   - For fixed/frictionless ducts (model == "fixed" or f_multiplier <= 0,
+//     where the laminar slope is infinite at zero drive), the flux is blended
+//     C1 into the odd cubic of flow_drive_floor.h.
 // At or below zero drive the flux is 0 (the caller reverses the duct for
 // reversed flow), and at exactly zero drive its partials are the branch's
 // finite slope there (#1209). M_in and M_exit are the flow's at G there too
@@ -157,12 +165,18 @@ struct FannoChannelFlow {
 // Drive [Pa] below which the compressible Fanno kernels hand off to the
 // low-Mach viscous closure (#1216) or odd-cubic floor (flow_drive_floor.h).
 constexpr double kFannoFlowDriveFloor = 1.0;
-// Handoff validity bounds for the low-Mach C1 multiplier m(t) at the floor:
-// |m(1) - 1| and |m'(1)| are O(M^2) (~1e-5 at 1 bar) on normal ducts; exceeding
-// these (e.g. near-vacuum Pt0 or a cooled fold below 1 Pa) falls back to the
-// odd cubic, keeping G(t) strictly monotone (#1216).
-constexpr double kFannoLowMachM1Tol = 0.05;
-constexpr double kFannoLowMachM1PrimeTol = 0.1;
+
+// C2 smoothstep window on r = low_1.G / at.G (incompressible-to-compressible
+// mass-flux ratio at kFannoFlowDriveFloor) blending the viscous rational cubic
+// into the odd-cubic floor when compressible choking caps at.G well below
+// low_1.G (vanishingly short L -> 0 or f_multiplier -> 0 ducts).
+//   r <= 1.25: subsonic regime (M <= ~0.55 for gamma = 1.4, and all cooled
+//              exit_total ducts where r <= 1): weight = 1 (pure viscous HP).
+//   r >= 2.00: deeply choked plateau (low_1.G >= 2 * G_sonic, viscous knee
+//              collapsed far below 1 Pa): weight = 0 (pure odd cubic, matching
+//              the f_multiplier = 0 limit continuously).
+constexpr double kFannoLowMachRatioLo = 1.25;
+constexpr double kFannoLowMachRatioHi = 2.00;
 
 FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<double>& X,
                                     double P_target, bool exit_total, double L, double D,

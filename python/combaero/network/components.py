@@ -11607,13 +11607,13 @@ class ChannelElement(NetworkElement):
         Standalone (unset): per species present, other fractions fixed.
 
         At exactly equal end stagnation pressures (zero drive) the flow is 0
-        either way, but the two directions' one-sided slopes differ: each is
-        its own sub-floor cubic's h'(0) G0 / floor (#1209), and G0 differs
-        where one exit keeps its head and the other loses it (1.5412e-5
-        forward into a plenum, 1.5286e-5 reversed into a static-coupled
-        boundary, on a 1 m, 1 cm duct at 1 bar). The partials there are the
-        mean of the two, the central slope -- what an orifice's
-        forward/reverse blend gives at its own zero drop (w = 1/2,
+        either way, with finite slope (#1209). For registered viscous friction
+        models the sub-floor low-Mach closure (#1216) gives the exact
+        Hagen-Poiseuille zero-drive slope in both directions (1.5412e-5 kg/(s Pa)
+        on a 1 m, 1 cm duct at 1 bar, independent of exit head recovery); for
+        fixed/frictionless ducts each direction takes its own sub-floor cubic's
+        h'(0) G0 / floor. The partials at zero drive are the mean of the two
+        directions, matching an orifice's forward/reverse blend (w = 1/2,
         _pressure_blend). ``forward`` forces one direction.
         """
         if forward is None:
