@@ -4006,9 +4006,8 @@ ch = ChannelElement("te", "A", "B", length=0.125, diameter=0.009,
 - **Known gaps:**
   - `T_aw` is borrowed from the smooth correlation, as the impingement
     paths do.
-  - `dh_dT` is the smooth result's relative property sensitivity scaled to
-    `h`; the pin correlations expose no temperature derivative of their
-    own.
+  - `dh_dT` is the array's own, at fixed flow and P: through viscosity (in
+    Re), Pr and conductivity, with `PinFinNuResult.dNu_dPr` (#1254).
 
 ### Impingement-Cooled Walls (jet-plate arrays)
 
@@ -4582,10 +4581,10 @@ complete = cb.complete_state(T=300, P=101325, X=air)
 
 ### Derivatives
 ```python
-# Temperature derivatives
-dh_dT = cb.dh_dT(T=300, X=air)
-ds_dT = cb.ds_dT(T=300, X=air)
-dcp_dT = cb.dcp_dT(T=300, X=air)
+# Temperature derivatives, molar basis
+dh_dT = cb.dh_dT(T=300, X=air)    # J/(mol*K), the molar cp
+ds_dT = cb.ds_dT(T=300, X=air)    # J/(mol*K^2), cp/T
+dcp_dT = cb.dcp_dT(T=300, X=air)  # J/(mol*K^2)
 dg_dT = cb.dg_over_RT_dT(T=300, X=air)
 ```
 

@@ -219,3 +219,28 @@ def test_api_unit_sync():
         f"The following {len(missing)} API members are missing from units_data.h:\n"
         + "\n".join(missing)
     )
+
+
+def test_docstring_energy_basis_matches_units_data() -> None:
+    """A docstring that states an energy per kg must not describe an output
+    that units_data.h gives per mol, or the reverse (#1279: dh_dT, ds_dT and
+    dcp_dT were documented as mass-specific, and return molar values). Only a
+    docstring naming one basis is checked; one naming both may mix inputs and
+    outputs."""
+    import re
+
+    kg = re.compile(r"J/\(?kg")
+    mol = re.compile(r"J/\(?mol")
+    mismatched = []
+    for name in cb.__all__:
+        if not cb.has_units(name):
+            continue
+        doc = getattr(getattr(cb, name, None), "__doc__", "") or ""
+        out = cb.output_units(name) or ""
+        doc_kg, doc_mol = bool(kg.search(doc)), bool(mol.search(doc))
+        out_kg, out_mol = bool(kg.search(out)), bool(mol.search(out))
+        if (doc_kg and not doc_mol and out_mol and not out_kg) or (
+            doc_mol and not doc_kg and out_kg and not out_mol
+        ):
+            mismatched.append((name, out))
+    assert not mismatched, mismatched
