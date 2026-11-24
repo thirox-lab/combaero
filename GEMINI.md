@@ -22,6 +22,7 @@ The repo's skills live in `.claude/skills/<name>/SKILL.md`. Read the one that ap
 - **Never rewrite a branch that is under review** (no amend, no force-push). Answer a review with new commits. A rebase onto a moved base is allowed when the owner or the reviewer asks for it.
 - **Never edit agent configuration:** `CLAUDE.md`, this file, `.claude/`, or any settings file. Propose a change to the owner instead.
 - **Never run `agy` with `--dangerously-skip-permissions`.**
+- **A refused command is the owner's decision, never yours to get around.** Do not rephrase it, and do not reach the same target through another tool or script. Send a `blocked` ping (below) whose note names the rule you need, e.g. `needs command(<program>) for: <command>`. Say the same in your reply, then stop.
 - **Stop at a decision that is the owner's** (an architecture change, a changed default, a disputed review finding) and say so in the PR or issue.
 
 ## Working with Claude (reviews and pings)
