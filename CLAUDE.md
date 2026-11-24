@@ -86,6 +86,8 @@ uv run scripts/sources.py find <terms>      # source register (validation/source
 ## Git Workflow
 - **Branch protection on `main`:** never push directly to `main`. Always work on a feature/fix branch and open a PR (`feature-branch → main`).
 - **CI is required to merge:** GitHub Actions checks must pass before a PR can be merged.
+- **Labels:** every PR and issue an agent opens gets one type label (`bug`, `enhancement`, `documentation`), at least one area label (`area:solver`, `area:physics`, `area:thermo`, `area:gui`, `area:ci`, `area:docs`), and the agent label of its author (`agent:claude`, `agent:gemini`). A new area label needs the owner's approval.
+- **Several agents work in this repo.** CLAUDE.md is the one rule set for all of them. [GEMINI.md](GEMINI.md) only points here and adds Gemini's attribution, limits and ping protocol; it never restates a rule.
 - **Merge queue:** the repo lives in the `thirox-lab` organisation for its merge queue (ruleset "Iron", squash). A green PR is added to the queue; the queue tests it on top of `main` and the entries ahead of it (the `merge_group` trigger) and merges it; the squash commit is signed by GitHub. A queued branch cannot be pushed to. A textual rebase is needed only when GitHub reports a conflict, but a clean merge is not proof: when another PR changed pinned values or shared tests, re-run the tests on top of current `main` before queueing.
 
 ## Releases and Dependencies
