@@ -9092,7 +9092,7 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         py::arg("Re"), py::arg("e_D"),
         "Dispatcher: selects friction_and_jacobian_* by tag string.\n\n"
         "tag must be one of: 'haaland', 'serghides', 'colebrook', "
-        "'petukhov'\n\n"
+        "'petukhov'; any other tag raises ValueError (#1213).\n\n"
         "Parameters:\n"
         "  tag : friction model name\n"
         "  Re  : Reynolds number [-]\n"

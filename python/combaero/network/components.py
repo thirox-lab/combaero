@@ -11264,6 +11264,14 @@ class ChannelElement(NetworkElement):
         self._Dh_source = "user" if Dh is not None else "derived from D (circular)"
 
         self.regime = regime
+        # Checked here so a typo refuses at construction, naming the element
+        # (#1213); the C++ dispatcher refuses it again at any evaluation.
+        known = cb._core.Registry.get().available_friction_models()
+        if friction_model not in known:
+            raise ValueError(
+                f"{type(self).__name__} '{id}': unknown friction_model "
+                f"{friction_model!r}; must be one of {sorted(known)}"
+            )
         self.friction_model = friction_model
         self.htc_model = htc_model
         self.t_hot = t_hot

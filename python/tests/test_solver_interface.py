@@ -281,8 +281,9 @@ def test_friction_dispatcher_matches_direct_models():
         np.testing.assert_allclose(got[0], expected[0], rtol=1e-12, atol=0.0)
         np.testing.assert_allclose(got[1], expected[1], rtol=1e-12, atol=0.0)
 
-    invalid = cb._core.friction_and_jacobian("does-not-exist", Re, e_D)
-    assert invalid.status.name == "INVALID"
+    # An unknown tag raises rather than returning an INVALID zero (#1213).
+    with pytest.raises(ValueError, match="Unknown friction model"):
+        cb._core.friction_and_jacobian("does-not-exist", Re, e_D)
 
 
 def test_density_jacobians():
