@@ -584,7 +584,9 @@ TEST(FannoCreepingFlow1216, CooledSubFloorPartialsMatchFiniteDifferences) {
         richardson([&](double d) { return eval_G(c.Pt0, c.Tt0, c.Tt_exit, X, Pb + d); }, hp);
     const double fd_Pt =
         richardson([&](double d) { return eval_G(c.Pt0 + d, c.Tt0, c.Tt_exit, X, Pb); }, hp);
-    const double hT = 0.1;
+    // Use hT = 0.2 K so both hT and hT/2 = 0.1 K sit on the FD plateau
+    // (0.05 K enters rayleigh_raw_flow root round-off near dG/dTt0 ~ 0).
+    const double hT = 0.2;
     const double fd_T0 =
         richardson([&](double d) { return eval_G(c.Pt0, c.Tt0 + d, c.Tt_exit, X, Pb); }, hT);
     const double fd_Te =
