@@ -8,4 +8,4 @@ What differs per agent lives in that agent's own file:
 Any other agent:
 - **Skills:** read the skills in `.claude/skills/<name>/SKILL.md`. `write-pr` applies to every PR; `model-provenance` to every physics, solver or Jacobian change.
 - **Attribution:** add a `Co-Authored-By:` trailer naming the agent to every commit. Label every PR and issue you open with `agent:<name>` (see CLAUDE.md, "Labels").
-- **Limits:** never merge, queue or push to `main`. Never edit agent configuration (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.claude/`, `.agents/`). Stop at decisions that are the owner's.
+- **Limits:** never merge, queue or push to `main`. Never edit agent configuration (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.claude/`). Stop at decisions that are the owner's.

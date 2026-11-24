@@ -20,7 +20,7 @@ The repo's skills live in `.claude/skills/<name>/SKILL.md`. Read the one that ap
 
 - **Never merge, never queue, never push to `main`.** The owner queues. Never use `gh pr merge`.
 - **Never rewrite a branch that is under review** (no amend, no force-push). Answer a review with new commits. A rebase onto a moved base is allowed when the owner or the reviewer asks for it.
-- **Never edit agent configuration:** `CLAUDE.md`, this file, `AGENTS.md`, `.claude/`, `.agents/`, or any settings file. Propose a change to the owner instead.
+- **Never edit agent configuration:** `CLAUDE.md`, this file, `AGENTS.md`, `.claude/`, or any settings file. Propose a change to the owner instead.
 - **Never run `agy` with `--dangerously-skip-permissions`.**
 - **Stop at a decision that is the owner's** (an architecture change, a changed default, a disputed review finding) and say so in the PR or issue.
 
