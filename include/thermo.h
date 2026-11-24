@@ -146,6 +146,8 @@ const std::vector<double>& cp_breakpoints();
 double cp_R(std::size_t species_idx, double T);
 // d(cp/R)/dT of one species [1/K]; 0 on the constant tails.
 double dcp_R_dT(std::size_t species_idx, double T);
+// d^2(cp/R)/dT^2 of one species [1/K^2]; 0 on the constant tails.
+double d2cp_R_dT2(std::size_t species_idx, double T);
 double h_RT(std::size_t species_idx, double T);
 double s_R(std::size_t species_idx, double T);
 double g_over_RT(std::size_t species_idx, double T);
@@ -201,10 +203,11 @@ CompleteState complete_state(double T, double P, const std::vector<double>& X, d
 
 // Derivatives of thermodynamic properties with respect to temperature, on the
 // molar basis (#1279): dh/dT = cp [J/(mol*K)], ds/dT = cp/T [J/(mol*K^2)],
-// dcp/dT [J/(mol*K^2)].
+// dcp/dT [J/(mol*K^2)], d^2cp/dT^2 [J/(mol*K^3)].
 double dh_dT(double T, const std::vector<double>& X);
 double ds_dT(double T, const std::vector<double>& X);
 double dcp_dT(double T, const std::vector<double>& X);
+double d2cp_dT2(double T, const std::vector<double>& X);
 double dg_over_RT_dT(double T, const std::vector<double>& X);
 
 // Inverse calculations (solving for temperature). h, s, u and the sv form are

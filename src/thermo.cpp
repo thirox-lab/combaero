@@ -112,6 +112,14 @@ double bridge_poly_dt(const C2Bridge& b, double t) {
   return acc;
 }
 
+double bridge_poly_dt2(const C2Bridge& b, double t) {
+  double acc = 0.0;
+  for (std::size_t k = b.c.size(); k-- > 2;) {
+    acc = acc * t + static_cast<double>(k * (k - 1)) * b.c[k];
+  }
+  return acc;
+}
+
 // Antiderivative in t of the bridge polynomial.
 double bridge_poly_int(const C2Bridge& b, double t) {
   double acc = 0.0;
@@ -217,6 +225,14 @@ double tail_p_dt(const Tail& tl, double t) {
   double acc = 0.0;
   for (std::size_t k = tl.c.size(); k-- > 1;) {
     acc = acc * t + static_cast<double>(k) * tl.c[k];
+  }
+  return acc;
+}
+
+double tail_p_dt2(const Tail& tl, double t) {
+  double acc = 0.0;
+  for (std::size_t k = tl.c.size(); k-- > 2;) {
+    acc = acc * t + static_cast<double>(k * (k - 1)) * tl.c[k];
   }
   return acc;
 }
@@ -796,6 +812,34 @@ double dcp_dT(double T, const std::vector<double> &X) {
     }
   }
   return dcp_mix;
+}
+
+double d2cp_R_dT2(std::size_t species_idx, double T) {
+  if (species_idx >= species_names.size()) {
+    throw std::out_of_range("d2cp_R_dT2: species index out of bounds");
+  }
+  if (const Tail* tl = active_tail(species_idx, T)) {
+    const double t = (T - tl->T0) / tl->w;
+    return t >= 1.0 ? 0.0 : tail_p_dt2(*tl, t) / (tl->w * tl->w);
+  }
+  if (const C2Bridge* b = active_bridge(species_idx, T)) {
+    return bridge_poly_dt2(*b, (T - b->T_join) / b->half_width) / (b->half_width * b->half_width);
+  }
+  const auto& a = get_interval(species_idx, T).coeffs;
+  // d^2(Cp/R)/dT^2 = 6*a1/T^4 + 2*a2/T^3 + 2*a5 + 6*a6*T + 12*a7*T^2
+  const double T2 = T * T;
+  return 6.0 * a[0] / (T2 * T2) + 2.0 * a[1] / (T2 * T) + 2.0 * a[4] + 6.0 * a[5] * T +
+         12.0 * a[6] * T2;
+}
+
+double d2cp_dT2(double T, const std::vector<double> &X) {
+  double d2cp_mix = 0.0;
+  for (std::size_t i = 0; i < X.size(); ++i) {
+    if (X[i] != 0.0) {
+      d2cp_mix += X[i] * d2cp_R_dT2(i, T) * thermo::R_GAS;
+    }
+  }
+  return d2cp_mix;
 }
 
 double dg_over_RT_dT(double T, const std::vector<double> &X) {
