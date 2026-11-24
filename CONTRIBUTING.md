@@ -10,7 +10,7 @@ Thank you for your interest in contributing to CombAero! This project welcomes c
 4. **Jacobian Mandate**: Physics correlations must expose `(f, J)` analytical derivatives where applicable.
 5. **CHANGELOG**: Every user-visible change (feature, bug fix, breaking change) must have an entry under `[Unreleased]` in `CHANGELOG.md` in the same commit.
 
-For detailed coding styles and hard rules, see [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) / [GEMINI.md](GEMINI.md).
+For detailed coding styles and hard rules, see [CLAUDE.md](CLAUDE.md) (Gemini: [GEMINI.md](GEMINI.md), which points there).
 
 ## Development Workflow
 
