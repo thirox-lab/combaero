@@ -31,7 +31,7 @@ struct PressureLossContext {
   double theta;      // T_ad/T_in - 1  (dimensionless temperature rise)
   double mdot_fuel;  // fuel mass flow [kg/s]  (0 if phi-based call)
   double mdot_air;   // air mass flow [kg/s]   (0 if phi-based call)
-  double mdot_total; // total inlet mass flow [kg/s]
+  double mdot_total; // total flow of the arriving streams [kg/s] (#1239)
 };
 
 using PressureLossCorrelation =
