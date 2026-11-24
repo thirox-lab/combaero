@@ -1593,8 +1593,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         py::arg("fraction") = 0.0);
   m.def(
       "combustor_residuals_and_jacobians",
-      [](const std::vector<solver::Stream> &streams, double P, double Q,
-         double fraction, py::function py_loss, bool use_equilibrium) {
+      [](const std::vector<solver::Stream> &streams, double Q, double fraction,
+         py::function py_loss, bool use_equilibrium) {
         PressureLossCorrelation cpp_loss =
             [py_loss](const PressureLossContext &ctx) -> std::tuple<double, double> {
           py::object res = py_loss(ctx);
@@ -1605,11 +1605,16 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
           }
         };
         return solver::combustor_residuals_and_jacobians(
-            streams, P, Q, fraction, cpp_loss, use_equilibrium);
+            streams, Q, fraction, cpp_loss, use_equilibrium);
       },
-      py::arg("streams"), py::arg("P"), py::arg("Q") = 0.0,
+      // Keyword-only after the streams (#1272): a call still passing P
+      // positionally raises instead of taking it as Q.
+      py::arg("streams"), py::kw_only(), py::arg("Q") = 0.0,
       py::arg("fraction") = 0.0, py::arg("pressure_loss"),
-      py::arg("use_equilibrium") = false);
+      py::arg("use_equilibrium") = false,
+      "Mix and burn the streams at their mixed total pressure (the mixer's "
+      "Pt_mix, whose stream partials the result carries; #1244, #1272), with "
+      "the pressure-loss callable's chain rule.");
 
   py::class_<solver::OrificeResult>(
       m, "OrificeResult", "Result of orifice residual and Jacobian evaluation")

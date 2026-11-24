@@ -305,10 +305,9 @@ def _zero_loss(ctx: object) -> tuple[float, float]:
 
 def _combustor(streams: list, method: str):
     """The combustor kernel as CombustorNode calls it: at the streams' mixed
-    Pt (#1244)."""
-    P = _st.mixer_from_streams_and_jacobians(streams).Pt_mix
+    Pt, which it takes itself (#1244, #1272)."""
     return _st.combustor_residuals_and_jacobians(
-        streams, P, pressure_loss=_zero_loss, use_equilibrium=(method == "equilibrium")
+        streams, pressure_loss=_zero_loss, use_equilibrium=(method == "equilibrium")
     )
 
 
@@ -465,25 +464,32 @@ def test_the_equilibrium_combustor_carries_its_burn_pressure(ma: float) -> None:
         assert abs(r.dTt_mix_d_stream[0].d_Pt) > 1e-7
 
 
-def test_the_combustor_refuses_a_pressure_other_than_the_mixed_pt() -> None:
+def test_the_combustor_burns_at_the_mixed_pt_and_takes_no_pressure() -> None:
     """The stream partials are the mixed Pt's, so a caller's own P would carry
     them wrongly (dT/dPt_fuel 1.3e-4 against an FD of 0 at P = 1e5 beside a
-    mixed 2.03e5): refused (#1244 review)."""
+    mixed 2.03e5; #1244 review). The kernel takes the mixed Pt itself
+    (#1272): its burn is the equilibrium at that pressure, and a call still
+    passing a P positionally raises rather than taking it as Q. The burn is
+    rich, so its equilibrium depends on the pressure it is taken at."""
     s = [
-        _cb.MassStream(0.05, 650.0, 2.0e5, _Y_AIR),
-        _cb.MassStream(1e-3, 300.0, 2.1e5, _Y_CH4),
+        _cb.MassStream(3e-5, 650.0, 2.0e5, _Y_AIR),
+        _cb.MassStream(5.376e-4, 300.0, 2.1e5, _Y_CH4),
     ]
-    with pytest.raises(ValueError, match="mixed Pt"):
+    mix = _st.mixer_from_streams_and_jacobians(s)
+    res = _combustor(s, "equilibrium")
+    ref = _st.adiabatic_T_equilibrium_and_jacobians_from_streams(s, mix.Pt_mix)
+    other = _st.adiabatic_T_equilibrium_and_jacobians_from_streams(s, 1.0e5)
+    assert other.Tt_mix != ref.Tt_mix  # the pressure matters here
+    assert res.Tt_mix == ref.Tt_mix
+    assert res.Pt_mix == mix.Pt_mix
+    with pytest.raises(TypeError):
         _st.combustor_residuals_and_jacobians(
             s, 1.0e5, pressure_loss=_zero_loss, use_equilibrium=True
         )
-    _combustor(s, "equilibrium")  # at the mixed Pt: accepted
-    # A non-finite stream Pt is refused as a bad pressure, not as a mismatch.
+    # A non-finite stream Pt is refused as a bad pressure.
     bad = [s[0], _cb.MassStream(1e-3, 300.0, float("nan"), _Y_CH4)]
     with pytest.raises(ValueError, match="finite and positive"):
-        _st.combustor_residuals_and_jacobians(
-            bad, float("nan"), pressure_loss=_zero_loss, use_equilibrium=True
-        )
+        _st.combustor_residuals_and_jacobians(bad, pressure_loss=_zero_loss, use_equilibrium=True)
 
 
 # --- #1262: the reforming + WGS equilibrium converges with oxygen nearly gone --
