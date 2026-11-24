@@ -118,11 +118,21 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 // true: those nodes are at rest (Pt = P), so the duct's exit head is
 // recovered there, not lost (see "Drive conventions" in docs/API_PYTHON.md).
 //
-// Below kFannoFlowDriveFloor of drive (Pt0 - P_target) the flux law, whose
-// slope is infinite at zero drive, is blended C1 into an odd cubic through
-// zero that matches its value and slope at the floor; at or below zero drive the flux is 0 (the caller reverses
-// the duct for reversed flow), and at exactly zero drive its partials are the
-// cubic's slope there, h'(0) G0 / floor (#1209). M_in and M_exit are the flow's at G there too
+// Below kFannoFlowDriveFloor of drive (Pt0 - P_target):
+//   - For viscous friction models (model != "fixed", f_multiplier > 0) where
+//     the floor state is unchoked and low-Mach, the duct solves the exact
+//     low-Mach viscous/inertial momentum balance directly in drive (no Pt0 - P
+//     cancellation, recovering Hagen-Poiseuille as drive -> 0 across all L/D
+//     and pressures, #1216) and hands off C1 to the compressible kernel at
+//     kFannoFlowDriveFloor via an O(M^2) cubic multiplier m(t) whose partials
+//     match the compressible kernel's continuously at t = 1.
+//   - For fixed/frictionless ducts (whose slope is infinite at zero drive) or
+//     where the floor state is not low-Mach (e.g. choked or cooled fold below
+//     the floor), the flux is blended C1 into the odd cubic of
+//     flow_drive_floor.h.
+// At or below zero drive the flux is 0 (the caller reverses the duct for
+// reversed flow), and at exactly zero drive its partials are the branch's
+// finite slope there (#1209). M_in and M_exit are the flow's at G there too
 // (#1017): M_in from the isentropic inlet at G, M_exit at the floor's
 // exit-to-inlet ratio. M_exit_root is the exit Mach of the root actually
 // solved -- the floor's below it, M_exit otherwise -- the warm start to pass
@@ -144,9 +154,15 @@ struct FannoChannelFlow {
   std::vector<double> dG_ddir;
 };
 
-// Drive [Pa] below which the flux is blended to a finite slope at zero (the
-// cubic of flow_drive_floor.h).
+// Drive [Pa] below which the compressible Fanno kernels hand off to the
+// low-Mach viscous closure (#1216) or odd-cubic floor (flow_drive_floor.h).
 constexpr double kFannoFlowDriveFloor = 1.0;
+// Handoff validity bounds for the low-Mach C1 multiplier m(t) at the floor:
+// |m(1) - 1| and |m'(1)| are O(M^2) (~1e-5 at 1 bar) on normal ducts; exceeding
+// these (e.g. near-vacuum Pt0 or a cooled fold below 1 Pa) falls back to the
+// odd cubic, keeping G(t) strictly monotone (#1216).
+constexpr double kFannoLowMachM1Tol = 0.05;
+constexpr double kFannoLowMachM1PrimeTol = 0.1;
 
 FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<double>& X,
                                     double P_target, bool exit_total, double L, double D,

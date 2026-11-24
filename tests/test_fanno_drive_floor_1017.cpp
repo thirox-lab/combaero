@@ -79,10 +79,18 @@ TEST(FannoDriveFloorMach1017, MachIsContinuousAcrossTheFloor) {
 }
 
 TEST(FannoDriveFloorMach1017, MachGoesToZeroWithTheDrive) {
+  // With #1216, below the floor the duct follows Hagen-Poiseuille as drive -> 0
+  // rather than extrapolating the inertia-dominated 1 Pa flux linearly: on this
+  // wide 20.8 bar duct (L/D = 3) G(1e-6 Pa) / G(1 Pa) ~ 2e-4 (vs 1.25e-6 under
+  // the old cubic), and scales linearly to zero as drive falls further.
   for (const bool heated : {false, true}) {
-    const FannoChannelFlow f = flow(1e-6, heated);
+    const FannoChannelFlow f6 = flow(1e-6, heated);
+    const FannoChannelFlow f9 = flow(1e-9, heated);
     const FannoChannelFlow at = flow(kFannoFlowDriveFloor, heated);
-    EXPECT_GT(f.M_in, 0.0);
-    EXPECT_LT(f.M_in, 1e-4 * at.M_in) << "heated " << heated;
+    EXPECT_GT(f6.M_in, 0.0);
+    EXPECT_LT(f6.M_in, 1e-3 * at.M_in) << "heated " << heated;
+    EXPECT_GT(f9.M_in, 0.0);
+    EXPECT_LT(f9.M_in, 1e-6 * at.M_in) << "heated " << heated;
+    EXPECT_NEAR(f9.M_in / f6.M_in, 1e-3, 1e-4) << "heated " << heated;
   }
 }

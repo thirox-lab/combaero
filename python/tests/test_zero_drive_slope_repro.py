@@ -96,11 +96,12 @@ def test_1193_orifice_rows_keep_a_pressure_slope_at_the_zero_drop_start() -> Non
 
 
 # ---------------------------------------------------------------------------
-# #1209: a compressible duct at exactly zero drive had dG/dPt = 0; the flux
-# is a C1 odd cubic per direction there, central FD 1.53487e-5 kg/(s Pa) for
-# h 1e-2..1e-5: the mean of the forward (1.54119e-5, into the plenum, exit
-# head kept) and reverse (1.52856e-5, into the static-coupled boundary)
-# one-sided slopes, which ChannelElement takes at exactly zero drive.
+# #1209 / #1216: a compressible duct at exactly zero drive had dG/dPt = 0;
+# with the low-Mach viscous closure (#1216), both forward (into the plenum,
+# exit head kept) and reverse (into the static-coupled boundary) recover the
+# exact Hagen-Poiseuille slope 1.54119e-5 kg/(s Pa) at zero drive (before
+# #1216, the static-coupled 1 Pa cubic was 0.82% low, giving a mean of
+# 1.53487e-5).
 # ---------------------------------------------------------------------------
 
 
@@ -146,5 +147,5 @@ def test_1209_duct_flow_row_has_its_sub_floor_slope_at_zero_drive(kind: str) -> 
     xp[j] += h
     xm[j] -= h
     fd = (s._residuals(xp)[i] - s._residuals(xm)[i]) / (2.0 * h)
-    assert fd == pytest.approx(1.5349e-5, rel=1e-3)  # the cubic's slope
+    assert fd == pytest.approx(1.5412e-5, rel=1e-3)  # Hagen-Poiseuille slope (#1216)
     assert J[i, j] == pytest.approx(fd, rel=1e-4)

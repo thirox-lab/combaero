@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -840,6 +841,360 @@ void blend_end_states(FannoChannelFlow& out, const FannoChannelFlow& at, double 
   out.M_in = Mi;
 }
 
+// Low-Mach viscous/inertial duct closure below kFannoFlowDriveFloor (#1216).
+// Solves Delta P_inc(G) = drive directly in drive (no Pt0 - P cancellation),
+// using friction_f_re_and_jacobian (no laminar re_floor), so G -> Hagen-
+// Poiseuille (1 - w(0)) as drive -> 0 across all L/D and pressures.
+struct LowMachSolution {
+  bool valid = false;
+  double G = 0.0;
+  double dG_ddrive = 0.0;
+  double dG_dPt0_fixed_drive = 0.0;
+  double dG_dTt0 = 0.0;
+  double dG_dTt_exit = 0.0;
+  std::vector<double> dG_ddir;
+};
+
+LowMachSolution low_mach_duct_flow(double Pt0, double Tt0, double Tt_exit,
+                                   const std::vector<double>& X, double drive, bool exit_total,
+                                   double L, double D, double rough, const std::string& model,
+                                   double fmult, const std::vector<std::vector<double>>& dirs,
+                                   bool with_derivatives) {
+  LowMachSolution sol;
+  if (model == "fixed" || !(fmult > 0.0)) {
+    return sol;
+  }
+  const double e_D = rough / D;
+  const auto [f_re_0, df_re_0] = solver::friction_f_re_and_jacobian(model, 0.0, e_D);
+  (void)df_re_0;
+  if (!(f_re_0 > 0.0)) {
+    return sol;  // unknown friction tag
+  }
+
+  const double R = specific_gas_constant(X);
+  const bool adiabatic = (Tt_exit == Tt0);
+  const double c_acc = (R / Pt0) * ((exit_total ? 0.5 : 1.0) * Tt_exit - 0.5 * Tt0);
+  const double fric_pref = fmult * L * R / (2.0 * Pt0 * D * D);
+
+  // Precompute station temperatures and viscosities once (1 node adiabatic,
+  // 12 Gauss-Legendre nodes on [0, 1] diabatic).
+  constexpr int kGlNodes = 12;
+  const int n_nodes = adiabatic ? 1 : kGlNodes;
+  std::array<double, kGlNodes> xi{};
+  std::array<double, kGlNodes> w_gl{};
+  std::array<double, kGlNodes> Tt_n{};
+  std::array<double, kGlNodes> mu_n{};
+  std::array<double, kGlNodes> dmu_n{};
+  if (adiabatic) {
+    xi[0] = 0.0;
+    w_gl[0] = 1.0;
+    Tt_n[0] = Tt0;
+    if (with_derivatives) {
+      const TransportDerivatives tr = transport_and_dT(Tt0, Pt0, X);
+      mu_n[0] = tr.mu;
+      dmu_n[0] = tr.dmu_dT;
+    } else {
+      mu_n[0] = viscosity(Tt0, Pt0, X);
+    }
+  } else {
+    for (std::size_t j = 0; j < kGlX.size(); ++j) {
+      const double x_minus = 0.5 * (1.0 - kGlX[j]);
+      const double x_plus = 0.5 * (1.0 + kGlX[j]);
+      const double wt = 0.5 * kGlW[j];
+      const int i0 = static_cast<int>(2 * j);
+      const int i1 = i0 + 1;
+      xi[i0] = x_minus;
+      w_gl[i0] = wt;
+      xi[i1] = x_plus;
+      w_gl[i1] = wt;
+    }
+    for (int i = 0; i < n_nodes; ++i) {
+      Tt_n[i] = (1.0 - xi[i]) * Tt0 + xi[i] * Tt_exit;
+      if (with_derivatives) {
+        const TransportDerivatives tr = transport_and_dT(Tt_n[i], Pt0, X);
+        mu_n[i] = tr.mu;
+        dmu_n[i] = tr.dmu_dT;
+      } else {
+        mu_n[i] = viscosity(Tt_n[i], Pt0, X);
+      }
+    }
+  }
+
+  auto eval_dp = [&](double G) -> std::pair<double, double> {
+    double I_fric = 0.0;
+    double I_fric_G = 0.0;
+    for (int i = 0; i < n_nodes; ++i) {
+      const double Re = G * D / mu_n[i];
+      const auto [F_Re, dF_dRe] = solver::friction_f_re_and_jacobian(model, Re, e_D);
+      const double coeff = w_gl[i] * mu_n[i] * Tt_n[i];
+      I_fric += coeff * F_Re;
+      I_fric_G += coeff * (F_Re + Re * dF_dRe);
+    }
+    const double dp = c_acc * G * G + fric_pref * G * I_fric;
+    const double ddp_dG = 2.0 * c_acc * G + fric_pref * I_fric_G;
+    return {dp, ddp_dG};
+  };
+
+  double G = 0.0;
+  double ddp_dG = eval_dp(0.0).second;
+  if (!(ddp_dG > 0.0)) {
+    return sol;
+  }
+
+  if (drive > 0.0) {
+    const double R0 = ddp_dG;
+    double lo = 0.0;
+    double hi = 0.0;
+    if (c_acc >= 0.0) {
+      const double G0 = (c_acc > 0.0)
+                            ? (2.0 * drive) / (R0 + std::sqrt(R0 * R0 + 4.0 * c_acc * drive))
+                            : drive / R0;
+      double g_cur = G0;
+      auto [dp_cur, sl_cur] = eval_dp(g_cur);
+      if (dp_cur < drive) {
+        lo = g_cur;
+        hi = g_cur;
+        for (int k = 0; k < 60 && dp_cur < drive; ++k) {
+          lo = hi;
+          hi *= 2.0;
+          std::tie(dp_cur, sl_cur) = eval_dp(hi);
+        }
+        if (dp_cur < drive) {
+          return sol;
+        }
+      } else {
+        hi = g_cur;
+      }
+      G = (lo > 0.0) ? 0.5 * (lo + hi) : g_cur;
+    } else {
+      // Cooling with Rayleigh gain (c_acc < 0): stay strictly on the first
+      // rising branch (ddp_dG > 0). If dp peaks below drive, bail out.
+      double g_cur = drive / R0;
+      auto [dp_cur, sl_cur] = eval_dp(g_cur);
+      // Step down if the linear guess already overshot the peak.
+      for (int k = 0; k < 40 && !(sl_cur > 0.0); ++k) {
+        g_cur *= 0.5;
+        std::tie(dp_cur, sl_cur) = eval_dp(g_cur);
+      }
+      if (!(sl_cur > 0.0)) {
+        return sol;
+      }
+      if (dp_cur >= drive) {
+        hi = g_cur;
+      } else {
+        lo = g_cur;
+        double step = g_cur;
+        for (int k = 0; k < 60; ++k) {
+          const double g_try = lo + step;
+          auto [dp_try, sl_try] = eval_dp(g_try);
+          if (!(sl_try > 0.0)) {
+            step *= 0.5;
+            if (step <= 1e-12 * lo) {
+              return sol;  // peak lies below drive
+            }
+            continue;
+          }
+          if (dp_try >= drive) {
+            hi = g_try;
+            break;
+          }
+          lo = g_try;
+          step *= 2.0;
+        }
+        if (!(hi > lo)) {
+          return sol;
+        }
+      }
+      G = 0.5 * (lo + hi);
+    }
+
+    bool converged = false;
+    for (int it = 0; it < 80; ++it) {
+      const auto [dp_v, sl_v] = eval_dp(G);
+      const double f = dp_v - drive;
+      if (!(sl_v > 0.0)) {
+        return sol;
+      }
+      if (std::abs(f) <= 1e-15 * drive) {
+        ddp_dG = sl_v;
+        converged = true;
+        break;
+      }
+      if (f > 0.0) {
+        hi = G;
+      } else {
+        lo = G;
+      }
+      double G_new = G - f / sl_v;
+      if (std::abs(G_new - G) <= 1e-14 * std::abs(G_new) + 1e-300) {
+        G = G_new;
+        ddp_dG = eval_dp(G).second;
+        converged = true;
+        break;
+      }
+      if (!(G_new > lo && G_new < hi)) {
+        G_new = 0.5 * (lo + hi);
+      }
+      G = G_new;
+    }
+    if (!converged || !(ddp_dG > 0.0)) {
+      return sol;
+    }
+  }
+
+  sol.valid = true;
+  sol.G = G;
+  sol.dG_ddrive = 1.0 / ddp_dG;
+  if (!with_derivatives) {
+    return sol;
+  }
+
+  sol.dG_dPt0_fixed_drive = (G > 0.0) ? (drive / (Pt0 * ddp_dG)) : 0.0;
+  if (G > 0.0) {
+    double ddp_dTt0 = (-0.5 * R / Pt0) * G * G;
+    double ddp_dTt_exit = ((exit_total ? 0.5 : 1.0) * R / Pt0) * G * G;
+    for (int i = 0; i < n_nodes; ++i) {
+      const double Re = G * D / mu_n[i];
+      const auto [F_Re, dF_dRe] = solver::friction_f_re_and_jacobian(model, Re, e_D);
+      const double dterm_dTt = mu_n[i] * F_Re + Tt_n[i] * (F_Re - Re * dF_dRe) * dmu_n[i];
+      const double dnode = fric_pref * G * w_gl[i] * dterm_dTt;
+      ddp_dTt0 += dnode * (1.0 - xi[i]);
+      ddp_dTt_exit += dnode * xi[i];
+    }
+    if (adiabatic) {
+      // Combine both ends into Tt0 when Tt_exit is tied to Tt0.
+      sol.dG_dTt0 = -(ddp_dTt0 + ddp_dTt_exit) / ddp_dG;
+      sol.dG_dTt_exit = 0.0;
+    } else {
+      sol.dG_dTt0 = -ddp_dTt0 / ddp_dG;
+      sol.dG_dTt_exit = -ddp_dTt_exit / ddp_dG;
+    }
+  }
+
+  if (!dirs.empty()) {
+    sol.dG_ddir.assign(dirs.size(), 0.0);
+    if (G > 0.0) {
+      auto dp_at_X = [&](const std::vector<double>& Xk) {
+        const double Rk = specific_gas_constant(Xk);
+        const double c_acc_k = (Rk / Pt0) * ((exit_total ? 0.5 : 1.0) * Tt_exit - 0.5 * Tt0);
+        const double fric_pref_k = fmult * L * Rk / (2.0 * Pt0 * D * D);
+        double I_fric = 0.0;
+        for (int i = 0; i < n_nodes; ++i) {
+          const double muk = viscosity(Tt_n[i], Pt0, Xk);
+          const double Re = G * D / muk;
+          const auto [F_Re, dF_dRe] = solver::friction_f_re_and_jacobian(model, Re, e_D);
+          (void)dF_dRe;
+          I_fric += w_gl[i] * muk * Tt_n[i] * F_Re;
+        }
+        return c_acc_k * G * G + fric_pref_k * G * I_fric;
+      };
+      const std::vector<double> dp_v = d_ddir(X, dirs, dp_at_X);
+      for (std::size_t i = 0; i < dirs.size(); ++i) {
+        sol.dG_ddir[i] = -dp_v[i] / ddp_dG;
+      }
+    }
+  }
+  return sol;
+}
+
+// Sub-floor blend for both fanno_channel_flow (Tt_exit == Tt0) and
+// fanno_rayleigh_channel_flow below kFannoFlowDriveFloor (#1216).
+//
+// For viscous friction models where the floor state is unchoked and low-Mach,
+// scales the exact low-Mach closure G_inc(drive) by the C1 cubic multiplier:
+//   m(t) = 1 + (m1 - 1) * phi0(t) + m1p * phi1(t),  t = drive / floor,
+//   phi0(t) = 3 t^2 - 2 t^3,  phi1(t) = t^3 - t^2.
+// Since phi0(1) = 1, phi1(1) = 0, phi0(0) = phi1(0) = 0, keeping dm1/d(alpha)
+// (which uses only the first derivatives already evaluated at the floor) makes
+// G AND all five partials (dP_target, dPt0, dTt0, dTt_exit, dY) exactly
+// continuous at drive = floor and exact at drive = 0.
+//
+// Falls back to the odd cubic (flow_drive_floor.h) for fixed/frictionless
+// ducts or when the floor state is not low-Mach (e.g. choked or cooled fold).
+FannoChannelFlow apply_sub_floor_blend(const FannoChannelFlow& at, double Pt0, double Tt0,
+                                       double Tt_exit, const std::vector<double>& X, double drive,
+                                       bool exit_total, double L, double D, double rough,
+                                       const std::string& model, double fmult,
+                                       const std::vector<std::vector<double>>& dirs,
+                                       bool with_derivatives) {
+  const double floor = kFannoFlowDriveFloor;
+  const double t = drive / floor;
+
+  if (!at.choked && at.G > 0.0 && model != "fixed" && fmult > 0.0) {
+    const LowMachSolution low_1 = low_mach_duct_flow(
+        Pt0, Tt0, Tt_exit, X, floor, exit_total, L, D, rough, model, fmult, dirs, with_derivatives);
+    if (low_1.valid && low_1.G > 0.0) {
+      const double m1 = at.G / low_1.G;
+      const double dG_comp_ddrive = -at.dG_dP_target;
+      const double m1p = floor * (dG_comp_ddrive - m1 * low_1.dG_ddrive) / low_1.G;
+      if (std::abs(m1 - 1.0) <= kFannoLowMachM1Tol && std::abs(m1p) <= kFannoLowMachM1PrimeTol) {
+        const LowMachSolution low = low_mach_duct_flow(Pt0, Tt0, Tt_exit, X, drive, exit_total, L,
+                                                       D, rough, model, fmult, dirs,
+                                                       with_derivatives);
+        if (low.valid) {
+          const double phi0 = t * t * (3.0 - 2.0 * t);
+          const double phi1 = t * t * (t - 1.0);
+          const double m = 1.0 + (m1 - 1.0) * phi0 + m1p * phi1;
+          const double dm_dt = 6.0 * (m1 - 1.0) * t * (1.0 - t) + m1p * t * (3.0 * t - 2.0);
+
+          FannoChannelFlow out = at;
+          out.G = low.G * m;
+          blend_end_states(out, at, Pt0, Tt0, X);
+          if (drive == 0.0) {
+            out.M_exit_root = 0.0;
+          }
+          if (!with_derivatives) {
+            out.dG_dPt0 = 0.0;
+            out.dG_dTt0 = 0.0;
+            out.dG_dP_target = 0.0;
+            out.dG_dTt_exit = 0.0;
+            out.dG_ddir.clear();
+            return out;
+          }
+          const double dG_ddrive = low.dG_ddrive * m + low.G * (dm_dt / floor);
+          auto chain_param = [&](double dG_inc, double dG_inc_1, double dG_comp_1) {
+            const double dm1 = (dG_comp_1 - m1 * dG_inc_1) / low_1.G;
+            return dG_inc * m + low.G * phi0 * dm1;
+          };
+          out.dG_dP_target = -dG_ddrive;
+          const double dG_dPt0_fixed = chain_param(
+              low.dG_dPt0_fixed_drive, low_1.dG_dPt0_fixed_drive, at.dG_dPt0 + at.dG_dP_target);
+          out.dG_dPt0 = dG_ddrive + dG_dPt0_fixed;
+          out.dG_dTt0 = chain_param(low.dG_dTt0, low_1.dG_dTt0, at.dG_dTt0);
+          out.dG_dTt_exit = chain_param(low.dG_dTt_exit, low_1.dG_dTt_exit, at.dG_dTt_exit);
+          out.dG_ddir.assign(dirs.size(), 0.0);
+          for (std::size_t i = 0; i < dirs.size(); ++i) {
+            out.dG_ddir[i] = chain_param(low.dG_ddir[i], low_1.dG_ddir[i], at.dG_ddir[i]);
+          }
+          return out;
+        }
+      }
+    }
+  }
+
+  // Fallback: odd cubic matching value and slope at the floor (fixed friction
+  // where slope is infinite at zero drive, or non-low-Mach floor state).
+  const double sigma =
+      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * floor / at.G, 0.0, kDriveFloorSigmaMax) : 0.5;
+  const DriveFloorCubic cubic = drive_floor_cubic(t, sigma);
+  const double h = cubic.h;
+  const double dh = cubic.dh;
+  FannoChannelFlow out = at;
+  out.G = at.G * h;
+  blend_end_states(out, at, Pt0, Tt0, X);
+  if (drive == 0.0) {
+    out.M_exit_root = 0.0;  // no root at zero flow: no warm start, as before #1209
+  }
+  out.dG_dP_target = -at.G * dh / floor;
+  out.dG_dPt0 = at.G * dh / floor + h * (at.dG_dPt0 + at.dG_dP_target);
+  out.dG_dTt0 = h * at.dG_dTt0;
+  out.dG_dTt_exit = h * at.dG_dTt_exit;
+  for (double& d : out.dG_ddir) {
+    d *= h;
+  }
+  return out;
+}
+
 }  // namespace
 
 FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<double>& X,
@@ -860,8 +1215,8 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
     throw std::invalid_argument("fanno_channel_flow: Pt0, Tt0 and P_target must be finite");
   }
   // No flow at or below zero drive (the caller reverses the duct for reversed
-  // flow). At exactly zero drive the flux's slope is the sub-floor cubic's at
-  // t = 0, finite (#1209): only the derivatives need the floor's flow.
+  // flow). At exactly zero drive the flux's slope is finite (#1209, #1216):
+  // only the derivatives need the floor's flow.
   if (!(drive >= 0.0) || !(Pt0 > 0.0) || !(Tt0 > 0.0) || (drive == 0.0 && !with_derivatives)) {
     out.dG_ddir.assign(dirs.size(), 0.0);
     return out;
@@ -873,43 +1228,13 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
     raw.M_exit_root = raw.M_exit;
     return raw;
   }
-  // Below the floor: G = G0 h(t), t = drive / floor, with G0 the flux at the
-  // floor and h the odd cubic matching the raw law's value AND slope there:
-  // sigma = (dG/d drive) floor / G0 is the local exponent (1/2 for a sqrt law;
-  // larger at low Re, where f rises as the flow falls), and
-  //   h(t) = (3 - sigma)/2 t + (sigma - 1)/2 t^3,   h(1) = 1, h'(1) = sigma,
-  // finite and positive at t = 0 and monotone for sigma < 3.
+  // Below the floor: evaluate the compressible kernel at kFannoFlowDriveFloor
+  // (with derivatives for the C1 handoff slope) and blend smoothly to zero.
   pb.P = Pt0 - kFannoFlowDriveFloor;
-  pb.with_derivatives = true;  // sigma needs the slope at the floor
+  pb.with_derivatives = true;
   const FannoChannelFlow at = raw_flow(pb);
-  const double sigma =
-      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * kFannoFlowDriveFloor / at.G, 0.0, kDriveFloorSigmaMax)
-                 : 0.5;
-  const double t = drive / kFannoFlowDriveFloor;
-  const DriveFloorCubic cubic = drive_floor_cubic(t, sigma);
-  const double h = cubic.h;
-  const double dh = cubic.dh;
-  out = at;
-  out.G = at.G * h;
-  blend_end_states(out, at, Pt0, Tt0, X);
-  if (drive == 0.0) {
-    out.M_exit_root = 0.0;  // no root at zero flow: no warm start, as before #1209
-  }
-  // d/dP_target through t only; d/dPt0 through t and through G0, whose own
-  // target Pt0 - floor moves with Pt0. sigma(Pt0, Tt0, Y) is held fixed. Its
-  // own term, G0 (t^3 - t)/2 dsigma, is first order in sigma's variation, not
-  // second, but that variation is small: sigma moves only as f does with Re.
-  // Measured (#1019), it left dG/dTt0 0.6% off at t = 0.5 on a 5 cm duct and
-  // dG/dPt0 below 1e-6. Differencing sigma would cost 4 + 2 n_dirs raw solves
-  // per derivative evaluation (3x the Jacobian of a short-segment network),
-  // and slowed bleed_station solves 2-3x; so it stays fixed.
-  out.dG_dP_target = -at.G * dh / kFannoFlowDriveFloor;
-  out.dG_dPt0 = at.G * dh / kFannoFlowDriveFloor + h * (at.dG_dPt0 + at.dG_dP_target);
-  out.dG_dTt0 = h * at.dG_dTt0;
-  for (double& d : out.dG_ddir) {
-    d *= h;
-  }
-  return out;
+  return apply_sub_floor_blend(at, Pt0, Tt0, Tt0, X, drive, exit_total, L, D, roughness,
+                               friction_model, f_multiplier, dirs, with_derivatives);
 }
 
 // ---------------------------------------------------------------------------
@@ -2022,31 +2347,13 @@ FannoChannelFlow fanno_rayleigh_channel_flow(
     raw.M_exit_root = raw.M_exit;
     return raw;
   }
-  // Below the floor: the same C1 odd-cubic blend as fanno_channel_flow.
+  // Below the floor: same C1 low-Mach closure (or odd-cubic fallback) as
+  // fanno_channel_flow (#1216).
   pb.P = Pt0 - kFannoFlowDriveFloor;
   pb.with_derivatives = true;
   const FannoChannelFlow at = rayleigh_raw_flow(pb);
-  const double sigma =
-      (at.G > 0.0) ? std::clamp(-at.dG_dP_target * kFannoFlowDriveFloor / at.G, 0.0, kDriveFloorSigmaMax)
-                 : 0.5;
-  const double t = drive / kFannoFlowDriveFloor;
-  const DriveFloorCubic cubic = drive_floor_cubic(t, sigma);
-  const double h = cubic.h;
-  const double dh = cubic.dh;
-  out = at;
-  out.G = at.G * h;
-  blend_end_states(out, at, Pt0, Tt0, X);
-  if (drive == 0.0) {
-    out.M_exit_root = 0.0;  // no root at zero flow: no warm start, as before #1209
-  }
-  out.dG_dP_target = -at.G * dh / kFannoFlowDriveFloor;
-  out.dG_dPt0 = at.G * dh / kFannoFlowDriveFloor + h * (at.dG_dPt0 + at.dG_dP_target);
-  out.dG_dTt0 = h * at.dG_dTt0;
-  out.dG_dTt_exit = h * at.dG_dTt_exit;
-  for (double& d : out.dG_ddir) {
-    d *= h;
-  }
-  return out;
+  return apply_sub_floor_blend(at, Pt0, Tt0, Tt_exit, X, drive, exit_total, L, D, roughness,
+                               friction_model, f_multiplier, dirs, with_derivatives);
 }
 
 }  // namespace combaero

@@ -100,6 +100,11 @@ SAME_LEVEL = 1e-9
 #: 1.5e-10 |P| read 3.5e-6 of round-off, against 2e-7 at 1.5e-9 |P|. The
 #: ladder's bottom level.
 P_STEP_FLOOR = 1e-8
+#: Sub-floor ducts (#1216) solve the low-Mach balance directly in drive (no
+#: Pt0 - P cancellation inside the kernel) and can sit at drives ~1e-3 Pa;
+#: allowing their ladder to extend down to 1e-9 |P| keeps them on central
+#: Richardson levels instead of falling back to one-sided O(h^2) steps.
+P_SUBFLOOR_STEP_FLOOR = 5e-10
 #: The Fanno kernels' joints [Pa]: the flow-drive floor either way, where
 #: the flux is C1 (``fanno_mach.h``). Zero drive is not one: the flux is an
 #: odd cubic through it, and a duct whose ends hold the same gas reverses
@@ -265,7 +270,7 @@ def _safe(d0: list[float], dp: list[float] | None, dm: list[float] | None) -> bo
     """Whether both sides of a stencil keep every drive on its side of the
     joints, within FLOOR_MARGIN of its distance to them and within
     1 / DRIVE_DIVISOR of its own curvature scale (the drive, or the floor
-    inside it, where the flux is a cubic)."""
+    inside it, where ``_pick`` resolves sub-floor curvature adaptively)."""
     for d in (dp, dm):
         if d is None or len(d) != len(d0):
             return False
@@ -349,14 +354,16 @@ class _Column:
         self.dp.append(dp)
         self.dm.append(dm)
 
-    def can_extend(self) -> bool:
-        return self.h[-1] > self.lo * (1.0 + 1e-12)
+    def can_extend(self, floor_frac: float = P_STEP_FLOOR) -> bool:
+        lo = floor_frac * abs(self.x[self.j])
+        return self.h[-1] > lo * (1.0 + 1e-12)
 
-    def extend(self) -> None:
+    def extend(self, floor_frac: float = P_STEP_FLOOR) -> None:
         """Two more levels, halving, the last clipped at the round-off floor."""
+        lo = floor_frac * abs(self.x[self.j])
         for _ in range(2):
-            if self.can_extend():
-                self._add(max(self.h[-1] / 2.0, self.lo))
+            if self.can_extend(floor_frac):
+                self._add(max(self.h[-1] / 2.0, lo))
 
     def select(
         self,
@@ -371,6 +378,13 @@ class _Column:
         D = np.array(self.D)
         r2 = (h[:-1] / h[1:])[:, None] ** 2
         R = (r2 * D[1:] - D[:-1]) / (r2 - 1.0)
+        # Second Neville-Richardson column (O(h^6) truncation, zero extra F
+        # evaluations). Between R[k] (error ~ h[k]^2 h[k+1]^2) and R[k+1]
+        # (error ~ h[k+1]^2 h[k+2]^2) the exact cancellation ratio is
+        # (h[k] / h[k+2])^2 (= 16 on halving steps, exact even when the last
+        # step is clipped at the floor).
+        r4 = (h[:-2] / h[2:])[:, None] ** 2
+        R2 = (r4 * R[1:] - R[:-1]) / (r4 - 1.0)
         safe = {
             el: np.array([_safe(dd, self.dp[k].get(el), self.dm[k].get(el)) for k in range(h.size)])
             for el, dd in d0.items()
@@ -390,19 +404,31 @@ class _Column:
                 why[i] = "none"
                 continue
             allowed = np.flatnonzero(ok)
-            if el in safe:
-                # A duct's row curves on its drive, which the cap reads: it
-                # takes the largest allowed step (round-off falls with it),
-                # not the window a spread chooses. A spread alone took 3e-3
-                # Pa on x4's row in c5.P at #1157's forward root on Linux
-                # arm64, three levels agreeing to 2e-8 and all 1.1e-7 off J.
+            # Above the drive floor a duct's curvature scale is its drive, which
+            # the cap reads, so it takes the largest allowed step (round-off
+            # falls with it). Below the floor (#1216) the low-Mach inertial
+            # crossover can be orders of magnitude smaller than 1 Pa, so let
+            # _pick resolve the row's curvature adaptively.
+            sub_floor = el in safe and any(abs(d) < cb.FANNO_FLOW_DRIVE_FLOOR for d in d0[el])
+            if el in safe and not sub_floor:
                 k = int(allowed[0])
                 e = float(abs(R[k, i] - R[allowed[1], i])) if allowed.size > 1 else np.nan
                 v, smaller = float(R[k, i]), False
             else:
                 v, k, e, smaller = _pick(R[:, i], h[1:], ok)
+                # When a sub-floor duct's O(h^4) truncation meets IEEE-754
+                # pressure round-off above UNRESOLVED (curving on a ~1e-3 Pa
+                # scale against 1e5 Pa pressures), check the O(h^6) column R2
+                # on the same D ladder and adopt it only if its 3-window spread
+                # is strictly tighter (never peeking at J).
+                ok2 = ok[:-1] & ok[1:]
+                rel_e0 = e * xj / scale[i] if scale[i] > 0.0 else 0.0
+                if sub_floor and np.count_nonzero(ok2) >= 3 and not (rel_e0 <= UNRESOLVED):
+                    v2, k2, e2, smaller2 = _pick(R2[:, i], h[2:], ok2)
+                    if np.isfinite(e2) and (not np.isfinite(e) or e2 < e):
+                        v, k, e, smaller = v2, k2 + 1, e2, smaller2
             val[i], step[i], est[i] = v, h[k + 1], e
-            if el in safe:
+            if el in safe and not sub_floor:
                 cut = "drive cap" if not ok.all() else "top level, under the drive cap"
                 reason = f"{cut} of {el}, drive {min(d0[el], key=_margin):.4g} Pa"
             else:
@@ -411,10 +437,8 @@ class _Column:
             # Smaller steps may help while the tightest window is the
             # smallest one and above ACCURACY, and whenever the estimate is
             # above UNRESOLVED: then the asymptotic range may lie below.
-            # A duct's row never asks: its level is the cap's, which smaller
-            # steps do not move.
             rel_e = e * xj / scale[i] if scale[i] > 0.0 else 0.0
-            more[i] = el not in safe and (
+            more[i] = (el not in safe or sub_floor) and (
                 not (rel_e <= ACCURACY) and (smaller or not (rel_e <= UNRESOLVED))
             )
         return val, step, est, why, more
@@ -519,9 +543,18 @@ def fd_jacobian(
     for j, col in ladders.items():
         while True:
             val, step, e, why, more = col.select(d0, row_el, scale)
-            if not more.any() or not col.can_extend():
+            if not more.any():
                 break
-            col.extend()
+            need_subfloor = any(
+                more[i]
+                and row_el[i] in d0
+                and any(abs(d) < cb.FANNO_FLOW_DRIVE_FLOOR for d in d0[row_el[i]])
+                for i in range(m)
+            )
+            floor_frac = P_SUBFLOOR_STEP_FLOOR if need_subfloor else P_STEP_FLOOR
+            if not col.can_extend(floor_frac):
+                break
+            col.extend(floor_frac)
         cols[:, j], steps[:, j], est[:, j] = val, step, e
         bounds[:, j] = why
         for i in np.flatnonzero(np.array(why) == "none"):

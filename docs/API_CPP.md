@@ -1033,6 +1033,12 @@ linear in its flow down to essentially zero flow.
 // colebrook / petukhov. Unknown tag: invalid_argument.
 double solver::laminar_blend_f_re_at_zero();
 double solver::friction_f_re_at_zero(const std::string& tag);
+
+// Smooth f(Re) * Re and d(f * Re)/dRe without the laminar re_floor (#1216):
+// finite and cancellation-free for all Re >= 0, equal to friction_f_re_at_zero
+// at Re = 0. Returns {0, 0} for an unknown tag.
+std::tuple<double, double> solver::friction_f_re_and_jacobian(const std::string& tag,
+                                                              double Re, double e_D);
 ```
 
 `channel_residuals_and_jacobian` takes its slope at exactly zero flow from
