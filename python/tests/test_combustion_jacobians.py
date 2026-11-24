@@ -807,3 +807,99 @@ def test_a_lean_trace_fuel_equilibrium_converges(fuel: str, phi: float, T: float
     X = _fuel_in_air(fuel, phi)
     assert _cb._core.combustion_equilibrium(T, X, P).converged
     _cb._core.combustion_equilibrium_and_jacobian(T, X, P)  # does not raise
+
+
+def _h2_or_co_fuel_in_air(fuel: str, hc: str, x_hc: float, x_air: float) -> np.ndarray:
+    """(1 - x_air) [fuel (1 - x_hc), hc x_hc] + x_air dry air."""
+    f = np.zeros(_cb.num_species())
+    f[_cb.species_index_from_name(fuel)] = 1.0 - x_hc
+    f[_cb.species_index_from_name(hc)] = x_hc
+    return (1.0 - x_air) * f + x_air * np.array(_X_AIR)
+
+
+@pytest.mark.parametrize(
+    ("fuel", "hc", "x_hc", "x_air", "T", "P"),
+    [
+        # #1288's reproducer: CO2 methanates to 2e-30 beside CH4 at 3e-5.
+        ("H2", "CH4", 4.654e-10, 0.06578, 176.40, 1.6175e6),
+        ("H2", "CH4", 1e-7, 0.01, 250.0, 1e5),
+        ("H2", "C3H8", 1e-5, 0.01, 400.0, 1e6),
+        # Steam at 1e-63 and H2 at 1e-29 beside CO.
+        ("CO", "NC7H16", 1.7e-10, 0.0036, 231.0, 2.2e5),
+        # Above REFORMING_RICH_BASIS_HC_FRACTION: H2 at 1e-22.
+        ("CO", "CH4", 0.0036, 0.0017, 242.0, 9.1e4),
+    ],
+)
+def test_a_trace_hydrocarbon_in_h2_or_co_fuel_converges(
+    fuel: str, hc: str, x_hc: float, x_air: float, T: float, P: float
+) -> None:
+    """H2 or CO fuel with a hydrocarbon, cold (#1288). The element potentials
+    found the equilibrium, but a species far below the extents' changes was a
+    non-key of the basis it was written back in, n plus those changes, and
+    came back negative: CO2 at 2e-30 (H2 fuel, steam-reforming basis), steam
+    and H2 (CO fuel). The joint solve now takes the basis whose scarcest
+    non-key is the most abundant, a component basis among them. On main 513
+    of 1000 drawn H2 states (150-465 K) and 235 of 3000 H2/CO states did not
+    converge. Each state and its inlet-T neighbours converge, and the
+    Jacobian is not refused."""
+    X = _h2_or_co_fuel_in_air(fuel, hc, x_hc, x_air)
+    for k in range(-3, 4):
+        Tk = T * (1.0 + k * 1e-12)
+        assert _cb._core.combustion_equilibrium(Tk, X, P).converged, k
+    _cb._core.combustion_equilibrium_and_jacobian(T, X, P)  # does not raise
+
+
+@pytest.mark.parametrize(
+    ("species", "T", "P", "X_in"),
+    [
+        (
+            "C3H8",
+            401.7752539835066,
+            12531.880248269548,
+            {
+                "N2": 0.0009727392110349137,
+                "O2": 0.0002610000828788607,
+                "AR": 1.1586161197009089e-05,
+                "CO2": 4.983295138498533e-07,
+                "C3H8": 2.0955383176324375e-05,
+                "CO": 0.9987332208321991,
+            },
+        ),
+        (
+            "NC7H16",
+            243.9444450558274,
+            1522860.2428696256,
+            {
+                "N2": 0.002237990593595921,
+                "O2": 0.0006004854371905038,
+                "AR": 2.6656394109172723e-05,
+                "CO2": 1.1465115745880742e-06,
+                "NC7H16": 1.453606357700638e-06,
+                "H2": 0.9971322674571722,
+            },
+        ),
+    ],
+)
+def test_h2_or_co_fuel_trace_hydrocarbon_jacobian_matches_central_differences(
+    species: str, T: float, P: float, X_in: dict[str, float]
+) -> None:
+    """The fuel's hydrocarbon column of dT/dX against central differences
+    (#1288). In the former basis the solve converged here, but its state
+    carried the non-key's rounding: J was 13 % (C3H8 in CO) and 1.3 %
+    (heptane in H2) off, and F's differences jumped by 1e5 and more. Both
+    now match to 1e-5 at steps of 1e-3 and 1e-4 of the amount."""
+    X = np.zeros(_cb.num_species())
+    for name, x in X_in.items():
+        X[_cb.species_index_from_name(name)] = x
+    j = _cb.species_index_from_name(species)
+    J = _cb._core.combustion_equilibrium_and_jacobian(T, X, P).dT_dX[j]
+    for rel in (1e-3, 1e-4):
+        h = rel * X[j]
+        Xp, Xm = X.copy(), X.copy()
+        Xp[j] += h
+        Xm[j] -= h
+        fd = (
+            _cb._core.combustion_equilibrium(T, Xp, P).state.T
+            - _cb._core.combustion_equilibrium(T, Xm, P).state.T
+        ) / (2.0 * h)
+        assert abs(J - fd) <= 1e-5 * abs(fd), (rel, J, fd)
