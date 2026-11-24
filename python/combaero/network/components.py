@@ -12655,6 +12655,14 @@ class CrossflowSegmentElement(ChannelElement):
                 f"{type(self).__name__} {id!r}: from_node is either a reservoir "
                 "(entry_K) or a station (from_kappa), not both"
             )
+        if entry_K is not None and not (math.isfinite(entry_K) and entry_K >= 0.0):
+            # A negative K is an entry that adds total pressure: a second-law
+            # violation, so invalid input rather than an extrapolation (#1220).
+            # At K = -1 the K / (1 + K) term divides by zero.
+            raise ValueError(
+                f"{type(self).__name__} {id!r}: entry_K must be finite and "
+                f"non-negative, got {entry_K!r}"
+            )
         super().__init__(
             id,
             from_node,
