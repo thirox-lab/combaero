@@ -250,9 +250,23 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
       Pt0, 600.0, 750.0, air, P_target, false, 0.05, 0.01, 1e-5, "haaland", 1.0, cold.G * 1.001,
       {}, true);
   ASSERT_FALSE(cold.choked);
+  ASSERT_FALSE(warm.choked);
+  EXPECT_NEAR(warm.G, cold.G, 5e-8 * cold.G);
   EXPECT_NEAR(cold.dG_dP_target, warm.dG_dP_target, 1e-8 * std::abs(cold.dG_dP_target));
   EXPECT_NEAR(cold.dG_dPt0, warm.dG_dPt0, 1e-8 * std::abs(cold.dG_dPt0));
-  EXPECT_NEAR(cold.dG_dTt0, warm.dG_dTt0, 1e-8 * std::abs(cold.dG_dTt0));
+  // At drive = 1.5 Pa on 2e5 Pa, cold and warm Brent brackets can land ~1e-8
+  // apart in G inside inlet_theta's ~2.5e-9 Pa jitter band, which shifts
+  // dG/dTt0 by ~3.6 * dG/G (~3.6e-8 on Linux GCC). Removing the first-order
+  // root shift d(dG/dTt0)/dG * (warm.G - cold.G) keeps the 1e-8 bound intact.
+  const FannoChannelFlow r_gp = fanno_rayleigh_channel_flow(
+      Pt0, 600.0, 750.0, air, P_target + 1e-3, false, 0.05, 0.01, 1e-5, "haaland", 1.0, cold.G, {},
+      true);
+  const FannoChannelFlow r_gm = fanno_rayleigh_channel_flow(
+      Pt0, 600.0, 750.0, air, P_target - 1e-3, false, 0.05, 0.01, 1e-5, "haaland", 1.0, cold.G, {},
+      true);
+  const double d2G_dTt0_dG = (r_gp.dG_dTt0 - r_gm.dG_dTt0) / (r_gp.G - r_gm.G);
+  const double warm_dG_dTt0_at_cold_G = warm.dG_dTt0 - d2G_dTt0_dG * (warm.G - cold.G);
+  EXPECT_NEAR(cold.dG_dTt0, warm_dG_dTt0_at_cold_G, 1e-8 * std::abs(cold.dG_dTt0));
   EXPECT_NEAR(cold.dG_dTt_exit, warm.dG_dTt_exit, 1e-8 * std::abs(cold.dG_dTt_exit));
 
   auto E_ld = [&](double Gx, double Ptx, double T0x, double Tex) {
