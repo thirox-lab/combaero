@@ -2,6 +2,10 @@
 
 **[CLAUDE.md](CLAUDE.md) is authoritative for every agent. Read it first, in full, and follow it.** Its hard rules, architecture, working practice, style and git workflow all apply to you unchanged. This file lists only what differs for Gemini. It does not restate CLAUDE.md, so the two cannot drift apart. If a rule here seems to conflict with CLAUDE.md, CLAUDE.md wins; raise the conflict with the owner.
 
+Antigravity inlines CLAUDE.md here at startup, through the include below. GEMINI.md plus CLAUDE.md is about 18 KB, under its 24 KB per-file cap after expansion. A session whose rules budget is exceeded gets CLAUDE.md as a file pointer instead; then read it before the first command.
+
+@[CLAUDE.md](CLAUDE.md)
+
 A user-level `~/.gemini/GEMINI.md` may carry general defaults (for example a C++ standard or a plan-first rule). In this repo, CLAUDE.md overrides them: the C++ standard is C++17.
 
 ## Skills
