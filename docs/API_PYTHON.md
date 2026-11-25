@@ -3608,6 +3608,10 @@ with open("my_network.json", "w") as f:
     `MomentumChamberNode` (side streams on its side inlet), `CombustorNode`;
   - elements: `ChannelElement`, `OrificeElement`, `PressureLossElement` (all
     four correlations), `LosslessConnectionElement`;
+  - the plenum-fed hole elements (#1104), each as its own node with its
+    `hole_cd`: `EffusionPlateElement` (`effusion_plate`, with its wall, gas
+    side and radiation), `FilmCoolingElement` (`film_cooling`) and
+    `SlotFilmElement` (`slot_film`, a wall's `film` still names it);
   - `ThermalWall`, with its faces' radiation;
   - smooth convective surfaces only.
 - **Compositions** are written as exact mass fractions.
@@ -3617,6 +3621,13 @@ with open("my_network.json", "w") as f:
   - a channel with an explicit convective area (the GUI derives it);
   - a head-loss area different from the element's area (the GUI has one);
   - a static-coupled `PressureBoundary`;
+  - a hole-Cd choice the node's Inspector does not offer (a film row's
+    `IdelchikRounded`, say), or a hole field it has no input for
+    (`edge_radius`);
+  - a duct-fed `EffusionPlateElement` (the GUI's form is the effusion liner),
+    a lone `ImpingementPlateElement` row (the GUI has the impingement array),
+    and the two connection elements: no `OrificeElement` subclass is written
+    as a plain orifice;
   - an element type not listed above.
 - `layout="rows"` places each node in a column by its flow depth.
 - Handles follow each node type (a plenum's `flow-left` / `flow-right`, a
