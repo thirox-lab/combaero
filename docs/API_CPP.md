@@ -540,12 +540,29 @@ PressureLossResult pressure_loss_compose(const PressureLossModel& model,
 
 > **Scope: a partial equilibrium, by design.** The equilibrium starts from
 > complete combustion and then equilibrates only steam reforming of each
-> hydrocarbon and the water-gas shift. Its products are CO2, H2O, CO, H2, the
-> hydrocarbons and the inert N2 and Ar. There is no dissociation (no O, H,
-> OH), no nitrogen chemistry (no NO, NO2 or N2O: N2 is inert, so there is no
-> NOx and no thermal-NO heat release) and no soot. NH3 burns completely to N2
-> and H2O; rich, the unburnt NH3 passes through, and no NH3 -> N2 + H2
-> decomposition is equilibrated (#1314). For a full equilibrium, use Cantera.
+> hydrocarbon, the water-gas shift and, where NH3 is present, its
+> decomposition 2 NH3 = N2 + 3 H2 (#1314). Its products are CO2, H2O, CO, H2,
+> the hydrocarbons, NH3, N2 and the inert Ar. There is no dissociation (no O,
+> H, OH), no oxidised nitrogen (no NO, NO2 or N2O, so there is no NOx and no
+> thermal-NO heat release) and no soot. Rich, the NH3 that complete
+> combustion leaves unburnt is equilibrated with N2 and H2 (cracked to 1e-5
+> to 1e-7 at combustor temperatures, kept where it is cold and at pressure).
+> Lean, NH3 burns completely to N2 and H2O, except for the fuel fraction the
+> phi = 0 softmin (`smooth_phi0`, phi below 3e-3) and the phi = 1 softmin
+> (phi above 0.9994) leave unburnt: that trace (up to 1e-5) is cracked beside
+> the O2, as a hydrocarbon trace is reformed there (T moves by at most
+> 3e-2 K). N2 is inert where the burned state holds no more NH3 than
+> `EQUILIBRIUM_NH3_MIN_FRACTION` (1e-10), and no NH3 is formed from N2 and
+> H2 there, although true equilibrium forms it in a rich burn at pressure. A
+> NH3 trace that crosses the threshold therefore switches the synthesis on
+> in a step (measured, burned NH3 0.99e-10 -> 1.01e-10, 300 K inlet, dry
+> air): H2 phi 4 at 100 bar forms NH3 1.05e-3 and T rises 1.64 K; CH4 phi 2
+> at 100 bar 2.8e-4 and +0.44 K; H2 phi 4 at 1 bar +0.017 K; phi 1.3 at
+> 1 bar +3e-4 K. dT/dX moves by 0.1-0.6 % (8-51 % in the NH3 column), and
+> dT/dP of an H2 burn from 0 to finite. Always-on NH3 synthesis, with the
+> methanation of #1241, is planned for 0.13.0. Nor is a
+> hydrocarbon formed where the burned state holds none (no methanation of
+> syngas or of NH3 + CO). For a full equilibrium, use Cantera.
 >
 > **Adding a species does not extend the equilibrium.** The reaction set is
 > written for the current species table. A species added to it (NO, NO2, OH, ...)
@@ -560,7 +577,8 @@ EquilibriumResult combustion_equilibrium(const State& in, bool smooth_phi0 = tru
                                          double k0 = SMOOTHING_K_PHI0);
 
 // With analytic derivatives (#716): one implicit-function solve on the joint
-// extents (reforming per hydrocarbon, WGS; #759) and the adiabatic root; a
+// extents (reforming per hydrocarbon, WGS, NH3 decomposition; #759, #1314)
+// and the adiabatic root; a
 // reaction with an absent species keeps a zero derivative. Throws
 // std::runtime_error where the equilibrium does not converge (#1262).
 struct EquilibriumJacobian {

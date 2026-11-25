@@ -4368,7 +4368,7 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "Returns EquilibriumResult with equilibrium temperature and "
       "composition.");
 
-  // General reforming + WGS equilibrium (all hydrocarbons)
+  // General reforming + WGS (+ NH3 decomposition, #1314) equilibrium
   m.def(
       "reforming_equilibrium",
       [make_state](
@@ -4376,10 +4376,13 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
           py::array_t<double, py::array::c_style | py::array::forcecast> X_arr,
           double P) { return reforming_equilibrium(make_state(T, P, X_arr)); },
       py::arg("T"), py::arg("X"), py::arg("P") = 101325.0,
-      "Isothermal steam reforming + WGS equilibrium for all hydrocarbons.\n\n"
+      "Isothermal joint equilibrium of steam reforming, the water-gas shift\n"
+      "and NH3 decomposition, solved simultaneously.\n\n"
       "General reforming: CnHm + n*H2O <-> n*CO + (n + m/2)*H2\n"
-      "Water-Gas Shift: CO + H2O <-> CO2 + H2\n\n"
-      "Handles all hydrocarbons: CH4, C2H6, C3H8, iC4H10, nC5H12, etc.\n"
+      "  (each hydrocarbon present, CH4 to nC7H16)\n"
+      "Water-Gas Shift: CO + H2O <-> CO2 + H2\n"
+      "NH3 decomposition: 2 NH3 <-> N2 + 3 H2 (where NH3 is present, #1314)\n\n"
+      "Without a hydrocarbon or NH3, the shift alone. No dissociation, no NOx.\n"
       "Returns EquilibriumResult with equilibrium composition at input "
       "temperature.");
 
@@ -4392,10 +4395,13 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         return reforming_equilibrium_adiabatic(make_state(T, P, X_arr));
       },
       py::arg("T"), py::arg("X"), py::arg("P") = 101325.0,
-      "Adiabatic steam reforming + WGS equilibrium for all hydrocarbons.\n\n"
+      "Adiabatic joint equilibrium of steam reforming, the water-gas shift\n"
+      "and NH3 decomposition, solved simultaneously.\n\n"
       "General reforming: CnHm + n*H2O <-> n*CO + (n + m/2)*H2\n"
-      "Water-Gas Shift: CO + H2O <-> CO2 + H2\n\n"
-      "Handles all hydrocarbons: CH4, C2H6, C3H8, iC4H10, nC5H12, etc.\n"
+      "  (each hydrocarbon present, CH4 to nC7H16)\n"
+      "Water-Gas Shift: CO + H2O <-> CO2 + H2\n"
+      "NH3 decomposition: 2 NH3 <-> N2 + 3 H2 (where NH3 is present, #1314)\n\n"
+      "Without a hydrocarbon or NH3, the shift alone. No dissociation, no NOx.\n"
       "Returns EquilibriumResult with equilibrium temperature and "
       "composition.");
 
@@ -4447,11 +4453,13 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       py::arg("T"), py::arg("X"), py::arg("P") = 101325.0,
       py::arg("smooth") = true, py::arg("k0") = combaero::SMOOTHING_K_PHI0,
       "Combustion + equilibrium in one step.\n\n"
-      "Combines complete combustion with reforming + WGS equilibrium.\n"
+      "Combines complete combustion with the reforming + WGS (+ NH3\n"
+      "decomposition) equilibrium.\n"
       "Use this when starting from an unburned fuel+air mixture.\n\n"
       "Workflow:\n"
-      "  1. Complete combustion (fuel + O2 -> CO2 + H2O)\n"
-      "  2. Reforming + WGS equilibrium on products\n\n"
+      "  1. Complete combustion (fuel + O2 -> CO2 + H2O, NH3 -> N2 + H2O)\n"
+      "  2. Reforming, WGS and, where NH3 is left, 2 NH3 <-> N2 + 3 H2\n"
+      "     equilibrium on the products\n\n"
       "Returns State with equilibrium temperature and composition.");
 
   // -------------------------------------------------------------
@@ -5481,7 +5489,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "  Complete    : complete combustion to CO2 + H2O (fast, default)\n"
       "  Equilibrium : PARTIAL equilibrium -- complete combustion, then\n"
       "                reforming + water-gas shift among CO, H2, CO2, H2O\n"
-      "                and the fuel. No dissociation (no O, OH, H, NO):\n"
+      "                and the fuel, and NH3 decomposition to N2 + H2 where\n"
+      "                NH3 is left. No dissociation (no O, OH, H, NO):\n"
       "                identical to Complete when lean, cooler when rich.\n"
       "                By design: a combustor rarely reaches full\n"
       "                equilibrium, least of all for NO.")
