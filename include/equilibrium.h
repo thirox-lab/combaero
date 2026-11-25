@@ -19,6 +19,10 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // -------------------------------------------------------------
 // Higher-fidelity product model for rich hydrocarbon combustion.
 // Produces CO, H2, CO2, H2O, N2 (ignoring soot/solid carbon).
+// Partial by design: N2 is inert (no NO/NO2, so no NOx) and nothing
+// dissociates. The reactions cover the current species table only; a species
+// added to it is not equilibrated (see docs/API_CPP.md, Chemical Equilibrium,
+// and python/tests/test_equilibrium_scope.py).
 //
 // The reactions (steam reforming of each hydrocarbon, and WGS) are solved
 // SIMULTANEOUSLY (#759): one extent per reaction, Newton on

@@ -7,6 +7,12 @@ generate `thermo_transport_data.h` for the C++ library.
 
 This is the primary use case. The complete workflow for adding one or more species:
 
+> **The equilibrium does not pick up a new species.** `combustion_equilibrium`
+> equilibrates reforming and the water-gas shift over the current table only; N2
+> is inert. A new species (NO, NO2, OH, ...) needs a decision on its reactions
+> first. `python/tests/test_equilibrium_scope.py` fails until that is made; see
+> the Chemical Equilibrium section of `docs/API_CPP.md`.
+
 ### Step 1 — Obtain source data
 
 Source files are **not included** in this repository (licensing). You need at

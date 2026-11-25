@@ -535,6 +535,21 @@ PressureLossResult pressure_loss_compose(const PressureLossModel& model,
 
 ## Chemical Equilibrium (equilibrium.h)
 
+> **Scope: a partial equilibrium, by design.** The equilibrium starts from
+> complete combustion and then equilibrates only steam reforming of each
+> hydrocarbon and the water-gas shift. Its products are CO2, H2O, CO, H2, the
+> hydrocarbons and the inert N2 and Ar. There is no dissociation (no O, H,
+> OH), no nitrogen chemistry (no NO, NO2 or N2O: N2 is inert, so there is no
+> NOx and no thermal-NO heat release) and no soot. NH3 burns completely to N2
+> and H2O; rich, the unburnt NH3 passes through, and no NH3 -> N2 + H2
+> decomposition is equilibrated (#1314). For a full equilibrium, use Cantera.
+>
+> **Adding a species does not extend the equilibrium.** The reaction set is
+> written for the current species table. A species added to it (NO, NO2, OH, ...)
+> would sit in the mixture at its fed amount, uncounted by any reaction, and its
+> Jacobian would be zero. `python/tests/test_equilibrium_scope.py` pins the
+> species table so the addition fails until this is decided.
+
 ```cpp
 // Combustion equilibrium (adiabatic): complete combustion with the phi = 1
 // softmin always on (#1048; T is C1 through stoichiometric), then reforming + WGS
