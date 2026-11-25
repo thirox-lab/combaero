@@ -14749,6 +14749,23 @@ class MultiPortChamberBase(NetworkElement):
                     f"element, etc.), found {len(outside_elems)}."
                 )
             outer = outside_elems[0]
+            # The port's throughflow is the outer element's own m_dot unknown
+            # (flow_at_node, the reversed-port path and the mass rows read
+            # it). A legacy tee leg (m_dot_com / m_dot_branch) or another
+            # junction (P_jct) has none, and the port read no flow: a solve
+            # converged with the ledger off by 37 % of the mass, and a
+            # reversed outlet handed its port node a leaving stream (#1301).
+            if f"{outer.id}.m_dot" not in outer.unknowns():
+                raise ValueError(
+                    f"MultiPortChamberBase '{self.id}': port '{port_id}' is "
+                    f"fed by '{outer.id}' ({type(outer).__name__}), which has "
+                    f"no flow unknown of its own ('{outer.id}.m_dot'), so the "
+                    f"junction cannot read the port's flow. Put a "
+                    f"LosslessConnectionElement between them, through one "
+                    f"more MomentumChamberNode of the port's area: "
+                    f"'{outer.id}' -> new node -> LosslessConnectionElement -> "
+                    f"'{port_id}' (#1301)."
+                )
             self._port_element_ids[i] = outer.id
 
             # Validate the outer element's orientation matches the declared
