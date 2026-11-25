@@ -544,8 +544,9 @@ double psi(double Me, double P, double Pt0, double Tt0, const FlowProblem& pb) {
 // zero (a species absent or at trace level here but carried by an inflow), a
 // one-sided second-order difference, O(h^2) like the central one, at half
 // the step where the doubled step is infeasible too. Where neither side is
-// feasible (two absent or trace species with opposite-sign components) the
-// result stays 0, as before: not yet handled.
+// feasible (two absent or trace species with opposite-sign components), the
+// direction is split into its blocking species and the rest, each of which
+// has a feasible stencil, and the parts are summed (dg/dv is linear in v).
 //
 // A component at or below kFannoDirRoundoff of the largest that would take its
 // fraction below zero is dropped from the step first: it contributes nothing
@@ -612,14 +613,46 @@ std::vector<double> d_ddir(const std::vector<double>& X,
     // s: the feasible set {t : Y + t v >= 0} is an interval holding 0, so s/2
     // is feasible with s. A first-order fallback here put a 1.2e-5 jump into
     // dG/dv as the trace fraction crossed 2h|v_k|.
+    bool done = false;
     for (const double s : {h, -h}) {
       if (!feasible(v, s)) {
         continue;
       }
       const double t = feasible(v, 2.0 * s) ? s : 0.5 * s;
       out[i] = (-3.0 * g_at_x() + 4.0 * at(v, t) - at(v, 2.0 * t)) / (2.0 * t);
+      done = true;
       break;
     }
+    if (done) {
+      continue;
+    }
+    // Neither side feasible: v has opposite-sign components on two species
+    // that are absent or below h|v_k| (#1203). It returned 0 here, a J entry
+    // of 0 where the true dG/dv was 58-82. dg/dv is linear in v, so split it:
+    // v = sum_b v_b e_b + w, with b each species that blocks a step of 2h
+    // either way and w the rest. A unit vector e_b is feasible on its
+    // positive side, and w (no blocked component) on both, so each part has a
+    // stencil above; their sum is the exact directional derivative.
+    std::vector<std::vector<double>> parts;
+    std::vector<double> coeff;
+    std::vector<double> w = v;
+    for (std::size_t k = 0; k < Y.size(); ++k) {
+      if (v[k] != 0.0 && Y[k] < 2.0 * h * std::abs(v[k])) {
+        std::vector<double> e(Y.size(), 0.0);
+        e[k] = 1.0;
+        parts.push_back(std::move(e));
+        coeff.push_back(v[k]);
+        w[k] = 0.0;
+      }
+    }
+    parts.push_back(w);
+    coeff.push_back(1.0);
+    const std::vector<double> sub = d_ddir(X, parts, g, step_scale);
+    double sum = 0.0;
+    for (std::size_t p = 0; p < sub.size(); ++p) {
+      sum += coeff[p] * sub[p];
+    }
+    out[i] = sum;
   }
   return out;
 }
