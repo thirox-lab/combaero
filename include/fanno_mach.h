@@ -270,6 +270,23 @@ FannoChannelFlow fanno_channel_flow(double Pt0, double Tt0, const std::vector<do
 // Where the needed drive peaks and turns back down (a cooled duct at a
 // laminar friction range or near the choke), G rises continuously with the
 // drive up to the peak and then jumps to the next branch or to the choke.
+// That jump is a saddle-node of the model, not of the root choice (#1307):
+// below the peak the duct has two subsonic roots (the rising branch's, stable
+// between fixed pressures, and the falling branch's) and, where the exit
+// pressure at the choke reaches the target, choked flow too. As Tt_exit or L
+// moves the peak below the drive, the subsonic roots merge and vanish; no
+// continuous choice removes the jump ("prefer choked" would choke every gently
+// cooled duct at low drive). The kernel's root is the START-UP CONVENTION: the
+// state a slow ramp from rest reaches. A steady solve has no history, so the
+// other state is not less likely, only not the start-up one;
+// fanno_rayleigh_choked_alternative below reports it. On the issue's duct
+// (Pt0 1e5 Pa, Tt0 400 K, L = D = 1 cm, exit total) the fold is at drives of
+// a few Pa, the order of the cooling's Pt gain: 7.9x in G at 1.5 Pa, 2.5x at
+// 10 Pa. Below the 1 Pa drive floor the closure blends from the floor's state
+// (#1216) and inherits its jump. Two known limits of the scan: on a strongly
+// cooled duct the needed drive at zero flow is not zero but up to ~2e-6 Pt0
+// (#1205), and a fold below the cold scan's start (e^-7 Gc) is not seen
+// (#1207; one drive in 23020 of a random sweep).
 // The cold scan (G_guess <= 0) searches a cooled duct's flux brackets for that
 // first fall, those whose ends are both positive (#1167, walked in halves
 // near the drive, #1206) and those whose ends straddle zero (#1190). G_guess
@@ -306,6 +323,28 @@ double fanno_rayleigh_choked_mass_flux(double Pt0, double Tt0, double Tt_exit,
                                        const std::vector<double>& X, double L, double D,
                                        double roughness, const std::string& friction_model,
                                        double f_multiplier = 1.0);
+
+// Choked flow as the other admissible state at a drive (#1307). A cooled
+// duct's needed drive can rise from zero flow to a peak and fall back (the
+// Rayleigh Pt gain), so at one drive it can have a subsonic root AND choked
+// flow: the duct is bistable (a saddle-node fold, not a selection rule).
+// fanno_rayleigh_channel_flow returns the start-up root, the first stable
+// one reached by a slow ramp from rest (see above); this says whether choked
+// flow would also hold. Choked flow is admissible when the exit pressure at
+// the choked flux (static, or total if exit_total) is at or above P_target:
+// the exit is then under-expanded against it. One choke solve and one march,
+// about the cost of a cold call; meant for reporting a solution, not for a
+// residual.
+struct FannoChokedAlternative {
+  bool admissible = false;   // exit pressure at the choked flux >= P_target
+  double G = 0.0;            // choked mass flux [kg/(m^2 s)]
+  double exit_margin = 0.0;  // that exit pressure minus P_target [Pa]
+};
+
+FannoChokedAlternative fanno_rayleigh_choked_alternative(
+    double Pt0, double Tt0, double Tt_exit, const std::vector<double>& X, double P_target,
+    bool exit_total, double L, double D, double roughness, const std::string& friction_model,
+    double f_multiplier = 1.0);
 
 // fanno_channel_flow with heat: same contract and fields, plus dG_dTt_exit.
 // G_guess (the previous flux, if any) only warm-starts the root (see the

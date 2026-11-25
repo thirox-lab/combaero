@@ -2899,6 +2899,31 @@ double fanno_rayleigh_choked_mass_flux(double Pt0, double Tt0, double Tt_exit,
   return choked_flux(pb, Pt0, Tt0, Tt_exit, X).G;
 }
 
+FannoChokedAlternative fanno_rayleigh_choked_alternative(
+    double Pt0, double Tt0, double Tt_exit, const std::vector<double>& X, double P_target,
+    bool exit_total, double L, double D, double roughness, const std::string& friction_model,
+    double f_multiplier) {
+  check_duct(L, D);
+  check_friction(roughness, f_multiplier);
+  if (!validation::is_finite_positive(Pt0) || !validation::is_finite_positive(Tt0) ||
+      !validation::is_finite_positive(Tt_exit) || !validation::is_finite(P_target)) {
+    throw std::invalid_argument(
+        "fanno_rayleigh_choked_alternative: Pt0, Tt0 and Tt_exit must be positive, P_target "
+        "finite");
+  }
+  static const std::vector<std::vector<double>> kNone;
+  const RayleighProblem pb{Pt0, Tt0, Tt_exit, P_target, L, D, roughness, f_multiplier, &X,
+                           &friction_model, exit_total, -1.0, &kNone, false};
+  // The same exit pressure at the choke as the cold path's choke test in
+  // rayleigh_raw_flow (its Fc), so "admissible" is the kernel's own verdict.
+  FannoChokedAlternative out;
+  out.G = choked_flux(pb, Pt0, Tt0, Tt_exit, X).G;
+  const RayleighDuct d = pb.duct(out.G, Tt0, Tt_exit, &X);
+  out.exit_margin = rayleigh_exit_pressure(d, march_zeta(d, Pt0), exit_total) - P_target;
+  out.admissible = out.exit_margin >= 0.0;
+  return out;
+}
+
 FannoChannelFlow fanno_rayleigh_channel_flow(
     double Pt0, double Tt0, double Tt_exit, const std::vector<double>& X, double P_target,
     bool exit_total, double L, double D, double roughness, const std::string& friction_model,

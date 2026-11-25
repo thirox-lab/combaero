@@ -278,6 +278,9 @@ UNIT_MAP: dict[str, str] = {
     "rayleigh_in_momentum": "-",
     "rayleigh_omitted": "-",
     "rayleigh_omitted_frac": "-",
+    # A cooled duct's other admissible state (#1307)
+    "bistable": "-",
+    "m_dot_choked_alternative": "kg/s",
     # Area change (#731)
     "F0": "m\u00b2",
     "F1": "m\u00b2",

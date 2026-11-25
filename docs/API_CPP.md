@@ -896,6 +896,26 @@ Fanno kernel at zero heat (<= 1e-7 in G) and Rayleigh algebra at zero
 friction (<= 1e-8 in exit Mach). About 8 ms per warm call with derivatives,
 ~3-5x the adiabatic kernel.
 
+**Root choice: the start-up convention (#1307).** Cooling raises the duct's
+Pt, so its needed drive can rise from zero flow to a peak and fall back. Below
+that peak a cooled duct has a subsonic root, and where the exit pressure at
+the choked flux reaches the target, choked flow as well: it is **bistable**.
+The jump to the choke as `Tt_exit` or `L` moves the peak below the drive is a
+saddle-node of the model (the two subsonic roots merge and vanish), so no
+continuous root choice removes it. `fanno_rayleigh_channel_flow` returns the
+first stable root from zero flow: the state a slow ramp from rest reaches. A
+steady solve has no history, so the other state is not less likely, only not
+the start-up one. `fanno_rayleigh_choked_alternative` says whether choked flow
+also holds against `P_target` (`admissible`: the exit pressure at the choked
+flux, total if `exit_total`, is at or above it; `exit_margin` is that pressure
+minus `P_target`). It costs one choke solve and one march, so it is for
+reporting a solution, never a residual. On Pt0 1e5 Pa, Tt0 400 K, L = D = 1 cm
+the fold sits at drives of a few Pa (a 7.9x jump in G at 1.5 Pa, 2.5x at
+10 Pa). Choosing between the states from the network's stability is out of
+scope. Known limits of the same scan: a strongly cooled duct's needed drive at
+zero flow is up to ~2e-6 Pt0, not 0 (#1205), and a fold below the cold scan's
+starting flux, e^-7 Gc, is not seen (#1207).
+
 ```cpp
 FannoRayleighMarch fanno_rayleigh_march(double G, double Pt0, double Tt0, double Tt_exit,
                                         const std::vector<double>& X, double L, double D,
@@ -903,6 +923,13 @@ FannoRayleighMarch fanno_rayleigh_march(double G, double Pt0, double Tt0, double
                                         double f_multiplier = 1.0);
 // {M_in, M_exit, zeta_min (<= 0: choked), zeta_peak, P_exit, Pt_exit, T_exit}
 double fanno_rayleigh_choked_mass_flux(double Pt0, double Tt0, double Tt_exit, ...);
+// {admissible, G (choked flux), exit_margin [Pa]}: whether choked flow also holds (#1307).
+FannoChokedAlternative fanno_rayleigh_choked_alternative(double Pt0, double Tt0, double Tt_exit,
+                                                         const std::vector<double>& X,
+                                                         double P_target, bool exit_total,
+                                                         double L, double D, double roughness,
+                                                         const std::string& friction_model,
+                                                         double f_multiplier = 1.0);
 // fanno_channel_flow's contract plus dG_dTt_exit; G_guess warm-starts the root.
 FannoChannelFlow fanno_rayleigh_channel_flow(double Pt0, double Tt0, double Tt_exit,
                                              const std::vector<double>& X, double P_target,

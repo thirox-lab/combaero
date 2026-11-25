@@ -193,6 +193,17 @@ export const QUANTITY_CATALOGUE: Record<
 		unit: "—",
 		format: (v) => (v > 0 ? "yes (Fanno-Rayleigh)" : "no"),
 	},
+	// A cooled duct's other admissible state (#1307): the solve is the start-up one
+	bistable: {
+		label: "Choked flow also admissible",
+		unit: "—",
+		format: (v) => (v > 0 ? "yes (start-up root shown)" : "no"),
+	},
+	m_dot_choked_alternative: {
+		label: "ṁ if choked",
+		unit: "kg/s",
+		format: formatMassFlow,
+	},
 	// Orifice velocity of approach and ISO 5167 taps (#649/#645/#651)
 	beta: { label: "β (declared)", unit: "—", format: (v) => v.toFixed(4) },
 	beta_flow: { label: "β (flow)", unit: "—", format: (v) => v.toFixed(4) },

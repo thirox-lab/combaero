@@ -1807,6 +1807,7 @@ bookkeeping keys. Five of them say what happened:
 | `__T_clamped__` | `list[str]` | nodes with flow whose temperature is at or below 0 K at the solution: more heat out than the stream holds as a gas (the thermo is an ideal gas down to 0 K). Reported INCONSISTENT (`__success__` False). The name is kept from the [200, 5000] K node clamp this replaced (#626). |
 | `__wall_undetermined__` | `list[str]` | effusion plates with no cooling path at the root (#998): no coolant flow through the holes and no gas flow on the other side, so the wall temperature is undetermined (`no_cooling_path` 1, wall keys NaN). Reported INCONSISTENT, the plate named in `__message__`. |
 | `__wall_above_limit__` | `list[str]` | effusion plates with a face above `T_wall_limit`, their material's envelope hot end (#998; `wall_above_limit` 1). Reported only. |
+| `__bistable_ducts__` | `dict[str, dict]` | compressible ducts with their heat in the momentum that run subsonic where choked flow would hold too (#1307): `{id: {m_dot, m_dot_choked_alternative}}`, from the duct's `bistable` / `m_dot_choked_alternative` keys. A cooled duct's needed drive can rise from zero flow to a peak and fall back (its Rayleigh Pt gain), and below that peak a subsonic root and choked flow are both admissible. The solution is the start-up one, the state a slow ramp from rest reaches; the other is reported, not chosen. The alternative is evaluated at the duct's solved end states: choked, its flow would move the heat it exchanges, so it is not a second solved network. Reported only, never a demotion. |
 | `__fraction_unanchored__` | `list[str]` | fraction losses without `m_ref` on their zero-flow blend in a driven flow component, not a dead end (#1004; `fraction_unanchored` 1): the loss law is not met at that root. Reported only, never a demotion. Checked once on the outermost solve's result, after every retry has restored the boundaries; on a failed solve the losses flagged at the best iterate are named in `__message__`. |
 | `__heat_faded__` | `list[str]` | heated nodes at a root inside the heat fade below `MIXER_HEAT_MDOT_FLOOR`, taking up part of their heat: neither flowing nor stagnant, a root the fade makes. Reported INCONSISTENT. |
 | `__supersonic_chambers__` | `list[str]` | compressible momentum chambers at a root past the sonic limit of their area, REFUSED: the chamber's Pt is below the sonic Pt* of its mass flux at its area, so no state of that area carries the flow (since #788 the closure has one root per Pt, so this is the only way past the sonic point; the supersonic root Newton once landed on is gone). Not a choked-bounded junction (below): the reason is in `__message__` (`'e1' (LosslessConnectionElement) feeds it, not a choked channel`, `row(s) [...] read its static pressure`, a channel wider than the chamber). Usually the element downstream is no restriction for that flow, or the chamber's area is too small for it. Reported INCONSISTENT. |
@@ -2674,7 +2675,11 @@ channel = ChannelElement("channel", "node2", "node3", length=2.0, diameter=0.05,
 # carries d/dY along the directions that composition moves in (#489).
 # On a ThermalWall (#551) the duct carries its heat in the momentum
 # (fanno_rayleigh_channel_flow, Tt linear from the feeding node's to the duct's
-# exit Tt); diagnostics "rayleigh_in_momentum" = 1. Into a plenum or chamber fed
+# exit Tt); diagnostics "rayleigh_in_momentum" = 1. A cooled duct can be
+# bistable (#1307): it runs subsonic, but choked flow would hold too. The root
+# is the start-up one (fanno_rayleigh_channel_flow); "bistable" = 1 and
+# "m_dot_choked_alternative" [kg/s] name the other, at the duct's solved end
+# states (NaN, and "bistable" 0, otherwise). Into a plenum or chamber fed
 # by this duct alone, with no wall of its own, the exit Tt is that node's. Into
 # any other node (one mixing other streams, one with its own wall, a boundary)
 # the solver forms the duct's own exit state from its stream and its own wall
