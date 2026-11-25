@@ -348,6 +348,43 @@ jobs:
           pnpm run build
         working-directory: gui/frontend
 
+  property-search:
+    # Hypothesis property searches (`-m nightly`), on the nightly run and on a
+    # manual dispatch only. A search spends its budget hunting new cases, so
+    # it must not run on every push, and a case it finds is a new issue, not
+    # a regression of the PR that happens to be open. That is also why the
+    # status check below does not need it: it never runs on a pull request
+    # or in the merge queue. A failure here mails the owner (GitHub notifies
+    # on a failed scheduled run); file the case it prints as an issue.
+    name: Property Search (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Install dependencies
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: "0.0.0.dev0"
+        run: uv sync --all-extras --all-groups
+
+      - name: Run property searches
+        working-directory: python/tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          COMBAERO_NIGHTLY: "1"
+          # Examples per (fuel, oxidizer, edge) cell; 200 is the module default.
+          COMBAERO_HYPOTHESIS_EXAMPLES: "500"
+        run: |
+          uv run pytest -m nightly -n auto -q --tb=short -p no:cacheprovider
+
   status-check:
     # IMPORTANT: Keep this literal name in sync with Iron ruleset required context:
     # "Validation Tests / status-check". Ruleset matching is strict and relies on exact string equality.

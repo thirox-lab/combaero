@@ -55,6 +55,9 @@ dev = [
     # The MPCE sympy cross-check (python/tests/_mpce_jacobian.py) and the
     # derivation scripts (scripts/derive_*_jacobian.py); no runtime use.
     "sympy>=1.14.0",
+    # Property searches (python/tests/test_equilibrium_properties_hypothesis.py),
+    # run by the nightly job only; no runtime use.
+    "hypothesis>=6.170",
 ]
 
 [tool.scikit-build]
