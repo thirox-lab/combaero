@@ -1,5 +1,6 @@
-"""The combustion equilibrium is partial by design: reforming and water-gas
-shift over a fixed species table, N2 inert (no NOx), no dissociation.
+"""The combustion equilibrium is partial by design: reforming, water-gas
+shift and NH3 decomposition (#1314) over a fixed species table, no NOx, no
+dissociation.
 
 A species added to the thermo table is not equilibrated by any reaction: it
 would pass through at its fed amount with a zero Jacobian, and nothing else
@@ -39,8 +40,8 @@ def test_species_table_matches_equilibrium_scope() -> None:
     removed = sorted(set(EQUILIBRIUM_SPECIES) - set(_species()))
     assert not added and not removed, (
         f"species table changed (added {added}, removed {removed}). The "
-        "combustion equilibrium only equilibrates reforming and the water-gas "
-        "shift, with N2 inert: a new species is not equilibrated and passes "
+        "combustion equilibrium only equilibrates reforming, the water-gas "
+        "shift and NH3 decomposition: a new species is not equilibrated and passes "
         "through at its fed amount. Decide its reactions (or that it is inert), "
         "update docs/API_CPP.md (Chemical Equilibrium) and then this list."
     )

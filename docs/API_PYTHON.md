@@ -227,9 +227,10 @@ Also: `set_equivalence_ratio_mass`, `bilger_stoich_mixture_fraction_mass`,
 inverse solvers.
 
 ### Chemical Equilibrium
-Partial equilibrium by design: complete combustion, then steam reforming and
-the water-gas shift only. N2 is inert: no NO/NO2 (no NOx), no dissociation, no
-soot. Scope and limits: the Chemical Equilibrium section of [API_CPP.md](API_CPP.md).
+Partial equilibrium by design: complete combustion, then steam reforming, the
+water-gas shift and, where NH3 is present, its decomposition 2 NH3 = N2 + 3 H2
+(#1314). No NO/NO2 (no NOx), no dissociation, no soot; N2 is inert without NH3.
+Scope and limits: the Chemical Equilibrium section of [API_CPP.md](API_CPP.md).
 ```python
 # T, P constant equilibrium
 eq_state = cb.combustion_equilibrium(T=300.0, X=X, P=101325.0, smooth=True)

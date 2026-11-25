@@ -355,11 +355,17 @@ struct ReformingConfig {
   std::size_t i_CO;
   std::size_t i_CO2;
   std::size_t i_H2;
+  std::size_t i_NH3;
+  std::size_t i_N2;
 
   // Hydrocarbon species indices and their C, H counts
   std::vector<std::size_t> hc_indices;
   std::vector<int> hc_C; // number of C atoms
   std::vector<int> hc_H; // number of H atoms
+
+  // Whether NH3 decomposition, 2 NH3 = N2 + 3 H2, is equilibrated (NH3 is
+  // present: EQUILIBRIUM_NH3_MIN_FRACTION; #1314). Without it N2 is inert.
+  bool nh3 = false;
 };
 
 static ReformingConfig make_reforming_config() {
@@ -368,6 +374,8 @@ static ReformingConfig make_reforming_config() {
   cfg.i_CO = species_index.at("CO");
   cfg.i_CO2 = species_index.at("CO2");
   cfg.i_H2 = species_index.at("H2");
+  cfg.i_NH3 = species_index.at("NH3");
+  cfg.i_N2 = species_index.at("N2");
 
   // Find all hydrocarbon species (C > 0, H > 0, O = 0, N = 0)
   for (std::size_t i = 0; i < species_names.size(); ++i) {
@@ -549,8 +557,111 @@ static void apply_reforming(std::vector<double> &n, double xi, std::size_t i_hc,
   n[cfg.i_H2] += (n_C + 0.5 * n_H) * xi;
 }
 
-// One round: reform each hydrocarbon in turn, then WGS, each to its own
-// equilibrium at the current composition.
+// NH3 decomposition, 2 NH3 = N2 + 3 H2 (#1314): ln K = -(g_N2 + 3 g_H2 -
+// 2 g_NH3)/RT, two moles gained per extent.
+static double lnKp_nh3_decomposition(double T, const ReformingConfig &cfg) {
+  return -(g_over_RT(cfg.i_N2, T) + 3.0 * g_over_RT(cfg.i_H2, T) -
+           2.0 * g_over_RT(cfg.i_NH3, T));
+}
+
+// Its extent alone at T from n0, for the rounds that start the joint solve.
+// F(xi) = ln(n_N2 + xi) + 3 ln(n_H2 + 3 xi) - 2 ln(n_NH3 - 2 xi)
+//         - 2 ln(n_t + 2 xi) + 2 ln(P/P0) - ln K
+// rises from -inf (N2 or H2 used up) to +inf (NH3 used up), with the slope
+//   dF/dxi = 1/n_N2 + 9/n_H2 + 4/n_NH3 - 4/n_t > 0  (n_NH3 < n_t),
+// so the root is bracketed: safeguarded Newton, bisecting where a step leaves
+// the bracket, converged to EQUILIBRIUM_WGS_FTOL or to F's rounding (NH3 is
+// cracked to 1e-5 of itself and below, and n_NH3 - 2 xi carries only
+// eps a_NH3 / n_NH3 of relative precision), as solve_wgs_extent. Only a start:
+// the joint Newton polishes it. A Newton step that leaves the bracket is
+// taken in the log of the distance to the bound it points at, where F is
+// linear in that log (F ~ 3 ln(n_H2) as H2 runs out): the adiabatic search
+// probes down to EQUILIBRIUM_T_MIN, where the H2 that NH3 at 0.8 holds is
+// 1e-70, and bisection from the middle of the bracket halved 200 times
+// without reaching it (very rich NH3, phi 16-20).
+static double solve_nh3_decomposition_isothermal(const std::vector<double> &n0, double T,
+                                                 double P, const ReformingConfig &cfg) {
+  const double a_NH3 = n0[cfg.i_NH3];
+  const double a_N2 = n0[cfg.i_N2];
+  const double a_H2 = n0[cfg.i_H2];
+  const double xi_hi = 0.5 * a_NH3;
+  const double xi_lo = -std::min(a_N2, a_H2 / 3.0);
+  if (!(xi_hi > xi_lo)) return 0.0;  // nothing can move either way
+  const double lnKp = lnKp_nh3_decomposition(T, cfg);
+  const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
+  double nt0 = 0.0;
+  for (double v : n0) nt0 += v;
+  const double inf = std::numeric_limits<double>::infinity();
+  const double eps = std::numeric_limits<double>::epsilon();
+  auto eval = [&](double xi, double &dF, double &noise) {
+    const double n_N2 = a_N2 + xi;
+    const double n_H2 = a_H2 + 3.0 * xi;
+    const double n_NH3 = a_NH3 - 2.0 * xi;
+    const double nt = nt0 + 2.0 * xi;
+    if (!(n_N2 > 0.0 && n_H2 > 0.0)) return -inf;
+    if (!(n_NH3 > 0.0)) return inf;
+    dF = 1.0 / n_N2 + 9.0 / n_H2 + 4.0 / n_NH3 - 4.0 / nt;
+    const double ax = std::abs(xi);
+    noise = eps * ((a_N2 + ax) / n_N2 + 3.0 * (a_H2 + 3.0 * ax) / n_H2 +
+                   2.0 * (a_NH3 + 2.0 * ax) / n_NH3 + 2.0 * (nt0 + 2.0 * ax) / nt +
+                   std::abs(lnKp));
+    return std::log(n_N2) + 3.0 * std::log(n_H2) - 2.0 * std::log(n_NH3) -
+           2.0 * std::log(nt) + 2.0 * ln_P - lnKp;
+  };
+  double lo = xi_lo;
+  double hi = xi_hi;
+  double xi = (lo < 0.0 && 0.0 < hi) ? 0.0 : 0.5 * (lo + hi);
+  double F = 0.0;
+  for (int it = 0; it < inner_solve::kReformingExtentMaxIter; ++it) {
+    double dF = 0.0;
+    double noise = 0.0;
+    F = eval(xi, dF, noise);
+    if (std::isnan(F)) {
+      inner_solve::throw_no_convergence("solve_nh3_decomposition_isothermal", it, "ln(Q/K)", F);
+    }
+    if (std::abs(F) <= EQUILIBRIUM_WGS_FTOL ||
+        std::abs(F) <= EQUILIBRIUM_WGS_NOISE_FACTOR * noise) {
+      return xi;
+    }
+    if (F > 0.0) {
+      hi = xi;
+    } else {
+      lo = xi;
+    }
+    const bool newton_ok = std::isfinite(F) && dF > 0.0 && std::isfinite(dF);
+    double xi_new = newton_ok ? xi - F / dF : 0.5 * (lo + hi);
+    if (newton_ok && !(xi_new > lo && xi_new < hi)) {
+      const double step = -F / dF;
+      if (step < 0.0) {
+        const double d = xi - xi_lo;
+        xi_new = xi_lo + d * std::exp(step / d);
+      } else {
+        const double d = xi_hi - xi;
+        xi_new = xi_hi - d * std::exp(-step / d);
+      }
+    }
+    if (!(xi_new > lo && xi_new < hi)) xi_new = 0.5 * (lo + hi);
+    // The bracket cannot be split further: a root to rounding.
+    if (!(xi_new > lo && xi_new < hi)) return xi;
+    xi = xi_new;
+  }
+  if (inner_solve::cap_exit_is_root(hi - lo, xi)) return xi;
+  inner_solve::throw_no_convergence("solve_nh3_decomposition_isothermal",
+                                    inner_solve::kReformingExtentMaxIter, "ln(Q/K)", F);
+}
+
+// NH3 decomposition to its own equilibrium at n (in place), if equilibrated.
+static void nh3_decomposition_step(std::vector<double> &n, double T, double P,
+                                   const ReformingConfig &cfg) {
+  if (!cfg.nh3) return;
+  const double xi = solve_nh3_decomposition_isothermal(n, T, P, cfg);
+  n[cfg.i_NH3] -= 2.0 * xi;
+  n[cfg.i_N2] += xi;
+  n[cfg.i_H2] += 3.0 * xi;
+}
+
+// One round: reform each hydrocarbon in turn, then decompose NH3 (where
+// present), then WGS, each to its own equilibrium at the current composition.
 static void reforming_wgs_round(std::vector<double> &n_out, double T, double P,
                                 const ReformingConfig &cfg) {
   for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
@@ -561,6 +672,7 @@ static void reforming_wgs_round(std::vector<double> &n_out, double T, double P,
     double xi = solve_reforming_isothermal(n_out, T, P, i_hc, n_C, n_H, cfg);
     apply_reforming(n_out, xi, i_hc, n_C, n_H, cfg);
   }
+  nh3_decomposition_step(n_out, T, P, cfg);
 
   WgsConfig wgs_cfg = make_wgs_config();
 
@@ -606,7 +718,15 @@ struct JointReaction {
   std::size_t key = 0;  // entry of nu whose species no other reaction has
 };
 
-// The reactions: reforming of each hydrocarbon (if with_reforming), then WGS.
+// NH3 decomposition, 2 NH3 = N2 + 3 H2 (#1314), keyed on NH3: no other
+// reaction holds NH3 or N2, and NH3 is the trace (1e-5 to 1e-7 of the total
+// at combustor temperatures).
+static JointReaction nh3_reaction(const ReformingConfig &cfg) {
+  return JointReaction{{{cfg.i_NH3, -2.0}, {cfg.i_N2, 1.0}, {cfg.i_H2, 3.0}}, 2.0, 0};
+}
+
+// The reactions: reforming of each hydrocarbon (if with_reforming), then WGS,
+// then NH3 decomposition (if cfg.nh3).
 // to_co2: reform to CO2 (CnHm + 2n H2O = n CO2 + (2n + m/2) H2) and key WGS
 // on CO instead of CO2, the same reaction space (#1262). Where CO is the
 // scarcer of the two (a lean burn with trace fuel: CO at 4e-12 beside CO2 at
@@ -639,6 +759,7 @@ static std::vector<JointReaction> joint_reactions(const ReformingConfig &cfg,
   rx.push_back(JointReaction{
       {{cfg.i_CO, -1.0}, {cfg.i_H2O, -1.0}, {cfg.i_CO2, 1.0}, {cfg.i_H2, 1.0}}, 0.0,
       to_co2 ? std::size_t{0} : std::size_t{2}});
+  if (cfg.nh3) rx.push_back(nh3_reaction(cfg));
   return rx;
 }
 
@@ -721,17 +842,25 @@ static bool joint_reactions_rich(const ReformingConfig &cfg, const std::vector<d
   // exchanged with the two (C and H balanced by them), and H2 is substituted
   // out of the oxygen carriers' rows. H2 then keys its own reaction only; the
   // same equilibrium.
+  // NH3 decomposition (#1314) holds H2, a non-key here, and no other
+  // reaction's species: it joins as it is, last.
   std::size_t k2 = cfg.hc_indices.size();
   for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
     if (k == k_ref) continue;
     if (k2 == cfg.hc_indices.size() || n[cfg.hc_indices[k]] > n[cfg.hc_indices[k2]]) k2 = k;
   }
-  if (k2 == cfg.hc_indices.size()) return true;
+  if (k2 == cfg.hc_indices.size()) {
+    if (cfg.nh3) rx.push_back(nh3_reaction(cfg));
+    return true;
+  }
   const std::size_t i_2 = cfg.hc_indices[k2];
   const double c2 = cfg.hc_C[k2];
   const double h2 = cfg.hc_H[k2];
   const double det = r * h2 - c2 * sH;
-  if (!(n[cfg.i_H2] < n[i_2]) || !(std::abs(det) > 0.0)) return true;
+  if (!(n[cfg.i_H2] < n[i_2]) || !(std::abs(det) > 0.0)) {
+    if (cfg.nh3) rx.push_back(nh3_reaction(cfg));
+    return true;
+  }
   // (c, h) = a (r, sH) + b (c2, h2).
   auto split = [&](double c, double h, double &a, double &b) {
     a = (c * h2 - c2 * h) / det;
@@ -748,11 +877,15 @@ static bool joint_reactions_rich(const ReformingConfig &cfg, const std::vector<d
         JointReaction{{{cfg.hc_indices[k], -1.0}, {i_ref, a}, {i_2, b}}, a + b - 1.0, 0});
   }
   two.push_back(JointReaction{{{cfg.i_H2, -1.0}, {i_ref, a_h}, {i_2, b_h}}, a_h + b_h - 1.0, 0});
-  for (std::size_t q = rx.size() - 2; q < rx.size(); ++q) {
+  // The oxygen carriers' rows, and NH3 decomposition (#1314; H2 is the key of
+  // its own exchange now, so it is substituted out of this row too).
+  std::vector<JointReaction> sub(rx.end() - 2, rx.end());
+  if (cfg.nh3) sub.push_back(nh3_reaction(cfg));
+  for (const JointReaction &rq : sub) {
     JointReaction o;
     o.key = 0;
     double nu_h2 = 0.0, nu_ref = 0.0;
-    for (const auto &p : rx[q].nu) {
+    for (const auto &p : rq.nu) {
       if (p.first == cfg.i_H2) {
         nu_h2 = p.second;
       } else if (p.first == i_ref) {
@@ -763,7 +896,7 @@ static bool joint_reactions_rich(const ReformingConfig &cfg, const std::vector<d
     }
     o.nu.push_back({i_ref, nu_ref + nu_h2 * a_h});
     o.nu.push_back({i_2, nu_h2 * b_h});
-    o.dn = rx[q].dn + nu_h2 * (a_h + b_h - 1.0);
+    o.dn = rq.dn + nu_h2 * (a_h + b_h - 1.0);
     two.push_back(o);
   }
   rx = two;
@@ -780,24 +913,32 @@ static bool solve_dense(std::vector<double> A, std::vector<double> &B, std::size
 // is n plus the extents' changes, and cancels where it is far below them;
 // here the non-keys are the components, the most abundant species there can
 // be, so every scarce species is a key and steps in ln n. False if the
-// present species do not span the present elements.
-static bool joint_reactions_components(const ReformingConfig &cfg,
+// present species do not span the present elements. The species are the
+// hydrocarbons (if with_reforming), the oxygen carriers and H2, and NH3 and
+// N2 where NH3 decomposition is equilibrated (cfg.nh3; N the fourth element,
+// #1314).
+static bool joint_reactions_components(const ReformingConfig &cfg, bool with_reforming,
                                        const std::vector<double> &n,
                                        std::vector<JointReaction> &rx) {
-  std::vector<std::size_t> pool = cfg.hc_indices;
+  std::vector<std::size_t> pool;
+  if (with_reforming) pool = cfg.hc_indices;
   for (std::size_t j : {cfg.i_H2O, cfg.i_CO, cfg.i_CO2, cfg.i_H2}) pool.push_back(j);
+  if (cfg.nh3) {
+    pool.push_back(cfg.i_NH3);
+    pool.push_back(cfg.i_N2);
+  }
   auto formula = [](std::size_t j) {
     const auto &ms = molecular_structures[j];
     return std::vector<double>{static_cast<double>(ms.C), static_cast<double>(ms.H),
-                               static_cast<double>(ms.O)};
+                               static_cast<double>(ms.O), static_cast<double>(ms.N)};
   };
-  double b[3] = {0.0, 0.0, 0.0};
+  double b[4] = {0.0, 0.0, 0.0, 0.0};
   for (std::size_t j : pool) {
     const auto a = formula(j);
-    for (std::size_t e = 0; e < 3; ++e) b[e] += a[e] * n[j];
+    for (std::size_t e = 0; e < 4; ++e) b[e] += a[e] * n[j];
   }
   std::vector<std::size_t> el;
-  for (std::size_t e = 0; e < 3; ++e) {
+  for (std::size_t e = 0; e < 4; ++e) {
     if (b[e] > 0.0) el.push_back(e);
   }
   const std::size_t E = el.size();
@@ -810,7 +951,7 @@ static bool joint_reactions_components(const ReformingConfig &cfg,
   };
   auto spans_present = [&](std::size_t j) {
     const auto a = formula(j);
-    for (std::size_t e = 0; e < 3; ++e) {
+    for (std::size_t e = 0; e < 4; ++e) {
       if (a[e] > 0.0 && !(b[e] > 0.0)) return false;
     }
     return true;
@@ -1181,21 +1322,22 @@ static bool element_potential_start(
     }
   }
   const std::size_t S = sp.size();
-  std::vector<std::vector<double>> aj(S);  // atoms C, H, O
+  std::vector<std::vector<double>> aj(S);  // atoms C, H, O, N (N: NH3 decomposition, #1314)
   for (std::size_t q = 0; q < S; ++q) {
     const auto &ms = molecular_structures[sp[q]];
-    aj[q] = {static_cast<double>(ms.C), static_cast<double>(ms.H), static_cast<double>(ms.O)};
+    aj[q] = {static_cast<double>(ms.C), static_cast<double>(ms.H), static_cast<double>(ms.O),
+             static_cast<double>(ms.N)};
   }
   double n_inert = 0.0;
   for (std::size_t j = 0; j < n.size(); ++j) {
     if (std::find(sp.begin(), sp.end(), j) == sp.end()) n_inert += n[j];
   }
-  std::vector<double> b(3, 0.0);
+  std::vector<double> b(4, 0.0);
   for (std::size_t q = 0; q < S; ++q) {
-    for (std::size_t e = 0; e < 3; ++e) b[e] += aj[q][e] * n[sp[q]];
+    for (std::size_t e = 0; e < 4; ++e) b[e] += aj[q][e] * n[sp[q]];
   }
   std::vector<std::size_t> el;
-  for (std::size_t e = 0; e < 3; ++e) {
+  for (std::size_t e = 0; e < 4; ++e) {
     if (b[e] > 0.0) el.push_back(e);
   }
   const std::size_t E = el.size();
@@ -1251,17 +1393,43 @@ static bool element_potential_start(
     comp = c;
     // C[i][k]: element el[i] of component k, embedded in a 3 x 3 identity for
     // E < 3 (the E x E block of adj(diag(C, I)) is adj(C)), so one cofactor
-    // form serves every E: adj(C)[i][k] = cofactor C_ki.
-    double C3[9] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-    for (std::size_t i = 0; i < E; ++i) {
-      for (std::size_t k = 0; k < E; ++k) C3[i * 3 + k] = aj[comp[k]][el[i]];
-    }
+    // form serves every E <= 3: adj(C)[i][k] = cofactor C_ki.
     std::vector<double> adj(E * E, 0.0);
-    for (std::size_t i = 0; i < E; ++i) {
-      for (std::size_t k = 0; k < E; ++k) {
-        const std::size_t r0 = (k + 1) % 3, r1 = (k + 2) % 3;
-        const std::size_t c0 = (i + 1) % 3, c1 = (i + 2) % 3;
-        adj[i * E + k] = C3[r0 * 3 + c0] * C3[r1 * 3 + c1] - C3[r0 * 3 + c1] * C3[r1 * 3 + c0];
+    if (E <= 3) {
+      double C3[9] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+      for (std::size_t i = 0; i < E; ++i) {
+        for (std::size_t k = 0; k < E; ++k) C3[i * 3 + k] = aj[comp[k]][el[i]];
+      }
+      for (std::size_t i = 0; i < E; ++i) {
+        for (std::size_t k = 0; k < E; ++k) {
+          const std::size_t r0 = (k + 1) % 3, r1 = (k + 2) % 3;
+          const std::size_t c0 = (i + 1) % 3, c1 = (i + 2) % 3;
+          adj[i * E + k] = C3[r0 * 3 + c0] * C3[r1 * 3 + c1] - C3[r0 * 3 + c1] * C3[r1 * 3 + c0];
+        }
+      }
+    } else {
+      // E = 4 (C, H, O and N, with NH3 decomposition; #1314): adj(C)[i][k] =
+      // (-1)^(i+k) det(C without row k and column i), each minor a 3 x 3
+      // determinant of small integers, so exact as the form above.
+      auto Cm = [&](std::size_t row, std::size_t col) { return aj[comp[col]][el[row]]; };
+      for (std::size_t i = 0; i < E; ++i) {
+        for (std::size_t k = 0; k < E; ++k) {
+          std::size_t rs[3], cs[3];
+          for (std::size_t t = 0, u = 0; t < E; ++t) {
+            if (t != k) rs[u++] = t;
+          }
+          for (std::size_t t = 0, u = 0; t < E; ++t) {
+            if (t != i) cs[u++] = t;
+          }
+          double m[9];
+          for (std::size_t a = 0; a < 3; ++a) {
+            for (std::size_t c = 0; c < 3; ++c) m[a * 3 + c] = Cm(rs[a], cs[c]);
+          }
+          const double d = m[0] * (m[4] * m[8] - m[5] * m[7]) -
+                           m[1] * (m[3] * m[8] - m[5] * m[6]) +
+                           m[2] * (m[3] * m[7] - m[4] * m[6]);
+          adj[i * E + k] = ((i + k) % 2 == 0) ? d : -d;
+        }
       }
     }
     for (std::size_t q = 0; q < S; ++q) {
@@ -1487,17 +1655,18 @@ static bool seed_absent_species(std::vector<double> &n, const std::vector<JointR
 // round-off of each element's own total, is not a solution (#1262 review,
 // #1285 review).
 static bool elements_conserved(const std::vector<double> &n0, const std::vector<double> &n) {
-  double b0[3] = {0.0, 0.0, 0.0}, b1[3] = {0.0, 0.0, 0.0};
+  // C, H, O and N (N moves with NH3 decomposition, #1314; inert otherwise).
+  double b0[4] = {0.0, 0.0, 0.0, 0.0}, b1[4] = {0.0, 0.0, 0.0, 0.0};
   for (std::size_t j = 0; j < n0.size(); ++j) {
     const auto &ms = molecular_structures[j];
-    const double a[3] = {static_cast<double>(ms.C), static_cast<double>(ms.H),
-                         static_cast<double>(ms.O)};
-    for (std::size_t e = 0; e < 3; ++e) {
+    const double a[4] = {static_cast<double>(ms.C), static_cast<double>(ms.H),
+                         static_cast<double>(ms.O), static_cast<double>(ms.N)};
+    for (std::size_t e = 0; e < 4; ++e) {
       b0[e] += a[e] * n0[j];
       b1[e] += a[e] * n[j];
     }
   }
-  for (std::size_t e = 0; e < 3; ++e) {
+  for (std::size_t e = 0; e < 4; ++e) {
     if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * b0[e])) return false;
   }
   return true;
@@ -1517,6 +1686,7 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     if (with_reforming) {
       reforming_wgs_round(n, T, P, cfg);
     } else {
+      nh3_decomposition_step(n, T, P, cfg);
       const WgsConfig w = make_wgs_config();
       const double lo = std::max(-n[w.i_CO2], -n[w.i_H2]);
       const double hi = std::min(n[w.i_CO], n[w.i_H2O]);
@@ -1544,7 +1714,7 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     rx = joint_reactions(cfg, with_reforming, n[cfg.i_CO] < n[cfg.i_CO2]);
     std::vector<JointReaction> rich;
     if (with_reforming && joint_reactions_rich(cfg, n, rich)) rx = rich;
-    if (with_reforming) {
+    if (with_reforming || cfg.nh3) {
       // Then the component basis where its scarcest non-key is more
       // abundant than this one's (#1288): a non-key far below the extents'
       // changes cancels, and the element potentials' state came back with it
@@ -1553,7 +1723,7 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
       // (written back as -1e-21); CO fuel with 0.4 % methane at 250 K leaves
       // H2 at 1e-22, a non-key of the rich basis (-4e-19).
       std::vector<JointReaction> comp;
-      if (joint_reactions_components(cfg, n, comp) &&
+      if (joint_reactions_components(cfg, with_reforming, n, comp) &&
           joint_min_nonkey(comp, n) > joint_min_nonkey(rx, n)) {
         rx = comp;
       }
@@ -1632,13 +1802,26 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
   return conv;
 }
 
-// Solve general reforming + WGS equilibrium at fixed T. Returns whether it
+// Solve general reforming + WGS equilibrium at fixed T (with NH3
+// decomposition if cfg.nh3; reforming if with_reforming). Returns whether it
 // converged.
 static bool solve_reforming_wgs_isothermal(const std::vector<double> &n0,
                                            double T, double P,
                                            const ReformingConfig &cfg,
-                                           std::vector<double> &n_out) {
-  return solve_reforming_wgs_joint(n0, T, P, cfg, true, n_out);
+                                           std::vector<double> &n_out,
+                                           bool with_reforming = true) {
+  return solve_reforming_wgs_joint(n0, T, P, cfg, with_reforming, n_out);
+}
+
+// Whether a hydrocarbon is present (reforming is equilibrated), and set
+// cfg.nh3 where NH3 is (#1314), from the mole fractions X.
+static bool reforming_species_present(const std::vector<double> &X, ReformingConfig &cfg) {
+  bool has_hc = false;
+  for (std::size_t i_hc : cfg.hc_indices) {
+    if (X[i_hc] > 1e-10) has_hc = true;
+  }
+  cfg.nh3 = X[cfg.i_NH3] >= EQUILIBRIUM_NH3_MIN_FRACTION;
+  return has_hc;
 }
 
 // Adiabatic solver functor for general reforming + WGS
@@ -1647,20 +1830,21 @@ struct ReformingAdiabaticFun {
   double H_mass_target;
   double P;
   ReformingConfig cfg;
+  bool with_reforming;
 
   mutable std::vector<double> n;
   mutable std::vector<double> X;
   mutable double T_last = 0.0;
 
   ReformingAdiabaticFun(const std::vector<double> &n_in_, double H_mass_target_,
-                        double P_, const ReformingConfig &cfg_)
+                        double P_, const ReformingConfig &cfg_, bool with_reforming_ = true)
       : n_in(n_in_), H_mass_target(H_mass_target_), P(P_), cfg(cfg_),
-        n(n_in_.size()), X(n_in_.size()) {}
+        with_reforming(with_reforming_), n(n_in_.size()), X(n_in_.size()) {}
 
   // conv: whether the inner equilibrium at T converged (its flag was dropped
   // before #927).
   double f(double T, bool &conv) const {
-    conv = solve_reforming_wgs_isothermal(n_in, T, P, cfg, n);
+    conv = solve_reforming_wgs_isothermal(n_in, T, P, cfg, n, with_reforming);
     molefractions(n, X);
     T_last = T;
     return h(T, X) / mwmix(X) - H_mass_target;
@@ -1673,22 +1857,16 @@ struct ReformingAdiabaticFun {
 EquilibriumResult reforming_equilibrium(const State &in) {
   ReformingConfig cfg = make_reforming_config();
 
-  // Check if any hydrocarbon is present
-  bool has_hc = false;
-  for (std::size_t i_hc : cfg.hc_indices) {
-    if (in.X[i_hc] > 1e-10) {
-      has_hc = true;
-      break;
-    }
-  }
+  // Check if any hydrocarbon (or NH3, #1314) is present
+  const bool has_hc = reforming_species_present(in.X, cfg);
 
-  if (!has_hc) {
+  if (!has_hc && !cfg.nh3) {
     // No hydrocarbons - fall back to WGS only
     return wgs_equilibrium(in);
   }
 
   std::vector<double> n_out;
-  const bool conv = solve_reforming_wgs_isothermal(in.X, in.T, in.P, cfg, n_out);
+  const bool conv = solve_reforming_wgs_isothermal(in.X, in.T, in.P, cfg, n_out, has_hc);
 
   std::vector<double> X_out;
   molefractions(n_out, X_out);
@@ -1702,16 +1880,10 @@ EquilibriumResult reforming_equilibrium(const State &in) {
 EquilibriumResult reforming_equilibrium_adiabatic(const State &in) {
   ReformingConfig cfg = make_reforming_config();
 
-  // Check if any hydrocarbon is present
-  bool has_hc = false;
-  for (std::size_t i_hc : cfg.hc_indices) {
-    if (in.X[i_hc] > 1e-10) {
-      has_hc = true;
-      break;
-    }
-  }
+  // Check if any hydrocarbon (or NH3, #1314) is present
+  const bool has_hc = reforming_species_present(in.X, cfg);
 
-  if (!has_hc) {
+  if (!has_hc && !cfg.nh3) {
     // No hydrocarbons - fall back to WGS only
     return wgs_equilibrium_adiabatic(in);
   }
@@ -1720,7 +1892,7 @@ EquilibriumResult reforming_equilibrium_adiabatic(const State &in) {
   double H_mass_target = h(in.T, in.X) / mwmix(in.X);
 
   // Solve for adiabatic temperature
-  ReformingAdiabaticFun F{in.X, H_mass_target, in.P, cfg};
+  ReformingAdiabaticFun F{in.X, H_mass_target, in.P, cfg, has_hc};
   bool conv_T = true;
   double T_ad = solve_adiabatic_T(F, in.T, conv_T);
 
@@ -1759,7 +1931,8 @@ EquilibriumResult reforming_equilibrium_adiabatic(const State &in) {
 
   // Get equilibrium composition at T_ad
   std::vector<double> n_out;
-  const bool conv = solve_reforming_wgs_isothermal(in.X, T_ad, in.P, cfg, n_out) && conv_T;
+  const bool conv =
+      solve_reforming_wgs_isothermal(in.X, T_ad, in.P, cfg, n_out, has_hc) && conv_T;
 
   std::vector<double> X_out;
   molefractions(n_out, X_out);
@@ -1850,12 +2023,10 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
 
   // Stage 2: the joint reforming + WGS equilibrium at T_ad (#759), as the
   // value path: reform if the BURNED state has any hydrocarbon, else WGS
-  // alone (as reforming_equilibrium_adiabatic).
-  const ReformingConfig cfg = make_reforming_config();
-  bool has_hc = false;
-  for (std::size_t i_hc : cfg.hc_indices) {
-    if (n0[i_hc] > 1e-10) has_hc = true;
-  }
+  // alone (as reforming_equilibrium_adiabatic); NH3 decomposition where it
+  // has NH3 (#1314).
+  ReformingConfig cfg = make_reforming_config();
+  const bool has_hc = reforming_species_present(n0, cfg);
   std::vector<double> nv;
   std::vector<JointReaction> rx;
   std::vector<std::size_t> act;

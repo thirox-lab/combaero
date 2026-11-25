@@ -675,3 +675,88 @@ class TestTraceOxygenEquilibrium:
             # Measured 2026-11-22: within 4e-4 relative at 650 K (the C4+
             # combaero carries), 1e-7 at 300 K.
             assert x_cb == pytest.approx(x_ct, rel=1e-3), (sp, T, x_o2, P)
+
+
+# ---------------------------------------------------------------------------
+# NH3 decomposition, 2 NH3 = N2 + 3 H2 (#1314), against Cantera on GRI-Mech
+# 3.0's thermo for combaero's species (C4-C7 absent from GRI; none forms here).
+# Rich, the unburnt NH3 passed through before: 273 K hot at phi 2.3 and NH3 at
+# 0.22 where equilibrium holds 1e-5. The tolerances are the rich hydrocarbon
+# ones above (3 K, 1e-3); measured 2026-11-25: 0.6 K and 2.5e-4, the NASA-9 vs
+# GRI thermo difference (against Cantera on combaero's own NASA-9 data, 2e-5 K:
+# python/tests/test_equilibrium_nh3_1314.py).
+# ---------------------------------------------------------------------------
+
+_NH3_DRY_AIR = {"N2": 0.78084, "O2": 0.20946, "AR": 0.00934, "CO2": 0.00036}
+_NH3_O2_N2 = {"O2": 0.21, "N2": 0.79}
+_NH3_SPECIES = ("N2", "O2", "AR", "CO2", "H2O", "CH4", "C2H6", "C3H8", "CO", "H2", "NH3")
+
+
+def _nh3_vec(d: dict[str, float]) -> np.ndarray:
+    X = np.zeros(num_species())
+    for name, v in d.items():
+        X[species_index_from_name(name)] += v
+    return X / X.sum()
+
+
+def _nh3_gri_gas(cantera):
+    species = {S.name: S for S in cantera.Species.list_from_file("gri30.yaml")}
+    return cantera.Solution(thermo="ideal-gas", species=[species[s] for s in _NH3_SPECIES])
+
+
+@pytest.mark.parametrize(
+    ("fuel", "phi", "air", "T_in", "P"),
+    [
+        ({"NH3": 1.0}, 2.3, _NH3_O2_N2, 300.0, 1e5),
+        ({"NH3": 1.0}, 2.3, _NH3_O2_N2, 300.0, 2e6),
+        ({"NH3": 1.0}, 1.2, _NH3_DRY_AIR, 300.0, 1e5),
+        ({"NH3": 1.0}, 1.2, _NH3_DRY_AIR, 700.0, 2e6),
+        ({"CH4": 0.75, "NH3": 0.25}, 1.6, _NH3_DRY_AIR, 300.0, 1e5),
+        ({"CH4": 0.5, "NH3": 0.5}, 1.5, _NH3_DRY_AIR, 300.0, 2e6),
+        ({"NH3": 1.0}, 6.0, _NH3_O2_N2, 700.0, 5e6),
+        ({"NH3": 1.0}, 10.0, _NH3_O2_N2, 600.0, 2e6),
+    ],
+)
+def test_rich_nh3_combustion_equilibrium_matches_cantera_hp(
+    combaero,
+    cantera,
+    fuel: dict[str, float],
+    phi: float,
+    air: dict[str, float],
+    T_in: float,
+    P: float,
+) -> None:
+    X = np.asarray(combaero.set_equivalence_ratio_mole(phi, _nh3_vec(fuel), _nh3_vec(air)))
+    got = combaero.combustion_equilibrium(T_in, X, P)
+    gas = _nh3_gri_gas(cantera)
+    names = [species_name(i) for i in range(num_species())]
+    gas.TPX = T_in, P, {n: x for n, x in zip(names, X, strict=True) if x > 0}
+    gas.equilibrate("HP")
+    assert got.converged
+    assert abs(got.state.T - gas.T) < 3.0, (got.state.T, gas.T)
+    for sp in ("NH3", "H2", "N2", "H2O", "CO", "CO2", "CH4"):
+        diff = abs(got.state.X[species_index_from_name(sp)] - gas[sp].X[0])
+        assert diff < 1e-3, (sp, got.state.X[species_index_from_name(sp)], gas[sp].X[0])
+
+
+@pytest.mark.parametrize(
+    ("feed", "T", "P"),
+    [
+        ({"NH3": 0.6, "N2": 0.2, "H2O": 0.2}, 700.0, 5e6),
+        ({"NH3": 0.3, "CH4": 0.1, "H2O": 0.3, "N2": 0.3}, 800.0, 2e6),
+        ({"NH3": 0.5, "H2O": 0.5}, 650.0, 2e6),
+    ],
+)
+def test_nh3_reforming_equilibrium_matches_cantera_tp(
+    combaero, cantera, feed: dict[str, float], T: float, P: float
+) -> None:
+    """A cracker's range, where equilibrium keeps NH3 (0.7-50 %)."""
+    X = _nh3_vec(feed)
+    got = combaero.reforming_equilibrium(T, X, P)
+    gas = _nh3_gri_gas(cantera)
+    names = [species_name(i) for i in range(num_species())]
+    gas.TPX = T, P, {n: x for n, x in zip(names, X, strict=True) if x > 0}
+    gas.equilibrate("TP")
+    assert got.converged
+    for sp in ("NH3", "H2", "N2", "H2O", "CO", "CO2", "CH4"):
+        assert got.state.X[species_index_from_name(sp)] == pytest.approx(gas[sp].X[0], abs=1e-3), sp

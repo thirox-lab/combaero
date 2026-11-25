@@ -19,12 +19,15 @@ EquilibriumResult wgs_equilibrium_adiabatic(const State &in);
 // -------------------------------------------------------------
 // Higher-fidelity product model for rich hydrocarbon combustion.
 // Produces CO, H2, CO2, H2O, N2 (ignoring soot/solid carbon).
-// Partial by design: N2 is inert (no NO/NO2, so no NOx) and nothing
-// dissociates. The reactions cover the current species table only; a species
-// added to it is not equilibrated (see docs/API_CPP.md, Chemical Equilibrium,
-// and python/tests/test_equilibrium_scope.py).
+// Partial by design: no NO/NO2 (so no NOx) and nothing dissociates. N2 is
+// inert except where NH3 is present: there the decomposition
+// 2 NH3 = N2 + 3 H2 is equilibrated with the others (#1314). The reactions
+// cover the current species table only; a species added to it is not
+// equilibrated (see docs/API_CPP.md, Chemical Equilibrium, and
+// python/tests/test_equilibrium_scope.py).
 //
-// The reactions (steam reforming of each hydrocarbon, and WGS) are solved
+// The reactions (steam reforming of each hydrocarbon, WGS, and NH3
+// decomposition where NH3 is present) are solved
 // SIMULTANEOUSLY (#759): one extent per reaction, Newton on
 // F_r = ln Q_r - ln K_r = 0 with the analytic Jacobian; each reaction's own
 // species (its hydrocarbon; CO2 for WGS) steps in ln n, the others are kept
@@ -116,7 +119,7 @@ constexpr double REFORMING_EP_COMPONENT_RANK_TOL = 1e-9;
 // means not converged (#1262).
 constexpr double REFORMING_SEED_FRACTION = 1e-10;
 constexpr int REFORMING_SEED_PASSES = 3;
-// A solved state's element totals (C, H, O) match the input's to this, each
+// A solved state's element totals (C, H, O, N) match the input's to this, each
 // relative to its own total, or the solve is not converged (#1262). Relative
 // to the largest total, it allowed about 1e-5 of hydrogen's own at phi 1e-7
 // (#1285 review).
@@ -129,6 +132,15 @@ constexpr double REFORMING_ELEMENT_RTOL = 1e-12;
 constexpr double REFORMING_JACOBIAN_TRACE = 1e-20;
 constexpr double REFORMING_JACOBIAN_TRACE_MAX = 1e-12;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
+// NH3 decomposition, 2 NH3 = N2 + 3 H2, joins the joint solve where NH3 is at
+// least this mole fraction of the burned state (#1314), as reforming does for
+// a hydrocarbon: the trace of fuel that the phi = 1 softmin leaves on its lean
+// side (below this from |phi - 1| of about 5e-4) passes through, so a lean
+// NH3 burn is as before. Rich, complete combustion left the unburnt NH3 as
+// NH3, where equilibrium cracks all but 1e-5 to 1e-7 of it: 273 K hot at
+// phi 2.3 against Cantera. N then joins the element balances, and N2 is no
+// longer inert.
+constexpr double EQUILIBRIUM_NH3_MIN_FRACTION = 1e-10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the
 // thermo floor: the former 300 K returned 300 K for a colder unreacting inlet) -- the first step the
@@ -164,7 +176,8 @@ EquilibriumResult combustion_equilibrium(const State &reactants,
                                          double k0 = SMOOTHING_K_PHI0);
 
 // combustion_equilibrium with analytic derivatives (#716): one implicit-function
-// solve on the joint extents (reforming per hydrocarbon, WGS; #759) and the
+// solve on the joint extents (reforming per hydrocarbon, WGS, NH3
+// decomposition where NH3 is present; #759, #1314) and the
 // adiabatic root, chained through complete_combustion_products_and_jacobian.
 // X is taken unnormalised (chain with a dX that keeps sum X = 1). A reaction
 // with an absent species cannot move and keeps a zero derivative. Throws
