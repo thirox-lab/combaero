@@ -96,7 +96,9 @@ All functions use consistent units to avoid conversion errors.
 | `dh_dT`            | T: K, X: mol/mol                   | J/(mol*K)                 |
 | `ds_dT`            | T: K, X: mol/mol                   | J/(mol*K^2)               |
 | `dcp_dT`           | T: K, X: mol/mol                   | J/(mol*K^2)               |
+| `d2cp_dT2`         | T: K, X: mol/mol                   | J/(mol*K^3)               |
 | `dcp_R_dT`         | species_idx: -, T: K               | 1/K                       |
+| `d2cp_R_dT2`       | species_idx: -, T: K               | 1/K^2                     |
 | `set_thermo_model` | name: -                            | -                         |
 | `thermo_model`     | -                                  | - ('nasa9' or 'nasa9_c2') |
 

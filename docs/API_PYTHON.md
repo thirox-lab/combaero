@@ -4595,10 +4595,12 @@ complete = cb.complete_state(T=300, P=101325, X=air)
 
 ### Derivatives
 ```python
-# Temperature derivatives, molar basis
-dh_dT = cb.dh_dT(T=300, X=air)    # J/(mol*K), the molar cp
-ds_dT = cb.ds_dT(T=300, X=air)    # J/(mol*K^2), cp/T
-dcp_dT = cb.dcp_dT(T=300, X=air)  # J/(mol*K^2)
+# Temperature derivatives, molar basis (and per-species dimensionless cp/R)
+dh_dT = cb.dh_dT(T=300, X=air)                      # J/(mol*K), the molar cp
+ds_dT = cb.ds_dT(T=300, X=air)                      # J/(mol*K^2), cp/T
+dcp_dT = cb.dcp_dT(T=300, X=air)                    # J/(mol*K^2)
+d2cp_dT2 = cb.d2cp_dT2(T=300, X=air)                # J/(mol*K^3)
+d2cp_R_dT2 = cb.d2cp_R_dT2(species_idx=0, T=300)    # 1/K^2, per-species d^2(cp/R)/dT^2
 dg_dT = cb.dg_over_RT_dT(T=300, X=air)
 ```
 

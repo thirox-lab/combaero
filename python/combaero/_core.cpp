@@ -2867,6 +2867,8 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "delta* = 0 exact Lennard-Jones.");
   m.def("dcp_R_dT", &dcp_R_dT, py::arg("species_idx"), py::arg("T"),
         "d(cp/R)/dT of one species [1/K].");
+  m.def("d2cp_R_dT2", &d2cp_R_dT2, py::arg("species_idx"), py::arg("T"),
+        "d^2(cp/R)/dT^2 of one species [1/K^2].");
   m.def(
       "set_thermo_model",
       [](const std::string& name) {
@@ -3571,6 +3573,17 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       py::arg("T"), py::arg("X"),
       "Molar specific heat derivative dcp/dT [J/(mol*K^2)] at temperature T and "
       "composition X.");
+
+  m.def(
+      "d2cp_dT2",
+      [](double T,
+         py::array_t<double, py::array::c_style | py::array::forcecast> X_arr) {
+        auto X = to_vec(X_arr);
+        return d2cp_dT2(T, X);
+      },
+      py::arg("T"), py::arg("X"),
+      "Molar specific heat second derivative d^2cp/dT^2 [J/(mol*K^3)] at "
+      "temperature T and composition X.");
 
   m.def(
       "dg_over_RT_dT",

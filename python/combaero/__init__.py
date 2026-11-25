@@ -157,6 +157,7 @@ try:
         transport_and_dT,
         omega22_and_derivative,
         dcp_R_dT,
+        d2cp_R_dT2,
         set_thermo_model,
         thermo_model,
         FannoChannelFlow,
@@ -366,6 +367,7 @@ try:
         dh_dT,
         ds_dT,
         dcp_dT,
+        d2cp_dT2,
         can_annular_eigenmodes,
         capacity_ratio,
         channel_smooth,
@@ -799,6 +801,7 @@ except (ModuleNotFoundError, ImportError) as e:
     dh_dT = _core.dh_dT
     ds_dT = _core.ds_dT
     dcp_dT = _core.dcp_dT
+    d2cp_dT2 = _core.d2cp_dT2
     num_species = _core.num_species
     species_name = _core.species_name
     species_index_from_name = _core.species_index_from_name
@@ -1387,6 +1390,7 @@ __all__ = [
     "transport_and_dT",
     "omega22_and_derivative",
     "dcp_R_dT",
+    "d2cp_R_dT2",
     "set_thermo_model",
     "thermo_model",
     "FannoChannelFlow",
@@ -1967,6 +1971,7 @@ __all__ = [
     "channel_flow",
     "channel_flow_rough",
     "dcp_dT",
+    "d2cp_dT2",
     "dh_dT",
     "ds_dT",
     "fanno_channel",

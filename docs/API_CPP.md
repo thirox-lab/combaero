@@ -221,10 +221,12 @@ CompleteState complete_state(double T, double P, const std::vector<double>& X, d
 
 ### Derivatives
 ```cpp
-// Molar basis: dh/dT = cp [J/(mol*K)], ds/dT = cp/T [J/(mol*K^2)], dcp/dT [J/(mol*K^2)].
+// Molar basis: dh/dT = cp [J/(mol*K)], ds/dT = cp/T [J/(mol*K^2)], dcp/dT [J/(mol*K^2)],
+// d^2cp/dT^2 [J/(mol*K^3)].
 double dh_dT(double T, const std::vector<double>& X);
 double ds_dT(double T, const std::vector<double>& X);
 double dcp_dT(double T, const std::vector<double>& X);
+double d2cp_dT2(double T, const std::vector<double>& X);
 double dg_over_RT_dT(double T, const std::vector<double>& X);
 ```
 
@@ -290,8 +292,9 @@ std::vector<double> mole_gradient_to_mass(const std::vector<double>& X,
 struct Omega22Result { double omega, domega_dTstar; };
 Omega22Result omega22_and_derivative(double T_star, double delta_star);
 
-// thermo.h: d(cp/R)/dT of one species [1/K].
+// thermo.h: d(cp/R)/dT [1/K] and d^2(cp/R)/dT^2 [1/K^2] of one species.
 double dcp_R_dT(std::size_t species_idx, double T);
+double d2cp_R_dT2(std::size_t species_idx, double T);
 
 // thermo.h: which species thermo every property evaluates (#549).
 // NASA9: the published NASA-9 polynomials, C0 in cp at the interval
