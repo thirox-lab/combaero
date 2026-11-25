@@ -2679,7 +2679,8 @@ channel = ChannelElement("channel", "node2", "node3", length=2.0, diameter=0.05,
 # bistable (#1307): it runs subsonic, but choked flow would hold too. The root
 # is the start-up one (fanno_rayleigh_channel_flow); "bistable" = 1 and
 # "m_dot_choked_alternative" [kg/s] name the other, at the duct's solved end
-# states (NaN, and "bistable" 0, otherwise). Into a plenum or chamber fed
+# states (NaN, and "bistable" 0, otherwise; both NaN if the choke solve
+# fails, #1337). Into a plenum or chamber fed
 # by this duct alone, with no wall of its own, the exit Tt is that node's. Into
 # any other node (one mixing other streams, one with its own wall, a boundary)
 # the solver forms the duct's own exit state from its stream and its own wall

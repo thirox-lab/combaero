@@ -28,6 +28,7 @@ import combaero as cb
 from combaero.network import (
     ChannelElement,
     ConvectiveSurface,
+    CrossflowSegmentElement,
     FlowNetwork,
     NetworkSolver,
     PressureBoundary,
@@ -104,29 +105,50 @@ def test_choked_flow_is_not_admissible_where_the_drive_is_monotone(Te: float) ->
     assert alt.exit_margin < 0.0
 
 
-def _pair(T_cold: float) -> FlowNetwork:
+def _pair(T_cold: float, reversed_duct: bool = False, segment: bool = False) -> FlowNetwork:
     """A duct from 400 K air at 1 bar to an exit-total boundary 2 Pa lower,
     cooled through a wall by a cold duct beside it. The cold side's T sets
     the hot duct's exit Tt: 100 K puts it inside the bistable band (391 K),
-    300 K above it (398 K)."""
+    300 K above it (398 K). reversed_duct declares the hot duct from its exit
+    to its inlet (the flow then runs against it); segment makes it a
+    CrossflowSegmentElement."""
     g = FlowNetwork()
     g.add_node(PressureBoundary("in", Pt=PT0, Tt=TT0, Y=Y))
     g.add_node(PressureBoundary("out", Pt=PT0 - 2.0, Tt=TT0, Y=Y, coupling="total"))
     g.add_node(PressureBoundary("k_in", Pt=1.2e5, Tt=T_cold, Y=Y))
     g.add_node(PressureBoundary("k_out", Pt=PT0, Tt=T_cold, Y=Y))
-    for eid, a, b in (("c", "in", "out"), ("k", "k_in", "k_out")):
+    ends = ("out", "in") if reversed_duct else ("in", "out")
+    surface_area = 2.0 * math.pi * D * 0.01
+    if segment:
+        c = CrossflowSegmentElement(
+            "c", *ends, length=0.01, area=math.pi * D * D / 4.0, Dh=D, regime="compressible"
+        )
+        c.surface = ConvectiveSurface(area=surface_area)
+        g.add_element(c)
+    else:
         g.add_element(
             ChannelElement(
-                eid,
-                a,
-                b,
+                "c",
+                *ends,
                 length=0.01,
                 diameter=D,
                 roughness=0.0,
                 regime="compressible",
-                surface=ConvectiveSurface(area=2.0 * math.pi * D * 0.01),
+                surface=ConvectiveSurface(area=surface_area),
             )
         )
+    g.add_element(
+        ChannelElement(
+            "k",
+            "k_in",
+            "k_out",
+            length=0.01,
+            diameter=D,
+            roughness=0.0,
+            regime="compressible",
+            surface=ConvectiveSurface(area=surface_area),
+        )
+    )
     g.add_wall(ThermalWall(id="w", element_a="c", element_b="k", layers=[WallLayer(5e-4, 200.0)]))
     return g
 
@@ -165,4 +187,53 @@ def test_a_duct_outside_the_band_reports_the_keys_unset() -> None:
         d = r["__element_diag__"][eid]
         assert d["bistable"] == 0.0
         assert math.isnan(d["m_dot_choked_alternative"])
+    assert r["__bistable_ducts__"] == {}
+
+
+def test_a_static_exit_duct_can_be_bistable_too() -> None:
+    """A static exit loses the exit head, which narrows the band but does not
+    close it: strongly cooled, choked flow holds beside a subsonic root an
+    order of magnitude smaller. Its alternative is the flux the same duct
+    chokes at under a large drive."""
+    args = (2.64e5, 899.6, 302.0, X)
+    geom = (False, 0.738, 0.0243, 0.0, "haaland")
+    sub = cb.fanno_rayleigh_channel_flow(*args, 2.64e5 - 19.6, *geom, 1.0, -1.0, [], False)
+    alt = cb.fanno_rayleigh_choked_alternative(*args, 2.64e5 - 19.6, *geom)
+    hard = cb.fanno_rayleigh_channel_flow(*args, 1e5, *geom, 1.0, -1.0, [], False)
+    assert not sub.choked and hard.choked
+    assert alt.admissible and alt.G > 10.0 * sub.G
+    assert pytest.approx(hard.G, rel=1e-10) == alt.G
+
+
+@pytest.mark.parametrize(("reversed_duct", "segment"), [(True, False), (False, True)])
+def test_the_flag_follows_the_flow_and_the_element(reversed_duct: bool, segment: bool) -> None:
+    """Declared against the flow, the duct reports its alternative with the
+    flow's sign; as a crossflow segment (its own duct ends, #802), the same
+    flag as the channel between the same boundaries. rel 1e-3, not exact: a
+    wall's arrangement follows the declared directions (#627), so declaring
+    the duct backwards moves its heat by ~3e-5 and its m_dot by ~2e-5."""
+    ref = _solve(_pair(100.0))["__element_diag__"]["c"]
+    r = _solve(_pair(100.0, reversed_duct=reversed_duct, segment=segment))
+    d = r["__element_diag__"]["c"]
+    sign = -1.0 if reversed_duct else 1.0
+    assert d["bistable"] == 1.0
+    assert d["m_dot"] == pytest.approx(sign * ref["m_dot"], rel=1e-3)
+    assert d["m_dot_choked_alternative"] == pytest.approx(
+        sign * ref["m_dot_choked_alternative"], rel=1e-3
+    )
+    assert set(r["__bistable_ducts__"]) == {"c"}
+
+
+def test_a_failing_choke_solve_leaves_the_flag_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The choke solve can fail where a subsonic solve converged (long laminar
+    ducts, #1337). A report never fails a solve: both keys are NaN and the
+    duct is not listed."""
+
+    def fail(*_args: object) -> None:
+        raise RuntimeError("fanno (Mach) brent: no sign change")
+
+    monkeypatch.setattr(cb, "fanno_rayleigh_choked_alternative", fail)
+    r = _solve(_pair(100.0))
+    d = r["__element_diag__"]["c"]
+    assert math.isnan(d["bistable"]) and math.isnan(d["m_dot_choked_alternative"])
     assert r["__bistable_ducts__"] == {}

@@ -11736,7 +11736,8 @@ class ChannelElement(NetworkElement):
     ) -> dict[str, float]:
         """Whether choked flow is also admissible where the duct runs
         subsonic (#1307): "bistable" 1, and "m_dot_choked_alternative" the
-        choked flow [kg/s] (NaN when not bistable).
+        choked flow [kg/s] (NaN when not bistable). Both NaN when the choke
+        solve fails: unknown, never a failed solve.
 
         Only a duct with its heat in the momentum can be: a cooled duct's
         needed drive can rise from zero flow to a peak and fall back (its
@@ -11752,19 +11753,25 @@ class ChannelElement(NetworkElement):
         src, dst, _, _, lost, exit_state = self._duct_ends_for(state_in, state_out, forward)
         if exit_state is None:
             return keys
-        alt = cb.fanno_rayleigh_choked_alternative(
-            src.Pt,
-            src.Tt,
-            exit_state[0],
-            src.X,
-            dst.Pt,
-            not lost,
-            self.length,
-            self.diameter,
-            self.roughness,
-            self.friction_model,
-            f_mult,
-        )
+        try:
+            alt = cb.fanno_rayleigh_choked_alternative(
+                src.Pt,
+                src.Tt,
+                exit_state[0],
+                src.X,
+                dst.Pt,
+                not lost,
+                self.length,
+                self.diameter,
+                self.roughness,
+                self.friction_model,
+                f_mult,
+            )
+        except RuntimeError:
+            # The choke solve can fail where a warm subsonic solve converged
+            # (long laminar ducts, #1337). A report must not fail a solve:
+            # bistability is then unknown, NaN.
+            return {"bistable": math.nan, "m_dot_choked_alternative": math.nan}
         if alt.admissible:
             sign = 1.0 if forward else -1.0
             keys = {"bistable": 1.0, "m_dot_choked_alternative": sign * self.area * float(alt.G)}
