@@ -64,7 +64,16 @@ double static_T(double Tt, double M, const std::vector<double>& X, double T_gues
     const double a2 = isentropic_expansion_coefficient(T, X) * R * T;
     return h_mass(T, X) + 0.5 * M * M * a2 - h0;
   };
+  // The bracket must lie below Tt. A 20 K floor above a stagnation T of 20 K
+  // or less inverted it (lo > hi), and the safeguarded Newton could return
+  // the 20 K bound: a static T above Tt, P above Pt, and an E(G) that flipped
+  // with the start, so a warm-started Fanno-Rayleigh solve returned a
+  // non-root (#1305; a duct cooled 450 -> 9.7 K). The ideal gas holds to 0 K
+  // (#626), so there the floor is 0.05 Tt, as above 400 K.
   double lo = std::max(20.0, 0.05 * Tt);
+  if (!(lo < Tt)) {
+    lo = 0.05 * Tt;
+  }
   double hi = Tt;
   if (M <= 0.0) {
     return Tt;
