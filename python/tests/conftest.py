@@ -22,6 +22,11 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "slow: a module over 20 s on one worker; CI runs these in a parallel job"
     )
+    config.addinivalue_line(
+        "markers",
+        "nightly: property searches (Hypothesis) run by the scheduled job only; "
+        "COMBAERO_NIGHTLY=1 enables them",
+    )
     from _closure_check import closure
 
     from combaero.network import solver as solver_mod
@@ -67,3 +72,17 @@ def _closure_marker(request: pytest.FixtureRequest):
     _ACTIVE["on"] = request.node.get_closest_marker("no_closure_check") is None
     yield
     _ACTIVE["on"] = True
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip ``nightly`` tests unless the scheduled job enables them.
+
+    Their search budget belongs to the nightly run: a PR run would spend it on
+    every push, and a failure it found would block an unrelated PR.
+    """
+    if os.environ.get("COMBAERO_NIGHTLY") == "1":
+        return
+    skip = pytest.mark.skip(reason="nightly only: set COMBAERO_NIGHTLY=1")
+    for item in items:
+        if "nightly" in item.keywords:
+            item.add_marker(skip)
