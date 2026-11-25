@@ -5951,9 +5951,9 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
                     "Natural frequency [Hz]")
       .def("label", &AcousticMode::label,
            "Mode label (e.g., '1L', '2T', '1L1T')")
-      .def("__repr__", [](const AcousticMode &m) {
-        return "<AcousticMode " + m.label() + " @ " +
-               std::to_string(m.frequency) + " Hz>";
+      .def("__repr__", [](const AcousticMode &mode) {
+        return "<AcousticMode " + mode.label() + " @ " +
+               std::to_string(mode.frequency) + " Hz>";
       });
 
   // Tube modes
@@ -5993,9 +5993,9 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       "closest_mode",
       [](const std::vector<AcousticMode> &modes,
          double f_target) -> py::object {
-        const auto *m = closest_mode(modes, f_target);
-        if (m)
-          return py::cast(*m);
+        const auto *found = closest_mode(modes, f_target);
+        if (found)
+          return py::cast(*found);
         return py::none();
       },
       py::arg("modes"), py::arg("f_target"),
@@ -6242,10 +6242,10 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
       .def_readwrite("frequency", &BlochMode::frequency)
       .def_readwrite("n_cans", &BlochMode::n_cans)
       .def("symmetry_type", &BlochMode::symmetry_type)
-      .def("__repr__", [](const BlochMode &m) {
-        return "BlochMode(m=" + std::to_string(m.m_azimuthal) +
-               ", f=" + std::to_string(m.frequency) + " Hz, " +
-               m.symmetry_type() + ")";
+      .def("__repr__", [](const BlochMode &mode) {
+        return "BlochMode(m=" + std::to_string(mode.m_azimuthal) +
+               ", f=" + std::to_string(mode.frequency) + " Hz, " +
+               mode.symmetry_type() + ")";
       });
 
   m.def(
@@ -7069,10 +7069,10 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "by P1, T1, Pt1, Tt1, P2 and the mass fractions Y.");
 
   m.def("solve_orifice_mdot",
-        [](const OrificeGeometry &geom, double dP, double rho, double mu,
+        [](const OrificeGeometry &orifice_geom, double dP, double rho, double mu,
            double P_upstream, double kappa, MeteringCdCorrelation correlation,
            double tol, int max_iter) {
-          return solve_orifice_mdot(geom, dP, rho, mu, P_upstream, kappa,
+          return solve_orifice_mdot(orifice_geom, dP, rho, mu, P_upstream, kappa,
                                     correlation, tol, max_iter);
         },
         py::arg("geom"), py::arg("dP"), py::arg("rho"), py::arg("mu"),
@@ -7200,10 +7200,10 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
 
   m.def(
       "orifice_flow",
-      [](const OrificeGeometry &geom, double dP, double T, double P, double mu,
+      [](const OrificeGeometry &orifice_geom, double dP, double T, double P, double mu,
          double Z, const std::vector<double> &X, double kappa,
          MeteringCdCorrelation correlation) {
-        return orifice_flow(geom, dP, T, P, mu, Z, X, kappa, correlation);
+        return orifice_flow(orifice_geom, dP, T, P, mu, Z, X, kappa, correlation);
       },
       py::arg("geom"), py::arg("dP"),
       py::arg("T"), py::arg("P"), py::arg("mu"), py::arg("Z") = 1.0,
@@ -7250,12 +7250,12 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
   // Convenience wrapper: computes mu from thermodynamic state
   m.def(
       "orifice_flow_state",
-      [](const OrificeGeometry &geom, double dP, double T, double P,
+      [](const OrificeGeometry &orifice_geom, double dP, double T, double P,
          py::array_t<double, py::array::c_style | py::array::forcecast> X_arr,
          double Z, double kappa, MeteringCdCorrelation correlation) {
         auto X = to_vec(X_arr);
         double mu = viscosity(T, P, X);
-        return orifice_flow(geom, dP, T, P, mu, Z, X, kappa, correlation);
+        return orifice_flow(orifice_geom, dP, T, P, mu, Z, X, kappa, correlation);
       },
       py::arg("geom"), py::arg("dP"), py::arg("T"), py::arg("P"), py::arg("X"),
       py::arg("Z") = 1.0, py::arg("kappa") = 0.0,
