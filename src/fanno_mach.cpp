@@ -628,11 +628,24 @@ std::vector<double> d_ddir(const std::vector<double>& X,
     }
     // Neither side feasible: v has opposite-sign components on two species
     // that are absent or below h|v_k| (#1203). It returned 0 here, a J entry
-    // of 0 where the true dG/dv was 58-82. dg/dv is linear in v, so split it:
+    // of 0 where the true dG/dv was 58-66. dg/dv is linear in v, so split it:
     // v = sum_b v_b e_b + w, with b each species that blocks a step of 2h
     // either way and w the rest. A unit vector e_b is feasible on its
-    // positive side, and w (no blocked component) on both, so each part has a
-    // stencil above; their sum is the exact directional derivative.
+    // positive side. w has no component blocked at h, but is stepped at its
+    // own (larger) h, where another component can block it; the recursion
+    // splits that too, and each level drops at least one component of w.
+    //
+    // Only for a state on the simplex. A negative fraction (here only from a
+    // direct kernel call; the network clamps Y to [0, 1]) blocks every
+    // direction, so no split shrinks and it would recurse forever: such a
+    // direction keeps the 0 it had.
+    bool on_simplex = true;
+    for (const double yk : Y) {
+      on_simplex = on_simplex && yk >= 0.0;
+    }
+    if (!on_simplex) {
+      continue;
+    }
     std::vector<std::vector<double>> parts;
     std::vector<double> coeff;
     std::vector<double> w = v;
