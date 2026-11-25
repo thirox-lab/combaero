@@ -9,7 +9,10 @@ if(MSVC)
     add_compile_options(/W4 /WX /permissive- /utf-8)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+    # -Wshadow: MSVC flags a local that hides another (C4456-C4459) as an
+    # error under /W4 /WX, and GCC/Clang do not by default, so a shadowing
+    # variable only failed on Windows CI (#1330). Same rule on every platform.
+    add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Werror)
 endif()
 
 # -----------------------------------------------------------------------------
