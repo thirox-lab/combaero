@@ -254,19 +254,12 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
   EXPECT_NEAR(warm.G, cold.G, 5e-8 * cold.G);
   EXPECT_NEAR(cold.dG_dP_target, warm.dG_dP_target, 1e-8 * std::abs(cold.dG_dP_target));
   EXPECT_NEAR(cold.dG_dPt0, warm.dG_dPt0, 1e-8 * std::abs(cold.dG_dPt0));
-  // At drive = 1.5 Pa on 2e5 Pa, cold and warm Brent brackets can land ~1e-8
-  // apart in G inside inlet_theta's ~2.5e-9 Pa jitter band, which shifts
-  // dG/dTt0 by ~3.6 * dG/G (~3.6e-8 on Linux GCC). Removing the first-order
-  // root shift d(dG/dTt0)/dG * (warm.G - cold.G) keeps the 1e-8 bound intact.
-  const FannoChannelFlow r_gp = fanno_rayleigh_channel_flow(
-      Pt0, 600.0, 750.0, air, P_target + 1e-3, false, 0.05, 0.01, 1e-5, "haaland", 1.0, cold.G, {},
-      true);
-  const FannoChannelFlow r_gm = fanno_rayleigh_channel_flow(
-      Pt0, 600.0, 750.0, air, P_target - 1e-3, false, 0.05, 0.01, 1e-5, "haaland", 1.0, cold.G, {},
-      true);
-  const double d2G_dTt0_dG = (r_gp.dG_dTt0 - r_gm.dG_dTt0) / (r_gp.G - r_gm.G);
-  const double warm_dG_dTt0_at_cold_G = warm.dG_dTt0 - d2G_dTt0_dG * (warm.G - cold.G);
-  EXPECT_NEAR(cold.dG_dTt0, warm_dG_dTt0_at_cold_G, 1e-8 * std::abs(cold.dG_dTt0));
+  // At drive = 1.5 Pa on 2e5 Pa, theta_in.d[2] (+6.7e-9/K) and the RK4 integral
+  // (-6.7e-9/K) cancel by ~5e5x to theta_exit.d[2] ~ -1.3e-14/K. A 3.5e-14 step
+  // jump in M_in from static_T's 1e-14*T Newton tolerance (reproduced on macOS
+  // at G_guess = 1.00292 * cold.G: 3.16e-8; Linux GCC at 1.001: 3.59e-8) sets a
+  // ~4e-8 irreducible floor on dG/dTt0 across cold vs warm roots.
+  EXPECT_NEAR(cold.dG_dTt0, warm.dG_dTt0, 2e-7 * std::abs(cold.dG_dTt0));
   EXPECT_NEAR(cold.dG_dTt_exit, warm.dG_dTt_exit, 1e-8 * std::abs(cold.dG_dTt_exit));
 
   auto E_ld = [&](double Gx, double Ptx, double T0x, double Tex) {
@@ -287,6 +280,10 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
   EXPECT_NEAR(cold.dG_dPt0, -E_ld_Pt / E_ld_G, 1e-7 * std::abs(E_ld_Pt / E_ld_G));
   EXPECT_NEAR(cold.dG_dTt0, -E_ld_T0 / E_ld_G, 1e-6 * std::abs(E_ld_T0 / E_ld_G));
   EXPECT_NEAR(cold.dG_dTt_exit, -E_ld_Te / E_ld_G, 1e-7 * std::abs(E_ld_Te / E_ld_G));
+  EXPECT_NEAR(warm.dG_dP_target, 1.0 / E_ld_G, 1e-7 * std::abs(1.0 / E_ld_G));
+  EXPECT_NEAR(warm.dG_dPt0, -E_ld_Pt / E_ld_G, 1e-7 * std::abs(E_ld_Pt / E_ld_G));
+  EXPECT_NEAR(warm.dG_dTt0, -E_ld_T0 / E_ld_G, 1e-6 * std::abs(E_ld_T0 / E_ld_G));
+  EXPECT_NEAR(warm.dG_dTt_exit, -E_ld_Te / E_ld_G, 1e-7 * std::abs(E_ld_Te / E_ld_G));
 
   // Near-choke: check a cleanly resolved point (1 - G/Gc = 1e-4, step 1e-6 on
   // a 1e-9..4e-8 plateau) against Richardson march FD, and an extreme point
