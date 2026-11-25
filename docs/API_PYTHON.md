@@ -532,6 +532,33 @@ RMS `7.54%` -- reading high, and increasingly so with crossflow (`+3%` below
 `U1/Vi = 0.4`, `+16%` at 1.41). Scored by
 `validation/cooling/orifice_runner.py`.
 
+**Validity limit: strong crossflow, by wall thickness (#807).** Eq. (17)
+has no wall-thickness (`t/d`) interaction, and above `U1/Vi ~ 1` its error
+takes the sign of the wall:
+- **Thin-walled liner holes (Kaddah 1964, cross-source accuracy):** Eq. (17)
+  reads LOW. By the velocity-head ratio `K = (P1 - pj)/(P1 - p1)`
+  (`U1/Vi = 1/sqrt(K - 1)` on Kaddah's approach velocity), on the clean rows
+  inside the liner envelope, with `U1` as combaero's mean of approaching and
+  departing flow:
+
+  | K band | U1/Vi | n | bias | MAE |
+  |---|---|---|---|---|
+  | 10 and above | below 0.33 | 26 | -0.2% | 3.5% |
+  | 2-10 | 0.33-1 | 25 | -2.6% | 5.3% |
+  | 1-2 | above 1 | 3 | -30.1% | 30.1% |
+
+  The K 1-2 band is -38% to -40% outside and at the margin of the envelope
+  too (n = 14 and 4). NACA TN 3663's thin liner holes show the same
+  direction (#807).
+- **The thick hole (Rohde, `t/d = 0.51`):** Eq. (17) reads HIGH, +16% at
+  `U1/Vi = 1.41` (above).
+
+So below `U1/Vi ~ 1` Eq. (17) holds to a few percent on both. Above it, a
+duct-fed liner or effusion row is uncertain by tens of percent, in a
+direction set by `t/d`, and is extrapolation. The term is the source's own,
+unchanged; a `t/d`-dependent crossflow term needs wall-thickness data across
+`L/d` and is #807. Scored by `validation/cooling/kaddah_runner.py`.
+
 #### Film cooling: Baldauf et al. (2002)
 
 Laterally averaged adiabatic effectiveness downstream of one row of
@@ -2277,10 +2304,12 @@ closure: the jet's head is its own, not the receiver's. Since 0.12.0
 - How much of the supply head a hole recovers depends on its lean relative to
   the supply flow and on the solved flow direction. No element declares the
   lean: [#1124](https://github.com/thirox-lab/combaero/issues/1124).
-- A `CrossflowSegmentElement` station with the duct flow reversed creates
-  total pressure, and a duct-fed hole booked at the duct total exposes it
-  to the second-law check: [#1125](https://github.com/thirox-lab/combaero/issues/1125)
-  (see `HoleCd.supply_drive`, "Duct-flow reversal", below).
+- In forward duct flow, a `CrossflowSegmentElement` station's Bassett regain
+  plus a hole drive above the arriving Pt can still give a station
+  `sigma_norm` below 0:
+  [#1125](https://github.com/thirox-lab/combaero/issues/1125). Reversed duct
+  flow passes since #1178 (see `HoleCd.supply_drive`, "Duct-flow reversal",
+  below).
 - Outflow boundaries are inconsistent. `ChannelElement` and
   `PortDischargeElement` honour `PressureBoundary.exit_head_lost`, and the
   orifice family loses its head anyway. `PressureLossElement`,
@@ -2437,28 +2466,26 @@ the duct total with the recovered fraction f in 0.12.0 (`supply_drive` and
     once the lean- and direction-dependent recovery term (#1124) is settled
     by Gritsch 2001 or Rohde data. It is refused on a hole that is not
     duct-fed, and together with a `supply_recovery`.
-  - **Duct-flow reversal (limitation, #1125).** Where the duct flow reverses
-    at a station (a liner fed from both ends, a dead-ended or back-pressured
-    duct), the station's reversed-flow model manufactures total pressure,
-    and a hole booked at the duct total exposes it: the second-law check
-    refuses the root. Both the converged root and the solver's
-    incompressible warm-start proxies are affected; when a proxy root is
-    refused, the solve's failure message names the element and its
-    `sigma_norm` and points at #1125. Example (`test_hole_supply_drive.py`):
+  - **Duct-flow reversal.** Where the duct flow reverses at a station (a
+    liner fed from both ends, a dead-ended or back-pressured duct), the
+    station's kappa term follows the ARRIVING stream (#1178). Until then it
+    followed the leaving one, which manufactured total pressure, and the
+    second-law check refused the root. Pinned by
+    `test_hole_supply_drive.py::test_a_reversing_liner_duct_solves_and_passes_the_second_law`:
     a 3-segment liner on a 5 mm duct, 1.3e5 Pa into 1.25e5 Pa, gas side a
-    flowing chamber, 30 deg holes. 0.11.x converged it (segment signs
-    `+---`); on 0.12 the inlet-referenced proxy root is refused (sigma_norm
-    -3.8e-2) and the warm-started root is demoted (-1.1e-2). A single
-    station with both duct ends at the same Pt is demoted (-1.0e-4) where
-    `"static"` passes.
+    flowing chamber, 30 deg holes. It converges with the duct flow
+    reversing, and every element passes the second-law check. If a solve
+    does fail after a warm-start proxy root was refused by the second law,
+    its failure message names the element and its `sigma_norm`. Still open:
+    the forward-flow case in #1125.
   - **Known gaps.** Held data (cross-source) give f ~ 0 for normal holes and
     for holes leaning across the supply flow, and f ~ 1 for 30 deg holes
     leaning with it (one lab). So the default f = 0 misses co-aligned holes
     (they need `supply_recovery=1.0` today). The lean- and direction-dependent
     recovery is a Cd-model term to come (#1124), sourced from Rohde 1969
     Fig. 11 and Gritsch, Schulz & Wittig 2001 (J. Turbomach. 123(4),
-    781-787, doi:10.1115/1.1397306; wanted entry in #1120). Duct-flow
-    reversal is the limitation above (#1125). Cold-start convergence of
+    781-787, doi:10.1115/1.1397306; wanted entry in #1120). The
+    forward-flow second-law case is #1125. Cold-start convergence of
     12-station liners with `inlet_crossflow="none", supply_recovery=1.0`
     drops against 0.11.x (a serial sweep: 61 -> 52 and 46 -> 30 of 64), and
     one `HoleCd()` case of 128 is lost (#1130). A duct-fed
