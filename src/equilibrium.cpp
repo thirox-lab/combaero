@@ -1449,8 +1449,8 @@ static bool element_potential_start(
             if (t != i) cs[u++] = t;
           }
           double m[9];
-          for (std::size_t a = 0; a < 3; ++a) {
-            for (std::size_t c = 0; c < 3; ++c) m[a * 3 + c] = Cm(rs[a], cs[c]);
+          for (std::size_t mr = 0; mr < 3; ++mr) {
+            for (std::size_t mc = 0; mc < 3; ++mc) m[mr * 3 + mc] = Cm(rs[mr], cs[mc]);
           }
           const double d = m[0] * (m[4] * m[8] - m[5] * m[7]) -
                            m[1] * (m[3] * m[8] - m[5] * m[6]) +
