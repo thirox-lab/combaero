@@ -193,16 +193,28 @@ constexpr double kFannoFlowDriveFloor = 1.0;
 constexpr double kFannoLowMachDropLo = 0.125;
 constexpr double kFannoLowMachDropHi = 0.25;
 
-// Optimal finite-difference steps for floor log-slope derivatives d(sigma)/dtheta
-// at drive = kFannoFlowDriveFloor:
-//   - kFannoFloorSigmaDriveStep: 4-point O(h^4) central-difference step fraction
-//     around kFannoFlowDriveFloor for Schwartz mixed partials
-//     d/dtheta (dG/ddrive) = d/ddrive (dG/dtheta). For the compressible kernel's
-//     ~2e-6 relative derivative noise in Pt0/Tt0/Tt_exit and O(10^2) fifth-
-//     derivative curvature near cooling/transition bends, h4* ~ (15/4 * eps / M5)^(1/5)
-//     ~ 0.03 cancels O(h^2) curvature without amplifying root-rounding noise.
-//   - kFannoFloorSigmaDirScale: multiplier on kFannoDirStep (1e-5 -> 1e-3) for
-//     direct directional differentiation of sigma(X) without raw_flow d_ddir noise.
+// Internal finite-difference steps for floor log-slope derivatives
+// d(sigma)/dtheta at drive = kFannoFlowDriveFloor (owner-approved exception in
+// #1303; #1317 replaces this with exact nested-dual second-order forward mode
+// once #1304's DualN<4> tangents land):
+//   - sigma = clamp(-dG/dP_target * floor / G, 0, kDriveFloorSigmaMax) uses the
+//     exact drive derivative at 1 Pa so dG/dP_target stays C1 across the floor.
+//     A two-point value-based secant above the floor breaks C1 at 1 Pa (or
+//     reintroduces Pt0 - P cancellation at small steps) and doubles residual
+//     solves; a value-only blend (s = 1) breaks C1 whenever sigma(1+) !=
+//     sigma_low (choked or cooled ducts).
+//   - Because d(sigma)/dtheta is therefore a mixed second partial and the
+//     compressible kernel has no second-order path yet, it is differenced
+//     internally in C++:
+//     * kFannoFloorSigmaDriveStep: 4-point O(h^4) central-difference step
+//       fraction around kFannoFlowDriveFloor for Schwarz mixed partials
+//       d/dtheta (dG/ddrive) = d/ddrive (dG/dtheta). For ~2e-6 relative
+//       derivative noise in Pt0/Tt0/Tt_exit and O(10^2) fifth-derivative
+//       curvature near cooling/transition bends, h4* ~ (15/4 * eps / M5)^(1/5)
+//       ~ 0.03 cancels O(h^2) curvature without amplifying root-rounding noise.
+//     * kFannoFloorSigmaDirScale: multiplier on kFannoDirStep (1e-5 -> 1e-3)
+//       for direct directional differentiation of sigma(X) without raw_flow
+//       d_ddir noise.
 constexpr double kFannoFloorSigmaDriveStep = 0.03;
 constexpr double kFannoFloorSigmaDirScale = 100.0;
 

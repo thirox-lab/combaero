@@ -1097,13 +1097,28 @@ LowMachSolution low_mach_duct_flow(double Pt0, double Tt0, double Tt_exit,
 }
 
 // Floor log-slope derivatives d(sigma)/dtheta at drive = kFannoFlowDriveFloor
-// (where sigma = clamp(-at.dG_dP_target * floor / at.G, 0, kDriveFloorSigmaMax)):
-//   - Pt0, Tt0, Tt_exit via Schwartz's mixed-partial identity
-//     d/dtheta (dG/ddrive) = d/ddrive (dG/dtheta) in two warm-started kernel
-//     evaluations around drive = floor (with dirs empty).
-//   - Composition directions directly via d_ddir(X, dirs, sigma(X)) at step
-//     kFannoFloorSigmaDirScale * kFannoDirStep, avoiding the low-Mach d_ddir
-//     cancellation jitter that Schwartz differentiation would amplify.
+// (where sigma = clamp(-at.dG_dP_target * floor / at.G, 0, kDriveFloorSigmaMax)).
+//
+// Design rationale (owner-approved FD exception in #1303; follow-up #1317):
+//   - We keep the exact drive-derivative sigma rather than a value-based secant
+//     or s = 1 blend so dG/dP_target is strictly C1 at drive = 1 Pa with a
+//     single compressible solve on residual-only calls (a secant above 1 Pa
+//     introduces a slope jump at 1 Pa or re-triggers Pt0 - P cancellation and
+//     doubles residual cost; s = 1 breaks C1 on choked and cooled ducts).
+//   - Because sigma is built from a first derivative of G, d(sigma)/dtheta is
+//     a mixed second partial and the compressible kernel has no second-order
+//     path yet. Internal C++ FD is therefore used here as an owner-approved
+//     exception until #1317 replaces it with exact nested-dual second-order
+//     forward mode on top of #1304's DualN<4> tangents:
+//       * Pt0, Tt0, Tt_exit: Schwarz mixed-partial identity
+//         d/dtheta (dG/ddrive) = d/ddrive (dG/dtheta) via 4-point O(h^4)
+//         central difference in drive around floor (falling back to 2-point
+//         central, then 1-sided O(h) near choke/fold boundaries), using
+//         warm-started kernel evaluations with dirs empty.
+//       * Composition directions: direct d_ddir(X, dirs, sigma(X)) at step
+//         kFannoFloorSigmaDirScale * kFannoDirStep (1e-3), avoiding the
+//         low-Mach d_ddir cancellation jitter that Schwarz differentiation
+//         would amplify.
 struct SigmaDerivs {
   double dPt0_fixed = 0.0;
   double dTt0 = 0.0;
@@ -1441,9 +1456,11 @@ FannoChannelFlow apply_sub_floor_blend(const FannoChannelFlow& at, const SigmaDe
           const double dG_cub_ddrive = at.G * dh / floor;
           const double dG_ddrive = w * dG_visc_ddrive + (1.0 - w) * dG_cub_ddrive;
 
-          // Compute d(sigma_low)/dtheta via Schwartz mixed partials on
-          // low_mach_duct_flow around drive = floor (only needed when dy_ds != 0
-          // and sigma > 0).
+          // Compute d(sigma_low)/dtheta via 2-point central Schwarz mixed
+          // partials on low_mach_duct_flow at floor +- 1e-4 Pa (only needed
+          // when dy_ds != 0 and sigma > 0; part of the owner-approved #1303
+          // internal-FD exception, tracked for exact second-order replacement
+          // in #1317).
           SigmaDerivs sig_low_d;
           sig_low_d.ddir.assign(dirs.size(), 0.0);
           if (drive > 0.0 && sigma > 0.0) {
