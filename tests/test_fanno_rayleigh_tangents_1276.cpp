@@ -7,8 +7,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace combaero {
@@ -37,6 +39,58 @@ double richardson_fd(const Fn& fn, double x0, double h) {
   const double d1 = (fn(x0 + h) - fn(x0 - h)) / (2.0 * h);
   const double d2 = (fn(x0 + 0.5 * h) - fn(x0 - 0.5 * h)) / h;
   return (4.0 * d2 - d1) / 3.0;
+}
+
+// Symmetric degree-5 odd-polynomial least-squares derivative at x0: fits
+// c1 * u + c3 * u^3 + c5 * u^5 to 0.5 * (fn(x0 + u*span) - fn(x0 - u*span))
+// on u_k = k / M (k = 1..M) and returns c1 / span. Gives O(span^6) truncation
+// while averaging down low-drive march root jitter (~2.5e-9 Pa on 2e5 Pa).
+template <typename Fn>
+double odd_poly5_deriv(const Fn& fn, double x0, double span, int M = 20) {
+  double a[3][3] = {};
+  double b[3] = {};
+  for (int k = 1; k <= M; ++k) {
+    const double u = static_cast<double>(k) / static_cast<double>(M);
+    const double p[3] = {u, u * u * u, u * u * u * u * u};
+    const double y = 0.5 * (fn(x0 + u * span) - fn(x0 - u * span));
+    for (int i = 0; i < 3; ++i) {
+      b[i] += p[i] * y;
+      for (int j = 0; j < 3; ++j) {
+        a[i][j] += p[i] * p[j];
+      }
+    }
+  }
+  // 3x3 Gaussian elimination with partial pivoting.
+  for (int col = 0; col < 3; ++col) {
+    int piv = col;
+    for (int r = col + 1; r < 3; ++r) {
+      if (std::abs(a[r][col]) > std::abs(a[piv][col])) {
+        piv = r;
+      }
+    }
+    if (piv != col) {
+      for (int c = col; c < 3; ++c) {
+        std::swap(a[col][c], a[piv][c]);
+      }
+      std::swap(b[col], b[piv]);
+    }
+    for (int r = col + 1; r < 3; ++r) {
+      const double f = a[r][col] / a[col][col];
+      for (int c = col; c < 3; ++c) {
+        a[r][c] -= f * a[col][c];
+      }
+      b[r] -= f * b[col];
+    }
+  }
+  double c[3] = {};
+  for (int r = 2; r >= 0; --r) {
+    double s = b[r];
+    for (int col = r + 1; col < 3; ++col) {
+      s -= a[r][col] * c[col];
+    }
+    c[r] = s / a[r][r];
+  }
+  return c[0] / span;
 }
 
 TEST(FannoRayleighTangents1276, SecondDerivativeOfCpMatchesFDAllRegions) {
@@ -204,27 +258,33 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
   auto E_ld = [&](double Gx, double Ptx, double T0x, double Tex) {
     return fanno_rayleigh_march(Gx, Ptx, T0x, Tex, air, 0.05, 0.01, 1e-5, "haaland", 1.0).P_exit;
   };
-  const double E_ld_G = richardson_fd([&](double v) { return E_ld(v, Pt0, 600.0, 750.0); }, cold.G,
-                                      5e-3 * cold.G);
-  const double E_ld_Pt = richardson_fd([&](double v) { return E_ld(cold.G, v, 600.0, 750.0); }, Pt0,
-                                       5e-3 * Pt0);
-  const double E_ld_T0 = richardson_fd([&](double v) { return E_ld(cold.G, Pt0, v, 750.0); }, 600.0,
-                                       5e-3 * 600.0);
-  const double E_ld_Te = richardson_fd([&](double v) { return E_ld(cold.G, Pt0, 600.0, v); }, 750.0,
-                                       5e-3 * 750.0);
-  EXPECT_NEAR(cold.dG_dP_target, 1.0 / E_ld_G, 1e-6 * std::abs(1.0 / E_ld_G));
-  EXPECT_NEAR(cold.dG_dPt0, -E_ld_Pt / E_ld_G, 1e-6 * std::abs(E_ld_Pt / E_ld_G));
-  EXPECT_NEAR(cold.dG_dTt0, -E_ld_T0 / E_ld_G, 1e-5 * std::abs(E_ld_T0 / E_ld_G));
-  EXPECT_NEAR(cold.dG_dTt_exit, -E_ld_Te / E_ld_G, 1e-6 * std::abs(E_ld_Te / E_ld_G));
+  // At 1.5 Pa on 2e5 Pa, fanno_rayleigh_march.P_exit carries ~2.5e-9 Pa root
+  // jitter from inlet_theta; odd_poly5_deriv on measured plateau spans resolves
+  // dG/dP, dG/dPt0, dG/dTt_exit to ~1e-8 and dG/dTt0 to ~1e-7.
+  const double E_ld_G =
+      odd_poly5_deriv([&](double v) { return E_ld(v, Pt0, 600.0, 750.0); }, cold.G, 0.08 * cold.G);
+  const double E_ld_Pt =
+      odd_poly5_deriv([&](double v) { return E_ld(cold.G, v, 600.0, 750.0); }, Pt0, 0.01 * Pt0);
+  const double E_ld_T0 =
+      odd_poly5_deriv([&](double v) { return E_ld(cold.G, Pt0, v, 750.0); }, 600.0, 70.0);
+  const double E_ld_Te =
+      odd_poly5_deriv([&](double v) { return E_ld(cold.G, Pt0, 600.0, v); }, 750.0, 40.0);
+  EXPECT_NEAR(cold.dG_dP_target, 1.0 / E_ld_G, 1e-7 * std::abs(1.0 / E_ld_G));
+  EXPECT_NEAR(cold.dG_dPt0, -E_ld_Pt / E_ld_G, 1e-7 * std::abs(E_ld_Pt / E_ld_G));
+  EXPECT_NEAR(cold.dG_dTt0, -E_ld_T0 / E_ld_G, 1e-6 * std::abs(E_ld_T0 / E_ld_G));
+  EXPECT_NEAR(cold.dG_dTt_exit, -E_ld_Te / E_ld_G, 1e-7 * std::abs(E_ld_Te / E_ld_G));
 
-  // Near-choke: check both a cleanly resolved point (1 - G/Gc = 1e-4, step 1e-6
-  // well above round-off and below sonic curvature, agreeing to < 1e-8) and an
-  // extreme near-choke point (1 - G/Gc = 1e-6, step 3e-8 on the FD minimum).
+  // Near-choke: check a cleanly resolved point (1 - G/Gc = 1e-4, step 1e-6 on
+  // a 1e-9..4e-8 plateau) against Richardson march FD, and an extreme point
+  // (1 - G/Gc = 1e-6, where FD sits on the noise floor) for finiteness, sign,
+  // and physical sqrt(1 - G/Gc) scaling.
   const double Gc =
       fanno_rayleigh_choked_mass_flux(5e5, 800.0, 1200.0, air, 0.30, 0.02, 1e-5, "haaland", 1.0);
   auto E_nc = [&](double Gx, double Ptx, double T0x, double Tex) {
     return fanno_rayleigh_march(Gx, Ptx, T0x, Tex, air, 0.30, 0.02, 1e-5, "haaland", 1.0).P_exit;
   };
+  double dG_dP_1e4 = 0.0;
+  double dG_dPt0_1e4 = 0.0;
   {
     const FannoRayleighMarch m_nc = fanno_rayleigh_march(Gc * (1.0 - 1e-4), 5e5, 800.0, 1200.0, air,
                                                          0.30, 0.02, 1e-5, "haaland", 1.0);
@@ -232,6 +292,8 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
         5e5, 800.0, 1200.0, air, m_nc.P_exit, false, 0.30, 0.02, 1e-5, "haaland", 1.0, -1.0, {},
         true);
     ASSERT_FALSE(r_nc.choked);
+    dG_dP_1e4 = r_nc.dG_dP_target;
+    dG_dPt0_1e4 = r_nc.dG_dPt0;
     const double E_G =
         richardson_fd([&](double v) { return E_nc(v, 5e5, 800.0, 1200.0); }, r_nc.G, 1e-6 * r_nc.G);
     const double E_Pt =
@@ -246,14 +308,18 @@ TEST(FannoRayleighTangents1276, LowDriveAndNearChokeStayNoiseFree) {
         5e5, 800.0, 1200.0, air, m_nc.P_exit, false, 0.30, 0.02, 1e-5, "haaland", 1.0, -1.0, {},
         true);
     ASSERT_FALSE(r_nc.choked);
+    EXPECT_TRUE(std::isfinite(r_nc.dG_dP_target));
+    EXPECT_TRUE(std::isfinite(r_nc.dG_dPt0));
     EXPECT_LT(r_nc.dG_dP_target, 0.0);
     EXPECT_GT(r_nc.dG_dPt0, 0.0);
-    const double E_G =
-        richardson_fd([&](double v) { return E_nc(v, 5e5, 800.0, 1200.0); }, r_nc.G, 3e-8 * r_nc.G);
-    const double E_Pt =
-        richardson_fd([&](double v) { return E_nc(r_nc.G, v, 800.0, 1200.0); }, 5e5, 3e-8 * 5e5);
-    EXPECT_NEAR(r_nc.dG_dP_target, 1.0 / E_G, 1e-6 * std::abs(1.0 / E_G));
-    EXPECT_NEAR(r_nc.dG_dPt0, -E_Pt / E_G, 1e-6 * std::abs(E_Pt / E_G));
+    // Near a quadratic sonic fold, dG/dP scales as sqrt(1 - G/Gc) (~0.1x from
+    // 1e-4 to 1e-6) while dG/dPt0 stays close to dGc/dPt0 (~0.99x).
+    const double ratio_P = r_nc.dG_dP_target / dG_dP_1e4;
+    const double ratio_Pt = r_nc.dG_dPt0 / dG_dPt0_1e4;
+    EXPECT_GT(ratio_P, 0.05);
+    EXPECT_LT(ratio_P, 0.2);
+    EXPECT_GT(ratio_Pt, 0.9);
+    EXPECT_LT(ratio_Pt, 1.1);
   }
 }
 
