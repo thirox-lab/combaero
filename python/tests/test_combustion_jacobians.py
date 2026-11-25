@@ -976,3 +976,70 @@ def test_a_lean_burn_without_steam_or_co2_has_its_jacobian(
         - _cb._core.combustion_equilibrium(T - hT, X, P).state.T
     ) / (2.0 * hT)
     assert abs(jac.dT_dT_in - fd_T) <= 1e-7, (jac.dT_dT_in, fd_T)
+
+
+_DRY_AIR_1312 = {"N2": 0.78084, "O2": 0.20946, "AR": 0.00934, "CO2": 0.00036}
+
+
+def _alkane_trace_air_co(fuel: str, x_air: float, traces: dict[str, float]) -> np.ndarray:
+    X = np.zeros(_cb.num_species())
+    X[_cb.species_index_from_name(fuel)] = 1.0 - x_air - sum(traces.values())
+    for name, x in _DRY_AIR_1312.items():
+        X[_cb.species_index_from_name(name)] += x_air * x
+    for name, x in traces.items():
+        X[_cb.species_index_from_name(name)] += x
+    return X
+
+
+@pytest.mark.parametrize(
+    ("fuel", "x_air", "traces", "T_cantera"),
+    [
+        ("NC6H14", 1e-6, {"CO": 1e-6, "H2O": 1e-7}, 266.37535750918335),
+        ("NC6H14", 1e-6, {"CO": 1e-6}, 266.3753357764652),
+        ("NC5H12", 1e-9, {"CO": 1e-6}, 282.99907103459554),
+    ],
+)
+def test_heavy_alkane_trace_air_and_co_converges(
+    fuel: str, x_air: float, traces: dict[str, float], T_cantera: float
+) -> None:
+    """A heavy alkane with trace air and a CO trace, 250 K, 1e4 Pa (#1312).
+    The alkanes disproportionate (heptane 1e-10 -> 0.57 of the moles, +16 K),
+    and the first Newton solve ran in the basis chosen at the start, where CO
+    and CO2 are the C and O components of every reaction: CO at 5e-7 came
+    out of 0.1-mol cancellations and oxygen's own total moved by 3e-12, so
+    the state was refused. A Newton result that breaks an element's balance
+    now restarts from the element potentials. T_cantera: Cantera 3.2 HP
+    equilibrium on the same species (NH3 out) and NASA-9 data; combaero
+    already found it on main to 1e-11 K, only the flag was wrong."""
+    X = _alkane_trace_air_co(fuel, x_air, traces)
+    r = _cb._core.combustion_equilibrium(250.0, X, 1e4)
+    assert r.converged
+    assert abs(r.state.T - T_cantera) <= 1e-6
+    # The isothermal inner solve across the adiabatic rise, both pressures
+    # (on main 260-268 K failed at 1e4 Pa, 280-300 K at 1e6 Pa).
+    for P in (1e4, 1e6):
+        burned = _cb._core.complete_combustion(250.0, X, P)
+        for T in (250.0, 255.0, 260.0, 265.0, 268.0, 280.0, 300.0):
+            assert _cb._core.reforming_equilibrium(T, burned.X, P).converged, (P, T)
+
+
+def test_heavy_alkane_trace_air_and_co_jacobian_matches_central_differences() -> None:
+    """#1312's reproducer: on main the Jacobian was refused (not converged).
+    dT/dX of the fuel, CO, O2 and steam against central differences at steps
+    of 1e-3 and 1e-4 of each amount. They agree to 2e-6, steam at 1e-4 to 2e-5
+    (its trace difference carries round-off), hence 5e-5."""
+    X = _alkane_trace_air_co("NC6H14", 1e-6, {"CO": 1e-6, "H2O": 1e-7})
+    T, P = 250.0, 1e4
+    J = _cb._core.combustion_equilibrium_and_jacobian(T, X, P).dT_dX
+    for name in ("NC6H14", "CO", "O2", "H2O"):
+        j = _cb.species_index_from_name(name)
+        for rel in (1e-3, 1e-4):
+            h = rel * X[j]
+            Xp, Xm = X.copy(), X.copy()
+            Xp[j] += h
+            Xm[j] -= h
+            rp = _cb._core.combustion_equilibrium(T, Xp, P)
+            rm = _cb._core.combustion_equilibrium(T, Xm, P)
+            assert rp.converged and rm.converged
+            fd = (rp.state.T - rm.state.T) / (2.0 * h)
+            assert abs(J[j] - fd) <= 5e-5 * abs(fd), (name, rel, J[j], fd)

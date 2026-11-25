@@ -1483,6 +1483,26 @@ static bool seed_absent_species(std::vector<double> &n, const std::vector<JointR
 // move; if it can, the round is taken and Newton re-solved. Returns whether
 // the residuals met REFORMING_NEWTON_FTOL and no left-out reaction moves.
 // active_out (optional) receives the reactions solved by Newton.
+// Elements: every step and seed conserves them; a state that does not, to
+// round-off of each element's own total, is not a solution (#1262 review,
+// #1285 review).
+static bool elements_conserved(const std::vector<double> &n0, const std::vector<double> &n) {
+  double b0[3] = {0.0, 0.0, 0.0}, b1[3] = {0.0, 0.0, 0.0};
+  for (std::size_t j = 0; j < n0.size(); ++j) {
+    const auto &ms = molecular_structures[j];
+    const double a[3] = {static_cast<double>(ms.C), static_cast<double>(ms.H),
+                         static_cast<double>(ms.O)};
+    for (std::size_t e = 0; e < 3; ++e) {
+      b0[e] += a[e] * n0[j];
+      b1[e] += a[e] * n[j];
+    }
+  }
+  for (std::size_t e = 0; e < 3; ++e) {
+    if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * b0[e])) return false;
+  }
+  return true;
+}
+
 static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, double P,
                                       const ReformingConfig &cfg, bool with_reforming,
                                       std::vector<double> &n_out,
@@ -1550,7 +1570,17 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     if (restart > 0) choose_basis(n_out);
     act = joint_active(rx, n_out);
     std::vector<double> n_try = n_out;
-    conv = joint_newton(n_try, P, rx, act, lnK, REFORMING_NEWTON_ROUNDS_IT);
+    // A Newton solve that broke an element's balance is not converged either
+    // (#1312): a basis chosen at the start can carry an element's only
+    // carriers as components of reactions that move far more. Heavy alkane
+    // with trace air and CO at 250-260 K: CO and CO2 were the C and O
+    // components while the alkanes disproportionated (heptane 1e-10 -> 0.57),
+    // so CO at 5e-7 came out of 0.1-mol cancellations and oxygen's own total
+    // moved by 3e-12. The element-potential start lands near equilibrium,
+    // where the basis is re-chosen with alkanes as components and oxygen in
+    // reactions of its own.
+    conv = joint_newton(n_try, P, rx, act, lnK, REFORMING_NEWTON_ROUNDS_IT) &&
+           elements_conserved(n0, n_try);
     if (!conv) {
       // Far from equilibrium: restart Newton from the element potentials.
       std::vector<double> n_ep = n_out;
@@ -1596,24 +1626,7 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     conv = false;
     choose_basis(n_out);
   }
-  // Elements: every step and seed conserves them; a state that does not, to
-  // round-off of each element's own total, is not a solution (#1262 review,
-  // #1285 review).
-  {
-    double b0[3] = {0.0, 0.0, 0.0}, b1[3] = {0.0, 0.0, 0.0};
-    for (std::size_t j = 0; j < n0.size(); ++j) {
-      const auto &ms = molecular_structures[j];
-      const double a[3] = {static_cast<double>(ms.C), static_cast<double>(ms.H),
-                           static_cast<double>(ms.O)};
-      for (std::size_t e = 0; e < 3; ++e) {
-        b0[e] += a[e] * n0[j];
-        b1[e] += a[e] * n_out[j];
-      }
-    }
-    for (std::size_t e = 0; e < 3; ++e) {
-      if (!(std::abs(b1[e] - b0[e]) <= REFORMING_ELEMENT_RTOL * b0[e])) conv = false;
-    }
-  }
+  if (!elements_conserved(n0, n_out)) conv = false;
   if (rx_out != nullptr) *rx_out = rx;
   if (active_out != nullptr) *active_out = act;
   return conv;
