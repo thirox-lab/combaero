@@ -36,5 +36,6 @@ Claude reviews your PRs before the owner queues them.
   ```
 
   `event` is one of `pr-opened`, `review-addressed`, `question`, `blocked`, `test`. Append only; never rewrite or truncate the file.
+- **A claim of "fixed" or "verified" quotes its evidence:** the command run and the number it printed, at the commit it ran on. An unmeasured claim is "not verified", said so.
 - **Claude pings you back** by resuming your conversation (`agy -r <id> -p ...`).
 - **Questions that need the owner** go to the owner, not to Claude.
