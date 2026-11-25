@@ -56,7 +56,8 @@ double sound_speed_sq_d2T(double T, const std::vector<double>& X) {
 
 // Static temperature at Mach M from the stagnation temperature:
 // h(T) + M^2 a(T)^2 / 2 = h(Tt). F(T) rises with T, F(Tt) >= 0, so a
-// safeguarded Newton on [T_lo, Tt] cannot leave the physical branch.
+// safeguarded Newton on a bracket [T_lo, Tt] with F(T_lo) < 0 cannot leave
+// the physical branch.
 double static_T(double Tt, double M, const std::vector<double>& X, double T_guess = -1.0) {
   const double h0 = h_mass(Tt, X);
   const double R = specific_gas_constant(X);
@@ -64,19 +65,30 @@ double static_T(double Tt, double M, const std::vector<double>& X, double T_gues
     const double a2 = isentropic_expansion_coefficient(T, X) * R * T;
     return h_mass(T, X) + 0.5 * M * M * a2 - h0;
   };
-  // The bracket must lie below Tt. A 20 K floor above a stagnation T of 20 K
-  // or less inverted it (lo > hi), and the safeguarded Newton could return
-  // the 20 K bound: a static T above Tt, P above Pt, and an E(G) that flipped
-  // with the start, so a warm-started Fanno-Rayleigh solve returned a
-  // non-root (#1305; a duct cooled 450 -> 9.7 K). The ideal gas holds to 0 K
-  // (#626), so there the floor is 0.05 Tt, as above 400 K.
-  double lo = std::max(20.0, 0.05 * Tt);
-  if (!(lo < Tt)) {
-    lo = 0.05 * Tt;
-  }
-  double hi = Tt;
   if (M <= 0.0) {
     return Tt;
+  }
+  // The bracket must hold the root: F(lo) < 0 <= F(hi). The usual floor,
+  // max(20 K, 0.05 Tt), does not wherever the static T lies below it: a
+  // stagnation T of 20 K or less (the floor at or above Tt), Tt up to ~24 K
+  // near M 1, or M > 1 at any Tt (M 3 at 50 K). There the safeguarded Newton
+  // returned the floor itself as the root, with no flag (#1305: a duct cooled
+  // 450 -> 9.7 K gave a static T above Tt and a warm-started solve a
+  // non-root). The ideal gas holds to 0 K (#626) and F(0+) = h(0) - h(Tt) < 0,
+  // so lowering the floor always finds the sign change; where the usual floor
+  // already holds it, nothing changes.
+  constexpr double kFloorT = 20.0;       // [K]
+  constexpr double kFloorFraction = 0.05;  // of Tt; also the lowering factor
+  constexpr int kMaxLower = 20;          // 0.05^20 Tt ~ 1e-26 Tt
+  double lo = std::max(kFloorT, kFloorFraction * Tt);
+  double hi = Tt;
+  for (int k = 0; !(F(lo) < 0.0); ++k) {
+    if (k == kMaxLower) {
+      inner_solve::throw_no_convergence("fanno static_T bracket", kMaxLower, "h residual [J/kg]",
+                                        F(lo));
+    }
+    hi = std::min(hi, lo);
+    lo *= kFloorFraction;
   }
   // Ideal-gas guess at constant gamma (or the caller's, from a neighbouring
   // station), then Newton with the bracket. The root does not depend on the
