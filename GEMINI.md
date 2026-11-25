@@ -2,6 +2,8 @@
 
 **[CLAUDE.md](CLAUDE.md) is authoritative for every agent. Read it first, in full, and follow it.** Its hard rules, architecture, working practice, style and git workflow all apply to you unchanged. This file lists only what differs for Gemini. It does not restate CLAUDE.md, so the two cannot drift apart. If a rule here seems to conflict with CLAUDE.md, CLAUDE.md wins; raise the conflict with the owner.
 
+CLAUDE.md is inlined at the end of this file (see "Shared rules").
+
 A user-level `~/.gemini/GEMINI.md` may carry general defaults (for example a C++ standard or a plan-first rule). In this repo, CLAUDE.md overrides them: the C++ standard is C++17.
 
 ## Skills
@@ -39,3 +41,9 @@ Claude reviews your PRs before the owner queues them.
 - **A claim of "fixed" or "verified" quotes its evidence:** the command run and the number it printed, at the commit it ran on. An unmeasured claim is "not verified", said so.
 - **Claude pings you back** by resuming your conversation (`agy -r <id> -p ...`).
 - **Questions that need the owner** go to the owner, not to Claude.
+
+## Shared rules (CLAUDE.md, inlined)
+
+Antigravity inlines CLAUDE.md here at startup. It sits last on purpose: a rule file over the 24 KB per-file cap after expansion is truncated from the bottom, so growth in CLAUDE.md cuts its own tail, never the Gemini rules above. GEMINI.md plus CLAUDE.md is about 18 KB. If the rules budget demotes this file to a pointer, or the expansion is truncated, read CLAUDE.md in full before the first command.
+
+@[CLAUDE.md](CLAUDE.md)
