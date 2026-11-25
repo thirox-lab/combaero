@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import re
 import warnings
 from pathlib import Path
 
@@ -14,9 +16,15 @@ from combaero.network import (
     CasingRadiation,
     ChannelElement,
     CombustorNode,
+    DiameterDischargeCoefficientConnectionElement,
+    EffectiveAreaConnectionElement,
+    EffusionPlateElement,
+    FilmCoolingElement,
     FlowNetwork,
     FuelBoundary,
     GasRadiation,
+    HoleCd,
+    ImpingementPlateElement,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
@@ -24,6 +32,7 @@ from combaero.network import (
     PlenumNode,
     PressureBoundary,
     PressureLossElement,
+    SlotFilmElement,
     ThermalWall,
     WallLayer,
 )
@@ -35,6 +44,7 @@ from combaero.network.pressure_loss import (
 )
 from gui.backend.export import FLOW_HANDLES, UnsupportedForGUIError, network_to_gui
 from gui.backend.runner import NetworkRunner
+from gui.backend.schemas import EffusionPlateData, FilmCoolingData, SlotFilmData
 
 _REPO = Path(__file__).resolve().parents[2]
 AIR = list(cb.mole_to_mass(cb.species.dry_air()))
@@ -365,3 +375,312 @@ def test_wall_radiation_round_trips(model: str) -> None:
         "T_casing": None,
     }
     _same(d, g, ["w.Q", "w.q_rad_a", "w.q_rad_b", "w.eps_g_a"], rel=1e-5)
+
+
+# --- hole elements (#1104) --------------------------------------------------
+
+
+def _chamber_net(hole: OrificeElement) -> FlowNetwork:
+    """Coolant at 2.0 bar / 600 K through ``hole`` into a merge chamber of
+    hot gas at about 1.95 bar / 1500 K (the issue's rig)."""
+    net = FlowNetwork()
+    net.add_node(PressureBoundary("cool", Pt=2.0e5, Tt=600.0, Y=AIR))
+    net.add_node(MassFlowBoundary("gas_in", m_dot=1.0, Tt=1500.0, Y=AIR))
+    net.add_node(PressureBoundary("exit", Pt=1.95e5, Tt=1500.0, Y=AIR))
+    net.add_node(MomentumChamberNode("ch", area=0.01, main_inlet="feed"))
+    net.add_element(LosslessConnectionElement("feed", "gas_in", "ch"))
+    net.add_element(LosslessConnectionElement("tail", "ch", "exit"))
+    net.add_element(hole)
+    return net
+
+
+def _data(doc: dict, nid: str, kind: str, schema: type) -> dict:
+    """The node's data, checked to be of ``kind`` and to carry every field of
+    its schema (the label aside): nothing left to the schema's defaults."""
+    node = next(n for n in doc["nodes"] if n["id"] == nid)
+    assert node["type"] == kind
+    missing = set(schema.model_fields) - set(node["data"]) - {"label"}
+    assert not missing, missing
+    return node["data"]
+
+
+def test_an_inclined_effusion_plate_with_radiation_round_trips() -> None:
+    """Its own node, not an orifice of the equivalent bore: the Cd on one real
+    hole with the inclined-inlet term, the gas side and the hot face's
+    radiation all survive, so the GUI solve is the script's."""
+    plate = EffusionPlateElement(
+        "eff",
+        "cool",
+        "ch",
+        hole_diameter=1.0e-3,
+        wall_thickness=2.0e-3,
+        pitch_x=6.0e-3,
+        pitch_y=5.0e-3,
+        panel_length=0.05,
+        panel_width=0.04,
+        angle_deg=30.0,
+        internal_Nu_multiplier=1.1,
+        wall_conductivity=15.0,
+        gas_film="baldauf_sellers",
+        gas_augmentation=1.3,
+        gas_baseline="flat_plate",
+        gas_start_length=0.02,
+        turbulence_intensity=0.08,
+        material="haynes230",
+        radiation=GasRadiation(beam_length=0.05, emissivity_wall=0.8, fuel_air_ratio=0.03),
+    )
+    doc, d, g = _both(_chamber_net(plate))
+    data = _data(doc, "eff", "effusion_plate", EffusionPlateData)
+    assert data["hole_cd"]["correlation"] == "IdelchikThick"
+    assert data["radiation"]["kind"] == "gas" and data["radiation"]["fuel_air_ratio"] == 0.03
+    assert (data["gas_baseline"], data["material"]) == ("flat_plate", "haynes230")
+    assert d["eff.Cd_inclination_applied"] == 1.0 and d["eff.q_rad_hot"] > 1.0e3
+    _same(
+        d,
+        g,
+        [
+            "eff.m_dot",
+            "eff.Cd",
+            "eff.n_holes",
+            "eff.T_wall_hot",
+            "eff.T_wall_cold",
+            "eff.q_wall",
+            "eff.q_rad_hot",
+            "eff.eta_film",
+            "eff.T_wall_limit",
+            "ch.Tt",
+        ],
+    )
+
+
+def test_a_plate_given_by_its_area_exports_the_same_holes() -> None:
+    """panel_area alone: the GUI takes a length and a width, and the square of
+    that area holds the same holes (no length is read without a film)."""
+    plate = EffusionPlateElement(
+        "eff",
+        "cool",
+        "ch",
+        hole_diameter=1.0e-3,
+        wall_thickness=2.0e-3,
+        pitch=6e-3,
+        panel_area=2.5e-3,
+    )
+    doc, d, g = _both(_chamber_net(plate))
+    data = _data(doc, "eff", "effusion_plate", EffusionPlateData)
+    assert data["panel_length"] * data["panel_width"] == pytest.approx(2.5e-3, rel=1e-15)
+    _same(d, g, ["eff.m_dot", "eff.Cd", "eff.n_holes", "eff.T_wall_hot"])
+
+
+def test_a_shaped_film_row_with_exit_crossflow_round_trips() -> None:
+    """A laidback fan-shaped row with Rowbury's exit-crossflow term: the hole
+    geometry, the term and its region and orientation survive."""
+    row = FilmCoolingElement(
+        "film",
+        "cool",
+        "ch",
+        hole_diameter=1.0e-3,
+        holes_per_row=10,
+        lateral_pitch=6.0e-3,
+        wall_thickness=3.0e-3,
+        n_rows=2,
+        row_pitch=0.01,
+        angle_deg=30.0,
+        hole_type="shaped",
+        area_ratio=3.5,
+        breakout_width=2.94e-3,
+        turbulence_intensity=0.06,
+        exit_crossflow_region="pressure_surface",
+        exit_crossflow_orientation_deg=15.0,
+        hole_cd=HoleCd(exit_crossflow="rowbury_2001"),
+    )
+    doc, d, g = _both(_chamber_net(row))
+    data = _data(doc, "film", "film_cooling", FilmCoolingData)
+    assert data["hole_cd"]["exit_crossflow"] == "rowbury_2001"
+    assert (data["hole_type"], data["n_rows"], data["row_pitch"]) == ("shaped", 2, 0.01)
+    assert d["film.Cd_exit_crossflow_applied"] == 1.0
+    _same(
+        d,
+        g,
+        ["film.m_dot", "film.Cd", "film.Cd_base", "film.Cd_exit_crossflow_ratio", "ch.Tt"],
+    )
+
+
+def test_a_slot_film_feeding_a_filmed_wall_round_trips() -> None:
+    """The slot is its own node and the wall downstream still names it as its
+    film: the slot flow and the filmed wall's results are the script's."""
+    net = FlowNetwork()
+    net.add_node(PressureBoundary("hi", Pt=1.03e5, Tt=1600.0, Y=AIR))
+    net.add_node(PressureBoundary("ho", Pt=1.0e5, Tt=1600.0, Y=AIR))
+    net.add_node(PressureBoundary("cool", Pt=1.05e5, Tt=700.0, Y=AIR))
+    net.add_node(PressureBoundary("ci", Pt=1.02e5, Tt=400.0, Y=AIR))
+    net.add_node(PressureBoundary("co", Pt=1.0e5, Tt=400.0, Y=AIR))
+    net.add_node(PlenumNode("g"))
+    net.add_element(
+        OrificeElement("hin", "hi", "g", diameter=0.03, Cd=0.8, correlation="fixed", in_pipe=False)
+    )
+    net.add_element(
+        SlotFilmElement(
+            "slot",
+            "cool",
+            "g",
+            slot_height=1.0e-3,
+            span=0.05,
+            lip_thickness=1.5e-3,
+            turbulence_intensity=0.1,
+            C_m_multiplier=1.2,
+            film_htc="seban1960",
+            hole_cd=HoleCd(correlation="fixed", Cd=0.7),
+        )
+    )
+    for eid, a, b, D in (("hch", "g", "ho", 0.04), ("cch", "ci", "co", 0.02)):
+        net.add_element(
+            ChannelElement(
+                eid, a, b, length=0.2, diameter=D, surface=ConvectiveSurface(model=SmoothModel())
+            )
+        )
+    net.add_wall(
+        ThermalWall(
+            "w",
+            "hch",
+            "cch",
+            layers=[WallLayer(0.001, 20.0)],
+            contact_area=0.05,
+            film="slot",
+            film_side="a",
+            film_start=0.0,
+            film_end=0.03,
+        )
+    )
+    doc, d, g = _both(net)
+    data = _data(doc, "slot", "slot_film", SlotFilmData)
+    assert data["hole_cd"] == dataclasses.asdict(HoleCd(correlation="fixed", Cd=0.7))
+    assert data["film_htc"] == "seban1960"
+    assert next(e for e in doc["edges"] if e["id"] == "w")["data"]["film"] == "slot"
+    assert d["w.eta_film"] > 0.0
+    _same(
+        d,
+        g,
+        ["slot.m_dot", "slot.Cd", "w.Q", "w.T_hot", "w.eta_film", "w.T_aw_a", "hch.m_dot"],
+        rel=1e-5,
+    )
+
+
+def test_hole_elements_without_a_gui_form_are_refused_and_named() -> None:
+    """No OrificeElement subclass is flattened to an orifice: a lone
+    impingement row, the connection elements, a duct-fed panel, a hole-Cd
+    choice the node does not offer and a geometry field it lacks are each
+    refused with their names."""
+    net = FlowNetwork()
+    net.add_node(PressureBoundary("a", Pt=2.0e5, Tt=600.0, Y=AIR))
+    net.add_node(PressureBoundary("b", Pt=1.9e5, Tt=600.0, Y=AIR))
+    net.add_element(
+        ImpingementPlateElement(
+            "jet",
+            "a",
+            "b",
+            d_jet=2.54e-3,
+            xn_d=5.0,
+            yn_d=4.0,
+            z_d=2.0,
+            span=0.1,
+            plate_thickness=2.54e-3,
+        )
+    )
+    net.add_element(EffectiveAreaConnectionElement("ea", "a", "b", effective_area=1e-4))
+    net.add_element(DiameterDischargeCoefficientConnectionElement("dd", "a", "b", 0.01, Cd=0.7))
+    net.add_element(
+        FilmCoolingElement(
+            "film",
+            "a",
+            "b",
+            hole_diameter=1e-3,
+            holes_per_row=10,
+            lateral_pitch=6e-3,
+            wall_thickness=3e-3,
+            hole_cd=HoleCd(correlation="IdelchikRounded"),
+        )
+    )
+    net.add_element(
+        SlotFilmElement(
+            "slot", "a", "b", slot_height=1e-3, span=0.05, lip_thickness=1e-3, edge_radius=2e-4
+        )
+    )
+    net.add_element(
+        EffusionPlateElement(
+            "duct",
+            "a",
+            "b",
+            hole_diameter=1e-3,
+            wall_thickness=2e-3,
+            pitch=6e-3,
+            panel_area=2.5e-3,
+            crossflow_segments=("s1", "s2"),
+        )
+    )
+    with pytest.raises(UnsupportedForGUIError) as err:
+        network_to_gui(net)
+    text = str(err.value)
+    assert "jet: a lone ImpingementPlateElement row" in text
+    assert "impingement_array composite" in text
+    assert "ea: element type EffectiveAreaConnectionElement" in text
+    assert "dd: element type DiameterDischargeCoefficientConnectionElement" in text
+    assert "film: hole_cd.correlation='IdelchikRounded' (the GUI's film_cooling node offers" in text
+    assert "slot: SlotFilmElement edge_radius=0.0002 (no field on the GUI's slot_film" in text
+    assert "duct: a duct-fed EffusionPlateElement (crossflow_segments)" in text
+    assert "effusion_liner composite" in text
+    # Problems aside, none of them is written as an orifice either.
+    from gui.backend.export import _element
+
+    kinds = {eid: _element(eid, el, []) for eid, el in net.elements.items()}
+    assert all(r is None or r[0] != "orifice" for r in kinds.values()), kinds
+
+
+@pytest.mark.parametrize(
+    ("spec", "name"),
+    [
+        (HoleCd(inlet_crossflow="mcgreehan_schotsch"), "inlet_crossflow"),
+        (HoleCd(supply_drive="static"), "supply_drive"),
+        (HoleCd(supply_recovery=0.5), "supply_recovery"),
+    ],
+)
+def test_a_hole_cd_option_with_no_gui_field_is_refused_by_name(spec: HoleCd, name: str) -> None:
+    """The plenum-fed hole nodes have no select for the supply-side terms:
+    anything but their neutral value is named, never written unseen. (The
+    elements refuse these on a plenum-fed hole themselves; the export's
+    check is the guard for a spec the element accepts.)"""
+    from gui.backend.export import _hole_cd
+
+    problems: list[str] = []
+    _hole_cd("eff", "effusion_plate", spec, problems)
+    assert problems == [
+        f"eff: hole_cd.{name}={getattr(spec, name)!r} (no field on the GUI's effusion_plate node)"
+    ]
+
+
+def test_the_hole_cd_table_matches_the_inspectors_rules() -> None:
+    """export._HOLE_CD_GUI is the Inspector's HOLE_CD_RULES (holeCd.ts) for
+    the node types it exports: the same choices per field, and a field the
+    Inspector shows no select for is absent (only its neutral values pass)."""
+    from gui.backend.export import _HOLE_CD_GUI
+
+    ts = (_REPO / "gui" / "frontend" / "src" / "utils" / "holeCd.ts").read_text()
+    consts = {
+        name: re.findall(r'"([^"]+)"', body)
+        for name, body in re.findall(r"const (\w+): \w+\[\] = (\[.*?\]);", ts, re.S)
+    }
+    fields = {
+        "correlations": "correlation",
+        "inclination": "inclination",
+        "inletCrossflow": "inlet_crossflow",
+        "exitCrossflow": "exit_crossflow",
+    }
+    for kind, offered in _HOLE_CD_GUI.items():
+        block = re.search(rf"\n\t{kind}: \{{(.*?)\n\t\}},", ts, re.S)
+        assert block, kind
+        for ts_key, field in fields.items():
+            value = re.search(rf"\b{ts_key}: (\[.*?\]|\w+)", block.group(1), re.S)
+            assert value, (kind, ts_key)
+            text = value.group(1)
+            choices = consts[text] if text in consts else re.findall(r'"([^"]+)"', text)
+            got = {v for v in offered.get(field, ()) if v is not None}
+            assert got == set(choices), (kind, field)

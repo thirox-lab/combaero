@@ -9,7 +9,10 @@ list of what and why -- never dropped.
 Phase 1 covers the boundaries (the fuel controller too), plenum, momentum chamber, combustor, channel,
 orifice, pressure loss (all four correlations), lossless connection, the
 compressor and turbine, the flow splitter (#903: one node over its outlet
-elements) and the thermal wall, with smooth convective surfaces.
+elements) and the thermal wall, with smooth convective surfaces. The
+plenum-fed hole elements -- effusion plate, film-cooling row and slot film
+(#1104) -- export to their own nodes with their hole_cd, wall and radiation;
+every other OrificeElement subclass is refused, never flattened to an orifice.
 """
 
 from __future__ import annotations
@@ -23,20 +26,26 @@ from combaero.network import (
     CasingRadiation,
     ChannelElement,
     CombustorNode,
+    EffusionPlateElement,
+    FilmCoolingElement,
     FlowNetwork,
     FuelBoundary,
     GasRadiation,
+    HoleCd,
+    ImpingementPlateElement,
     LosslessConnectionElement,
     MassFlowBoundary,
     MomentumChamberNode,
     PlenumNode,
     PressureBoundary,
     PressureLossElement,
+    SlotFilmElement,
     SplitterOutletElement,
     ThermalWall,
     TurbomachineElement,
 )
 from combaero.network.components import OrificeElement, SmoothModel
+from combaero.network.hole_cd import CD_INCLINATION_MODELS, HOLE_CD_CORRELATIONS
 from combaero.network.pressure_loss import (
     ConstantFractionLoss,
     ConstantHeadLoss,
@@ -63,6 +72,9 @@ FLOW_HANDLES: dict[str, tuple[str | None, str | None]] = {
     "combustor": ("flow-source", "flow-target"),
     "channel": ("flow-source", "flow-target"),
     "orifice": ("flow-source", "flow-target"),
+    "effusion_plate": ("flow-source", "flow-target"),
+    "film_cooling": ("flow-source", "flow-target"),
+    "slot_film": ("flow-source", "flow-target"),
     "discrete_loss": ("flow-source", "flow-target"),
     "lossless_connection": (None, None),
     "compressor": ("flow-source", "flow-target"),
@@ -83,6 +95,9 @@ SUPPORTED = (
     "CombustorNode",
     "ChannelElement",
     "OrificeElement",
+    "EffusionPlateElement",
+    "FilmCoolingElement",
+    "SlotFilmElement",
     "PressureLossElement",
     "LosslessConnectionElement",
     "CompressorElement",
@@ -218,6 +233,143 @@ def _node(nid: str, node: Any, problems: list[str]) -> tuple[str, dict[str, Any]
     return None
 
 
+#: The hole-Cd choices each GUI hole node offers, by HoleCd field: the
+#: Inspector's HOLE_CD_RULES (gui/frontend/src/utils/holeCd.ts; the frontend
+#: sources do not ship in the wheel, so the export cannot read the table).
+#: A term a node has no select for takes only "auto" or "none"
+#: (_HOLE_CD_HIDDEN), as the Inspector's rule says; any other value is refused
+#: by name rather than written where the user cannot see or change it. A
+#: correlation None is the node type's default (an element holds it resolved).
+_DISCHARGE_CORRELATIONS = (None, "IdelchikThick", "Lichtarowicz", "McGreehanSchotsch", "fixed")
+_HOLE_CD_GUI: dict[str, dict[str, tuple[Any, ...]]] = {
+    "orifice": {"correlation": (None, *HOLE_CD_CORRELATIONS)},
+    "effusion_plate": {
+        "correlation": _DISCHARGE_CORRELATIONS,
+        "inclination": CD_INCLINATION_MODELS,
+        "exit_crossflow": ("auto", "none", "rowbury_2001"),
+    },
+    "film_cooling": {
+        "correlation": _DISCHARGE_CORRELATIONS,
+        "inclination": CD_INCLINATION_MODELS,
+        "exit_crossflow": ("auto", "none", "rowbury_2001"),
+    },
+    "slot_film": {"correlation": _DISCHARGE_CORRELATIONS},
+}
+_HOLE_CD_HIDDEN: dict[str, tuple[Any, ...]] = {
+    "inclination": ("auto", "none"),
+    "inlet_crossflow": ("auto", "none"),
+    "exit_crossflow": ("auto", "none"),
+    "supply_drive": ("auto",),
+    "supply_recovery": (None,),
+}
+
+
+def _hole_cd(eid: str, kind: str, spec: HoleCd, problems: list[str]) -> dict[str, Any]:
+    """The element's resolved hole_cd (correlation and Cd as used) as the
+    node's HoleCdData, refusing by name each choice the node cannot hold."""
+    offered = _HOLE_CD_GUI[kind]
+    for f in dataclasses.fields(HoleCd):
+        if f.name == "Cd":  # the 'fixed' correlation's value: kept with it
+            continue
+        value = getattr(spec, f.name)
+        allowed = offered.get(f.name, _HOLE_CD_HIDDEN.get(f.name, (f.default,)))
+        if value not in allowed:
+            where = (
+                f"the GUI's {kind} node offers {list(allowed)}"
+                if f.name in offered
+                else f"no field on the GUI's {kind} node"
+            )
+            problems.append(f"{eid}: hole_cd.{f.name}={value!r} ({where})")
+    return dataclasses.asdict(spec)
+
+
+def _no_gui_field(eid: str, kind: str, el: Any, problems: list[str], **defaults: Any) -> None:
+    """Refuse, by name, each attribute the node has no field for that is not
+    the value the GUI builds it with."""
+    for name, default in defaults.items():
+        value = getattr(el, name)
+        if value != default:
+            problems.append(
+                f"{eid}: {type(el).__name__} {name}={value!r} (no field on the GUI's "
+                f"{kind} node, which builds {default!r})"
+            )
+
+
+def _effusion_plate(eid: str, el: EffusionPlateElement, problems: list[str]) -> dict[str, Any]:
+    if el.crossflow_segments is not None:
+        problems.append(
+            f"{eid}: a duct-fed EffusionPlateElement (crossflow_segments); the GUI's "
+            "duct-fed form is the effusion_liner composite"
+        )
+    _no_gui_field(eid, "effusion_plate", el, problems, edge_radius=0.0, regime="compressible")
+    # The element keeps panel_area, and panel_length where it was given. A
+    # panel given by its area alone reads no length (the film and the flat-
+    # plate baseline need one and refuse without), so it goes as the square
+    # of that area: the same holes, nothing read differently.
+    length = el.panel_length if el.panel_length is not None else el.panel_area**0.5
+    return {
+        "hole_diameter": float(el.hole_diameter),
+        "wall_thickness": float(el.wall_thickness),
+        "pitch_x": float(el.pitch_x),
+        "pitch_y": float(el.pitch_y),
+        "panel_length": float(length),
+        "panel_width": float(el.panel_area / length),
+        "angle_deg": float(el.angle_deg),
+        "hole_cd": _hole_cd(eid, "effusion_plate", el.hole_cd, problems),
+        "internal_Nu_multiplier": float(el.internal_Nu_multiplier),
+        "wall_conductivity": float(el.wall_conductivity),
+        "gas_film": el.gas_film,
+        "gas_augmentation": float(el.gas_augmentation),
+        "gas_baseline": el.gas_baseline,
+        "gas_start_length": el.gas_start_length,
+        "exit_crossflow_region": el.exit_crossflow_region,
+        "exit_crossflow_orientation_deg": float(el.exit_crossflow_orientation_deg),
+        "turbulence_intensity": float(el.turbulence_intensity),
+        "gas_heat_flux": float(el.gas_heat_flux),
+        "material": el.material,
+        "radiation": _radiation(el.radiation),
+    }
+
+
+def _film_cooling(eid: str, el: FilmCoolingElement, problems: list[str]) -> dict[str, Any]:
+    _no_gui_field(eid, "film_cooling", el, problems, edge_radius=0.0, regime="compressible")
+    d: dict[str, Any] = {
+        "hole_type": el.hole_type,
+        "hole_diameter": float(el.hole_diameter),
+        "holes_per_row": int(el.holes_per_row),
+        "lateral_pitch": float(el.lateral_pitch),
+        "n_rows": int(el.n_rows),
+        # Read with more than one row only (the element stores 0.0 without one).
+        "row_pitch": float(el.row_pitch) if el.n_rows > 1 else None,
+        "wall_thickness": float(el.wall_thickness),
+        "angle_deg": float(el.angle_deg),
+        "turbulence_intensity": float(el.turbulence_intensity),
+        "hole_cd": _hole_cd(eid, "film_cooling", el.hole_cd, problems),
+        "exit_crossflow_region": el.exit_crossflow_region,
+        "exit_crossflow_orientation_deg": float(el.exit_crossflow_orientation_deg),
+    }
+    # A shaped hole's exit geometry; a cylindrical hole has none (the GUI
+    # keeps its defaults and builds without them).
+    if el.area_ratio is not None:
+        d["area_ratio"] = float(el.area_ratio)
+    if el.breakout_width is not None:
+        d["breakout_width"] = float(el.breakout_width)
+    return d
+
+
+def _slot_film(eid: str, el: SlotFilmElement, problems: list[str]) -> dict[str, Any]:
+    _no_gui_field(eid, "slot_film", el, problems, edge_radius=0.0, regime="compressible")
+    return {
+        "slot_height": float(el.slot_height),
+        "span": float(el.span),
+        "lip_thickness": float(el.lip_thickness),
+        "turbulence_intensity": float(el.turbulence_intensity),
+        "C_m_multiplier": float(el.C_m_multiplier),
+        "film_htc": el.film_htc,
+        "hole_cd": _hole_cd(eid, "slot_film", el.hole_cd, problems),
+    }
+
+
 def _element(eid: str, el: Any, problems: list[str]) -> tuple[str, dict[str, Any]] | None:
     if isinstance(el, ChannelElement):
         if el.diameter is None:
@@ -234,11 +386,28 @@ def _element(eid: str, el: Any, problems: list[str]) -> tuple[str, dict[str, Any
         if el.Dh is not None and abs(el.Dh - el.diameter) > 1e-15 * max(el.Dh, 1.0):
             d["Dh"] = float(el.Dh)
         return "channel", d
-    if isinstance(el, OrificeElement):
+    # The hole subclasses before the plain orifice (#1104): flattened to one,
+    # they would lose the hole count, the Cd on the real bore, the wall and
+    # the radiation.
+    if isinstance(el, EffusionPlateElement):
+        return "effusion_plate", _effusion_plate(eid, el, problems)
+    if isinstance(el, FilmCoolingElement):
+        return "film_cooling", _film_cooling(eid, el, problems)
+    if isinstance(el, SlotFilmElement):
+        return "slot_film", _slot_film(eid, el, problems)
+    if isinstance(el, ImpingementPlateElement):
+        problems.append(
+            f"{eid}: a lone ImpingementPlateElement row (the GUI has only the "
+            "impingement_array composite, which builds its own rows)"
+        )
+        return None
+    # Exactly the orifice: any other subclass (the connection elements) falls
+    # through to the refusal below.
+    if type(el) is OrificeElement:
         d = {
             # The element's resolved spec (correlation and Cd as used), so the
             # GUI builds the same Cd chain.
-            "hole_cd": dataclasses.asdict(el.hole_cd),
+            "hole_cd": _hole_cd(eid, "orifice", el.hole_cd, problems),
             "plate_thickness": float(el.plate_thickness),
             "edge_radius": float(el.edge_radius),
             "bevel_depth": float(el.bevel_depth),
