@@ -132,14 +132,32 @@ constexpr double REFORMING_ELEMENT_RTOL = 1e-12;
 constexpr double REFORMING_JACOBIAN_TRACE = 1e-20;
 constexpr double REFORMING_JACOBIAN_TRACE_MAX = 1e-12;
 constexpr int REFORMING_JOINT_RESTARTS = 10;
-// NH3 decomposition, 2 NH3 = N2 + 3 H2, joins the joint solve where NH3 is at
-// least this mole fraction of the burned state (#1314), as reforming does for
-// a hydrocarbon: the trace of fuel that the phi = 1 softmin leaves on its lean
-// side (below this from |phi - 1| of about 5e-4) passes through, so a lean
-// NH3 burn is as before. Rich, complete combustion left the unburnt NH3 as
-// NH3, where equilibrium cracks all but 1e-5 to 1e-7 of it: 273 K hot at
-// phi 2.3 against Cantera. N then joins the element balances, and N2 is no
-// longer inert.
+// Reforming is equilibrated where a hydrocarbon is above this mole fraction
+// of the burned state (else the shift alone, or with NH3 decomposition).
+constexpr double EQUILIBRIUM_HC_MIN_FRACTION = 1e-10;
+// NH3 decomposition, 2 NH3 = N2 + 3 H2, joins the joint solve where NH3 is
+// above this mole fraction of the burned state (#1314), the same test as
+// EQUILIBRIUM_HC_MIN_FRACTION (both strict). N then joins the element
+// balances, and N2 is no longer inert. Rich, complete combustion left the
+// unburnt NH3 as NH3, where equilibrium cracks all but 1e-5 to 1e-7 of it:
+// 273 K hot at phi 2.3 against Cantera. Lean, complete combustion leaves NH3
+// above this in two bands, where it is now cracked (beside the O2, as a
+// hydrocarbon trace is reformed there on main): the phi = 0 softmin's
+// (smooth_phi0) unburnt fraction at phi 1e-6 to 3e-3 (up to 1e-5 NH3; T moves
+// by -2.9e-2 to +5.9e-3 K, dT/dX_NH3 by about 10 %, and the NH3 and H2
+// entries of dX_out/dX by O(1)), and the phi = 1 softmin's at phi 0.9994 to 1
+// (at most 9.4e-3 K). Lean burns in between, and every state without NH3,
+// are as before, bit for bit.
+// The test is a switch (owner decision 2026-11-25, kept for 0.12.0): true
+// equilibrium also forms NH3 from N2 + H2 in a rich burn at pressure, and
+// that synthesis is on only where NH3 is above the threshold. A trace that
+// crosses it turns the synthesis on in a step (measured 2026-11-25, dry air,
+// 300 K inlet, burned NH3 0.99e-10 -> 1.01e-10): H2 phi 4 at 100 bar forms
+// NH3 1.05e-3 and T rises 1.64 K; CH4 phi 2 at 100 bar 2.8e-4 and +0.44 K;
+// H2 phi 4 at 1 bar 1.1e-5 and +0.017 K; phi 1.3 at 1 bar (H2 or CH4)
+// 1.3e-7 and +3e-4 K. dT/dX moves by 0.1-0.6 % in the major columns and
+// 8-51 % in NH3's own, and dT/dP from 0 (H2 fuel) to finite. Always-on NH3
+// synthesis, with #1241's methanation, is planned for 0.13.0.
 constexpr double EQUILIBRIUM_NH3_MIN_FRACTION = 1e-10;
 // The adiabatic temperature (WGS and reforming) is bracketed in
 // [EQUILIBRIUM_T_MIN, EQUILIBRIUM_T_MAX] K from its guess (the low end the

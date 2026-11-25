@@ -94,6 +94,15 @@ static WgsConfig make_wgs_config() {
 // stencil read past the bound (a 1e-300 floor made F jump there) and it
 // stopped at ln(Q/K) = 12-14: where the shift runs away from the trace, a
 // whole shift short (CO 7e-7 instead of 0.015 from CO 1e-8 at 800 K).
+// Where that pass ends on its iteration cap without a root, the solve is run
+// again with every step that leaves the bracket taken in the log of the
+// distance to the bound it points at (F is linear in that log as a species
+// runs out), as solve_nh3_decomposition_isothermal (#1314 review). A root a
+// trace of 1e-185 from its bound -- CO from CO2 at 1e-11 in an H2-rich gas at
+// the 10 K floor the adiabatic search probes, cold very rich NH3 with a trace
+// of carbon -- is out of bisection's reach in 100 halvings of the bracket.
+// Only a pass that would have thrown takes the second one, so every result
+// the first pass returns is unchanged.
 static double solve_wgs_extent(const std::vector<double> &n0, double T, const WgsConfig &cfg) {
   const double a_CO2 = n0[cfg.i_CO2];
   const double a_H2 = n0[cfg.i_H2];
@@ -128,52 +137,70 @@ static double solve_wgs_extent(const std::vector<double> &n0, double T, const Wg
                    std::abs(lnKp));
     return std::log(p_CO2) + std::log(p_H2) - std::log(r_CO) - std::log(r_H2O) - lnKp;
   };
-  double lo = xi_min;
-  double hi = xi_max;
-  double xi = (lo < 0.0 && 0.0 < hi) ? 0.0 : 0.5 * (lo + hi);
-  double dx_old = hi - lo;
-  double dx = dx_old;
   double F = 0.0;
-  for (int it = 0; it < inner_solve::kWgsExtentMaxIter; ++it) {
-    double dF = 0.0;
-    double noise = 0.0;
-    F = eval(xi, dF, noise);
-    if (std::isnan(F)) {
-      inner_solve::throw_no_convergence("solve_wgs_extent", it, "ln(Q/K)", F);
+  // One pass; true with the root in xi_out. log_steps: a step that leaves
+  // the bracket is taken in the log of its bound's distance before bisecting.
+  auto pass = [&](bool log_steps, double &xi_out) {
+    double lo = xi_min;
+    double hi = xi_max;
+    double xi = (lo < 0.0 && 0.0 < hi) ? 0.0 : 0.5 * (lo + hi);
+    double dx_old = hi - lo;
+    double dx = dx_old;
+    for (int it = 0; it < inner_solve::kWgsExtentMaxIter; ++it) {
+      double dF = 0.0;
+      double noise = 0.0;
+      F = eval(xi, dF, noise);
+      if (std::isnan(F)) {
+        inner_solve::throw_no_convergence("solve_wgs_extent", it, "ln(Q/K)", F);
+      }
+      // A root to the tolerance, or to F's rounding (a trace amount at the
+      // root carries only eps |n0| / n of relative precision).
+      if (std::abs(F) <= EQUILIBRIUM_WGS_FTOL ||
+          std::abs(F) <= EQUILIBRIUM_WGS_NOISE_FACTOR * noise) {
+        xi_out = xi;
+        return true;
+      }
+      if (F > 0.0) {
+        hi = xi;
+      } else {
+        lo = xi;
+      }
+      double xi_new = 0.0;
+      const bool newton_ok = std::isfinite(F) && dF > 0.0 && std::isfinite(dF);
+      const double step = newton_ok ? -F / dF : 0.0;
+      if (newton_ok && xi + step > lo && xi + step < hi &&
+          std::abs(2.0 * step) <= std::abs(dx_old)) {
+        dx_old = dx;
+        dx = step;
+        xi_new = xi + step;
+      } else {
+        double xi_log = 0.0;
+        if (log_steps && newton_ok) {
+          // Toward xi_min: CO2 or H2 runs out; toward xi_max: CO or steam.
+          const double d = step < 0.0 ? xi - xi_min : xi_max - xi;
+          xi_log = step < 0.0 ? xi_min + d * std::exp(step / d) : xi_max - d * std::exp(-step / d);
+        }
+        dx_old = dx;
+        if (log_steps && newton_ok && xi_log > lo && xi_log < hi) {
+          dx = xi_log - xi;
+          xi_new = xi_log;
+        } else {
+          dx = 0.5 * (hi - lo);
+          xi_new = lo + dx;
+        }
+      }
+      // The bracket cannot be split further: a root to rounding.
+      if (!(xi_new > lo && xi_new < hi)) {
+        xi_out = xi;
+        return true;
+      }
+      xi = xi_new;
     }
-    // A root to the tolerance, or to F's rounding (a trace amount at the root
-    // carries only eps |n0| / n of relative precision).
-    if (std::abs(F) <= EQUILIBRIUM_WGS_FTOL ||
-        std::abs(F) <= EQUILIBRIUM_WGS_NOISE_FACTOR * noise) {
-      return xi;
-    }
-    if (F > 0.0) {
-      hi = xi;
-    } else {
-      lo = xi;
-    }
-    double xi_new = 0.0;
-    const bool newton_ok = std::isfinite(F) && dF > 0.0 && std::isfinite(dF);
-    const double step = newton_ok ? -F / dF : 0.0;
-    if (newton_ok && xi + step > lo && xi + step < hi &&
-        std::abs(2.0 * step) <= std::abs(dx_old)) {
-      dx_old = dx;
-      dx = step;
-      xi_new = xi + step;
-    } else {
-      dx_old = dx;
-      dx = 0.5 * (hi - lo);
-      xi_new = lo + dx;
-    }
-    // The bracket cannot be split further: a root to rounding.
-    if (!(xi_new > lo && xi_new < hi)) {
-      return xi;
-    }
-    xi = xi_new;
-  }
-  if (inner_solve::cap_exit_is_root(hi - lo, xi)) {
-    return xi;
-  }
+    xi_out = xi;
+    return inner_solve::cap_exit_is_root(hi - lo, xi);
+  };
+  double xi = 0.0;
+  if (pass(false, xi) || pass(true, xi)) return xi;
   inner_solve::throw_no_convergence("solve_wgs_extent", inner_solve::kWgsExtentMaxIter,
                                     "ln(Q/K)", F);
 }
@@ -1818,9 +1845,9 @@ static bool solve_reforming_wgs_isothermal(const std::vector<double> &n0,
 static bool reforming_species_present(const std::vector<double> &X, ReformingConfig &cfg) {
   bool has_hc = false;
   for (std::size_t i_hc : cfg.hc_indices) {
-    if (X[i_hc] > 1e-10) has_hc = true;
+    if (X[i_hc] > EQUILIBRIUM_HC_MIN_FRACTION) has_hc = true;
   }
-  cfg.nh3 = X[cfg.i_NH3] >= EQUILIBRIUM_NH3_MIN_FRACTION;
+  cfg.nh3 = X[cfg.i_NH3] > EQUILIBRIUM_NH3_MIN_FRACTION;
   return has_hc;
 }
 

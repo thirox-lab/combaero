@@ -202,8 +202,13 @@ def test_lean_nh3_burns_completely_as_before() -> None:
 def test_the_lean_softmin_trace_of_nh3_passes_through() -> None:
     """At phi 0.9993 the phi = 1 softmin leaves 8.5e-12 of the NH3 unburnt,
     below EQUILIBRIUM_NH3_MIN_FRACTION: it passes through as on main (no H2
-    formed), so lean burns stay bit-identical. From |phi - 1| of about 5e-4
-    the trace is cracked (T moves by at most 1e-2 K, at phi 0.999999)."""
+    formed). Lean results change only where complete combustion leaves more
+    than that (measured on 20000 lean states, phi 1e-6 to 1): the phi = 0
+    softmin's unburnt fraction at phi 1e-6 to 3e-3 (up to 1e-5 NH3, cracked
+    beside the O2 as a hydrocarbon trace is reformed; T -2.9e-2 to +5.9e-3 K,
+    and the NH3 and H2 entries of dX_out/dX by O(1)), and the phi = 1
+    softmin's at phi 0.9994 to 1 (at most 9.4e-3 K). Lean burns in between
+    are bit-identical to main."""
     X = _phi_mix(0.9993, {"NH3": 1.0}, _O2_N2)
     burned = _core.complete_combustion_products_and_jacobian(X).X_b
     i_nh3 = _NAMES.index("NH3")
@@ -307,3 +312,39 @@ def test_nh3_equilibrium_jacobian_matches_central_differences(case: str) -> None
     hT = 1e-3
     fd_T = (run(X, Tq=T + hT)[0] - run(X, Tq=T - hT)[0]) / (2.0 * hT)
     assert jac.dT_dT_in == pytest.approx(fd_T, rel=1e-7)
+
+
+# Very rich NH3 with a trace of carbon (#1314 review). With no hydrocarbon, the
+# round cracks NH3 (making H2) and then runs the shift; the adiabatic search
+# probes down to the 10 K floor, where CO2 at 1e-11 beside H2 leaves CO at
+# 1e-185 from its bound, out of reach of solve_wgs_extent's 100 bisections:
+# 10 of these 420 states threw "solve_wgs_extent: no convergence" (none on
+# main, which did not crack the NH3; the shift solve alone threw there too).
+@pytest.mark.parametrize("co2", [1e-12, 1e-9, 1e-6])
+@pytest.mark.parametrize("phi", [3.0, 30.0, 60.0, 100.0])
+def test_very_rich_nh3_with_a_carbon_trace_converges(phi: float, co2: float) -> None:
+    X = _phi_mix(phi, {"NH3": 1.0}, {"O2": 0.21, "N2": 0.79, "CO2": co2})
+    for T in (250.0, 550.0, 850.0):
+        for P in (1e4, 1e5, 1e6, 1e7):
+            r = _core.combustion_equilibrium(T, X, P)
+            assert r.converged, (T, P)
+            jac = _core.combustion_equilibrium_and_jacobian(T, X, P)
+            assert np.isfinite(jac.dT_dX).all(), (T, P)
+
+
+@pytest.mark.parametrize("T", [10.0, 20.0, 30.0])
+def test_a_cold_shift_with_a_trace_of_co2_converges(T: float) -> None:
+    """The shift alone at the thermo floor: H2-rich, no CO, CO2 1e-11. The
+    root, CO at 1e-217 to 1e-79, sits that close to its bound; the second
+    pass of solve_wgs_extent steps in the log of that distance and reaches
+    it: CO = CO2 H2 / (H2O K), so a tenth of the CO2 gives a tenth of the CO
+    (H2 and steam do not move), which a point that is not the root misses."""
+    i_co = _NAMES.index("CO")
+    co = []
+    for x_co2 in (1e-11, 1e-12):
+        X = _vec({"H2": 0.6, "H2O": 0.1, "CO2": x_co2, "N2": 0.3})
+        r = _core.wgs_equilibrium(T, X, 1e5)
+        assert r.state.X[_NAMES.index("CO2")] == pytest.approx(X[_NAMES.index("CO2")], rel=1e-9)
+        co.append(r.state.X[i_co])
+    assert 0.0 < co[1] < co[0] < 1e-70
+    assert co[1] / co[0] == pytest.approx(0.1, rel=1e-9)
