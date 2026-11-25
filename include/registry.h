@@ -18,6 +18,11 @@ public:
   using FrictionFunc =
       std::function<solver::CorrelationResult<std::tuple<double, double>>(
           double Re, double e_D)>;
+  // Regularized F_Re(Re) = f(Re) * Re and dF_Re/dRe without the laminar
+  // re_floor (#1216), registered alongside FrictionFunc as one composition
+  // point for friction models.
+  using FrictionFReFunc =
+      std::function<std::tuple<double, double>(double Re, double e_D)>;
 
   // Get the global singleton instance
   static Registry &get() {
@@ -27,6 +32,9 @@ public:
 
   // Retrieve a friction function by name
   FrictionFunc get_friction_model(const std::string &name) const;
+
+  // Retrieve the F_Re(Re) = f(Re) * Re function by name (#1216)
+  FrictionFReFunc get_friction_f_re_model(const std::string &name) const;
 
   // Check if name exists
   bool has_friction_model(const std::string &name) const;
@@ -46,6 +54,7 @@ private:
   Registry(); // Private constructor builds the mappings
 
   std::map<std::string, FrictionFunc> friction_models_;
+  std::map<std::string, FrictionFReFunc> friction_f_re_models_;
   std::map<std::string, double> friction_f_re_at_zero_;
 };
 

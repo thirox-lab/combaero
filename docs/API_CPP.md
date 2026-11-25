@@ -818,12 +818,24 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // Mass flux from (Pt0, Tt0) against P_target -- the duct's exit stagnation
 // pressure if exit_total, else its exit static -- with dG/dPt0, dG/dTt0,
 // dG/dP_target. Monotone in P_target, saturating exactly at the choked flux
-// (choked = true, dG/dP_target = 0); 0 at or below zero drive, and blended C1
-// to a finite slope below kFannoFlowDriveFloor = 1 Pa (the cubic of
-// flow_drive_floor.h); at exactly zero drive G = 0 with the cubic's slope
-// h'(0) G0 / floor in dG/dP_target and dG/dPt0 (#1209), where M_in and M_exit
-// are re-evaluated at the blended G (#1017) and M_exit_root keeps the floor
-// root's exit Mach (the warm start for M_exit_guess). Unchoked it solves for
+// (choked = true, dG/dP_target = 0); 0 at or below zero drive. Below
+// kFannoFlowDriveFloor = 1 Pa, out.choked is always false (G < at.G and
+// dG/dP_target < 0). Registered viscous friction models solve the low-Mach
+// viscous/inertial balance directly in drive (recovering exact Hagen-Poiseuille
+// as drive -> 0 whenever chi = dp_inc(at.G) / kFannoFlowDriveFloor >=
+// kFannoLowMachDropHi = 0.25, which holds for every unchoked real-gas duct
+// since the Fanno sonic limit (2/(gamma+1))^((gamma+1)/(gamma-1)) >= 0.316)
+// and hand off C1 to the floor state via a shape-preserving rational cubic
+// (#1216), blending smoothly across a chosen binary octave inside the derived
+// sonic bound (chi in [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25])
+// into the odd cubic of flow_drive_floor.h when vanishing length (L -> 0) or
+// f_multiplier -> 0 chokes the duct deep below 1 Pa; fixed/frictionless ducts
+// use the odd cubic directly. Note: adiabatic static-exit sub-floor dG_ddir
+// inherits raw_flow's pre-existing 1 Pa d_ddir cancellation noise.
+// At exactly zero drive G = 0 with the branch's finite slope in dG/dP_target
+// and dG/dPt0 (#1209), where M_in and M_exit are re-evaluated at the blended G
+// (#1017) and M_exit_root keeps the floor root's exit Mach (the warm start for
+// M_exit_guess). Unchoked it solves for
 // the exit Mach (P_exit is linear in G at fixed M, so G(M_exit) is explicit)
 // and differentiates implicitly, well conditioned up to the choke.
 // dY_directions: mass-fraction directions v; dG_ddir returns dG/ds along each
@@ -1048,6 +1060,17 @@ linear in its flow down to essentially zero flow.
 // colebrook / petukhov. Unknown tag: invalid_argument.
 double solver::laminar_blend_f_re_at_zero();
 double solver::friction_f_re_at_zero(const std::string& tag);
+
+// Smooth f(Re) * Re and d(f * Re)/dRe without the laminar re_floor (#1216):
+// finite and cancellation-free for all Re >= 0, equal to friction_f_re_at_zero
+// at Re = 0. Dispatched through Registry::get_friction_f_re_model; returns
+// {0, 0} for an unknown tag.
+std::tuple<double, double> solver::friction_f_re_and_jacobian_haaland(double Re, double e_D);
+std::tuple<double, double> solver::friction_f_re_and_jacobian_serghides(double Re, double e_D);
+std::tuple<double, double> solver::friction_f_re_and_jacobian_colebrook(double Re, double e_D);
+std::tuple<double, double> solver::friction_f_re_and_jacobian_petukhov(double Re);
+std::tuple<double, double> solver::friction_f_re_and_jacobian(const std::string& tag,
+                                                              double Re, double e_D);
 ```
 
 `channel_residuals_and_jacobian` takes its slope at exactly zero flow from

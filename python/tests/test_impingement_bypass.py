@@ -317,8 +317,15 @@ def _jacobian_error(
     x = np.array(res["__x_solution__"], dtype=float)
     # Flows 1e-5, pressures and temperatures 1e-7: the compressible channel's
     # Fanno iteration repeats to ~1e-12 (see test_impingement_plate_element).
+    # Richardson-extrapolate flow columns (h and 2h) so sub-floor inertial
+    # curvature (#1216) does not require shrinking h into the repeatability floor.
     rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
     fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
+    flow_cols = [j for j, n in enumerate(s.unknown_names) if n.endswith(".m_dot")]
+    if flow_cols:
+        fd_2h = fd_jacobian(s, x, rel=np.where(rel == 1e-5, 2e-5, rel), floor=1e-10)
+        fd = fd.copy()
+        fd[:, flow_cols] = (4.0 * fd[:, flow_cols] - fd_2h[:, flow_cols]) / 3.0
     jac = s._residuals_and_jacobian(x)[1].toarray()
     sig = np.abs(fd) > 1e-3 * np.abs(fd).max(axis=1, keepdims=True)
     err = np.abs(jac - fd)[sig] / np.abs(fd[sig])

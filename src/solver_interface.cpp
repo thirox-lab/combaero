@@ -232,156 +232,130 @@ static std::tuple<double, double> blend_laminar(double Re, double f_turb, double
   return {f, df};
 }
 
+// (F_Re, dF_Re/dRe) where F_Re(Re) = (1 - w(Re)) * f_re + w(Re) * f_turb(Re) * Re:
+// the re_floor = 0 limit of Re * blend_laminar, smooth and cancellation-free
+// for all Re >= 0 (#1216).
+static std::tuple<double, double> blend_laminar_f_re(double Re, double f_turb,
+                                                     double df_turb_dRe) {
+  using namespace laminar_friction;
+  const double t = std::tanh((Re - blend_center) / blend_width);
+  const double w = 0.5 * (1.0 + t);
+  const double dw_dRe = 0.5 * (1.0 - t * t) / blend_width;
+  const double F_Re = (1.0 - w) * f_re + w * f_turb * Re;
+  const double dF_dRe = w * (f_turb + Re * df_turb_dRe) + dw_dRe * (f_turb * Re - f_re);
+  return {F_Re, dF_dRe};
+}
+
+static std::tuple<double, double> f_turb_and_dRe_haaland(double Re, double e_D) {
+  const double re_eps = laminar_friction::turbulent_re_floor;
+  const double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
+  const double a = std::pow(e_D / haaland::coeff_roughness, haaland::coeff_exponent);
+  const double b = haaland::coeff_reynolds / Re_eff;
+  const double arg = a + b;
+  const double inv_sqrt_f = haaland::coeff_outer * std::log10(arg);
+  const double dU_darg = haaland::coeff_outer / (M_LN10 * arg);
+  const double darg_dRe_eff = -haaland::coeff_reynolds / (Re_eff * Re_eff);
+  const double dRe_eff_dRe = Re / Re_eff;
+  const double darg_dRe = darg_dRe_eff * dRe_eff_dRe;
+  const double dU_dRe = dU_darg * darg_dRe;
+  const double f_turb = 1.0 / (inv_sqrt_f * inv_sqrt_f);
+  const double df_turb_dU = -2.0 / (inv_sqrt_f * inv_sqrt_f * inv_sqrt_f);
+  const double df_turb_dRe = df_turb_dU * dU_dRe;
+  return {f_turb, df_turb_dRe};
+}
+
+static std::tuple<double, double> f_turb_and_dRe_serghides(double Re, double e_D) {
+  const double re_eps = laminar_friction::turbulent_re_floor;
+  const double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
+  const double r = serghides::coeff_roughness;
+  const double cA = serghides::coeff_reynolds_A;
+  const double cBC = serghides::coeff_reynolds_BC;
+  const double ln10 = M_LN10;
+
+  const double argA = e_D / r + cA / Re_eff;
+  const double A = -2.0 * std::log10(argA);
+  const double argB = e_D / r + cBC * A / Re_eff;
+  const double B = -2.0 * std::log10(argB);
+  const double argC = e_D / r + cBC * B / Re_eff;
+  const double C = -2.0 * std::log10(argC);
+
+  const double denom = C - 2.0 * B + A;
+  const double inv_sqrt_f =
+      (std::abs(denom) < 1e-30) ? C : A - (B - A) * (B - A) / denom;
+
+  const double dRe_eff_dRe = Re / Re_eff;
+  const double dA_dRe = (2.0 / (ln10 * argA)) * (cA / (Re_eff * Re_eff)) * dRe_eff_dRe;
+  const double dargB_dRe = cBC * (dA_dRe * Re_eff - A * dRe_eff_dRe) / (Re_eff * Re_eff);
+  const double dB_dRe = (-2.0 / (ln10 * argB)) * dargB_dRe;
+  const double dargC_dRe = cBC * (dB_dRe * Re_eff - B * dRe_eff_dRe) / (Re_eff * Re_eff);
+  const double dC_dRe = (-2.0 / (ln10 * argC)) * dargC_dRe;
+
+  double d_inv_sqrt_f_dRe;
+  if (std::abs(denom) < 1e-30) {
+    d_inv_sqrt_f_dRe = dC_dRe;
+  } else {
+    const double BmA = B - A;
+    const double d_BmA_dRe = dB_dRe - dA_dRe;
+    const double d_denom_dRe = dC_dRe - 2.0 * dB_dRe + dA_dRe;
+    d_inv_sqrt_f_dRe =
+        dA_dRe - (2.0 * BmA * d_BmA_dRe * denom - BmA * BmA * d_denom_dRe) /
+                     (denom * denom);
+  }
+  const double f_turb = 1.0 / (inv_sqrt_f * inv_sqrt_f);
+  const double df_turb_dRe = (-2.0 / (inv_sqrt_f * inv_sqrt_f * inv_sqrt_f)) * d_inv_sqrt_f_dRe;
+  return {f_turb, df_turb_dRe};
+}
+
+static std::tuple<double, double> f_turb_and_dRe_colebrook(double Re, double e_D) {
+  const double re_eps = laminar_friction::turbulent_re_floor;
+  const double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
+  const double f_val = ::friction_colebrook(Re, e_D);
+  const double x = 1.0 / std::sqrt(f_val);
+  const double ln10 = M_LN10;
+  const double arg =
+      e_D / serghides::coeff_roughness + serghides::coeff_reynolds_BC * x / Re_eff;
+  const double dF_dx = 1.0 + 2.0 * serghides::coeff_reynolds_BC / (ln10 * arg * Re_eff);
+  const double dF_dRe_eff =
+      (-2.0 / (ln10 * arg)) * (serghides::coeff_reynolds_BC * x / (Re_eff * Re_eff));
+  const double dx_dRe = -(dF_dRe_eff * (Re / Re_eff)) / dF_dx;
+  const double df_turb_dRe = (-2.0 / (x * x * x)) * dx_dRe;
+  return {f_val, df_turb_dRe};
+}
+
+static std::tuple<double, double> f_turb_and_dRe_petukhov(double Re) {
+  const double re_eps = laminar_friction::turbulent_re_floor;
+  const double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
+  const double x = petukhov::coeff_a * std::log(Re_eff) - petukhov::coeff_b;
+  const double f_turb = 1.0 / (x * x);
+  const double dx_dRe = petukhov::coeff_a * Re / (Re_eff * Re_eff);
+  const double df_turb_dRe = (-2.0 / (x * x * x)) * dx_dRe;
+  return {f_turb, df_turb_dRe};
+}
+
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian_haaland(double Re, double e_D) {
-  // Explicit Haaland equation approximation of friction factor f (Darcy)
-  // 1/sqrt(f) = coeff_outer * log10( (e_D/coeff_roughness)^coeff_exponent +
-  // coeff_reynolds/Re )
-
-  // Regularized Re to avoid singularity at Re=0 and sync with base friction evaluation
-  const double re_eps = laminar_friction::turbulent_re_floor;
-  double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
-
-  // Isolate core logarithmic argument
-  double a = std::pow(e_D / haaland::coeff_roughness, haaland::coeff_exponent);
-  double b = haaland::coeff_reynolds / Re_eff;
-  double arg = a + b;
-
-  // 1/sqrt(f) for turbulent branch
-  double inv_sqrt_f = haaland::coeff_outer * std::log10(arg);
-
-  // Analytical derivative via chain rule for turbulent branch:
-  // Let U = inv_sqrt_f = coeff_outer * log10(arg) = (coeff_outer / ln(10)) * ln(arg)
-  double dU_darg = haaland::coeff_outer / (M_LN10 * arg);
-  // d(arg)/dRe_eff = -coeff_reynolds / Re_eff^2
-  double darg_dRe_eff = -haaland::coeff_reynolds / (Re_eff * Re_eff);
-  double dRe_eff_dRe = Re / Re_eff;
-  double darg_dRe = darg_dRe_eff * dRe_eff_dRe;
-  double dU_dRe = dU_darg * darg_dRe;
-
-  // Turbulent branch (Haaland)
-  double f_turb = 1.0 / (inv_sqrt_f * inv_sqrt_f);
-  double df_turb_dU = -2.0 / (inv_sqrt_f * inv_sqrt_f * inv_sqrt_f);
-  double df_turb_dRe = df_turb_dU * dU_dRe;
-
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_haaland(Re, e_D);
   const auto [f, jacobian] = blend_laminar(Re, f_turb, df_turb_dRe);
   return {{f, jacobian}, CorrelationValidity::VALID, ""};
 }
 
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian_serghides(double Re, double e_D) {
-  const double re_eps = laminar_friction::turbulent_re_floor;
-  double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
-
-  // Serghides Steffensen form: 1/sqrt(f) = A - (B-A)^2 / (C - 2B + A)
-  // A = -2 log10(e_D/3.7 + 12/Re)
-  // B = -2 log10(e_D/3.7 + 2.51*A/Re)
-  // C = -2 log10(e_D/3.7 + 2.51*B/Re)
-  const double r = serghides::coeff_roughness;
-  const double cA = serghides::coeff_reynolds_A;
-  const double cBC = serghides::coeff_reynolds_BC;
-  const double ln10 = M_LN10;
-
-  double argA = e_D / r + cA / Re_eff;
-  double A = -2.0 * std::log10(argA);
-
-  double argB = e_D / r + cBC * A / Re_eff;
-  double B = -2.0 * std::log10(argB);
-
-  double argC = e_D / r + cBC * B / Re_eff;
-  double C = -2.0 * std::log10(argC);
-
-  double denom = C - 2.0 * B + A;
-  double inv_sqrt_f =
-      (std::abs(denom) < 1e-30) ? C : A - (B - A) * (B - A) / denom;
-
-  // Analytical derivative via chain rule through A, B, C, inv_sqrt_f, f.
-  // dA/dRe = (2 / (ln10 * argA)) * (cA / Re^2)
-  // dA/dRe = dA/dRe_eff * dRe_eff/dRe
-  double dRe_eff_dRe = Re / Re_eff;
-  double dA_dRe = (2.0 / (ln10 * argA)) * (cA / (Re_eff * Re_eff)) * dRe_eff_dRe;
-
-  // dB/dRe = dB/d(argB) * d(argB)/dRe
-  // d(argB)/dRe = cBC * d(A/Re_eff)/dRe = cBC * (dA/dRe * Re_eff - A * dRe_eff/dRe) / Re_eff^2
-  double dargB_dRe = cBC * (dA_dRe * Re_eff - A * dRe_eff_dRe) / (Re_eff * Re_eff);
-  double dB_dRe = (-2.0 / (ln10 * argB)) * dargB_dRe;
-
-  double dargC_dRe = cBC * (dB_dRe * Re_eff - B * dRe_eff_dRe) / (Re_eff * Re_eff);
-  double dC_dRe = (-2.0 / (ln10 * argC)) * dargC_dRe;
-
-  // d(inv_sqrt_f)/dRe from Steffensen formula
-  double d_inv_sqrt_f_dRe;
-  if (std::abs(denom) < 1e-30) {
-    d_inv_sqrt_f_dRe = dC_dRe;
-  } else {
-    // inv_sqrt_f = A - (B-A)^2 / denom,  denom = C - 2B + A
-    double BmA = B - A;
-    double d_BmA_dRe = dB_dRe - dA_dRe;
-    double d_denom_dRe = dC_dRe - 2.0 * dB_dRe + dA_dRe;
-    // d((B-A)^2/denom)/dRe = (2*(B-A)*d(B-A) * denom - (B-A)^2 * d_denom) /
-    // denom^2
-    d_inv_sqrt_f_dRe =
-        dA_dRe - (2.0 * BmA * d_BmA_dRe * denom - BmA * BmA * d_denom_dRe) /
-                     (denom * denom);
-  }
-  // Turbulent branch (Serghides)
-  double f_turb = 1.0 / (inv_sqrt_f * inv_sqrt_f);
-  double df_turb_dRe = (-2.0 / (inv_sqrt_f * inv_sqrt_f * inv_sqrt_f)) * d_inv_sqrt_f_dRe;
-
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_serghides(Re, e_D);
   const auto [f, jacobian] = blend_laminar(Re, f_turb, df_turb_dRe);
   return {{f, jacobian}, CorrelationValidity::VALID, ""};
 }
 
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian_colebrook(double Re, double e_D) {
-  const double re_eps = laminar_friction::turbulent_re_floor;
-  double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
-
-  // Colebrook converges internally; use Serghides as starting guess.
-  // After convergence, the implicit derivative is:
-  //   F(x, Re) = x + 2*log10(e_D/3.7 + 2.51*x/Re) = 0,  x = 1/sqrt(f)
-  //   dF/dx  = 1 + 2/(ln10 * arg) * 2.51/Re  = 1 + 2*2.51/(ln10*arg*Re)
-  //   dF/dRe = 2/(ln10 * arg) * (-2.51*x/Re^2)
-  //   dx/dRe = -(dF/dRe) / (dF/dx)
-  //   df/dRe = -2 * x^(-3) * dx/dRe
-
-  // Get converged x = 1/sqrt(f) from the colebrook scalar function
-  double f_val = ::friction_colebrook(Re, e_D);
-  double x = 1.0 / std::sqrt(f_val);
-
-  const double ln10 = M_LN10;
-  double arg =
-      e_D / serghides::coeff_roughness + serghides::coeff_reynolds_BC * x / Re_eff;
-
-  double dF_dx = 1.0 + 2.0 * serghides::coeff_reynolds_BC / (ln10 * arg * Re_eff);
-  // dx/dRe = -(dF/dRe) / (dF/dx)
-  // dF/dRe = dF/dRe_eff * dRe_eff/dRe
-  // dF/dRe_eff = 2/(ln10 * arg) * (-t_BC * x / Re_eff^2)
-  double dF_dRe_eff = (-2.0 / (ln10 * arg)) * (serghides::coeff_reynolds_BC * x / (Re_eff * Re_eff));
-  double dx_dRe = -(dF_dRe_eff * (Re / Re_eff)) / dF_dx;
-  double df_turb_dRe = (-2.0 / (x * x * x)) * dx_dRe;
-
-  // Colebrook had no laminar branch at all: 63% low at Re 200, 54% high at
-  // Re 2000 against Hagen-Poiseuille. Blended like Haaland and Serghides.
-  const auto [f, jacobian] = blend_laminar(Re, f_val, df_turb_dRe);
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_colebrook(Re, e_D);
+  const auto [f, jacobian] = blend_laminar(Re, f_turb, df_turb_dRe);
   return {{f, jacobian}, CorrelationValidity::VALID, ""};
 }
 
 CorrelationResult<std::tuple<double, double>>
 friction_and_jacobian_petukhov(double Re) {
-  // f = (coeff_a * ln(Re) - coeff_b)^(-2), at the same regularized Re as the
-  // other turbulent fits. The raw fit's base vanishes at Re 7.97, a pole the
-  // floor keeps out of reach (Re_eff >= 64), and the blend hands everything
-  // below transition to Hagen-Poiseuille (#1210).
-  const double re_eps = laminar_friction::turbulent_re_floor;
-  const double Re_eff = std::sqrt(Re * Re + re_eps * re_eps);
-  const double x = petukhov::coeff_a * std::log(Re_eff) - petukhov::coeff_b;
-  const double f_turb = 1.0 / (x * x);
-
-  // df/dRe = -2 * x^(-3) * dx/dRe, dx/dRe = coeff_a / Re_eff * Re / Re_eff
-  const double dx_dRe = petukhov::coeff_a * Re / (Re_eff * Re_eff);
-  const double df_turb_dRe = (-2.0 / (x * x * x)) * dx_dRe;
-
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_petukhov(Re);
   const auto [f, jacobian] = blend_laminar(Re, f_turb, df_turb_dRe);
   return {{f, jacobian}, CorrelationValidity::VALID, ""};
 }
@@ -402,6 +376,34 @@ double laminar_blend_f_re_at_zero() {
 
 double friction_f_re_at_zero(const std::string &tag) {
   return Registry::get().friction_f_re_at_zero(tag);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_haaland(double Re, double e_D) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_haaland(Re, e_D);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_serghides(double Re, double e_D) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_serghides(Re, e_D);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_colebrook(double Re, double e_D) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_colebrook(Re, e_D);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian_petukhov(double Re) {
+  const auto [f_turb, df_turb_dRe] = f_turb_and_dRe_petukhov(Re);
+  return blend_laminar_f_re(Re, f_turb, df_turb_dRe);
+}
+
+std::tuple<double, double> friction_f_re_and_jacobian(const std::string &tag,
+                                                      double Re, double e_D) {
+  if (Registry::get().has_friction_model(tag)) {
+    return Registry::get().get_friction_f_re_model(tag)(Re, e_D);
+  }
+  return {0.0, 0.0};
 }
 
 // -----------------------------------------------------------------------------

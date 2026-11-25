@@ -10,6 +10,12 @@ Registry::Registry() {
   friction_models_["petukhov"] = [](double Re, double) {
     return solver::friction_and_jacobian_petukhov(Re);
   };
+  friction_f_re_models_["haaland"] = solver::friction_f_re_and_jacobian_haaland;
+  friction_f_re_models_["serghides"] = solver::friction_f_re_and_jacobian_serghides;
+  friction_f_re_models_["colebrook"] = solver::friction_f_re_and_jacobian_colebrook;
+  friction_f_re_models_["petukhov"] = [](double Re, double) {
+    return solver::friction_f_re_and_jacobian_petukhov(Re);
+  };
   const double blended = solver::laminar_blend_f_re_at_zero();
   friction_f_re_at_zero_["haaland"] = blended;
   friction_f_re_at_zero_["serghides"] = blended;
@@ -21,6 +27,15 @@ Registry::FrictionFunc
 Registry::get_friction_model(const std::string &name) const {
   auto it = friction_models_.find(name);
   if (it != friction_models_.end()) {
+    return it->second;
+  }
+  throw std::invalid_argument("Unknown friction model registry_id: " + name);
+}
+
+Registry::FrictionFReFunc
+Registry::get_friction_f_re_model(const std::string &name) const {
+  auto it = friction_f_re_models_.find(name);
+  if (it != friction_f_re_models_.end()) {
     return it->second;
   }
   throw std::invalid_argument("Unknown friction model registry_id: " + name);
