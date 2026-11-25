@@ -1,0 +1,1 @@
+- The combustion equilibrium's scope is now stated where it is documented: a partial equilibrium by design (reforming and water-gas shift only), with N2 inert -- no NO/NO2, no dissociation, no soot -- and rich NH3 passing through undecomposed (#1314). A test pins the species table, so adding a species (NO, NO2, OH, ...) fails until its equilibrium treatment is decided.
