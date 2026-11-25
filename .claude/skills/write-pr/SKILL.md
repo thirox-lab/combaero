@@ -26,6 +26,14 @@ description: Use when writing or editing a pull request title, body or comment, 
   (Gemini's is in GEMINI.md).
 - Label the PR: one type, at least one area, and the author's `agent:` label
   (CLAUDE.md, "Labels"). The same applies to issues.
+- **A PR that resolves an issue says so in its BODY, as `Fixes #N`** (or
+  `Closes #N`), one line per issue, so GitHub closes it on merge. The merge
+  queue's squash commit takes the PR title and body: a `Fixes #N` only in a
+  commit message, or `(#N)` in the title, closes nothing (four issues stayed
+  open after their fixes merged, 2026-11-25). A PR that only touches an issue
+  (a partial fix, a follow-up, a test) names it without the keyword ("Part of
+  #N", "See #N"), so it is not closed early. After the merge, check that each
+  `Fixes` issue closed.
 
 ### Standard PR Body Structure
 1. **Summary:** 1-3 bullet points on *what* changed and *why*.
