@@ -1025,15 +1025,19 @@ def test_heavy_alkane_trace_air_and_co_converges(
 
 def test_heavy_alkane_trace_air_and_co_jacobian_matches_central_differences() -> None:
     """#1312's reproducer: on main the Jacobian was refused (not converged).
-    dT/dX of the fuel, CO, O2 and steam against central differences at steps
-    of 1e-3 and 1e-4 of each amount. They agree to 2e-6, steam at 1e-4 to 2e-5
-    (its trace difference carries round-off), hence 5e-5."""
+    dT/dX of the fuel, CO, O2 and steam against central differences. The
+    steps differ by column. The traces (1e-7 to 1e-6) need large relative
+    steps: at 1e-4 of steam (1e-11 absolute) the difference is round-off and
+    platform-dependent (217.705 on macOS, 217.713 on Linux, J 217.700). The
+    fuel needs small ones (truncation is 1e-4 at a step of 1e-2). At these
+    steps all four agree to 2.3e-6 or better."""
     X = _alkane_trace_air_co("NC6H14", 1e-6, {"CO": 1e-6, "H2O": 1e-7})
     T, P = 250.0, 1e4
     J = _cb._core.combustion_equilibrium_and_jacobian(T, X, P).dT_dX
-    for name in ("NC6H14", "CO", "O2", "H2O"):
+    steps = {"NC6H14": (1e-3, 3e-4), "CO": (3e-2, 1e-2), "O2": (3e-2, 1e-2), "H2O": (3e-2, 1e-2)}
+    for name, rels in steps.items():
         j = _cb.species_index_from_name(name)
-        for rel in (1e-3, 1e-4):
+        for rel in rels:
             h = rel * X[j]
             Xp, Xm = X.copy(), X.copy()
             Xp[j] += h
@@ -1042,4 +1046,4 @@ def test_heavy_alkane_trace_air_and_co_jacobian_matches_central_differences() ->
             rm = _cb._core.combustion_equilibrium(T, Xm, P)
             assert rp.converged and rm.converged
             fd = (rp.state.T - rm.state.T) / (2.0 * h)
-            assert abs(J[j] - fd) <= 5e-5 * abs(fd), (name, rel, J[j], fd)
+            assert abs(J[j] - fd) <= 2e-5 * abs(fd), (name, rel, J[j], fd)
