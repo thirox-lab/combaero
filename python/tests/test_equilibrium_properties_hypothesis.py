@@ -102,18 +102,14 @@ def mixtures(
 
 OXIDIZERS = ("dry_air", "humid_air", "o2n2")
 
-# The fuel-rich edge (the oxidizer a trace, down to 1e-12) holds open
-# failures: a heavy alkane with trace air and a CO trace does not converge at
-# 250 K (#1312), and dT/dX columns there miss their resolved difference. Its
-# cells keep searching and report, but do not fail the nightly run until
-# #1312 is fixed; then drop the mark so the edge gates too.
-_RICH_EDGE_OPEN = pytest.mark.xfail(
-    reason="fuel-rich edge: open equilibrium failures (#1312)", strict=False
-)
+# Both edges gate. The fuel-rich edge (the oxidizer a trace, down to 1e-12)
+# was a non-strict xfail while #1312 (a heavy alkane with trace air and a CO
+# trace, not converged at 250 K) was open; its remaining dT/dX misses were the
+# FD reference's, on trace columns (see _resolved_fd).
 CELLS = pytest.mark.parametrize(
     ("fuel", "oxidizer", "edge"),
     [(f, o, "oxidizer") for f in FUELS for o in OXIDIZERS]
-    + [pytest.param(f, o, "fuel", marks=_RICH_EDGE_OPEN) for f in FUELS for o in OXIDIZERS],
+    + [(f, o, "fuel") for f in FUELS for o in OXIDIZERS],
 )
 
 
@@ -179,16 +175,25 @@ def _resolved_fd(T: float, X: list[float], P: float, k: int, scale: float) -> fl
     difference at 1e-4 X_k is truncation-limited at about 1e-4 of the row on
     rich heptane, and near stoichiometric methane (where dT/dX turns at the
     temperature peak) even Richardson at 1e-4 X_k is off by 3e-5 and at
-    3e-4 X_k by 4e-3, while 3e-5 X_k agrees to 2e-7. So three steps are tried
-    and the two adjacent estimates that agree best are used; a column whose
-    best pair still differs by more than a tenth of the tolerance is not
-    resolved and is skipped."""
+    3e-4 X_k by 4e-3, while 3e-5 X_k agrees to 2e-7. A trace column is the
+    opposite case: round-off-limited, so it needs a LARGE relative step. CO2 at
+    1.2e-6 beside isobutane (1208 K, 4.2 bar) read 1.1e-4 of the row at
+    1e-4..1e-6 X_k (steps of 1e-10..1e-12) and 8.9e-8 once 1e-2 and 1e-3 X_k
+    were tried. So five steps are tried, from the largest down, and the first
+    adjacent pair that agrees to a tenth of the tolerance is used: truncation
+    shows as disagreement at the large steps, so a pair that agrees there is
+    resolved. Taking the pair with the SMALLEST spread instead let two noisy
+    small-step estimates win by chance agreeing (a 1e-6 CO trace beside CH4
+    at 1383 K read 1.25e-4 of the row that way, 3.7e-7 top-down). A column
+    with no agreeing pair is not resolved and is skipped."""
     est = []
-    for rel in (1e-4, 1e-5, 1e-6):
+    for rel in (1e-2, 1e-3, 1e-4, 1e-5, 1e-6):
         h = rel * X[k]
         est.append((4.0 * _central(T, X, P, k, 0.5 * h) - _central(T, X, P, k, h)) / 3.0)
-    spread, best = min((abs(a - b), b) for a, b in zip(est[:-1], est[1:], strict=True))
-    return best if spread <= 0.1 * TOL * scale else None
+    for a, b in zip(est[:-1], est[1:], strict=True):
+        if abs(a - b) <= 0.1 * TOL * scale:
+            return b
+    return None
 
 
 TOL = 1e-4  # dT/dX error over the row's largest entry
