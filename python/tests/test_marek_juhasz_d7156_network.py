@@ -192,6 +192,10 @@ def test_run_19_starts_at_its_root_and_converges_cold() -> None:
     assert x0["k1.P"] == pytest.approx(145.2e3, rel=0.02)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        r = NetworkSolver(mj.build(mj.runs()[19])).solve()
+        # stall_handover=False: the cold attempt's stall detector measures
+        # progress per 5 s of wall clock, so on a loaded runner (the slow tier
+        # on 4 xdist workers) it handed this ~6 s solve to the retry although
+        # the solve converges cold; this test is about the seed (#990).
+        r = NetworkSolver(mj.build(mj.runs()[19])).solve(stall_handover=False)
     assert r["__success__"], r["__message__"]
     assert not [w for w in caught if "auto-retrying" in str(w.message)]
