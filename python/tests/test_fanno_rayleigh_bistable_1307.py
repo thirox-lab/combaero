@@ -10,31 +10,20 @@ jumps to the choke: no continuous root choice removes that.
 
 The kernel keeps the start-up root (the first stable one, which a slow ramp
 from rest reaches). fanno_rayleigh_choked_alternative says whether choked
-flow also holds; a duct's diagnostics and the solve's __bistable_ducts__
-report it. Case from the issue: Pt0 1e5 Pa, Tt0 400 K, L = D = 1 cm, exit
+flow also holds for the boundary values given; whether a network has a
+choked solution is #1338. Case from the issue: Pt0 1e5 Pa, Tt0 400 K, L = D = 1 cm, exit
 total, air.
 """
 
 from __future__ import annotations
 
 import math
-import warnings
 from collections.abc import Callable
 
 import numpy as np
 import pytest
 
 import combaero as cb
-from combaero.network import (
-    ChannelElement,
-    ConvectiveSurface,
-    CrossflowSegmentElement,
-    FlowNetwork,
-    NetworkSolver,
-    PressureBoundary,
-    ThermalWall,
-    WallLayer,
-)
 
 X = list(cb.species.dry_air())
 Y = list(cb.mole_to_mass(cb.species.dry_air()))
@@ -96,98 +85,14 @@ def test_every_branch_flip_in_a_scan_is_flagged(
         assert _alt(*call(values[j])).admissible, (label, values[j])
 
 
+@pytest.mark.parametrize("drive", [1.0, 5.0])
 @pytest.mark.parametrize("Te", [400.0, 420.0, 396.0])
-def test_choked_flow_is_not_admissible_where_the_drive_is_monotone(Te: float) -> None:
+def test_choked_flow_is_not_admissible_where_the_drive_is_monotone(Te: float, drive: float) -> None:
     """Adiabatic, heated, and cooled too little for the choke's exit Pt to
     reach the target: the exit pressure at choke is below it, no flag."""
-    alt = _alt(Te, 1.0)
+    alt = _alt(Te, drive)
     assert not alt.admissible
     assert alt.exit_margin < 0.0
-
-
-def _pair(T_cold: float, reversed_duct: bool = False, segment: bool = False) -> FlowNetwork:
-    """A duct from 400 K air at 1 bar to an exit-total boundary 2 Pa lower,
-    cooled through a wall by a cold duct beside it. The cold side's T sets
-    the hot duct's exit Tt: 100 K puts it inside the bistable band (391 K),
-    300 K above it (398 K). reversed_duct declares the hot duct from its exit
-    to its inlet (the flow then runs against it); segment makes it a
-    CrossflowSegmentElement."""
-    g = FlowNetwork()
-    g.add_node(PressureBoundary("in", Pt=PT0, Tt=TT0, Y=Y))
-    g.add_node(PressureBoundary("out", Pt=PT0 - 2.0, Tt=TT0, Y=Y, coupling="total"))
-    g.add_node(PressureBoundary("k_in", Pt=1.2e5, Tt=T_cold, Y=Y))
-    g.add_node(PressureBoundary("k_out", Pt=PT0, Tt=T_cold, Y=Y))
-    ends = ("out", "in") if reversed_duct else ("in", "out")
-    surface_area = 2.0 * math.pi * D * 0.01
-    if segment:
-        c = CrossflowSegmentElement(
-            "c", *ends, length=0.01, area=math.pi * D * D / 4.0, Dh=D, regime="compressible"
-        )
-        c.surface = ConvectiveSurface(area=surface_area)
-        g.add_element(c)
-    else:
-        g.add_element(
-            ChannelElement(
-                "c",
-                *ends,
-                length=0.01,
-                diameter=D,
-                roughness=0.0,
-                regime="compressible",
-                surface=ConvectiveSurface(area=surface_area),
-            )
-        )
-    g.add_element(
-        ChannelElement(
-            "k",
-            "k_in",
-            "k_out",
-            length=0.01,
-            diameter=D,
-            roughness=0.0,
-            regime="compressible",
-            surface=ConvectiveSurface(area=surface_area),
-        )
-    )
-    g.add_wall(ThermalWall(id="w", element_a="c", element_b="k", layers=[WallLayer(5e-4, 200.0)]))
-    return g
-
-
-def _solve(g: FlowNetwork) -> dict:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        r = NetworkSolver(g).solve(timeout=60)
-    assert r["__success__"], r["__message__"]
-    return r
-
-
-def test_a_solved_network_names_a_bistable_duct() -> None:
-    """The solve stays the start-up root, and is a success; the duct's keys
-    and __bistable_ducts__ name the choked flow it could also carry, at the
-    duct's solved end states (the kernel's own verdict on them)."""
-    r = _solve(_pair(100.0))
-    d = r["__element_diag__"]["c"]
-    assert d["choked"] == 0.0 and d["rayleigh_in_momentum"] == 1.0
-    assert d["bistable"] == 1.0
-    alt = cb.fanno_rayleigh_choked_alternative(
-        r["in.Pt"], r["in.Tt"], d["Tt_out"], X, r["out.Pt"], True, 0.01, D, 0.0, "haaland"
-    )
-    assert alt.admissible
-    A = math.pi * D * D / 4.0
-    assert d["m_dot_choked_alternative"] == pytest.approx(A * alt.G, rel=1e-12)
-    assert d["m_dot_choked_alternative"] > 5.0 * d["m_dot"]
-    assert r["__bistable_ducts__"] == {
-        "c": {"m_dot": d["m_dot"], "m_dot_choked_alternative": d["m_dot_choked_alternative"]}
-    }
-
-
-def test_a_duct_outside_the_band_reports_the_keys_unset() -> None:
-    r = _solve(_pair(300.0))
-    for eid in ("c", "k"):
-        d = r["__element_diag__"][eid]
-        assert d["bistable"] == 0.0
-        assert math.isnan(d["m_dot_choked_alternative"])
-    assert r["__bistable_ducts__"] == {}
 
 
 def test_a_static_exit_duct_can_be_bistable_too() -> None:
@@ -205,35 +110,13 @@ def test_a_static_exit_duct_can_be_bistable_too() -> None:
     assert pytest.approx(hard.G, rel=1e-10) == alt.G
 
 
-@pytest.mark.parametrize(("reversed_duct", "segment"), [(True, False), (False, True)])
-def test_the_flag_follows_the_flow_and_the_element(reversed_duct: bool, segment: bool) -> None:
-    """Declared against the flow, the duct reports its alternative with the
-    flow's sign; as a crossflow segment (its own duct ends, #802), the same
-    flag as the channel between the same boundaries. rel 1e-3, not exact: a
-    wall's arrangement follows the declared directions (#627), so declaring
-    the duct backwards moves its heat by ~3e-5 and its m_dot by ~2e-5."""
-    ref = _solve(_pair(100.0))["__element_diag__"]["c"]
-    r = _solve(_pair(100.0, reversed_duct=reversed_duct, segment=segment))
-    d = r["__element_diag__"]["c"]
-    sign = -1.0 if reversed_duct else 1.0
-    assert d["bistable"] == 1.0
-    assert d["m_dot"] == pytest.approx(sign * ref["m_dot"], rel=1e-3)
-    assert d["m_dot_choked_alternative"] == pytest.approx(
-        sign * ref["m_dot_choked_alternative"], rel=1e-3
-    )
-    assert set(r["__bistable_ducts__"]) == {"c"}
-
-
-def test_a_failing_choke_solve_leaves_the_flag_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The choke solve can fail where a subsonic solve converged (long laminar
-    ducts, #1337). A report never fails a solve: both keys are NaN and the
-    duct is not listed."""
-
-    def fail(*_args: object) -> None:
-        raise RuntimeError("fanno (Mach) brent: no sign change")
-
-    monkeypatch.setattr(cb, "fanno_rayleigh_choked_alternative", fail)
-    r = _solve(_pair(100.0))
-    d = r["__element_diag__"]["c"]
-    assert math.isnan(d["bistable"]) and math.isnan(d["m_dot_choked_alternative"])
-    assert r["__bistable_ducts__"] == {}
+@pytest.mark.parametrize("drive", [0.0, -5.0])
+def test_no_forward_drive_has_no_choked_alternative(drive: float) -> None:
+    """With no forward drive the channel flow is no flow, and there is no
+    forward choked state to compare: not admissible, nothing evaluated. Te
+    391 K sits inside the band, where a forward drive would admit it."""
+    alt = _alt(391.0, drive)
+    assert not alt.admissible
+    assert alt.G == 0.0 and math.isnan(alt.exit_margin)
+    assert _flow(391.0, drive).G == 0.0
+    assert _alt(391.0, 1.5).admissible

@@ -908,8 +908,11 @@ steady solve has no history, so the other state is not less likely, only not
 the start-up one. `fanno_rayleigh_choked_alternative` says whether choked flow
 also holds against `P_target` (`admissible`: the exit pressure at the choked
 flux, total if `exit_total`, is at or above it; `exit_margin` is that pressure
-minus `P_target`). It costs one choke solve and one march, so it is for
-reporting a solution, never a residual. On Pt0 1e5 Pa, Tt0 400 K, L = D = 1 cm
+minus `P_target`; with no forward drive, not admissible, `G` 0 and
+`exit_margin` NaN). The verdict is exact for the boundary values given, with
+`Tt_exit` held. In a network the end states move with the flow, so it does not
+say whether the network has a choked solution (#1338). It costs one choke
+solve and one march, so it is for reporting a solution, never a residual. On Pt0 1e5 Pa, Tt0 400 K, L = D = 1 cm
 the fold sits at drives of a few Pa (a 7.9x jump in G at 1.5 Pa, 2.5x at
 10 Pa). Choosing between the states from the network's stability is out of
 scope. Known limits of the same scan: a strongly cooled duct's needed drive at

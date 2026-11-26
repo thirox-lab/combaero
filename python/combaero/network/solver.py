@@ -8263,17 +8263,6 @@ class NetworkSolver:
         sol_dict["__heat_undetermined__"] = list(_target_stagnant)
         sol_dict["__wall_undetermined__"] = _wall_undetermined
         sol_dict["__wall_above_limit__"] = _wall_above_limit
-        # Reported only (#1307): ducts running subsonic where choked flow would
-        # hold too (a cooled duct's fold). The root is the start-up one, the
-        # state a slow ramp from rest reaches; the other is named, not chosen.
-        sol_dict["__bistable_ducts__"] = {
-            eid: {
-                "m_dot": float(diag.get("m_dot", math.nan)),
-                "m_dot_choked_alternative": float(diag["m_dot_choked_alternative"]),
-            }
-            for eid, diag in sorted((sol_dict.get("__element_diag__") or {}).items())
-            if float(diag.get("bistable", 0.0)) == 1.0
-        }
         sol_dict["__supersonic_chambers__"] = list(_supersonic)
         sol_dict["__choked_bounded_junctions__"] = list(_choked_bounded)
         sol_dict["__outcome__"] = outcome

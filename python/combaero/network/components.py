@@ -11629,9 +11629,11 @@ class ChannelElement(NetworkElement):
                 return self._zero_drive_flow(state_in, state_out, f_mult)
             forward = state_in.Pt >= state_out.Pt
         A = self.area
-        src, dst, src_id, dst_id, lost, exit_state = self._duct_ends_for(
-            state_in, state_out, forward
+        src, dst = (state_in, state_out) if forward else (state_out, state_in)
+        src_id, dst_id = (
+            (self.from_node, self.to_node) if forward else (self.to_node, self.from_node)
         )
+        lost = self._exit_head_lost(1.0 if forward else -1.0)
         known = getattr(self, "_composition_directions", None)
         if not derivatives:
             dirs: list[Any] = []
@@ -11640,6 +11642,13 @@ class ChannelElement(NetworkElement):
             dirs = [[float(j == k) for j in range(n_sp)] for k, y in enumerate(src.Y) if y > 0.0]
         else:
             dirs = known.get(src_id, [])
+        # Wall heat in the momentum (#551, #672): Tt rises linearly from the
+        # feeding node's to this duct's exit Tt.
+        exit_state = (
+            None
+            if getattr(self, "_rayleigh_suspended", False)
+            else self._rayleigh_exit_state(dst_id, dst, src_id, src)
+        )
         heated = exit_state is not None
         if heated:
             exit_Tt, exit_keys = exit_state
@@ -11706,76 +11715,6 @@ class ChannelElement(NetworkElement):
                 if gk != 0.0:
                     derivs[f"{src_id}.Y[{k}]"] = sign * A * gk
         return sign * A * flow.G, derivs, flow
-
-    def _duct_ends_for(
-        self, state_in: NetworkMixtureState, state_out: NetworkMixtureState, forward: bool
-    ) -> tuple[NetworkMixtureState, NetworkMixtureState, str, str, bool, Any]:
-        """The duct's feeding and receiving states and ids in the flow
-        direction, whether the exit head is lost, and the Rayleigh exit state
-        ((exit_Tt, its keys), or None for adiabatic Fanno)."""
-        src, dst = (state_in, state_out) if forward else (state_out, state_in)
-        src_id, dst_id = (
-            (self.from_node, self.to_node) if forward else (self.to_node, self.from_node)
-        )
-        lost = self._exit_head_lost(1.0 if forward else -1.0)
-        # Wall heat in the momentum (#551, #672): Tt rises linearly from the
-        # feeding node's to this duct's exit Tt.
-        exit_state = (
-            None
-            if getattr(self, "_rayleigh_suspended", False)
-            else self._rayleigh_exit_state(dst_id, dst, src_id, src)
-        )
-        return src, dst, src_id, dst_id, lost, exit_state
-
-    def _bistability(
-        self,
-        state_in: NetworkMixtureState,
-        state_out: NetworkMixtureState,
-        f_mult: float,
-        flow: Any,
-    ) -> dict[str, float]:
-        """Whether choked flow is also admissible where the duct runs
-        subsonic (#1307): "bistable" 1, and "m_dot_choked_alternative" the
-        choked flow [kg/s] (NaN when not bistable). Both NaN when the choke
-        solve fails: unknown, never a failed solve.
-
-        Only a duct with its heat in the momentum can be: a cooled duct's
-        needed drive can rise from zero flow to a peak and fall back (its
-        Rayleigh Pt gain), so one drive holds a subsonic root and choked flow.
-        The solve takes the start-up root, the one a slow ramp from rest
-        reaches (fanno_rayleigh_channel_flow); the other state is reported, not
-        chosen. Adiabatic Fanno flow is monotone in its drive: never bistable.
-        Reporting only: one choke solve per call, so never in a residual."""
-        keys = {"bistable": 0.0, "m_dot_choked_alternative": math.nan}
-        if bool(flow.choked) or not float(flow.G) > 0.0 or state_in.Pt == state_out.Pt:
-            return keys
-        forward = state_in.Pt > state_out.Pt
-        src, dst, _, _, lost, exit_state = self._duct_ends_for(state_in, state_out, forward)
-        if exit_state is None:
-            return keys
-        try:
-            alt = cb.fanno_rayleigh_choked_alternative(
-                src.Pt,
-                src.Tt,
-                exit_state[0],
-                src.X,
-                dst.Pt,
-                not lost,
-                self.length,
-                self.diameter,
-                self.roughness,
-                self.friction_model,
-                f_mult,
-            )
-        except RuntimeError:
-            # The choke solve can fail where a warm subsonic solve converged
-            # (long laminar ducts, #1337). A report must not fail a solve:
-            # bistability is then unknown, NaN.
-            return {"bistable": math.nan, "m_dot_choked_alternative": math.nan}
-        if alt.admissible:
-            sign = 1.0 if forward else -1.0
-            keys = {"bistable": 1.0, "m_dot_choked_alternative": sign * self.area * float(alt.G)}
-        return keys
 
     def _zero_drive_flow(
         self, state_in: NetworkMixtureState, state_out: NetworkMixtureState, f_mult: float
@@ -12186,7 +12125,6 @@ class ChannelElement(NetworkElement):
                 "choked": float(flow.choked),
                 "M_in_duct": float(flow.M_in),
                 "M_exit_duct": float(flow.M_exit),
-                **self._bistability(state_in, state_out, f_mult, flow),
             }
             if getattr(self, "_wall_heated", False):
                 into = self.to_node if float(state_in.m_dot) >= 0.0 else self.from_node
@@ -13506,7 +13444,6 @@ class CrossflowSegmentElement(ChannelElement):
             out["choked"] = float(flow.choked)
             out["M_in_duct"] = float(flow.M_in)
             out["M_exit_duct"] = float(flow.M_exit)
-            out.update(self._bistability(src, dst, f_mult, flow))
         return out
 
 

@@ -334,11 +334,16 @@ double fanno_rayleigh_choked_mass_flux(double Pt0, double Tt0, double Tt_exit,
 // the choked flux (static, or total if exit_total) is at or above P_target:
 // the exit is then under-expanded against it. One choke solve and one march,
 // about the cost of a cold call; meant for reporting a solution, not for a
-// residual.
+// residual. The verdict is exact for the boundary values given (Tt_exit
+// held): in a network the end states move with the flow, so it says nothing
+// about whether the network has a choked solution. With no forward drive
+// (Pt0 <= P_target) it is not admissible, G 0 and exit_margin NaN. Below
+// kFannoFlowDriveFloor the channel flow's G is the low-Mach blend, not a
+// root, so a subsonic G compared with this one is only a root above it.
 struct FannoChokedAlternative {
   bool admissible = false;   // exit pressure at the choked flux >= P_target
   double G = 0.0;            // choked mass flux [kg/(m^2 s)]
-  double exit_margin = 0.0;  // that exit pressure minus P_target [Pa]
+  double exit_margin = 0.0;  // that exit pressure minus P_target [Pa]; NaN if not evaluated
 };
 
 FannoChokedAlternative fanno_rayleigh_choked_alternative(
