@@ -823,6 +823,10 @@ inline constexpr Entry function_units[] = {
      "Pt0: Pa, Tt0: K, Tt_exit: K, X: mol/mol, L: m, D: m, roughness: m, "
      "friction_model: str, f_multiplier: -",
      "kg/(m^2*s)"},
+    {"fanno_rayleigh_choked_alternative",
+     "Pt0: Pa, Tt0: K, Tt_exit: K, X: mol/mol, P_target: Pa, exit_total: bool, L: m, D: m, "
+     "roughness: m, friction_model: str, f_multiplier: -",
+     "FannoChokedAlternative"},
     {"fanno_rayleigh_channel_flow",
      "Pt0: Pa, Tt0: K, Tt_exit: K, X: mol/mol, P_target: Pa, exit_total: bool, L: m, D: m, "
      "roughness: m, friction_model: str, f_multiplier: -, G_guess: kg/(m^2*s), "
@@ -1929,6 +1933,9 @@ inline constexpr Entry function_units[] = {
     {"FannoChannelFlow::dG_dP_target", "-", "kg/(m^2*s*Pa)"},
     {"FannoChannelFlow::dG_dTt_exit", "-", "kg/(m^2*s*K)"},
     {"FannoChannelFlow::dG_ddir", "-", "kg/(m^2*s)"},
+    {"FannoChokedAlternative::admissible", "-", "-"},
+    {"FannoChokedAlternative::G", "-", "kg/(m^2*s)"},
+    {"FannoChokedAlternative::exit_margin", "-", "Pa"},
     {"FannoRayleighMarch::M_in", "-", "-"},
     {"FannoRayleighMarch::M_exit", "-", "-"},
     {"FannoRayleighMarch::zeta_min", "-", "-"},

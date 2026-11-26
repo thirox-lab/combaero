@@ -1080,6 +1080,17 @@ PYBIND11_MODULE(_core, m) {
         py::arg("D"), py::arg("roughness"), py::arg("friction_model"),
         py::arg("f_multiplier") = 1.0,
         "Mass flux [kg/(m^2 s)] at which a duct with friction and heat chokes.");
+  py::class_<combaero::FannoChokedAlternative>(m, "FannoChokedAlternative")
+      .def_readonly("admissible", &combaero::FannoChokedAlternative::admissible)
+      .def_readonly("G", &combaero::FannoChokedAlternative::G)
+      .def_readonly("exit_margin", &combaero::FannoChokedAlternative::exit_margin);
+  m.def("fanno_rayleigh_choked_alternative", &combaero::fanno_rayleigh_choked_alternative,
+        py::arg("Pt0"), py::arg("Tt0"), py::arg("Tt_exit"), py::arg("X"), py::arg("P_target"),
+        py::arg("exit_total"), py::arg("L"), py::arg("D"), py::arg("roughness"),
+        py::arg("friction_model"), py::arg("f_multiplier") = 1.0,
+        "Whether choked flow is also admissible against P_target (#1307): the exit pressure\n"
+        "at the choked flux (total if exit_total, else static) is at or above it. With an\n"
+        "unchoked fanno_rayleigh_channel_flow root the duct is bistable. Reporting only.");
   m.def("fanno_rayleigh_channel_flow", &combaero::fanno_rayleigh_channel_flow, py::arg("Pt0"),
         py::arg("Tt0"), py::arg("Tt_exit"), py::arg("X"), py::arg("P_target"),
         py::arg("exit_total"), py::arg("L"), py::arg("D"), py::arg("roughness"),
