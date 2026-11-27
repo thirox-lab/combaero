@@ -775,12 +775,23 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   // Me. A caller's guess (the previous solve) gives a tight bracket, widened
   // geometrically until it holds a sign change; without one the bracket is
   // grown down from Me = 1 by halving.
+  //
+  // Lowest exit Mach at which s = 1 / M_in^2 in fanno_length_between stays
+  // finite in IEEE-754 double (#1242): at low Mach M_in ~ Me * (P / Pt0), so
+  // 1 / M_in^2 <= DBL_MAX requires Me >= (Pt0 / P) / sqrt(DBL_MAX). Replacing
+  // the former hardcoded 1e-6 floor admits physical ultra-low-Mach states
+  // (e.g. high-Tt solver probes at the 1 Pa drive floor or narrow laminar
+  // ducts, where Hagen-Poiseuille gives Me = 2 drive D^2 / (64 f_mult mu L a0)
+  // << 1e-6) while keeping every ordinary duct (Me > 2^-20) bit-identical.
+  const double inv_sqrt_max = 1.0 / std::sqrt(std::numeric_limits<double>::max());
+  const double kMachMin = (pb.P > 0.0) ? std::max((pb.Pt0 / pb.P) * inv_sqrt_max, inv_sqrt_max)
+                                       : inv_sqrt_max;
   auto f = [&](double Me) { return psi(Me, pb.P, pb.Pt0, pb.Tt0, pb); };
   double lo = 0.0, hi = 0.0, f_lo = 0.0, f_hi = 0.0;
   bool bracketed = false;
   if (pb.Me_guess > 0.0 && pb.Me_guess < 1.0) {
     double w = 0.01;
-    lo = pb.Me_guess * (1.0 - w);
+    lo = std::max(pb.Me_guess * (1.0 - w), kMachMin);
     hi = std::min(1.0, pb.Me_guess * (1.0 + w));
     f_lo = f(lo);
     f_hi = f(hi);
@@ -789,7 +800,8 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
       if (f_lo <= 0.0) {
         hi = lo;
         f_hi = f_lo;
-        lo = std::max(pb.Me_guess * (1.0 - w), 1e-6);
+        lo = (w < 1.0) ? std::max(pb.Me_guess * (1.0 - w), kMachMin)
+                       : std::max(0.5 * lo, kMachMin);
         f_lo = f(lo);
       } else {
         lo = hi;
@@ -810,10 +822,10 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
     lo = 0.5;
     f_lo = f(lo);
   }
-  while (f_lo <= 0.0 && lo > 1e-6) {
+  while (f_lo <= 0.0 && lo > kMachMin) {
     hi = lo;
     f_hi = f_lo;
-    lo *= 0.5;
+    lo = std::max(lo * 0.5, kMachMin);
     f_lo = f(lo);
   }
   const double Me = brent(f, lo, hi, f_lo, f_hi, 1e-13);
