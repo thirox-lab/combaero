@@ -161,3 +161,20 @@ def test_a_cold_rich_alkane_with_an_oxygen_trace_has_the_right_jacobian(x_o2: fl
 
     fd = (T_out(h) - T_out(-h)) / (2.0 * h)
     assert j.dT_dX[k] == pytest.approx(fd, rel=1e-4)
+
+
+@pytest.mark.parametrize(("T", "h2o"), [(482.0, 9.979044e-04), (404.0, 2.190e-02)])
+def test_a_lean_two_fuel_trace_converges(T: float, h2o: float) -> None:
+    """Found by the nightly property search on this change: CH4 and n-heptane
+    at 1e-4 each in air at 0.1 bar. The phi = 0 smoothing leaves 8e-18 of each
+    unburnt, and the joint solve stalled with every alkane near its start, as
+    heptane's equilibrium (subnormal at 450 K, below the range at 500 K)
+    looked representable from the stalled iterate. After a failed solve the
+    hydrocarbons are now reformed completely, the rest solved, and each added
+    back at its own equilibrium amount there (or left 0 below the normal
+    range). T is as before #1241 to 1e-9 K (a reformed 8e-18 trace)."""
+    X = _vec({"N2": 0.7791, "O2": 0.2090, "AR": 0.00928, "CO2": 0.001397, "H2O": h2o,
+              "CH4": 9.979e-05, "NC7H16": 9.979e-05})  # fmt: skip
+    r = _core.combustion_equilibrium(T, X, 1e4)
+    assert r.converged
+    _core.combustion_equilibrium_and_jacobian(T, X, 1e4)

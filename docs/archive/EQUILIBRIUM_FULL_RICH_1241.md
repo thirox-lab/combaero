@@ -23,7 +23,15 @@ slope, on 2026-11-27.
 - **The limit.** `REFORMING_JACOBIAN_LIMIT_RTOL`.
   - From the first converging trace, the ladder steps down by 100 until two traces' derivatives agree to 1e-8: along the direction if one is given, else over the matrix, each relative to its own infinity-norm.
   - The kept derivatives are the larger trace's, so where the first trace is already in the limit's regime J is as before.
+  - The step-down runs only along `dX_dir`. Without a direction, the seed is the same trace of every fed species, which is no reactant's direction, so its limit means nothing.
   - The floor is sqrt(DBL_MIN): a species quadratic in the trace (N2 beside the NH3 it forms) stays normal.
+- **Light-first fallback.** After the bound, a solve that still fails:
+  - every hydrocarbon is reformed completely with steam;
+  - the shift and NH3 are solved without reforming, by the full solver;
+  - each hydrocarbon is added back at its own reforming equilibrium at that converged state, or left at 0 below the normal range;
+  - the set is solved once more, without the fallback.
+
+  Representability is judged at a converged state, not at the stalled iterate. The nightly search found the case: CH4 and heptane smoothing traces of 8e-18 at 500 K and 0.1 bar.
 - **The NH3 start.** `solve_nh3_decomposition_isothermal` returns its bracketed iterate at the iteration cap instead of throwing. It is a start; the joint solve decides convergence.
 
 ## Ground truth
@@ -52,6 +60,12 @@ slope, on 2026-11-27.
 
 - **The union predicate, every column of dXb/dX counting as fed.** It did not fix the fuel-free columns, which need a direction, and it refused two NH3 burns near phi 1.
 - **The fixed first trace of 1e-20.** It lies past the bend for fuel-only blends: dY_NH3/dm_air was 75.5 where the limit is 1594.
+
+## Open after this change
+
+- **#1343:** 5 of 4000 extreme states are refused (near-pure CO with a hydrogen trace and about 1e-40 of air; CH4 at 63 K).
+- **#1347:** with an NH3 trace (1e-17), dT/dX in a cold rich isobutane burn is noisy at 1e-4. Without N2 it is exact. One nightly cell sits at 1.01e-4 against its 1e-4 bound.
+- **#1292, #1345:** OPEN sweep patterns, the one-sided limits at zero fuel and zero air.
 
 ## What a difference cannot check
 

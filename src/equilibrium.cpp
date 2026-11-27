@@ -1767,7 +1767,8 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
                                       const ReformingConfig &cfg, bool with_reforming,
                                       std::vector<double> &n_out,
                                       std::vector<JointReaction> *rx_out = nullptr,
-                                      std::vector<std::size_t> *active_out = nullptr) {
+                                      std::vector<std::size_t> *active_out = nullptr,
+                                      bool allow_fallback = true) {
   std::vector<JointReaction> rx = joint_reactions(cfg, with_reforming);
   std::vector<double> lnK;
 
@@ -1872,6 +1873,74 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
         act = joint_active(rx, n_try);
         conv = joint_newton(n_try, P, rx, act, lnK, REFORMING_NEWTON_MAX_IT) &&
                elements_conserved(n0, n_try);
+      }
+      // Still failed: decide representability at a converged state, not at
+      // the stalled iterate (#1241). Every hydrocarbon is reformed
+      // completely with steam (CnHm + n H2O -> n CO + (n + m/2) H2), the
+      // shift and NH3 solved without reforming, and each hydrocarbon's own
+      // reforming equilibrium at that solution gives its amount: below the
+      // normal range it stays 0, else it is formed back from CO and H2, and
+      // the whole set is solved once more from there (without this fallback).
+      // A lean burn's phi = 0 smoothing traces (CH4 and n-heptane at 8e-18
+      // beside major steam, 500 K, 0.1 bar) stalled with every alkane near
+      // its start: heptane's equilibrium (subnormal at 450 K) looked
+      // representable from the stalled iterate.
+      if (!conv && with_reforming && allow_fallback) {
+        std::vector<double> n_h = n_out;
+        bool ok = false;
+        for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+          const std::size_t i = cfg.hc_indices[k];
+          const double a = n_h[i];
+          if (!(a > 0.0)) continue;
+          ok = true;
+          n_h[i] = 0.0;
+          n_h[cfg.i_CO] += cfg.hc_C[k] * a;
+          n_h[cfg.i_H2] += (cfg.hc_C[k] + 0.5 * cfg.hc_H[k]) * a;
+          n_h[cfg.i_H2O] -= cfg.hc_C[k] * a;
+        }
+        ok = ok && n_h[cfg.i_H2O] >= 0.0;
+        if (ok) {
+          std::vector<double> n_red;
+          ok = solve_reforming_wgs_joint(n_h, T, P, cfg, false, n_red);
+          if (ok) n_h = n_red;
+        }
+        if (ok) {
+          double nt = 0.0;
+          for (double v : n_h) nt += v;
+          const double x_CO = n_h[cfg.i_CO] / nt, x_H2 = n_h[cfg.i_H2] / nt;
+          const double x_H2O = n_h[cfg.i_H2O] / nt;
+          const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
+          const double ln_min = std::log(std::numeric_limits<double>::min());
+          std::vector<double> n_add = n_h;
+          for (std::size_t k = 0; ok && k < cfg.hc_indices.size(); ++k) {
+            if (!(x_CO > 0.0 && x_H2 > 0.0 && x_H2O > 0.0)) break;
+            const double nC = cfg.hc_C[k], m = nC + 0.5 * cfg.hc_H[k];
+            const double ln_n = std::log(nt) + nC * std::log(x_CO) + m * std::log(x_H2) -
+                                nC * std::log(x_H2O) + (m - 1.0) * ln_P -
+                                lnKp_reforming(T, cfg.hc_indices[k], cfg.hc_C[k],
+                                               cfg.hc_H[k], cfg);
+            if (!(ln_n >= ln_min)) continue;  // no double holds it: stays 0
+            double a = std::exp(ln_n);
+            a = std::min({a, 0.5 * n_add[cfg.i_CO] / nC, 0.5 * n_add[cfg.i_H2] / m});
+            n_add[cfg.hc_indices[k]] += a;
+            n_add[cfg.i_CO] -= nC * a;
+            n_add[cfg.i_H2] -= m * a;
+            n_add[cfg.i_H2O] += nC * a;
+          }
+          std::vector<double> n_fin;
+          std::vector<JointReaction> rx_fin;
+          std::vector<std::size_t> act_fin;
+          ok = solve_reforming_wgs_joint(n_add, T, P, cfg, true, n_fin, &rx_fin, &act_fin,
+                                         false);
+          if (ok && elements_conserved(n0, n_fin)) {
+            n_try = n_fin;
+            rx = rx_fin;
+            lnK.assign(rx.size(), 0.0);
+            for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
+            act = act_fin;
+            conv = true;
+          }
+        }
       }
     }
     n_out = n_try;
@@ -2478,12 +2547,16 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
           // 1594. Where the next trace agrees, this trace's derivatives are
           // kept (as before #1241). Down to sqrt(DBL_MIN): a species
           // quadratic in the trace (N2 beside the NH3 it forms) stays normal.
+          // Along dX_dir only: without a direction the seed is the same trace
+          // of every fed species, no reactant's direction, and the limit of
+          // stepping it down has no meaning; the first converging trace is
+          // kept, as before #1241.
           EquilibriumJacobian j_prev = ift(nv2, rx2, act2);
           std::vector<double> nv_k = nv2;
           std::vector<JointReaction> rx_k = rx2;
           std::vector<std::size_t> act_k = act2;
           const double trace_min = std::sqrt(std::numeric_limits<double>::min());
-          for (double t = trace / 100.0; t >= trace_min; t /= 100.0) {
+          for (double t = trace / 100.0; dX_dir != nullptr && t >= trace_min; t /= 100.0) {
             std::vector<double> n0w = n0;
             for (std::size_t j = 0; j < ns; ++j) {
               if (n0v_fed[j]) n0w[j] += t * nt0 * seed_w[j];
