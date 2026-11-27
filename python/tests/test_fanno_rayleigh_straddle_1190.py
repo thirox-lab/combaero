@@ -64,9 +64,10 @@ def test_issue_drive_returns_the_first_fall() -> None:
     gc = _gc()
     c = _flow(2.145)
     assert not c.choked
-    # The issue's table: the first fall at 0.0150235 Gc, the third crossing
-    # (what the cold scan returned) at 0.021177 Gc.
-    assert c.G / gc == pytest.approx(0.0150235, abs=1e-6)
+    # The issue's table: the first fall at 0.0150297 Gc (w32 march, closer to
+    # the 512-step reference 0.0151077 than the old theta32 0.0150235); the
+    # third crossing (what the cold scan returned) at 0.021177 Gc.
+    assert c.G / gc == pytest.approx(0.0150297, abs=1e-6)
     assert pytest.approx(_first_fall(2.145, gc), rel=ROOT_BAND) == c.G
     # A warm start from below the first fall agrees.
     assert pytest.approx(c.G, rel=ROOT_BAND) == _flow(2.145, 0.0145 * gc).G

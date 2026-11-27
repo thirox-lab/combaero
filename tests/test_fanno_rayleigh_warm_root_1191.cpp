@@ -83,7 +83,7 @@ TEST(FannoRayleighWarmRoot1191, LaminarFoldWarmStartAboveTheLaterFall) {
   const double Gc = choked_flux(kLaminar);
   const FannoChannelFlow c = flow(kLaminar, kLaminarDrive, -1.0);
   ASSERT_FALSE(c.choked);
-  EXPECT_NEAR(c.G / Gc, 0.0150235, 1e-6);
+  EXPECT_NEAR(c.G / Gc, 0.0150297, 1e-6);
   for (const double s : {0.0145, 0.017, 0.02, 0.0215}) {
     const FannoChannelFlow w = flow(kLaminar, kLaminarDrive, s * Gc);
     EXPECT_FALSE(w.choked) << s;

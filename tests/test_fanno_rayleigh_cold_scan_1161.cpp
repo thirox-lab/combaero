@@ -220,11 +220,19 @@ TEST(FannoRayleighColdScan1161, StaticChokingDriveIsTheMarchsSubsonicEnd) {
       }
       (march(mid).zeta_min > 1e-10 ? lo : hi) = mid;
     }
+    const FannoRayleighMarch m_gc = march(std::log(Gc));
     const double ref = d.Pt0 - march(lo).P_exit;
-    const double sonic = d.Pt0 - march(std::log(Gc)).P_exit;
+    const double sonic = d.Pt0 - m_gc.P_exit;
     const double dc = choking_drive(d);
     EXPECT_NEAR(dc, ref, 0.1) << "Tt0 " << d.Tt0;
-    EXPECT_LT(dc, sonic) << "Tt0 " << d.Tt0;
-    EXPECT_GT(dc, sonic - 10.0) << "Tt0 " << d.Tt0;
+    if (m_gc.zeta_min <= 1e-10) {
+      EXPECT_LT(dc, sonic) << "Tt0 " << d.Tt0;
+      EXPECT_GT(dc, sonic - 10.0) << "Tt0 " << d.Tt0;
+    } else {
+      // When the forward march stays above the zeta floor all the way to Gc,
+      // ref equals sonic (0 Pa floor cutback) and choking_drive's upper
+      // bisection bracket (width ~2.6e-8 Pa) sits right above sonic.
+      EXPECT_NEAR(dc, sonic, 1e-6) << "Tt0 " << d.Tt0;
+    }
   }
 }

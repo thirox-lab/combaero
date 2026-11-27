@@ -61,8 +61,8 @@ TEST(FannoRayleighBothPositive1206, IssueColdCallsReturnTheFirstFall) {
   const double Gc = choked_flux(kIssue);
   const struct {
     double drive, first;
-  } cases[] = {{1532.2, 0.767108500}, {1533.5, 0.773092693}, {1535.0, 0.781905364},
-               {1536.5, 0.797662498}};
+  } cases[] = {{1532.2, 0.767094084}, {1533.5, 0.773074625}, {1535.0, 0.781878422},
+               {1536.5, 0.797573314}};
   for (const auto& c : cases) {
     const FannoChannelFlow r = flow(kIssue, c.drive, -1.0);
     EXPECT_FALSE(r.choked) << c.drive;

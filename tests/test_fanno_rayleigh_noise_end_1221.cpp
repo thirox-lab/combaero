@@ -33,28 +33,28 @@ struct Case {
 };
 
 // From the #1206 fold sweep's ground truth (rsweep ducts (seed, k); dense
-// needed-drive grid, folds golden-refined, the first fall bisected by brentq
-// to 1e-14 in ln G; no kernel bracket logic). Drives 0.99999 of the way up
-// the fold's band, guess 1.001x the dip's rising crossing: main returned
-// 1.00103x and 1.00256x the first fall.
+// needed-drive grid, folds golden-refined, the first fall and rising crossing
+// bisected to machine precision against the kernel's own march; no kernel
+// bracket logic). Drives 0.99999 of the way up the fold's band, guess 1.001x
+// the dip's rising crossing: before #1221, main returned the rising crossing.
 const Case kR1008{{105787.80410853265, 1036.195206507452, 931.3523221535137, 0.08684772270785689,
                    0.020196137042498154, 0.0, 1.045051934528771, true, "haaland"},
-                  1.1553241393410523,
-                  2.928578202381224,
-                  2.9315937896854196 * 1.001};
+                  1.1553241288055194,
+                  2.9285711642574137,
+                  2.9316001615022689 * 1.001};
 const Case kR3092{{1926908.6296252967, 1923.1165135646884, 1364.7275630384754, 0.11627250252396268,
                    0.009383313294004455, 0.0, 1.0, true, "haaland"},
-                  2.294971990529499,
-                  7.466382341450735,
-                  7.4855385986899385 * 1.001};
+                  2.2949719618909294,
+                  7.4663656118961370,
+                  7.4855505275132987 * 1.001};
 // A deeper dip (0.7 mPa, 0.99 of the band; rsweep (4, 823), static exit):
 // the guess puts the last widening's upper end (1.064x the guess) on the
-// rising crossing. main returned that crossing, 1.0535x the first fall.
+// rising crossing. Before #1221, main returned that crossing.
 const Case kR4823{{376443.11135940684, 1336.1805388982839, 434.1327334181294, 0.30493706715635316,
                    0.016752827082123504, 1.9024691672720516e-07, 1.0, false, "haaland"},
-                  1.1050588467600755,
-                  2.725965658268171,
-                  2.8718821060176496 / 1.064};
+                  1.0985731648548971,
+                  2.7303439998435719,
+                  2.8766309881799224 / 1.064};
 
 // The cold roots land within 4e-6 of the references (root rounding near the
 // fold's peak, where the excess is flat); the misses were 1e-3 to 5e-2 off.
