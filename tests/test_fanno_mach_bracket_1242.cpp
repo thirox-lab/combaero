@@ -54,8 +54,12 @@ TEST(FannoMachBracket1242, UltraLowMachStatesSolveCleanlyColdAndWarm) {
       {"narrow_laminar_static", 1.0e5, 1000.0, 1.0, false, 0.1, 1.0e-4, 0.0, "haaland", 1.0},
       // Sub-floor drive (calls raw_flow at kFannoFlowDriveFloor = 1 Pa).
       {"narrow_laminar_subfloor", 1.0e5, 1000.0, 0.25, true, 0.1, 1.0e-4, 0.0, "haaland", 1.0},
-      // Ultra-narrow duct (Me ~ 1e-10) and high-resistance fixed-f duct (Me ~ 1.2e-8).
+      // Ultra-narrow and capillary ducts pinning the machine-range guard below
+      // 1e-11 (measured Me = 1.53e-9, 4.84e-11, 4.84e-12), plus a high-fL/D
+      // fixed-f duct (measured Me = 1.2e-8).
       {"ultra_narrow_D1e-5", 1.0e5, 1000.0, 1.0, true, 1.0, 1.0e-5, 0.0, "haaland", 1.0},
+      {"capillary_D1e-6_L100", 1.0e5, 1000.0, 1.0, true, 100.0, 1.0e-6, 0.0, "haaland", 1.0},
+      {"capillary_D1e-7_L1000", 1.0e5, 1000.0, 1.0, true, 1000.0, 1.0e-7, 0.0, "haaland", 1.0},
       {"fixed_huge_fLD", 1.0e5, 300.0, 1.0, true, 1.0e6, 1.0e-3, 0.0, "fixed", 100.0},
   };
 

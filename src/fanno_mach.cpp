@@ -776,13 +776,12 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   // geometrically until it holds a sign change; without one the bracket is
   // grown down from Me = 1 by halving.
   //
-  // Lowest exit Mach at which s = 1 / M_in^2 in fanno_length_between stays
-  // finite in IEEE-754 double (#1242): at low Mach M_in ~ Me * (P / Pt0), so
-  // 1 / M_in^2 <= DBL_MAX requires Me >= (Pt0 / P) / sqrt(DBL_MAX). Replacing
-  // the former hardcoded 1e-6 floor admits physical ultra-low-Mach states
-  // (e.g. high-Tt solver probes at the 1 Pa drive floor or narrow laminar
-  // ducts, where Hagen-Poiseuille gives Me = 2 drive D^2 / (64 f_mult mu L a0)
-  // << 1e-6) while keeping every ordinary duct (Me > 2^-20) bit-identical.
+  // IEEE-754 machine-range guard for the cold halving loop (#1242):
+  // fanno_length_between integrates in s = 1 / M^2 up to 1 / M_in^2, and at
+  // low Mach M_in ~ Me * (P / Pt0), so 1 / M_in^2 <= DBL_MAX requires
+  // Me >= (Pt0 / P) / sqrt(DBL_MAX). Keeping the warm-start loop identical to
+  // main preserves bit-identity on every ordinary duct (Me > 2^-20, cold and
+  // warm); only the cold halving loop extends below 1e-6 down to kMachMin.
   const double inv_sqrt_max = 1.0 / std::sqrt(std::numeric_limits<double>::max());
   const double kMachMin = (pb.P > 0.0) ? std::max((pb.Pt0 / pb.P) * inv_sqrt_max, inv_sqrt_max)
                                        : inv_sqrt_max;
@@ -791,7 +790,7 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   bool bracketed = false;
   if (pb.Me_guess > 0.0 && pb.Me_guess < 1.0) {
     double w = 0.01;
-    lo = std::max(pb.Me_guess * (1.0 - w), kMachMin);
+    lo = pb.Me_guess * (1.0 - w);
     hi = std::min(1.0, pb.Me_guess * (1.0 + w));
     f_lo = f(lo);
     f_hi = f(hi);
@@ -800,8 +799,7 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
       if (f_lo <= 0.0) {
         hi = lo;
         f_hi = f_lo;
-        lo = (w < 1.0) ? std::max(pb.Me_guess * (1.0 - w), kMachMin)
-                       : std::max(0.5 * lo, kMachMin);
+        lo = std::max(pb.Me_guess * (1.0 - w), 1e-6);
         f_lo = f(lo);
       } else {
         lo = hi;

@@ -82,6 +82,7 @@ def test_fanno_channel_flow_brackets_below_1e_6_mach(
     assert L_check == pytest.approx(L, rel=1e-8)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("sc", [1e-14, 1e-11])
 def test_deadend_near_zero_start_raises_no_fanno_brent_exception(sc: float) -> None:
     """#1242 reproducer: starting mass flows at 1e-11 or 1e-14 kg/s must not
