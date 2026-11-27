@@ -3,8 +3,9 @@
 Rich, complete combustion leaves the unburnt NH3, and the reforming + water-gas
 shift equilibrium passed it through: NH3 at 0.217 where equilibrium holds
 1e-5, 273 K hot (NH3 0.40, O2 0.13, N2 0.47 at 300 K, 1 bar). The
-decomposition now joins the joint solve wherever NH3 is in the burned state
-(EQUILIBRIUM_NH3_MIN_FRACTION), with N in the element balances.
+decomposition now joins the joint solve, with N in the element balances:
+wherever NH3 is in the burned state (#1314), and since #1241 also forming NH3
+from N2 and H2 (no threshold).
 
 The reference values are Cantera 3.2 HP (TP for the isothermal cases)
 equilibria on combaero's own species set, NH3 included, and its NASA-9 data
@@ -189,8 +190,9 @@ def test_nh3_isothermal_equilibrium_matches_cantera(case: str) -> None:
 
 def test_lean_nh3_burns_completely_as_before() -> None:
     """Lean, complete combustion burns all the NH3 (the phi = 1 softmin's
-    trace is below EQUILIBRIUM_NH3_MIN_FRACTION), and the products are as on
-    main: N2, O2, H2O, no NH3 and no H2 (Cantera: 1248.5972 K)."""
+    trace underflows to 0 this far from phi 1), and the products are N2, O2,
+    H2O, no NH3 and no H2 (Cantera: 1248.5972 K): no reducing species, so the
+    equilibrium stage is skipped, bit for bit as before #1241."""
     X = _vec({"NH3": 0.10, "O2": 0.19, "N2": 0.71})
     r = _core.combustion_equilibrium(300.0, X, 1e5)
     assert r.converged
@@ -199,24 +201,43 @@ def test_lean_nh3_burns_completely_as_before() -> None:
     assert r.state.X[_NAMES.index("H2")] == 0.0
 
 
-def test_the_lean_softmin_trace_of_nh3_passes_through() -> None:
-    """At phi 0.9993 the phi = 1 softmin leaves 8.5e-12 of the NH3 unburnt,
-    below EQUILIBRIUM_NH3_MIN_FRACTION: it passes through as on main (no H2
-    formed). Lean results change only where complete combustion leaves more
-    than that (measured on 20000 lean states, phi 1e-6 to 1): the phi = 0
-    softmin's unburnt fraction at phi 1e-6 to 3e-3 (up to 1e-5 NH3, cracked
-    beside the O2 as a hydrocarbon trace is reformed; T -2.9e-2 to +5.9e-3 K,
-    and the NH3 and H2 entries of dX_out/dX by O(1)), and the phi = 1
-    softmin's at phi 0.9994 to 1 (at most 9.4e-3 K). Lean burns in between
-    are bit-identical to main."""
-    X = _phi_mix(0.9993, {"NH3": 1.0}, _O2_N2)
-    burned = _core.complete_combustion_products_and_jacobian(X).X_b
-    i_nh3 = _NAMES.index("NH3")
-    assert 0.0 < burned[i_nh3] < 1e-10
+def _g_over_RT(species: str, T: float) -> float:
+    e = np.zeros(len(_NAMES))
+    e[_NAMES.index(species)] = 1.0
+    R = 8.31446261815324
+    return (_core.h(T, e) - T * _core.s(T, e, 101325.0, 101325.0)) / (R * T)
+
+
+@pytest.mark.parametrize("phi", [0.9993, 0.9996])
+def test_the_lean_softmin_trace_of_nh3_is_decomposed_to_equilibrium(phi: float) -> None:
+    """At phi 0.9993 the phi = 1 softmin leaves 8.5e-12 of the NH3 unburnt.
+    Up to 0.12.0 it passed through below EQUILIBRIUM_NH3_MIN_FRACTION (1e-10)
+    and was decomposed above it, a step in T and dX_out/dX at the cut. The
+    decomposition is now always equilibrated (#1241): 6.4e-22 is left, at
+    ln Q - ln K = 0 to 1e-9 (1e-14 measured; K from h and s of the pure
+    species, independent of the solve), and the N and H it releases are
+    conserved."""
+    X = _phi_mix(phi, {"NH3": 1.0}, _O2_N2)
+    burned = np.array(_core.complete_combustion_products_and_jacobian(X).X_b)
+    i_nh3, i_n2, i_h2 = (_NAMES.index(k) for k in ("NH3", "N2", "H2"))
+    assert 0.0 < burned[i_nh3] < 1e-8
     r = _core.combustion_equilibrium(300.0, X, 1e5)
     assert r.converged
-    assert r.state.X[i_nh3] == pytest.approx(burned[i_nh3], rel=1e-12)
-    assert r.state.X[_NAMES.index("H2")] == 0.0
+    x = np.array(r.state.X)
+    T = r.state.T
+    assert x[i_nh3] < 1e-6 * burned[i_nh3]
+    lnK = -(_g_over_RT("N2", T) + 3.0 * _g_over_RT("H2", T) - 2.0 * _g_over_RT("NH3", T))
+    lnQ = (
+        np.log(x[i_n2])
+        + 3.0 * np.log(x[i_h2])
+        - 2.0 * np.log(x[i_nh3])
+        + 2.0 * np.log(1e5 / 101325.0)
+    )
+    assert abs(lnQ - lnK) < 1e-9
+    # H released as H2 (no other H carrier moves: no carbon, O2 inert here).
+    assert x[i_h2] == pytest.approx(
+        1.5 * (burned[i_nh3] - x[i_nh3]) * x[i_n2] / burned[i_n2], rel=1e-6
+    )
 
 
 _ATOMS = {

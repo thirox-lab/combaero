@@ -1540,17 +1540,34 @@ class Open:
 #: hotcold_mild, ideal_nport, impingement, impingement_bypass, effusion,
 #: fuel_controller) take hours there.
 FULL_HITS: dict[str, tuple[Hit, ...]] = {
-    "#1241": (
+    # Zero fuel, cold: the trace's complete reforming holds only below about
+    # 1e-12 of fuel (measured, full sweep, 2026-11-27).
+    "#1292": (
+        Hit("fuel_controller", "OrificeElement 'exit'", "mdot", "inj.m_dot", "exact_zero", 1.3e-2),
+        Hit("walled_combustor", "OrificeElement 'x_h2'", "mdot", "inj.m_dot", "exact_zero", 4e-2),
+        Hit("walled_combustor", "OrificeElement 'x_c2'", "mdot", "inj.m_dot", "exact_zero", 6.1e-3),
+    ),  # 6.42e-03, 1.95e-02, 3.04e-03
+    # Zero air: complete NH3 synthesis and the first oxygen's products
+    # reformed, below about 1e-17 to 1e-28 kg/s of air.
+    "#1345": (
+        Hit("fuel_controller", "OrificeElement 'exit'", "mdot", "a_in.m_dot", "exact_zero", 0.15),
         Hit(
-            "walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 3e-01
-        ),  # 1.38e-01
-        Hit(
-            "walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "exact_zero", 4e-01
-        ),  # 2.04e-01
-        Hit(
-            "walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "exact_zero", 1e-01
-        ),  # 5.01e-02
-    ),
+            "fuel_controller",
+            "node 'fuel' Tt_target",
+            "T",
+            "a_in.m_dot",
+            "exact_zero",
+            1.01,
+            case="fuel_controller:0/v0/s0",
+            j_value=-1010.58,
+        ),
+        Hit("fuel_controller", "node 'fuel' Tt_target", "T", "a_in.m_dot", "exact_zero", 0.13),
+        Hit("fuel_controller", "ChannelElement 'hot'", "mdot", "a_in.m_dot", "exact_zero", 0.27),
+        Hit("fuel_controller", "ChannelElement 'cold'", "mdot", "a_in.m_dot", "exact_zero", 3.3e-2),
+        Hit("walled_combustor", "ChannelElement 'hot'", "p", "a_in.m_dot", "exact_zero", 0.5),
+        Hit("walled_combustor", "OrificeElement 'x_c2'", "mdot", "a_in.m_dot", "exact_zero", 0.11),
+        Hit("walled_combustor", "OrificeElement 'x_h2'", "mdot", "a_in.m_dot", "exact_zero", 0.57),
+    ),  # 7.45e-02; 1.0 (saturated); 6.37e-02; 1.35e-01; 1.64e-02; 2.50e-01; 5.37e-02; 2.84e-01
 }
 
 
@@ -1561,17 +1578,22 @@ _EXIT, _NOZZLE, _TT = "OrificeElement 'exit'", "OrificeElement 'nozzle'", "node 
 #: its cap.
 OPEN: tuple[Open, ...] = (
     Open(
-        "#1241",
-        "equilibrium combustor, a fuel stream at exactly zero flow (a fuel-free mix): J is "
-        "the exact slope below the reforming cut (burnt hydrocarbon > 1e-10), F's slope "
-        "halves above it (60448 against 31730 K per kg/s, a 1e-6 K step at 4e-11 kg/s)",
-        (
-            Hit("combustor", _EXIT, "mdot", "inj.m_dot", "exact_zero", 2e-3),
-            Hit("fuel_controller", _NOZZLE, "mdot", "inj.m_dot", "exact_zero", 0.4),
-            Hit("fuel_controller", _TT, "T", "inj.m_dot", "exact_zero", 0.4),
-        ),
-        Case("combustor", 1, 0, 0),
+        "#1292",
+        "equilibrium combustor, a fuel stream at exactly zero flow, cold: J is the exact "
+        "one-sided limit (the trace reformed completely), which holds only below about 1e-12 "
+        "of fuel; the ladder's steps see the slope above it (29.4 against 47.7)",
+        (Hit("combustor", _EXIT, "mdot", "inj.m_dot", "exact_zero", 2.2e-2),),  # 1.10e-02
+        Case("combustor", 2, 0, 0),
         "inj.m_dot = 0",
+    ),
+    Open(
+        "#1345",
+        "equilibrium combustor, the air at exactly zero flow (a fuel-only mix): J is the exact "
+        "one-sided limit (N2 all to NH3, the first oxygen's products reformed), reached only "
+        "below about 1e-17 to 1e-28 kg/s of air; the ladder's steps see the burn beyond it",
+        (Hit("combustor", _EXIT, "mdot", "a_in.m_dot", "exact_zero", 0.6),),  # 2.77e-01
+        Case("combustor", 2, 0, 0),
+        "a_in.m_dot = 0",
     ),
 )
 

@@ -1289,6 +1289,10 @@ MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double 
   // equilibrium's dX_out/dX and dX_out/dT_in.
   //   dX_i/dY_m = (delta_im - X_i) / (W_m S),  S = sum_l Y_l / W_l;
   //   dY_j/dX_l = (delta_jl W_j - Y_j W_l) / MW_b.
+  // Per zero-flow stream: T_ad and Y_b along its own mixing direction.
+  std::vector<bool> zero_flow_dir(streams.size(), false);
+  std::vector<double> zero_flow_dT_ad(streams.size(), 0.0);
+  std::vector<std::vector<double>> zero_flow_dYb(streams.size());
   std::vector<double> dT_ad_dY_mix(n_species, 0.0);
   std::vector<std::vector<double>> dYb_dY_mix(
       n_species, std::vector<double>(n_species, 0.0));
@@ -1323,6 +1327,42 @@ MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double 
     }
     if (!T_clamped) {
       for (std::size_t j = 0; j < n_species; ++j) dYb_dT_mix[j] = to_Y(ej.dXout_dT_in, j);
+    }
+    // A stream at exactly zero flow (#1241): where it feeds a species the
+    // burned state lacks, the equilibrium has a one-sided slope along its
+    // mixing direction that no dT/dX matrix holds (in dry air the slopes
+    // along two fuels do not add). Its flow columns are taken from the
+    // equilibrium's derivatives along that direction alone; every other
+    // column, and every stream with flow, keeps the matrix above.
+    for (std::size_t i_s = 0; i_s < streams.size(); ++i_s) {
+      if (streams[i_s].m_dot != 0.0) continue;
+      std::vector<double> dY(n_species);
+      bool any = false;
+      for (std::size_t m = 0; m < n_species; ++m) {
+        dY[m] = mix.dY_mix_d_stream[m][i_s].d_mdot;
+        any = any || dY[m] != 0.0;
+      }
+      if (!any) continue;
+      std::vector<double> dX(n_species, 0.0);
+      for (std::size_t m = 0; m < n_species; ++m) {
+        if (dY[m] == 0.0) continue;
+        for (std::size_t i = 0; i < n_species; ++i) {
+          dX[i] += (((i == m) ? 1.0 : 0.0) - X_mix[i]) / (W[m] * S) * dY[m];
+        }
+      }
+      const EquilibriumJacobian ejd = combaero::combustion_equilibrium_and_jacobian(
+          eq_in, true, combaero::SMOOTHING_K_PHI0, &dX);
+      double dT = 0.0;
+      std::vector<double> dXb(n_species, 0.0);
+      for (std::size_t k = 0; k < n_species; ++k) {
+        dT += ejd.dT_dX[k] * dX[k];
+        for (std::size_t l = 0; l < n_species; ++l) dXb[l] += ejd.dXout_dX[l][k] * dX[k];
+      }
+      std::vector<double> dYb(n_species);
+      for (std::size_t j = 0; j < n_species; ++j) dYb[j] = to_Y(dXb, j);
+      zero_flow_dir[i_s] = true;
+      zero_flow_dT_ad[i_s] = dT;
+      zero_flow_dYb[i_s] = dYb;
     }
     if (dP_out != nullptr) {
       // T_out(T_ad(P), Y_b(P)) at the shift, as the T_mix chain below.
@@ -1382,8 +1422,13 @@ MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double 
       dY_mix_dP_total[k] = mix.dY_mix_d_stream[k][i].d_Pt;
     }
 
-    dT_stream.d_mdot =
-        compute_chain(mix.dTt_mix_d_stream[i].d_mdot, dY_mix_dmdot);
+    if (zero_flow_dir[i]) {
+      double dT_dir = zero_flow_dT_ad[i] * dT_out_dT_ad;
+      for (std::size_t j = 0; j < n_species; ++j) dT_dir += w_shift[j] * zero_flow_dYb[i][j];
+      dT_stream.d_mdot = dT_ad_dT_mix * mix.dTt_mix_d_stream[i].d_mdot + dT_dir;
+    } else {
+      dT_stream.d_mdot = compute_chain(mix.dTt_mix_d_stream[i].d_mdot, dY_mix_dmdot);
+    }
     // Q is spread over the throughput: d(Q phi)/dm_i = Q phi', a pure
     // enthalpy shift of the products. Missing, a combustor carrying wall heat
     // had dT/dm = 0 where the difference gave 1658 K per kg/s.
@@ -1415,7 +1460,9 @@ MixerResult equilibrium_from_streams(const std::vector<Stream> &streams, double 
       };
 
       dY_stream.d_mdot =
-          compute_Y_chain(mix.dTt_mix_d_stream[i].d_mdot, dY_mix_dmdot);
+          zero_flow_dir[i]
+              ? dYb_dT_mix[tgt] * mix.dTt_mix_d_stream[i].d_mdot + zero_flow_dYb[i][tgt]
+              : compute_Y_chain(mix.dTt_mix_d_stream[i].d_mdot, dY_mix_dmdot);
       dY_stream.d_Tt = compute_Y_chain(mix.dTt_mix_d_stream[i].d_Tt, dY_mix_dT);
       dY_stream.d_Pt =
           compute_Y_chain(mix.dTt_mix_d_stream[i].d_Pt, dY_mix_dP_total);

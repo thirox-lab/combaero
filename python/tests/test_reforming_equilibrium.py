@@ -95,7 +95,9 @@ class TestReformingEquilibrium:
         assert result.state.X[sp.indices["H2"]] > 0.01
 
     def test_element_conservation(self, sp: SpeciesLocator) -> None:
-        """Test that element ratios are conserved (using N2 as reference)."""
+        """Element ratios are conserved, per argon, the one inert: N2 is not
+        since NH3 synthesis is always equilibrated (#1241), so N is counted
+        over N2 and NH3."""
         X = sp.empty()
         X[sp.indices["CH4"]] = 0.015
         X[sp.indices["C2H6"]] = 0.003
@@ -105,30 +107,22 @@ class TestReformingEquilibrium:
         X[sp.indices["AR"]] = 0.002
 
         result = ca.reforming_equilibrium(2000.0, X)
+        Xo = result.state.X
+        ar_in, ar_out = X[sp.indices["AR"]], Xo[sp.indices["AR"]]
 
-        # N2 is inert, so element ratios per N2 should be conserved
-        n2_in = X[sp.indices["N2"]]
-        n2_out = result.state.X[sp.indices["N2"]]
+        def carbon(x: list[float]) -> float:
+            return (
+                x[sp.indices["CH4"]]
+                + 2 * x[sp.indices["C2H6"]]
+                + x[sp.indices["CO"]]
+                + x[sp.indices["CO2"]]
+            )
 
-        # C atoms per N2: CH4 + 2*C2H6 + CO + CO2
-        C_per_N2_in = (
-            X[sp.indices["CH4"]]
-            + 2 * X[sp.indices["C2H6"]]
-            + X[sp.indices["CO"]]
-            + X[sp.indices["CO2"]]
-        ) / n2_in
-        C_per_N2_out = (
-            result.state.X[sp.indices["CH4"]]
-            + 2 * result.state.X[sp.indices["C2H6"]]
-            + result.state.X[sp.indices["CO"]]
-            + result.state.X[sp.indices["CO2"]]
-        ) / n2_out
-        assert C_per_N2_in == pytest.approx(C_per_N2_out, rel=1e-5)
+        def nitrogen(x: list[float]) -> float:
+            return 2 * x[sp.indices["N2"]] + x[sp.indices["NH3"]]
 
-        # Ar per N2 should be unchanged
-        ar_per_n2_in = X[sp.indices["AR"]] / n2_in
-        ar_per_n2_out = result.state.X[sp.indices["AR"]] / n2_out
-        assert ar_per_n2_in == pytest.approx(ar_per_n2_out, rel=1e-10)
+        assert carbon(X) / ar_in == pytest.approx(carbon(Xo) / ar_out, rel=1e-5)
+        assert nitrogen(X) / ar_in == pytest.approx(nitrogen(Xo) / ar_out, rel=1e-10)
 
 
 class TestCh4OnlyReformingEquilibrium:
@@ -203,13 +197,15 @@ def _elements(X: list[float]) -> dict[str, float]:
 
     counts = {
         "C": {"CH4": 1, "C2H6": 2, "C3H8": 3, "CO": 1, "CO2": 1},
-        "H": {"CH4": 4, "C2H6": 6, "C3H8": 8, "H2": 2, "H2O": 2},
+        "H": {"CH4": 4, "C2H6": 6, "C3H8": 8, "H2": 2, "H2O": 2, "NH3": 3},
         "O": {"CO": 1, "CO2": 2, "H2O": 1},
     }
     n = np.asarray(X)
+    # Per nitrogen atom, N2 and NH3 (NH3 synthesis is always equilibrated, so
+    # N2 alone is not conserved; #1241).
+    n_N = 2 * n[ca.species_index_from_name("N2")] + n[ca.species_index_from_name("NH3")]
     return {
-        e: sum(k * n[ca.species_index_from_name(s)] for s, k in sp_.items())
-        / n[ca.species_index_from_name("N2")]
+        e: sum(k * n[ca.species_index_from_name(s)] for s, k in sp_.items()) / n_N
         for e, sp_ in counts.items()
     }
 
@@ -226,14 +222,19 @@ class TestSimultaneousReformingEquilibrium:
         800.0: (0.029704814, 0.161972378, 0.014278614, 0.044300708, 0.220038672),
         900.0: (0.004793335, 0.131784917, 0.038066025, 0.041272863, 0.279289526),
     }
-    _SMR_WGS_T_AD = {700.0: 617.762887, 900.0: 711.998293, 1200.0: 824.688325}
+    # Argon as the diluent, where the solver's N2 was: the isothermal values
+    # do not depend on which inert it is, and N2 is not one since NH3
+    # synthesis is always equilibrated (#1241). The adiabatic ones do (cp):
+    # Cantera 3.2 HP on combaero's species and NASA-9 data, argon diluent,
+    # 2026-11-27 (combaero agrees to 1e-8 K).
+    _SMR_WGS_T_AD = {700.0: 609.683963, 900.0: 697.535800, 1200.0: 799.786392}
 
     @pytest.mark.parametrize("T", [600.0, 650.0, 712.0, 800.0, 900.0])
     def test_matches_the_smr_wgs_solver_where_it_holds(self, T: float) -> None:
         """CH4 + steam (forward reforming): the removed smr_wgs solver solved
         both extents at once, so the two must agree. A single round was 0.04
         off at 712 K."""
-        X = _mix(CH4=0.1, H2O=0.3, N2=0.6)
+        X = _mix(CH4=0.1, H2O=0.3, AR=0.6)
         got = ca.reforming_equilibrium(T, X)
         assert got.converged
         names = ("CH4", "H2O", "CO", "CO2", "H2")
@@ -242,8 +243,9 @@ class TestSimultaneousReformingEquilibrium:
 
     @pytest.mark.parametrize("T_in", [700.0, 900.0, 1200.0])
     def test_adiabatic_matches_the_smr_wgs_solver(self, T_in: float) -> None:
-        """At 900 K inlet a single round gave 734.1 K; Cantera gives 711.9."""
-        X = _mix(CH4=0.1, H2O=0.3, N2=0.6)
+        """At 900 K inlet a single round gave 734.1 K (N2 diluent; Cantera
+        711.9 K there)."""
+        X = _mix(CH4=0.1, H2O=0.3, AR=0.6)
         got = ca.reforming_equilibrium_adiabatic(T_in, X)
         assert got.converged
         assert pytest.approx(self._SMR_WGS_T_AD[T_in], abs=1e-3) == got.state.T

@@ -1,0 +1,1 @@
+- **`combustion_equilibrium_and_jacobian(..., dX_dir=...)` (#1241).** The optional direction the derivatives will be applied along. Where a reactant feeds a species the burned state lacks, `dT_dX @ dX_dir` is the one-sided slope along that direction. Elsewhere it changes nothing.
