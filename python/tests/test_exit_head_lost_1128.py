@@ -590,20 +590,25 @@ def _stress_families():
     return FAMILIES
 
 
-def test_legacy_tee_34_recovers_forward_root_after_failed_reversed_solve() -> None:
+@pytest.mark.parametrize("with_homotopy", [False, True], ids=["cold", "with-homotopy"])
+def test_legacy_tee_34_recovers_forward_root_after_failed_reversed_solve(
+    with_homotopy: bool,
+) -> None:
     """Binds the #1128/#1234 forward-start retry trigger on failed reversed
     iterates: under static outflow discharge, legacy_tee 34's cold solve stalls
     past sonic on the reversed leg (no_progress rather than inconsistent).
-    Running _retry_legacy_tees_forward on failed reversed iterates before
-    homotopy/BC-ramp recovers main's exact forward root."""
+    Running _retry_legacy_tees_forward on failed reversed iterates (both plain
+    and before homotopy/BC-ramp) recovers main's exact forward root via the
+    forward-start retry rather than falling through to homotopy."""
     g, _ = _stress_families()["legacy_tee"](34)
     s = NetworkSolver(g)
-    s.homotopy_retry = True
-    s.bc_ramp_retry = True
+    s.homotopy_retry = with_homotopy
+    s.bc_ramp_retry = with_homotopy
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         r = s.solve(timeout=20.0)
     assert r["__success__"], r.get("__message__")
+    assert r["__message__"].startswith("Converged from a forward start"), r.get("__message__")
     assert r["ls.m_dot"] == pytest.approx(2.80953, rel=1e-4)
     assert r["lc.m_dot"] == pytest.approx(3.19314, rel=1e-4)
 
