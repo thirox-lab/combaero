@@ -374,3 +374,16 @@ def test_a_start_on_the_subsonic_side_is_not_moved() -> None:
             assert c.bounded and abs(c.residual) < 1e-6 * st.Pt
         else:
             assert st.Pt == st.P and not c.bounded
+
+
+def test_a_bore_equal_to_the_pipe_under_auto_coupling_matches_plain_channel() -> None:
+    """Under coupling='auto' (#1128), a pass-through orifice (bore == pipe)
+    discharging into the outlet loses its exit dynamic head just like the
+    plain channel-into-outlet reference, so cmb.Pt matches to 1e-11."""
+    net = _net(0.1)
+    net.nodes["out"].coupling = "auto"
+    _, r = _solve(net)
+    assert r["__success__"], r["__message__"]
+    _, ref = _solve(_net(None))
+    assert ref["__success__"], ref["__message__"]
+    assert r["cmb.Pt"] == pytest.approx(ref["cmb.Pt"], rel=1e-11)

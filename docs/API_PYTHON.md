@@ -2240,10 +2240,16 @@ conventions at the node the flow goes into.
     takes that node's `Pt`; the incompressible row carries the entry head.
     A feed from a moving `MomentumChamberNode` is not covered by this rule.
 - **Total-receiving:** the element matches the downstream `Pt`, so the
-  receiving node decides what happens to the head.
+  receiving node decides what happens to the head (see receiver table below;
+  into a static-coupled outflow `PressureBoundary`, elements with an exit
+  velocity area dissipate their exit dynamic head under #1128):
   - `ChannelElement`: incompressible and Fanno, ribbed and pin-fin;
-  - `PressureLossElement`, `AreaChangeElement`, `LosslessConnectionElement`,
-    the `SplitterOutletElement` reference and `VortexElement`;
+  - `PressureLossElement` (when it carries a velocity area, exit head lost at
+    a static outflow `PressureBoundary`), `AreaChangeElement` (exit head lost
+    at a static outflow `PressureBoundary`), `LosslessConnectionElement` (exit
+    head lost at a static outflow `PressureBoundary` when it carries an area
+    or leaves a `MomentumChamberNode`), the `SplitterOutletElement` reference
+    and `VortexElement`;
   - the turbomachines, whose pressure ratio is total-to-total;
   - the junction port rows (`MultiPortChamberBase`): the port chambers own
     each port's head, and the Mynard and constant-K losses are defined on `Pt`.

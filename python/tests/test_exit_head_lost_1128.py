@@ -515,3 +515,65 @@ def test_blocked_fraction_loss_converges_from_all_seeds(pt_seed: float, coupling
     assert r["__success__"], r.get("__message__")
     assert abs(r["loss.m_dot"]) < FLOW_REVERSAL_M_SCALE
     assert r["__fraction_unanchored__"] == ["loss"]
+
+
+@pytest.mark.parametrize("kind", ["lossless", "area_change_passthrough", "orifice_passthrough"])
+def test_discharge_total_row_Tt_and_Y_jacobian_on_merge_chamber(kind: str) -> None:
+    """Binds the Tt and Y derivative terms of _discharge_total_row: a merge
+    MomentumChamberNode fed by 900 K air and 300 K CH4 into a static outflow
+    boundary has non-zero dTt/dx and dY/dx on the chamber state."""
+    Y_CH4 = [0.0] * cb.num_species()
+    Y_CH4[cb.species_index_from_name("CH4")] = 1.0
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("air", Pt=1.5e5, Tt=900.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("fuel", Pt=1.5e5, Tt=300.0, Y=Y_CH4))
+    g.add_node(MomentumChamberNode("m", area=A, main_inlet="air_ch"))
+    g.add_node(PressureBoundary("out", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
+    g.add_element(ChannelElement("air_ch", "air", "m", length=0.5, diameter=D))
+    g.add_element(
+        OrificeElement("fuel_or", "fuel", "m", Cd=0.6, diameter=0.008, correlation="fixed")
+    )
+    if kind == "lossless":
+        g.add_element(LosslessConnectionElement("x", "m", "out"))
+    elif kind == "area_change_passthrough":
+        g.add_element(AreaChangeElement("x", "m", "out", F0=A, F1=A))
+    else:
+        g.add_element(OrificeElement("x", "m", "out", Cd=0.6, diameter=D, correlation="fixed"))
+    r = _solve(g)
+    if kind != "orifice_passthrough":
+        assert r["__element_diag__"]["x"][KEY] == 0.0
+    x = np.array(r["__x_solution__"], dtype=float)
+    s = NetworkSolver(g)
+    s._build_x0()
+    s._residuals(x)
+    _, jac = s._residuals_and_jacobian(x)
+    fd = fd_jacobian(s, x)
+    row = s.unknown_names.index("x.m_dot")
+    j_row = jac.toarray()[row]
+    fd_row = fd[row]
+    scale = float(np.abs(fd_row * x).max()) or 1.0
+    err = float((np.abs(j_row - fd_row) * np.abs(x) / scale).max())
+    assert err < 1e-6, f"merge chamber _discharge_total_row ({kind}) row err = {err:.3e}"
+
+
+@pytest.mark.parametrize("kind", ["lossless", "area_change_passthrough", "orifice_passthrough"])
+def test_discharge_total_row_reversed_leg_m_sign_jacobian(kind: str) -> None:
+    """Binds the reversed-leg dm sign of _discharge_total_row: an element
+    declared from the outflow boundary side ('out' -> 'a') carrying reversed
+    flow (m_dot < 0) discharges from chamber 'a' into static boundary 'out'."""
+    g = FlowNetwork()
+    g.add_node(PressureBoundary("in", Pt=1.2e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(MomentumChamberNode("a", area=A))
+    g.add_node(PressureBoundary("out", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
+    g.add_element(ChannelElement("c", "a", "in", length=0.5, diameter=D))
+    if kind == "lossless":
+        g.add_element(LosslessConnectionElement("x", "out", "a"))
+    elif kind == "area_change_passthrough":
+        g.add_element(AreaChangeElement("x", "out", "a", F0=A, F1=A))
+    else:
+        g.add_element(OrificeElement("x", "out", "a", Cd=0.6, diameter=D, correlation="fixed"))
+    r = _solve(g)
+    assert r["x.m_dot"] < -0.1
+    if kind != "orifice_passthrough":
+        assert r["__element_diag__"]["x"][KEY] == 0.0
+    _check_network_jacobian(g, np.array(r["__x_solution__"], dtype=float), tol=1e-6)

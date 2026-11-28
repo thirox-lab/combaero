@@ -8,12 +8,12 @@ Before #1128, only `ChannelElement` and `PortDischargeElement` honoured `exit_he
 
 | Element `X` (under `coupling="auto"`) | `main` (`e427b904`) `m_dot` [kg/s] | `main` `exit_head_recovered` [Pa] | `#1128` `m_dot` [kg/s] | `#1128` `exit_head_recovered` [Pa] |
 |---|---:|---:|---:|---:|
-| `ChannelElement` (`L = 1e-4 m`, reference) | 0.19555 | 0.00 | 0.19555 | 0.00 |
-| `PressureLossElement` (`zeta = 0`, `area = A`) | 0.42333 | 4620.89 | 0.19562 | 0.00 |
-| `LosslessConnectionElement` (from chamber `A`) | 0.42333 | 4620.89 | 0.19562 | 0.00 |
-| `AreaChangeElement` (`F0 = A, F1 = A`, pass-through) | 0.42333 | 4620.89 | 0.19562 | 0.00 |
+| `ChannelElement` (`L = 1e-4 m`, reference) | 0.19562 | 0.00 | 0.19562 | 0.00 |
+| `PressureLossElement` (`zeta = 0`, `area = A`) | 0.42333 | 25567.18 | 0.19562 | 0.00 |
+| `LosslessConnectionElement` (from chamber `A`) | 0.42333 | 25567.18 | 0.19562 | 0.00 |
+| `AreaChangeElement` (`F0 = A, F1 = A`, pass-through) | 0.42333 | 25567.18 | 0.19562 | 0.00 |
 | `OrificeElement` (`bore = D`, pass-through) | 0.42333 | — | 0.19562 | — |
-| `AreaChangeElement` (`F0 = A, F1 = 4A`) | 0.20369 | 394.43 | 0.19565 | 0.00 |
+| `AreaChangeElement` (`F0 = A, F1 = 4A`) | 0.24225 | 410.82 | 0.23368 | 0.00 |
 
 `CrossflowSegmentElement`'s station predicate (#1150) is intentionally untouched: a boundary feed remains `entry_K = 0`, and the feed-head family (#1152, #1212, #1153, #1154) is out of scope here.
 
@@ -57,8 +57,10 @@ Two interpretations of `MomentumChamberNode -> LosslessConnectionElement(area=No
 
 ### 4. Solver Robustness Findings (Root-Caused, Not Masked)
 
-1. **`test_fraction_unanchored_1004` (`NO_PROGRESS` stall):** Root-caused to a pre-existing `hybr` failure on blocked `ConstantFractionLoss` / `LinearThetaFractionLoss` networks without `m_ref` (4/35 `(zeta, P_a)` cases already failed identically on `main` `e427b904`). Outside `FLOW_REVERSAL_M_SCALE = 1e-4 kg/s`, `dF/dm = 0`, so `hybr` overshoots across `m = 0` onto the opposite branch cliff and aborts after 10 rejected trust-region steps (`NO_PROGRESS`), while `NetworkSolver` skipped its existing LM fallback because `PressureLossElement` had no `regime="compressible"` attribute. Including unanchored fraction losses and static-discharge elements in the `hybr -> lm` fallback gate (`solver.py`) rescues 70/70 swept cases and 10/10 `p.Pt` seeds to `|F| ~ 1e-11`.
-2. **Exact-root guard (`solver.py`):** In `solver.py`, MINPACK's progress test can stop at machine precision when the raw Pa norm is `~1e-11` (above `1e-12`) even though the scaled dimensionless norm is `< 1e-12` (`~1e-16`). Accepting `best_scaled_norm <= _EXACT_ROOT_TOL and final_norm <= _RESIDUAL_TOL` closes this exact-root false negative without loosening `_RESIDUAL_TOL`.
+1. **`test_fraction_unanchored_1004` (`NO_PROGRESS` stall):** Root-caused to a pre-existing `hybr` failure on blocked `ConstantFractionLoss` / `LinearThetaFractionLoss` networks without `m_ref` (4/35 `(zeta, P_a)` cases already failed identically on `main` `e427b904`). Outside `FLOW_REVERSAL_M_SCALE = 1e-4 kg/s`, `dF/dm = 0`, so `hybr` overshoots across `m = 0` onto the opposite branch cliff and aborts after 10 rejected trust-region steps (`NO_PROGRESS`), while `NetworkSolver` skipped its existing LM fallback because `PressureLossElement` had no `regime="compressible"` attribute. Gating ONLY the post-failure LM fallback (never `hybr`'s 65% budget cut or stall handover, and never inside `_in_warmstart_proxy`) on `_has_unanchored_fraction` (`solver.py`) rescues 70/70 swept cases and 10/10 `p.Pt` seeds to `|F| ~ 1e-11`.
+2. **Static-discharging fraction-loss cold seed (`solver.py`, `random` seed 35):** In `_resistance_network_guess`, a fraction loss's Picard ratio row previously enforced flow-independent `Pt_dn - (1 - xi) Pt_up = 0` (`L[col, col] = 0`) even when the element discharged with an exit area into a static boundary (seeding `random` 35 at 34.5 kg/s vs its 0.238 kg/s choked root). Carrying the exit dynamic-head linearization `mode[k] * q_dir * (|m[k]| + SEED_MDOT_FLOOR)` (`q_dir = 1 / (2 rho A^2)`) on `L[col, col]` preserves `#989`'s fraction-ratio law while respecting exit head (`random` 35 solves cold in `0.31 s`, `random` 4 in `1.48 s`).
+3. **Legacy-tee forward-start retry on failed reversed iterates (`solver.py`, `legacy_tee` seed 34):** Under static discharge, a merging `TeeJunctionElement` cold solve that strays into reversed flow can stall past sonic (`no_progress`) instead of converging to a refused reversed root (`inconsistent`). `_retry_legacy_tees_forward` now scans all `TeeJunctionElement`s at the failed solve's best iterate (not only `__inconsistent_elements__`) and also runs before `homotopy_retry` / `bc_ramp_retry` so those retries cannot burn the budget first, restoring `legacy_tee` 34's forward root in `0.38 s`.
+4. **Exact-root guard (`solver.py`):** In `solver.py`, MINPACK's progress test can stop at machine precision when the raw Pa norm is `~1e-11` (above `1e-12`) even though the scaled dimensionless norm is `< 1e-12` (`~1e-16`). Accepting `best_scaled_norm <= _EXACT_ROOT_TOL and final_norm <= _RESIDUAL_TOL` closes this exact-root false negative without loosening `_RESIDUAL_TOL`.
 
 ## Verification and Test Pointers
 
