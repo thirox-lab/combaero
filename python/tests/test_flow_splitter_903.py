@@ -84,13 +84,14 @@ def _network(
     reference: str | None = REFERENCE,
     m_supply: float = M_SUPPLY,
     auto_reference: bool = True,
+    sink_coupling: str = "auto",
 ) -> tuple[FlowNetwork, FlowSplitter]:
     """supply -> splitter -> o_i -> head loss -> sink_i (one per outlet)."""
     net = FlowNetwork()
     inlet = _supply(net, kind, m_supply)
     for o, (_, zeta, area) in PATHS.items():
         net.add_node(PlenumNode(o))
-        net.add_node(PressureBoundary(f"{o}_x", Pt=P_SINK, Tt=300.0, Y=AIR))
+        net.add_node(PressureBoundary(f"{o}_x", Pt=P_SINK, Tt=300.0, Y=AIR, coupling=sink_coupling))
         net.add_element(
             PressureLossElement(
                 f"{o}_loss", o, f"{o}_x", correlation=ConstantHeadLoss(zeta, area), area=area
@@ -187,7 +188,7 @@ def test_the_valve_drops_and_metering_match_a_hand_calculation(m_supply: float) 
     jet. At 0.3 of the flow the drops are ~3% of Pt, and the valve's zeta is
     the incompressible K with the jet's first-order compressibility. (Lower, the head loss's flow
     reversal blend, exp(-m / 1e-4 kg/s), would show in the hand comparison.)"""
-    _, r = _solve(_network("mass", m_supply=m_supply)[0])
+    _, r = _solve(_network("mass", m_supply=m_supply, sink_coupling="total")[0])
     assert r["__success__"], r["__message__"]
     fr = {"o1": 0.2, "o2": 0.3, "o3": 0.5}
     Pt = {o: _hand_Pt(fr[o] * m_supply, z, a) for o, (_, z, a) in PATHS.items()}

@@ -6904,6 +6904,7 @@ class NetworkSolver:
         # direction at low-Mach).
         from .components import MultiPortChamberBase as _MPCElem
         from .components import TeeJunctionElement as _TeeJE
+        from .components import _node_exit_head_lost
 
         _has_tee = any(isinstance(e, _TeeJE) for e in self.network.elements.values())
         _has_mpce = any(isinstance(e, _MPCElem) for e in self.network.elements.values())
@@ -6914,8 +6915,37 @@ class NetworkSolver:
         _has_merge = any(
             getattr(n, "main_inlet", None) is not None for n in self.network.nodes.values()
         )
+        # Blocked fraction losses (#1004/#1128) have dF/dm = 0 outside the narrow
+        # zero-flow reversal blend, where hybr can overshoot across m = 0 and
+        # exit with NO_PROGRESS after 10 rejections while LM converges to ~1e-11.
+        # Static-coupled discharge elements (#1128) also call compressible
+        # discharge_total_pressure (choking at M = 1) without a regime attribute.
+        _has_loss_or_discharge = any(
+            (
+                isinstance(e, PressureLossElement)
+                and (
+                    e.unanchored_fraction
+                    or (
+                        e._exit_head_area() is not None
+                        and (
+                            _node_exit_head_lost(self.network.nodes.get(e.to_node))
+                            or _node_exit_head_lost(self.network.nodes.get(e.from_node))
+                        )
+                    )
+                )
+            )
+            or (
+                isinstance(e, LosslessConnectionElement)
+                and (e._exit_head_spec(True) is not None or e._exit_head_spec(False) is not None)
+            )
+            for e in self.network.elements.values()
+        )
         _has_compressible = method == "hybr" and (
-            bool(self._compressible_element_overrides()) or _has_tee or _has_mpce or _has_merge
+            bool(self._compressible_element_overrides())
+            or _has_tee
+            or _has_mpce
+            or _has_merge
+            or _has_loss_or_discharge
         )
         _hybr_budget = timeout * 0.65 if (_has_compressible and timeout is not None) else timeout
         # Mutable so the LM fallback block can extend the effective limit.
@@ -6972,6 +7002,7 @@ class NetworkSolver:
         start_time = time.perf_counter()
         best_x = x0_use.copy()
         best_res_norm = np.linalg.norm(res0)
+        best_scaled_norm = float(np.linalg.norm(res0 * inv_D_f))
         last_exception: Exception | None = None
         # Last PHYSICAL evaluation (scaled F, scaled J): what a rejected
         # probe is answered with (see the except branch below).
@@ -7004,7 +7035,7 @@ class NetworkSolver:
             return f
 
         def _residuals_scaled(x_scaled: np.ndarray) -> Any:
-            nonlocal best_x, best_res_norm, last_exception
+            nonlocal best_x, best_res_norm, best_scaled_norm, last_exception
 
             # Check timeout
             if _timeout_eff[0] is not None and (time.perf_counter() - start_time) > _timeout_eff[0]:
@@ -7024,6 +7055,7 @@ class NetworkSolver:
                 _improved = res_norm < best_res_norm
                 if _improved:
                     best_res_norm = res_norm
+                    best_scaled_norm = float(np.linalg.norm(res * inv_D_f))
                     best_x = x_real.copy()
 
                 # Record convergence history point
@@ -7213,7 +7245,10 @@ class NetworkSolver:
             # is 0/0 and hybr reports "not making good progress" from the
             # root itself. A residual at machine level IS the solution (#582:
             # a row linear in its own unknown reaches |F| = 1e-19 in one step).
-            if not success and final_norm <= _EXACT_ROOT_TOL:
+            if not success and (
+                final_norm <= _EXACT_ROOT_TOL
+                or (best_scaled_norm <= _EXACT_ROOT_TOL and final_norm <= _RESIDUAL_TOL)
+            ):
                 success = True
                 outcome = SolveOutcome.CONVERGED
                 message = (
@@ -7275,13 +7310,14 @@ class NetworkSolver:
         # LM fallback for hybr oscillation on compressible networks.
         # Levenberg-Marquardt's (J^TJ + lI) regularisation prevents the
         # ill-conditioned Newton step that causes hybr to bounce near a
-        # choked solution without making progress.  Start from the best
-        # iterate hybr found; restore the full timeout so LM gets the
-        # remaining 35% of the budget. Also for ANY network where hybr
-        # reported success at a non-root (its xtol test on a Broyden-updated
-        # Jacobian): an 8-row impingement array with the epsilon-NTU wall heat
-        # stopped there at |F| = 1.7e-3, where LM from its best iterate reaches
-        # 3e-11 (#627). Only a failed solve gets the extra phase.
+        # choked solution or across a sharp reversal blend without making
+        # progress.  Start from the best iterate hybr found; restore the full
+        # timeout so LM gets the remaining 35% of the budget. Also for ANY
+        # network where hybr reported success at a non-root (its xtol test on
+        # a Broyden-updated Jacobian): an 8-row impingement array with the
+        # epsilon-NTU wall heat stopped there at |F| = 1.7e-3, where LM from
+        # its best iterate reaches 3e-11 (#627). Only a failed solve gets the
+        # extra phase.
         if not success and (_has_compressible or outcome == SolveOutcome.RESIDUAL_TOO_LARGE):
             _elapsed = time.perf_counter() - start_time
             _remaining = (timeout - _elapsed) if timeout is not None else None

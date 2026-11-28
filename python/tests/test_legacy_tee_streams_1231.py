@@ -419,7 +419,11 @@ def _stress_legacy_tee(seed: int) -> FlowNetwork:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "stress"))
     from networks import FAMILIES
 
-    return FAMILIES["legacy_tee"](seed)[0]
+    g = FAMILIES["legacy_tee"](seed)[0]
+    for node in g.nodes.values():
+        if isinstance(node, PressureBoundary):
+            node.coupling = "total"
+    return g
 
 
 def test_a_failed_forward_retry_leaves_the_refused_solve_on_the_solver() -> None:

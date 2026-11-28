@@ -2254,7 +2254,7 @@ The receiving node decides where a total-receiving element's head goes:
 |---|---|---|
 | `PlenumNode`, `CombustorNode` | at rest, `Pt = P` | recovered: the node takes the element's exit `Pt` as its `P`, so no dump loss is charged |
 | `MomentumChamberNode` | `Pt = P + q`, the head of its own throughput at its own `area` | carried by the chamber; with the element's exit area the two conventions agree |
-| `PressureBoundary` | `exit_head_lost(is_outflow)` from `coupling` (`"auto"`: lost on outflow) | lost where the element reads the flag (`ChannelElement`, and `PortDischargeElement` out of a chamber), recovered where it does not |
+| `PressureBoundary` | `exit_head_lost(is_outflow)` from `coupling` (`"auto"`: lost on outflow) | lost when the element has an exit area (`ChannelElement`, `PortDischargeElement`, `PressureLossElement`, `AreaChangeElement`, `LosslessConnectionElement` with an area or leaving a `MomentumChamberNode`, and pass-through `OrificeElement`; #1128); recovered under `coupling="total"` |
 
 Into a plenum a total-receiving element is a perfect diffuser. That is by
 design: plenums are also used as duct stations, as in a duct cut into
@@ -2311,17 +2311,7 @@ closure: the jet's head is its own, not the receiver's. Since 0.12.0
   [#1125](https://github.com/thirox-lab/combaero/issues/1125). Reversed duct
   flow passes since #1178 (see `HoleCd.supply_drive`, "Duct-flow reversal",
   below).
-- Outflow boundaries are inconsistent. `ChannelElement` and
-  `PortDischargeElement` honour `PressureBoundary.exit_head_lost`, and the
-  orifice family loses its head anyway. `PressureLossElement`,
-  `AreaChangeElement` and `LosslessConnectionElement` do not read the flag and
-  recover the whole head at an outflow boundary. A zero-loss
-  `PressureLossElement` there passes about twice the flow of a short channel of
-  the same area: 0.423 against 0.196 kg/s at 1.05e5 into 1.0e5 Pa
-  (drive-convention audit, 2026-11-12). No issue is filed for it yet.
-- `PressureLossElement` stays `Pt` to `Pt` on purpose. Lefebvre's pressure-loss
-  factor and a `zeta` loss are total-to-total and already include any dump,
-  and a fraction loss has no velocity to make a head from.
+- `PressureLossElement` stays `Pt` to `Pt` between internal nodes on purpose (Lefebvre's pressure-loss factor and a `zeta` loss are total-to-total, and a fraction loss with no velocity area has no head to lose). At an outflow `PressureBoundary` declaring `exit_head_lost`, `PressureLossElement` (when it has a velocity area), `AreaChangeElement` (normal and pass-through), `LosslessConnectionElement` (when it has an area or leaves a `MomentumChamberNode`), and pass-through `OrificeElement` (`bore == D_pipe` or `bore == D_chamber`) lose their exit dynamic head, matching `ChannelElement` (#1128). Set `PressureBoundary(..., coupling="total")` to impose `Pt` and retain total-to-total recovery.
 
 ### Network Elements
 
@@ -2330,9 +2320,9 @@ closure: the jet's head is its own, not the receiver's. Since 0.12.0
 **`exit_head_recovered` [Pa], information only.** A total-receiving element (it matches the downstream node's `Pt`) reports the dynamic head that a node at rest recovers from its exit: q = G^2 / (2 rho), with G = |m_dot| / A at its exit area and rho the exit static density. At a `PlenumNode`, `CombustorNode` or other node at rest (`Pt = P`), that head becomes static pressure with no dump loss. No residual or Jacobian reads it, and it never warns.
 - **Who reports it:** `ChannelElement` (incompressible and Fanno, ribbed and pin-fin), `PressureLossElement`, `AreaChangeElement` (at the exit face), `LosslessConnectionElement`, `SplitterOutletElement` and `VortexElement`.
 - **The exit state:** the channel's own exit end state where its diagnostics solve one. Otherwise it is the isentropic static state from the flow's `Tt` and the receiver's `Pt` at G (C++ `duct_static_state`). An incompressible element (`regime="incompressible"`) uses its constant density, at the flow's `Tt` and the receiver's `Pt`. Outside the low-Mach range that value is the model's own head, and `__incompressible_validity__` flags the element.
-- **It is 0** when the receiver is a `MomentumChamberNode` (it carries its own head), when the channel loses its head at a `PressureBoundary` with `exit_head_lost`, when there is no exit area, when there is no flow, and when the exit is choked (a choked Fanno duct, or G above the sonic flux at the receiver's `Pt`): a choked exit is not matched to the receiver's `Pt`. It is also 0 on a `CrossflowSegmentElement`, which meets its nodes at static continuity.
+- **It is 0** when the receiver is a `MomentumChamberNode` (it carries its own head), when the element loses its head at a `PressureBoundary` with `exit_head_lost`, when there is no exit area, when there is no flow, and when the exit is choked (a choked Fanno duct, or G above the sonic flux at the receiver's `Pt`): a choked exit is not matched to the receiver's `Pt`. It is also 0 on a `CrossflowSegmentElement`, which meets its nodes at static continuity.
 - **Per element:**
-  - `PressureLossElement` and `AreaChangeElement` do not read `exit_head_lost`, so an outflow boundary recovers their head and they report it.
+  - `PressureLossElement`, `AreaChangeElement`, `LosslessConnectionElement` and pass-through `OrificeElement` honour `PressureBoundary.exit_head_lost` (#1128): at an outflow boundary with `exit_head_lost=True` (default `coupling="auto"` or `"static"`), they lose their exit head and report 0; under `coupling="total"` or into a plenum they recover and report it.
   - A pressure loss on the `DEFAULT_CHAMBER_AREA` placeholder has no velocity reference and reports 0. That is a fraction loss with no area of its own and none to inherit.
   - A lossless link or a splitter reference with no `area` carries the head of the `MomentumChamberNode` it leaves, at that chamber's area and static density, and reports 0 from any other node. A metered splitter outlet has no pressure row and reports 0.
   - `VortexElement` has no through-flow area: it reports the swirl head 0.5 rho V_theta^2 at the exit radius.
@@ -2729,9 +2719,11 @@ lossless = LosslessConnectionElement("lossless", "node4", "node5")
 # plenum with plain edges to two outlets: equal outlet Pt leaves the split
 # free (an outlet can even run backwards), unequal leaves no solution. Put a
 # flow-dependent loss on each outlet path, or merge the outlets into one
-# boundary. These elements couple the boundary's Pt, never its static P (only
-# a channel, crossflow segment or port discharge loses an exit head there),
-# so a single such link into one boundary is fine.
+# boundary. From a PlenumNode with no area of its own, a lossless link couples
+# the boundary's Pt; with an explicit area or leaving a MomentumChamberNode it
+# honours PressureBoundary.exit_head_lost (#1128), discharging to the boundary's
+# static pressure under coupling="auto"/"static" (set coupling="total" to impose
+# Pt). A single such link into one boundary is fine.
 # A momentum chamber discharging into a PressureBoundary (#637): static
 # coupling (the chamber's static P is the boundary's, its head lost) and,
 # choked, under-expanded at the sonic static pressure of its flux. Inflow and

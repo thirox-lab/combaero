@@ -98,7 +98,7 @@ def _net(
             )
     else:
         g.add_node(MassFlowBoundary("gas_in", m_dot=m_gas, Tt=1500.0, Y=Y_AIR))
-    ex = PressureBoundary("exit")
+    ex = PressureBoundary("exit", coupling="total")
     ex.Pt, ex.Tt, ex.Y = 5e5, 1500.0, Y_AIR
     g.add_node(ex)
     if mixed_supply:

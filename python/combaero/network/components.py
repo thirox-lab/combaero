@@ -3538,6 +3538,86 @@ class NetworkNode(ABC):
 # ---------------------------------------------------------------------------
 
 
+def _node_exit_head_lost(node: Any) -> bool:
+    """True when ``node`` is a boundary declaring exit_head_lost on outflow (#1128)."""
+    return node is not None and hasattr(node, "exit_head_lost") and bool(node.exit_head_lost(True))
+
+
+def _discharge_total_row(
+    elem_id: str,
+    from_node: str,
+    to_node: str,
+    state_in: "NetworkMixtureState",
+    state_out: "NetworkMixtureState",
+    fwd_spec: tuple[float, bool] | None,
+    rev_spec: tuple[float, bool] | None,
+) -> tuple[list[float], dict[int, dict[str, float]]]:
+    """Residual and exact Jacobian of a zero-loss Pt connection that honours
+    ``PressureBoundary.exit_head_lost`` (#1128).
+
+    ``fwd_spec`` / ``rev_spec`` are ``(area, incompressible)`` when discharging
+    into a static-coupled boundary in that direction, or ``None`` for plain
+    ``Pt_in - Pt_out = 0``. Forward and reverse legs blend smoothly through zero
+    flow via ``_flow_blend``.
+    """
+    if fwd_spec is None and rev_spec is None:
+        return [state_in.Pt - state_out.Pt], {0: {f"{from_node}.Pt": 1.0, f"{to_node}.Pt": -1.0}}
+
+    m = float(state_in.m_dot)
+    m_sign = 1.0 if m >= 0.0 else -1.0
+    m_abs = abs(m)
+    w, dw_dm = _flow_blend(m)
+
+    def _leg(
+        spec: tuple[float, bool] | None,
+        forward: bool,
+    ) -> tuple[float, dict[str, float]]:
+        if spec is None:
+            return float(state_in.Pt - state_out.Pt), {
+                f"{from_node}.Pt": 1.0,
+                f"{to_node}.Pt": -1.0,
+            }
+        area, inc = spec
+        up, dn = (state_in, state_out) if forward else (state_out, state_in)
+        up_id, dn_id = (from_node, to_node) if forward else (to_node, from_node)
+        dt = _solver_tools.discharge_total_pressure(
+            float(dn.Pt), float(up.Tt), m_abs / area, list(up.Y), inc
+        )
+        # Forward orientation: Pt_in - Pt_req (fwd) or Pt_req - Pt_out (rev).
+        sgn = 1.0 if forward else -1.0
+        res = sgn * (float(up.Pt) - float(dt.Pt))
+        row: dict[str, float] = {
+            f"{up_id}.Pt": sgn,
+            f"{dn_id}.Pt": -sgn * float(dt.dPt_dP),
+        }
+        dm_term = -sgn * float(dt.dPt_dG) * m_sign / area
+        if dm_term != 0.0:
+            row[f"{elem_id}.m_dot"] = dm_term
+        dtt_term = -sgn * float(dt.dPt_dTt)
+        if dtt_term != 0.0:
+            row[f"{up_id}.Tt"] = dtt_term
+        for k, dy in enumerate(dt.dPt_dY):
+            if dy != 0.0:
+                row[f"{up_id}.Y[{k}]"] = -sgn * float(dy)
+        return res, row
+
+    if w == 1.0:
+        r_f, j_f = _leg(fwd_spec, True)
+        return [r_f], {0: j_f}
+    if w == 0.0:
+        r_r, j_r = _leg(rev_spec, False)
+        return [r_r], {0: j_r}
+    r_f, j_f = _leg(fwd_spec, True)
+    r_r, j_r = _leg(rev_spec, False)
+    out_j: dict[str, float] = {}
+    for k in dict.fromkeys([*j_f, *j_r]):
+        out_j[k] = w * j_f.get(k, 0.0) + (1.0 - w) * j_r.get(k, 0.0)
+    if dw_dm:
+        key = f"{elem_id}.m_dot"
+        out_j[key] = out_j.get(key, 0.0) + dw_dm * (r_f - r_r)
+    return [w * r_f + (1.0 - w) * r_r], {0: out_j}
+
+
 def _exit_head_recovered(
     nodes: tuple[Any, Any],
     state_in: "NetworkMixtureState",
@@ -4598,15 +4678,17 @@ class PressureBoundary(NetworkNode):
         #: impossible ceiling under total coupling, M = 0.752 and comfortable
         #: under static. See issue #360.
         #:
-        #: Only elements that read this flag apply it (``exit_head_lost``):
-        #: ChannelElement (incompressible and Fanno) and PortDischargeElement.
+        #: Elements that read this flag (``exit_head_lost``):
+        #: ChannelElement (incompressible and Fanno), PortDischargeElement,
+        #: PressureLossElement (when it has a velocity area), AreaChangeElement
+        #: (normal and pass-through), LosslessConnectionElement (when it has an
+        #: area or leaves a MomentumChamberNode), and pass-through
+        #: OrificeElement (#1128).
         #: Static-receiving elements (orifices, holes) lose their exit head
-        #: whatever the setting. PressureLossElement, AreaChangeElement and
-        #: LosslessConnectionElement do not read it and recover the head here
-        #: even under ``"static"``, a known inconsistency. A PlenumNode or
-        #: CombustorNode is NOT a static coupling: it is at rest (Pt = P), and
-        #: a channel meeting it recovers its exit head. See "Drive conventions"
-        #: in docs/API_PYTHON.md.
+        #: whatever the setting. A PlenumNode or CombustorNode is NOT a static
+        #: coupling: it is at rest (Pt = P), and a total-receiving element
+        #: meeting it recovers its exit head. See "Drive conventions" in
+        #: docs/API_PYTHON.md.
         self.coupling: str = coupling
 
     def exit_head_lost(self, is_outflow: bool) -> bool:
@@ -5721,11 +5803,32 @@ class OrificeElement(NetworkElement):
         ``_seed_Cd_default`` standing in for the correlation's (#872)."""
         return self.Cd if self.Cd is not None else type(self)._seed_Cd_default
 
+    def _pass_through_exit_head_spec(self, forward: bool) -> tuple[float, bool] | None:
+        """(area, incompressible) when a pass-through orifice (#788, #1016)
+        discharges into a static boundary (#1128), matching
+        ``LosslessConnectionElement._exit_head_spec``."""
+        nodes = getattr(self, "_end_nodes", (None, None))
+        up_node, dn_node = (nodes[0], nodes[1]) if forward else (nodes[1], nodes[0])
+        if not _node_exit_head_lost(dn_node):
+            return None
+        if isinstance(up_node, MomentumChamberNode) and up_node.area and up_node.area > 0.0:
+            return float(up_node.area), getattr(
+                up_node, "regime", "compressible"
+            ) == "incompressible"
+        if self.area and self.area > 0.0:
+            return float(self.area), self.regime == "incompressible"
+        return None
+
     def _seed_resistance(self, rho: float, P_ref: float, m_ref: float) -> float | None:
         """Start guess: m = Cd A sqrt(2 rho dP); a correlation's Cd is
         approximated by ``_seed_Cd_default`` (#872). No orifice (bore ==
-        pipe): no loss."""
+        pipe or chamber): no loss, plus exit dynamic head into a static
+        boundary (#1128)."""
         if self._pass_through:
+            spec = self._pass_through_exit_head_spec(True)
+            if spec is not None:
+                area = spec[0]
+                return 1.0 / (2.0 * rho * area * area)
             return 0.0
         if not self.area:
             return None
@@ -5874,6 +5977,7 @@ class OrificeElement(NetworkElement):
         """The plates' (effusion, film, slot, impingement) check against an
         adjacent momentum chamber (#1016): their resolve_topology skips the
         pipe discovery, so this is the whole of #788's rule for them."""
+        self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
         self._pass_through = False
         self._pass_through_reason = ""
         reason = self._bore_against_chambers(graph)
@@ -5949,6 +6053,7 @@ class OrificeElement(NetworkElement):
     def _resolve_orifice_geometry(self, graph: "FlowNetwork") -> None:
         """Pipe discovery, beta, recovery and the Cd geometry (#554, #645,
         #788, #1016)."""
+        self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
         self._to_node_obj = graph.nodes.get(self.to_node)
         self._to_side_closed = self._side_is_closed(graph, self.to_node)
         if self.closed:
@@ -6211,12 +6316,18 @@ class OrificeElement(NetworkElement):
             return [float(state_in.m_dot)], {0: {f"{self.id}.m_dot": 1.0}}
 
         if self._pass_through:
-            # Bore == pipe (#788): no orifice. Zero loss, the flow passes
-            # unchanged; its rate is the network's. Exact and linear, so
-            # the Jacobian is the constant +-1 of a lossless connection.
-            return [state_in.Pt - state_out.Pt], {
-                0: {f"{self.from_node}.Pt": 1.0, f"{self.to_node}.Pt": -1.0}
-            }
+            # Bore == pipe (#788) or bore == chamber (#1016): no orifice.
+            # Zero loss, honouring PressureBoundary.exit_head_lost (#1128)
+            # identically to LosslessConnectionElement.
+            return _discharge_total_row(
+                self.id,
+                self.from_node,
+                self.to_node,
+                state_in,
+                state_out,
+                self._pass_through_exit_head_spec(True),
+                self._pass_through_exit_head_spec(False),
+            )
 
         m_dot = state_in.m_dot
         effective_cd = self._effective_Cd(state_in, state_out, flows)
@@ -9880,13 +9991,31 @@ class LosslessConnectionElement(NetworkElement):
         self.area: float | None = None
         self.diameter: float | None = None
 
+    def _exit_head_spec(self, forward: bool) -> tuple[float, bool] | None:
+        """(area, incompressible) when discharging into a static boundary (#1128)."""
+        nodes = getattr(self, "_end_nodes", (None, None))
+        up_node, dn_node = (nodes[0], nodes[1]) if forward else (nodes[1], nodes[0])
+        if not _node_exit_head_lost(dn_node):
+            return None
+        if self.area and self.area > 0.0:
+            return float(self.area), False
+        if isinstance(up_node, MomentumChamberNode) and up_node.area and up_node.area > 0.0:
+            return float(up_node.area), getattr(
+                up_node, "regime", "compressible"
+            ) == "incompressible"
+        return None
+
     def _seed_resistance(self, rho: float, P_ref: float, m_ref: float) -> float | None:
-        """Start guess: no loss; zero, which the seed raises to a small
-        fraction of the network's smallest resistance."""
+        """Start guess: exit dynamic head when discharging to a static boundary,
+        else zero (no loss)."""
+        spec = self._exit_head_spec(True)
+        if spec is not None:
+            area = spec[0]
+            return 1.0 / (2.0 * rho * area * area)
         return 0.0
 
     def resolve_topology(self, graph: "FlowNetwork") -> None:
-        # No geometry needed; the end nodes are for exit_head_recovered.
+        # End nodes for exit_head_lost (#1128) and exit_head_recovered.
         self._end_nodes = (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
 
     def unknowns(self) -> list[str]:
@@ -9895,10 +10024,15 @@ class LosslessConnectionElement(NetworkElement):
     def residuals(
         self, state_in: NetworkMixtureState, state_out: NetworkMixtureState
     ) -> tuple[list[float], dict[int, dict[str, float]]]:
-        # Residual: Pt_in - Pt_out = 0
-        res = [state_in.Pt - state_out.Pt]
-        jac = {0: {f"{self.from_node}.Pt": 1.0, f"{self.to_node}.Pt": -1.0}}
-        return res, jac
+        return _discharge_total_row(
+            self.id,
+            self.from_node,
+            self.to_node,
+            state_in,
+            state_out,
+            self._exit_head_spec(True),
+            self._exit_head_spec(False),
+        )
 
     def get_spatial_profile(self, n_steps: int = 100):
         """
@@ -9936,16 +10070,22 @@ class LosslessConnectionElement(NetworkElement):
         mach_in = v_in / cs_in.thermo.a if cs_in.thermo.a > 0 and v_in > 0 else 0.0
 
         nodes = getattr(self, "_end_nodes", (None, None))
+        head_lost = self._exit_head_spec(float(state_in.m_dot) >= 0.0) is not None
         return {
             "m_dot": float(state_in.m_dot),
             **_element_pressure_block(state_in, state_out, mach_in=mach_in, mach_out=mach_in),
             **ref,
-            # Info only: with no area of its own the link carries the head of
-            # the momentum chamber it leaves (0 from any other node).
+            # Info only: 0 when exit_head_lost applies; otherwise with no area
+            # of its own the link carries the head of the momentum chamber it
+            # leaves (0 from any other node).
             "exit_head_recovered": (
-                _exit_head_recovered(nodes, state_in, state_out, self.area)
-                if self.area
-                else _source_chamber_head(nodes, state_in, state_out)
+                0.0
+                if head_lost
+                else (
+                    _exit_head_recovered(nodes, state_in, state_out, self.area)
+                    if self.area
+                    else _source_chamber_head(nodes, state_in, state_out)
+                )
             ),
         }
 
@@ -10639,20 +10779,36 @@ class PressureLossElement(NetworkElement):
     def unknowns(self) -> list[str]:
         return [f"{self.id}.m_dot"]
 
+    def _exit_head_area(self) -> float | None:
+        """Velocity reference area for exit_head_lost / exit_head_recovered:
+        user or inherited area, else the correlation's own; None when on the
+        DEFAULT_CHAMBER_AREA placeholder (fraction loss with no area)."""
+        area = None if self._area_source == "default" else self.area
+        area = area or getattr(self.correlation, "area", None)
+        return float(area) if (area is not None and area > 0.0) else None
+
     def _seed_resistance(self, rho: float, P_ref: float, m_ref: float) -> float | None:
         """Start guess from the shipped correlations: a fraction loss xi P at
         its design flow (or the reference flow), a head loss zeta q at its
-        area. Any other callable: no estimate."""
+        area, plus the exit dynamic head when discharging into a static boundary."""
         c = self.correlation
+        base: float | None = None
         xi = getattr(c, "xi", getattr(c, "xi0", None))
         if xi is not None:
             m = getattr(c, "m_ref", None) or m_ref
-            return float(xi) * P_ref / (m * m)
-        zeta = getattr(c, "zeta", getattr(c, "zeta0", None))
-        area = getattr(c, "area", None)
-        if zeta is not None and area:
-            return float(zeta) / (2.0 * rho * area * area)
-        return None
+            base = float(xi) * P_ref / (m * m)
+        else:
+            zeta = getattr(c, "zeta", getattr(c, "zeta0", None))
+            area = getattr(c, "area", None)
+            if zeta is not None and area:
+                base = float(zeta) / (2.0 * rho * area * area)
+        graph = getattr(self, "_graph_ref", None)
+        to_node = graph.nodes.get(self.to_node) if graph is not None else None
+        exit_area = self._exit_head_area() if _node_exit_head_lost(to_node) else None
+        if exit_area is not None:
+            q_k = 1.0 / (2.0 * rho * exit_area * exit_area)
+            return q_k if base is None else base + q_k
+        return base
 
     def _seed_fraction(self) -> tuple[float, float | None] | None:
         """(xi, m_ref) of a shipped fraction correlation, for the cold start's
@@ -10849,13 +11005,37 @@ class PressureLossElement(NetworkElement):
             raise RuntimeError(
                 f"PressureLossElement '{self.id}' correlation raised: {exc}"
             ) from exc
-        # Pt_dn - Pt_up * (1 - xi) = 0, in the direction the flow runs.
-        res = dn.Pt - up.Pt * (1.0 - xi)
+        # Pt_exit_req - Pt_up * (1 - xi) = 0, in the direction the flow runs.
+        # At an outflow PressureBoundary declaring exit_head_lost (#1128) and
+        # with a velocity area, Pt_exit_req is the exit stagnation pressure at
+        # static pressure dn.Pt (C1 across sonic choke); otherwise dn.Pt.
+        dn_node = graph.nodes.get(dn_id) if graph is not None else None
+        exit_area = self._exit_head_area() if _node_exit_head_lost(dn_node) else None
+        dt = None
+        if exit_area is not None:
+            dt = _solver_tools.discharge_total_pressure(
+                float(dn.Pt), float(up.Tt), abs(float(m_dot)) / exit_area, list(up.Y), False
+            )
+            res = float(dt.Pt) - up.Pt * (1.0 - xi)
+        else:
+            res = dn.Pt - up.Pt * (1.0 - xi)
         m_sign = 1.0 if m_dot >= 0.0 else -1.0
 
         def row() -> dict[str, float]:
             return self._jacobian(
-                up, graph, T_in, T_ad, xi, dxi_dtheta, up_id, dn_id, m_sign, partials, ctx
+                up,
+                graph,
+                T_in,
+                T_ad,
+                xi,
+                dxi_dtheta,
+                up_id,
+                dn_id,
+                m_sign,
+                partials,
+                ctx,
+                dt,
+                exit_area,
             )[0]
 
         return res, row
@@ -10909,23 +11089,37 @@ class PressureLossElement(NetworkElement):
         m_sign: float,
         partials: Any,
         ctx: SimpleNamespace | None,
+        dt: Any = None,
+        exit_area: float | None = None,
     ) -> dict[int, dict[str, float]]:
-        """d(Pt_dn - Pt_up (1 - xi))/dx with ``state_in`` the flow-upstream
+        """d(Pt_exit_req - Pt_up (1 - xi))/dx with ``state_in`` the flow-upstream
         node's state; the correlation saw ``|m_dot|``, so its m column carries
         the flow's sign. ``partials`` is a built-in model's composed result
         (analytic); without it ``ctx`` is the user callable's context, and its
-        other dependences are differenced."""
+        other dependences are differenced. When ``dt`` is set (#1128),
+        Pt_exit_req is the exit total pressure at static boundary dn.Pt."""
         jac: dict[int, dict[str, float]] = {
             0: {
                 f"{up_id}.Pt": -(1.0 - xi),
-                f"{dn_id}.Pt": 1.0,
+                f"{dn_id}.Pt": float(dt.dPt_dP) if dt is not None else 1.0,
             }
         }
+        if dt is not None and exit_area is not None:
+            dm_dt = float(dt.dPt_dG) * m_sign / exit_area
+            if dm_dt != 0.0:
+                jac[0][f"{self.id}.m_dot"] = dm_dt
+            dtt_dt = float(dt.dPt_dTt)
+            if dtt_dt != 0.0:
+                jac[0][f"{up_id}.Tt"] = dtt_dt
+            for k, dy in enumerate(dt.dPt_dY):
+                if dy != 0.0:
+                    jac[0][f"{up_id}.Y[{k}]"] = float(dy)
 
         # ----- Analytical theta Jacobian (linear-theta correlations) -----
         # d_res/d_T_burned = -Pt_in * dxi_dtheta / Tt_in.
         if self._theta_source_resolved is not None and dxi_dtheta != 0.0 and T_in > 0:
-            jac[0][f"{self._theta_source_resolved}.Tt"] = state_in.Pt * dxi_dtheta / T_in
+            key = f"{self._theta_source_resolved}.Tt"
+            jac[0][key] = jac[0].get(key, 0.0) + state_in.Pt * dxi_dtheta / T_in
 
         # ----- The other dependences: m_dot, Pt_in, Tt_in, composition. A
         # built-in model returns them analytically from C++
@@ -10955,7 +11149,8 @@ class PressureLossElement(NetworkElement):
         m_abs = ctx.mdot_total if ctx is not None else 0.0
         dxi_dmdot = _dxi_dvar("mdot_total", m_abs, 1e-6)
         if dxi_dmdot != 0.0:
-            jac[0][f"{self.id}.m_dot"] = state_in.Pt * dxi_dmdot * m_sign
+            key = f"{self.id}.m_dot"
+            jac[0][key] = jac[0].get(key, 0.0) + state_in.Pt * dxi_dmdot * m_sign
 
         dxi_dPt_in = _dxi_dvar("Pt_in", float(state_in.Pt), 1.0)
         if dxi_dPt_in != 0.0:
@@ -10968,7 +11163,8 @@ class PressureLossElement(NetworkElement):
             # Emit a relay-routable Tt Jacobian on the upstream node.
             dxi_dTt_in = _dxi_dvar("Tt_in", T_in, 0.01)
             if dxi_dTt_in != 0.0:
-                jac[0][f"{up_id}.Tt"] = state_in.Pt * dxi_dTt_in
+                key = f"{up_id}.Tt"
+                jac[0][key] = jac[0].get(key, 0.0) + state_in.Pt * dxi_dTt_in
         elif graph is not None and T_in > 0:
             self._add_unburned_jacobian(
                 jac[0], graph, T_in, T_ad, state_in.Pt, dxi_dtheta, _dxi_dvar
@@ -10982,7 +11178,8 @@ class PressureLossElement(NetworkElement):
         if partials is not None:
             for k, d in enumerate(partials.dxi_dY):
                 if d != 0.0 and Y_in[k] > 0.0:
-                    jac[0][f"{up_id}.Y[{k}]"] = state_in.Pt * d
+                    key = f"{up_id}.Y[{k}]"
+                    jac[0][key] = jac[0].get(key, 0.0) + state_in.Pt * d
             return jac
         assert ctx is not None
         X_saved = ctx.X_in
@@ -11003,7 +11200,8 @@ class PressureLossElement(NetworkElement):
                     xi_pm.append(self.correlation(ctx)[0])
                 d = (xi_pm[0] - xi_pm[1]) / ((signs[0] - signs[1]) * h)
                 if d != 0.0:
-                    jac[0][f"{up_id}.Y[{k}]"] = state_in.Pt * d
+                    key = f"{up_id}.Y[{k}]"
+                    jac[0][key] = jac[0].get(key, 0.0) + state_in.Pt * d
         finally:
             ctx.X_in = X_saved
 
@@ -11066,18 +11264,18 @@ class PressureLossElement(NetworkElement):
         self, graph: Any, state_in: NetworkMixtureState, state_out: NetworkMixtureState
     ) -> float:
         """The exit head a node at rest recovers (``exit_head_recovered``,
-        information only). The loss is Pt to Pt and reads no boundary's
-        ``exit_head_lost``, so an outflow boundary recovers it too. Its
-        velocity reference is a given or inherited area, else the
-        correlation's own; a loss on the DEFAULT_CHAMBER_AREA placeholder (a
-        fraction loss with no neighbour to inherit from) has none: 0."""
-        area = None if self._area_source == "default" else self.area
-        area = area or getattr(self.correlation, "area", None)
+        information only). 0 when discharging into a PressureBoundary declaring
+        ``exit_head_lost`` (#1128), or when on the DEFAULT_CHAMBER_AREA
+        placeholder (a fraction loss with no velocity reference)."""
+        area = self._exit_head_area()
         nodes = (
             (graph.nodes.get(self.from_node), graph.nodes.get(self.to_node))
             if graph is not None
             else (None, None)
         )
+        dn_node = nodes[1] if float(state_in.m_dot) >= 0.0 else nodes[0]
+        if area is not None and _node_exit_head_lost(dn_node):
+            return 0.0
         return _exit_head_recovered(nodes, state_in, state_out, area)
 
     def diagnostics(
@@ -13647,15 +13845,22 @@ class AreaChangeElement(NetworkElement):
         there is no area change (#1023). Must change with the residual."""
         return "p" if self._pass_through else "mdot"
 
+    def _exit_head_lost(self, forward: bool) -> bool:
+        """Whether the exit dynamic head is lost at the receiving boundary (#1128)."""
+        nodes = getattr(self, "_end_nodes", (None, None))
+        return _node_exit_head_lost(nodes[1] if forward else nodes[0])
+
     def _seed_resistance(self, rho: float, P_ref: float, m_ref: float) -> float | None:
-        """Start guess: a Borda-Carnot head at the smaller area; none for
-        equal faces (no area change, #1023)."""
+        """Start guess: a Borda-Carnot head at the smaller area, plus exit
+        dynamic head when discharging to a static boundary (#1128)."""
         if not self.F0 or not self.F1:
             return None
+        lost = self._exit_head_lost(True)
         if self._pass_through:
-            return 0.0
+            return (1.0 / (2.0 * rho * self.F1 * self.F1)) if lost else 0.0
         a, b = sorted((self.F0, self.F1))
-        return (1.0 - a / b) ** 2 / (2.0 * rho * a * a)
+        zeta = (1.0 - a / b) ** 2 + ((a / self.F1) ** 2 if lost else 0.0)
+        return zeta / (2.0 * rho * a * a)
 
     def n_equations(self) -> int:
         return 1
@@ -13722,18 +13927,29 @@ class AreaChangeElement(NetworkElement):
             float(self.D_h or 0.0),
             self.regime == "incompressible",
             derivatives,
+            self._exit_head_lost(True),
+            self._exit_head_lost(False),
         )
 
     def residuals(
         self, state_in: NetworkMixtureState, state_out: NetworkMixtureState
     ) -> tuple[list[float], LazyJacobian]:
         if self._pass_through:
-            # Equal faces (#1023): no area change. Zero loss, the flow passes
-            # unchanged; its rate is the network's. Exact and linear, so the
-            # Jacobian is the constant +-1 of a lossless connection.
-            return [state_in.Pt - state_out.Pt], LazyJacobian(
-                lambda: {0: {f"{self.from_node}.Pt": 1.0, f"{self.to_node}.Pt": -1.0}}
+            # Equal faces (#1023): no area change loss; honours exit_head_lost
+            # at a static-coupled boundary (#1128).
+            inc = self.regime == "incompressible"
+            fwd_spec = (float(self.F1), inc) if self._exit_head_lost(True) else None
+            rev_spec = (float(self.F0), inc) if self._exit_head_lost(False) else None
+            res, jac = _discharge_total_row(
+                self.id,
+                self.from_node,
+                self.to_node,
+                state_in,
+                state_out,
+                fwd_spec,
+                rev_spec,
             )
+            return res, LazyJacobian(lambda: jac)
         # The loss couples stagnation to stagnation, as ChannelElement does
         # (#175, #541): for a plenum or boundary downstream Pt == P.
         m_calc = float(self._flow(state_in, state_out, derivatives=False).m_dot)
@@ -13816,13 +14032,18 @@ class AreaChangeElement(NetworkElement):
             "F1": f1,
             "F0_source": self._F0_source,
             "F1_source": self._F1_source,
-            # The head at the exit face a node at rest recovers (info only).
-            "exit_head_recovered": _exit_head_recovered(
-                getattr(self, "_end_nodes", (None, None)),
-                state_in,
-                state_out,
-                F_out,
-                incompressible=self.regime == "incompressible",
+            # The head at the exit face a node at rest recovers (info only;
+            # 0 when exit_head_lost applies at the receiving boundary, #1128).
+            "exit_head_recovered": (
+                0.0
+                if self._exit_head_lost(m_dot >= 0.0)
+                else _exit_head_recovered(
+                    getattr(self, "_end_nodes", (None, None)),
+                    state_in,
+                    state_out,
+                    F_out,
+                    incompressible=self.regime == "incompressible",
+                )
             ),
         }
 
@@ -13859,12 +14080,16 @@ class AreaChangeElement(NetworkElement):
             "F1": f1,
             "F0_source": self._F0_source,
             "F1_source": self._F1_source,
-            "exit_head_recovered": _exit_head_recovered(
-                getattr(self, "_end_nodes", (None, None)),
-                state_in,
-                state_out,
-                area,
-                incompressible=self.regime == "incompressible",
+            "exit_head_recovered": (
+                0.0
+                if self._exit_head_lost(m_dot >= 0.0)
+                else _exit_head_recovered(
+                    getattr(self, "_end_nodes", (None, None)),
+                    state_in,
+                    state_out,
+                    area,
+                    incompressible=self.regime == "incompressible",
+                )
             ),
         }
 

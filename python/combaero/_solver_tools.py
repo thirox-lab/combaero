@@ -62,6 +62,7 @@ orifice_mdot_and_jacobian = _core.orifice_mdot_and_jacobian
 orifice_residuals_and_jacobian = _core.orifice_residuals_and_jacobian
 orifice_tap_pressure_and_jacobian = _core.orifice_tap_pressure_and_jacobian
 approach_static_pressure = _core.approach_static_pressure
+discharge_total_pressure = _core.discharge_total_pressure
 sonic_static_pressure = _core.sonic_static_pressure
 pressure_loss_and_jacobian = _core.pressure_loss_and_jacobian
 viscosity_and_jacobians = _core.viscosity_and_jacobians
@@ -118,6 +119,7 @@ __all__ = [
     "orifice_residuals_and_jacobian",
     "orifice_tap_pressure_and_jacobian",
     "approach_static_pressure",
+    "discharge_total_pressure",
     "sonic_static_pressure",
     "pressure_loss_and_jacobian",
     "viscosity_and_jacobians",

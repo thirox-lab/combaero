@@ -259,9 +259,9 @@ def test_a_legacy_merging_tee_into_a_momentum_chamber_converges(case: tuple) -> 
 
     Pis, Pib, Po, Tis, Tib, To, F_C, psi = case
     g = FlowNetwork()
-    g.add_node(PressureBoundary("is", Pt=Pis, Tt=Tis, Y=AIR))
-    g.add_node(PressureBoundary("ib", Pt=Pib, Tt=Tib, Y=AIR))
-    g.add_node(PressureBoundary("o", Pt=Po, Tt=To, Y=AIR))
+    g.add_node(PressureBoundary("is", Pt=Pis, Tt=Tis, Y=AIR, coupling="total"))
+    g.add_node(PressureBoundary("ib", Pt=Pib, Tt=Tib, Y=AIR, coupling="total"))
+    g.add_node(PressureBoundary("o", Pt=Po, Tt=To, Y=AIR, coupling="total"))
     g.add_node(MomentumChamberNode("ps", area=F_C))
     g.add_node(MomentumChamberNode("pb", area=F_C / psi))
     g.add_node(MomentumChamberNode("pc", area=F_C))

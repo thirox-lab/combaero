@@ -895,6 +895,9 @@ inline constexpr Entry function_units[] = {
     {"approach_static_pressure",
      "Pt: Pa, Tt: K, G: kg/(m^2*s), Y: kg/kg, incompressible: bool",
      "ApproachStatic"},
+    {"discharge_total_pressure",
+     "P_static: Pa, Tt: K, G: kg/(m^2*s), Y: kg/kg, incompressible: bool",
+     "DischargeTotal"},
     {"orifice_tap_pressure_and_jacobian",
      "P_static_up: Pa, P_total_up: Pa, P_total_down: Pa, beta: -, C: -, "
      "compressible: bool",
@@ -930,13 +933,15 @@ inline constexpr Entry function_units[] = {
      "choked: bool)"},
     {"area_change_flow",
      "Pt0: Pa, Tt0: K, Y: -, Pt_target: Pa, F_in: m^2, F_out: m^2, model: -, "
-     "length: m, D_h: m, incompressible: bool, with_derivatives: bool",
+     "length: m, D_h: m, incompressible: bool, with_derivatives: bool, "
+     "exit_head_lost: bool",
      "AreaChangeFlow (m_dot: kg/s, choked: bool, mach: -, Re: -, zeta: -, "
      "dm_dPt0: kg/(s*Pa), dm_dTt0: kg/(s*K), dm_dPt_target: kg/(s*Pa), "
      "dm_dY: kg/s)"},
     {"area_change_element_flow",
      "Pt_a: Pa, Tt_a: K, Y_a: -, Pt_b: Pa, Tt_b: K, Y_b: -, F_a: m^2, F_b: m^2, "
-     "model: -, length: m, D_h: m, incompressible: bool, with_derivatives: bool",
+     "model: -, length: m, D_h: m, incompressible: bool, with_derivatives: bool, "
+     "exit_head_lost_b: bool, exit_head_lost_a: bool",
      "AreaChangeElementFlow (m_dot: kg/s, choked: bool, mach: -, Re: -, zeta: -, "
      "dm_dPt_a: kg/(s*Pa), dm_dTt_a: kg/(s*K), dm_dPt_b: kg/(s*Pa), "
      "dm_dTt_b: kg/(s*K), dm_dY_a: kg/s, dm_dY_b: kg/s)"},
@@ -2139,6 +2144,12 @@ inline constexpr Entry function_units[] = {
     {"ApproachStatic::dP_dG", "-", "Pa/(kg/(m^2*s))"},
     {"ApproachStatic::dP_dY", "-", "Pa"},
     {"ApproachStatic::choked", "-", "- (bool)"},
+    {"DischargeTotal::Pt", "-", "Pa"},
+    {"DischargeTotal::dPt_dP", "-", "-"},
+    {"DischargeTotal::dPt_dTt", "-", "Pa/K"},
+    {"DischargeTotal::dPt_dG", "-", "Pa/(kg/(m^2*s))"},
+    {"DischargeTotal::dPt_dY", "-", "Pa"},
+    {"DischargeTotal::choked", "-", "- (bool)"},
     {"OrificeTapPressure::p_tap", "-", "Pa"},
     {"OrificeTapPressure::loss_ratio", "-", "-"},
     {"OrificeTapPressure::d_dP_static_up", "-", "-"},

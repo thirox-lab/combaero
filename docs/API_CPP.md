@@ -1060,10 +1060,12 @@ struct AreaChangeFlow {
 AreaChangeFlow area_change_flow(double Pt0, double Tt0, const std::vector<double>& Y,
                                 double Pt_target, double F_in, double F_out,
                                 const std::string& model, double length, double D_h,
-                                bool incompressible, bool with_derivatives = true);
+                                bool incompressible, bool with_derivatives = true,
+                                bool exit_head_lost = false);
 
 // The network element's flow from node a (face F_a) to node b: each direction
 // fed from its own upstream node, the two blended C1 through zero drive.
+// exit_head_lost_b / exit_head_lost_a apply static exit coupling (#1128).
 struct AreaChangeElementFlow {
     double m_dot; bool choked; double mach, Re, zeta;
     double dm_dPt_a, dm_dTt_a, dm_dPt_b, dm_dTt_b;
@@ -1073,7 +1075,8 @@ AreaChangeElementFlow area_change_element_flow(
     double Pt_a, double Tt_a, const std::vector<double>& Y_a,
     double Pt_b, double Tt_b, const std::vector<double>& Y_b,
     double F_a, double F_b, const std::string& model, double length, double D_h,
-    bool incompressible, bool with_derivatives = true);
+    bool incompressible, bool with_derivatives = true,
+    bool exit_head_lost_b = false, bool exit_head_lost_a = false);
 
 // Incompressible kernels at a given density (standalone): dP and its partials.
 struct AreaChangeResult { double dP, dS_dm, dS_drho, dS_dmu; };
@@ -2718,6 +2721,15 @@ SonicStatic sonic_static_pressure(double Tt, double G, const std::vector<double>
 ApproachStatic approach_static_pressure(double Pt, double Tt, double G,
                                         const std::vector<double>& Y,
                                         bool incompressible);
+
+// Exit stagnation pressure Pt_exit of a stream at (Tt, G, Y) discharging into
+// static pressure P_static (#1128). Subsonic: chamber_static_state at P_static.
+// Choked (P_static < P*): sonic Pt*(Tt, G, X), C1 across M = 1 by the envelope
+// theorem. Incompressible: Pt = P_static + G^2 R Tt / (2 P_static). All
+// derivatives analytic.
+DischargeTotal discharge_total_pressure(double P_static, double Tt, double G,
+                                        const std::vector<double>& Y,
+                                        bool incompressible = false);
 
 // An orifice between pipes (#645): the tap pressure the kernels expand to,
 // from the recovered (stagnation) drop between the two pipes' nodes,

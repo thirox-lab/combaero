@@ -66,7 +66,10 @@ def _net(
     n.add_node(MassFlowBoundary("fuel", m_dot=1.0, Tt=300.0, Y=Y_CH4))
     n.add_node(PlenumNode("pl"))
     n.add_node(CombustorNode("cmb"))
-    n.add_node(PressureBoundary("out", Pt=exit_Pt, Tt=300.0, Y=Y_AIR))
+    # Pass-through bore tests (#788) impose Pt = exit_Pt at the junction;
+    # coupling="total" preserves that Pt-imposing boundary semantics (#1128).
+    out_coupling = "total" if bore is not None else "auto"
+    n.add_node(PressureBoundary("out", Pt=exit_Pt, Tt=300.0, Y=Y_AIR, coupling=out_coupling))
     n.add_element(LosslessConnectionElement("ea", "air", "pl"))
     n.add_element(OrificeElement("of", "fuel", "pl", Cd=0.6, diameter=0.02, correlation="fixed"))
     n.add_element(LosslessConnectionElement("ep", "pl", "cmb"))

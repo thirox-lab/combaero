@@ -204,7 +204,8 @@ struct AreaChangeFlow {
 AreaChangeFlow area_change_flow(double Pt0, double Tt0, const std::vector<double>& Y,
                                 double Pt_target, double F_in, double F_out,
                                 const std::string& model, double length, double D_h,
-                                bool incompressible, bool with_derivatives = true);
+                                bool incompressible, bool with_derivatives = true,
+                                bool exit_head_lost = false);
 
 // The network element's flow between its two nodes a (F_a, the from side) and
 // b (F_b): m_dot > 0 from a to b. Each direction is area_change_flow fed from
@@ -215,6 +216,8 @@ AreaChangeFlow area_change_flow(double Pt0, double Tt0, const std::vector<double
 // different closures (an expansion one way, a contraction the other). Past
 // 30 floors of drive only the upwind branch is evaluated (w is 0 or 1 to
 // 1e-13). The diagnostics (choked, mach, Re, zeta) are the upwind branch's.
+// exit_head_lost_b / exit_head_lost_a apply static-pressure exit coupling
+// (#1128) on the a -> b and b -> a branches respectively.
 struct AreaChangeElementFlow {
     double m_dot = 0.0;
     bool choked = false;
@@ -232,7 +235,8 @@ AreaChangeElementFlow area_change_element_flow(
     double Pt_a, double Tt_a, const std::vector<double>& Y_a,
     double Pt_b, double Tt_b, const std::vector<double>& Y_b,
     double F_a, double F_b, const std::string& model, double length, double D_h,
-    bool incompressible, bool with_derivatives = true);
+    bool incompressible, bool with_derivatives = true,
+    bool exit_head_lost_b = false, bool exit_head_lost_a = false);
 
 // -----------------------------------------------------------------------------
 // Incompressible kernels at a given density (standalone use)

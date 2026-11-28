@@ -29,11 +29,19 @@ constexpr double kEps = 1e-12;
 
 inline double sqrt_(double a) { return std::sqrt(a); }
 inline double exp_(double a) { return std::exp(a); }
+inline double log_(double a) { return std::log(a); }
 inline double log1p_(double a) { return std::log1p(a); }
 inline double expm1_(double a) { return std::expm1(a); }
 
 template <int N> DualN<N> sqrt_(const DualN<N>& a) { return solver::dsqrt(a); }
 template <int N> DualN<N> exp_(const DualN<N>& a) { return solver::dexp(a); }
+template <int N> DualN<N> log_(const DualN<N>& a) {
+    DualN<N> r;
+    r.v = std::log(a.v);
+    const double c = 1.0 / a.v;
+    for (int i = 0; i < N; ++i) r.d[i] = c * a.d[i];
+    return r;
+}
 template <int N> DualN<N> log1p_(const DualN<N>& a) {
     DualN<N> r;
     r.v = std::log1p(a.v);
@@ -245,12 +253,15 @@ ZetaAndSlope table_ratio(LowRe t, double Re, double n) {
     return {r.R, r.dR};
 }
 
-// The incompressible loss's exponent in Re, e = d ln(zeta Re^2) / d ln Re,
-// and de/dRe: the flow then goes as drive^(1/e).
-std::pair<double, double> table_exponent(LowRe t, double Re, double n) {
+// The incompressible drive's exponent in Re, e = d ln((R + offset) Re^2) / d ln Re,
+// and de/dRe: the flow then goes as drive^(1/e). offset is 0 for total-to-total
+// and r_exit^2 / zeta_inc when exit_head_lost adds the exit dynamic head (#1128).
+std::pair<double, double> table_exponent(LowRe t, double Re, double n,
+                                         double offset_over_zeta_inc = 0.0) {
     const Ratio r = table_ratio3(t, Re, n);
-    const double e = 2.0 + Re * r.dR / r.R;
-    const double de = r.dR / r.R + Re * r.d2R / r.R - Re * r.dR * r.dR / (r.R * r.R);
+    const double c = r.R + offset_over_zeta_inc;
+    const double e = 2.0 + Re * r.dR / c;
+    const double de = r.dR / c + Re * r.d2R / c - Re * r.dR * r.dR / (c * c);
     return {e, de};
 }
 
@@ -379,19 +390,21 @@ struct Branch {
     bool expansion = true;
     bool sharp = true;
     bool low_re = false; // sharp: the low-Re table's ratio (4-1 or 3-10)
+    bool exit_head_lost = false; // static-pressure exit coupling (#1128)
     LowRe table = LowRe::Expansion;
     double n = 1.0;      // small / large
     double step = 1.0;   // area ratio of the Borda-Carnot step: n, or Cc
     double Cc = 1.0;     // contraction: vena contracta over the small section
     double phi = 1.0;    // conical expansion: 5-2's ratio to Borda-Carnot
     double zeta_inc = 0.0;  // incompressible high-Re zeta (the low-Re table closes on it)
+    double r_exit = 0.0;    // F_small / F_out (n for expansion, 1 for contraction)
     double F_small = 0.0;
     double D = 0.0;      // Re length
-    double floor = 0.0;  // drive floor [Pa]: zeta_inc times AREA_CHANGE_HEAD_FLOOR
+    double floor = 0.0;  // drive floor [Pa]: (zeta_inc + exit_head) * AREA_CHANGE_HEAD_FLOOR
 };
 
 Branch make_branch(double F_in, double F_out, const std::string& model, double length,
-                   double D_h) {
+                   double D_h, bool exit_head_lost = false) {
     if (!validation::is_finite_positive(F_in) || !validation::is_finite_positive(F_out)) {
         throw std::invalid_argument("area_change: areas must be positive and finite");
     }
@@ -414,6 +427,8 @@ Branch make_branch(double F_in, double F_out, const std::string& model, double l
     b.expansion = F_in < F_out;
     b.sharp = model == "sharp";
     b.low_re = b.sharp;
+    b.exit_head_lost = exit_head_lost;
+    b.r_exit = b.expansion ? b.n : 1.0;
     b.table = b.expansion ? LowRe::Expansion : LowRe::Contraction;
     b.D = (D_h > 0.0) ? D_h : std::sqrt(4.0 * b.F_small / M_PI);
     if (b.expansion) {
@@ -442,7 +457,8 @@ Branch make_branch(double F_in, double F_out, const std::string& model, double l
         b.Cc = 1.0 / (1.0 + std::sqrt(b.zeta_inc));
         b.step = b.Cc;
     }
-    b.floor = b.zeta_inc * AREA_CHANGE_HEAD_FLOOR;
+    const double zeta_drive = b.zeta_inc + (b.exit_head_lost ? b.r_exit * b.r_exit : 0.0);
+    b.floor = zeta_drive * AREA_CHANGE_HEAD_FLOOR;
     return b;
 }
 
@@ -497,23 +513,79 @@ template <int N> DualN<N> mu_at(const DualN<N>& T, const Gas& gas) {
 }
 
 template <class S> struct EvalT {
-    S loss;     // Pt0 - Pt_out [Pa]
-    S G_small;  // mass flux at the small section
-    S Re;       // small section (sharp expansion; else 0)
+    S loss;         // matched drive: Pt0 - Pt_out (or Pt0 - P_exit if exit_head_lost) [Pa]
+    S exit_margin;  // Phi_max(g) * pi_exit - b.step * Phi_1 (exit choke margin, >= 0)
+    S G_small;      // mass flux at the small section
+    S Re;           // small section (sharp expansion/contraction; else 0)
+    double dPt_loss = 0.0; // step's own stagnation loss Pt0 - Pt_exit [Pa]
     double q_small = 0.0;  // static dynamic head at the small section
     double mach = 0.0;     // at the closure's station
 };
+
+// Solve subsonic exit Mach Me in [0, 1) from dimensionless isentropic mass
+// flux Phi(Me, g) = Me * (1 + (g - 1)/2 Me^2)^(-(g + 1)/(2 (g - 1))) = phi_target.
+double solve_exit_mach(double phi_target, double g, double M_guess) {
+    if (!(phi_target > 0.0)) {
+        return 0.0;
+    }
+    double lo = 0.0;
+    double hi = 1.0;
+    double M = std::clamp(M_guess, 1e-15, 1.0 - 1e-12);
+    const double exp_pow = -(g + 1.0) / (2.0 * (g - 1.0));
+    for (int it = 0; it < inner_solve::kAreaChangeMaxIter; ++it) {
+        const double x = 0.5 * (g - 1.0) * M * M;
+        const double base = std::exp(exp_pow * std::log1p(x));
+        const double f = M * base - phi_target;
+        if (f > 0.0) {
+            hi = M;
+        } else {
+            lo = M;
+        }
+        const double fp = base * (1.0 - M * M) / (1.0 + x);
+        double M_new = (fp > 0.0) ? M - f / fp : 0.5 * (lo + hi);
+        if (!(M_new > lo && M_new < hi)) {
+            M_new = 0.5 * (lo + hi);
+        }
+        if (std::abs(M_new - M) <= 1e-15 * std::max(1.0, M) || hi - lo <= 1e-15) {
+            return M_new;
+        }
+        M = M_new;
+    }
+    return M;
+}
+
+inline double lift_exit_mach(double Me_v, double phi_e, double g) {
+    (void)phi_e;
+    (void)g;
+    return Me_v;
+}
+
+template <int N>
+DualN<N> lift_exit_mach(double Me_v, const DualN<N>& phi_e, const DualN<N>& g) {
+    const DualN<N> x = 0.5 * (g - 1.0) * (Me_v * Me_v);
+    const DualN<N> base = exp_(-(g + 1.0) / (2.0 * (g - 1.0)) * log1p_(x));
+    const DualN<N> phi_fixed = Me_v * base;
+    const double dPhi_dMe = base.v * (1.0 - Me_v * Me_v) / (1.0 + x.v);
+    DualN<N> Me;
+    Me.v = Me_v;
+    for (int i = 0; i < N; ++i) {
+        Me.d[i] = (phi_e.d[i] - phi_fixed.d[i]) / dPhi_dMe;
+    }
+    return Me;
+}
 
 // Compressible: parametrised by the Mach number M at the closure's station
 // (the small section for an expansion, the vena contracta for a contraction).
 template <class S>
 EvalT<S> eval_compressible(const S& M, const S& Pt0, const S& Tt0, const S& g, const S& Rg,
-                           const Branch& b, const Gas& gas) {
+                           const Branch& b, const Gas& gas, bool exit_choked_at_face = false) {
     const S Msq = M * M;
     const S lnX = log1p_(0.5 * (g - 1.0) * Msq);
-    const S Ga = Pt0 * sqrt_(g / (Rg * Tt0)) * M * exp_(-(g + 1.0) / (2.0 * (g - 1.0)) * lnX);
+    const S phi_1 = M * exp_(-(g + 1.0) / (2.0 * (g - 1.0)) * lnX);
+    const S Ga = Pt0 * sqrt_(g / (Rg * Tt0)) * phi_1;
     const BordaCarnotT<S> bc = borda_carnot_t(M, b.step, g);
-    S loss = -Pt0 * expm1_(bc.ln_pi);
+    S dPt_loss = -Pt0 * expm1_(bc.ln_pi);
+    S mult = 1.0 + 0.0 * M;
     const S G_small = b.expansion ? Ga : b.Cc * Ga;
     S Re = 0.0 * M;
     const double Pa = value_of(Pt0) * std::exp(-value_of(g) / (value_of(g) - 1.0) * value_of(lnX));
@@ -524,19 +596,41 @@ EvalT<S> eval_compressible(const S& M, const S& Pt0, const S& Tt0, const S& g, c
         const S Ta = Tt0 / exp_(lnX);
         Re = G_small * b.D / mu_at(Ta, gas);
         const ZetaAndSlope r = table_ratio(b.table, value_of(Re), b.n);
-        loss = loss * lift(r.zeta, r.dzeta_dRe, Re);
+        mult = mult * lift(r.zeta, r.dzeta_dRe, Re);
     }
     if (b.expansion) {
         q_small = 0.5 * value_of(g) * Pa * value_of(Msq);
         if (!b.sharp) {
-            loss = loss * b.phi;
+            mult = mult * b.phi;
         }
     } else {
         // The small section is the step's exit, station 2.
         const double p2 = Pa * std::exp(value_of(bc.ln_p21));
         q_small = 0.5 * value_of(g) * p2 * value_of(bc.y);
     }
-    return {loss, G_small, Re, q_small, value_of(M)};
+    dPt_loss = dPt_loss * mult;
+    S loss = dPt_loss;
+    S exit_margin = 0.0 * M;
+    if (b.exit_head_lost) {
+        // Exit stagnation pressure ratio pi_exit = Pt_exit / Pt0 = 1 + mult * expm1(ln_pi).
+        // Exit face flux parameter Phi(Me) = b.step * Phi(M) / pi_exit.
+        const S pi_exit = 1.0 + expm1_(bc.ln_pi) * mult;
+        const S phi_max = exp_(-(g + 1.0) / (2.0 * (g - 1.0)) * log_(0.5 * (g + 1.0)));
+        exit_margin = phi_max * pi_exit - b.step * phi_1;
+        S lnXe = 0.0 * M;
+        if (exit_choked_at_face) {
+            lnXe = log1p_(0.5 * (g - 1.0));
+        } else {
+            const S phi_e = b.step * phi_1 / pi_exit;
+            const double Me_v = solve_exit_mach(value_of(phi_e), value_of(g),
+                                                std::sqrt(std::max(value_of(bc.y), 0.0)));
+            const S Me = lift_exit_mach(Me_v, phi_e, g);
+            lnXe = log1p_(0.5 * (g - 1.0) * Me * Me);
+        }
+        const S q_exit_comp = -Pt0 * pi_exit * expm1_(-g / (g - 1.0) * lnXe);
+        loss = dPt_loss + q_exit_comp;
+    }
+    return {loss, exit_margin, G_small, Re, value_of(dPt_loss), q_small, value_of(M)};
 }
 
 // Incompressible (M -> 0): parametrised by the small section's mass flux.
@@ -552,16 +646,58 @@ EvalT<S> eval_incompressible(const S& G, const S& Pt0, const S& Tt0, const S& g,
         const ZetaAndSlope r = table_ratio(b.table, value_of(Re), b.n);
         zeta = lift(r.zeta, r.dzeta_dRe, Re) * b.zeta_inc;
     }
+    const S dPt_loss = zeta * q;
+    const S loss = b.exit_head_lost ? (zeta + b.r_exit * b.r_exit) * q : dPt_loss;
     const double a0 = std::sqrt(value_of(g) * value_of(Rg) * value_of(Tt0));
     const double Ga = value_of(G) / (b.expansion ? 1.0 : b.Cc);
-    return {zeta * q, G, Re, value_of(q), Ga / (value_of(rho) * a0)};
+    return {loss, 0.0 * G, G, Re, value_of(dPt_loss), value_of(q), Ga / (value_of(rho) * a0)};
 }
 
 template <class S>
 EvalT<S> eval_branch(bool incompressible, const S& p, const S& Pt0, const S& Tt0, const S& g,
-                     const S& Rg, const Branch& b, const Gas& gas) {
+                     const S& Rg, const Branch& b, const Gas& gas,
+                     bool exit_choked_at_face = false) {
     return incompressible ? eval_incompressible(p, Pt0, Tt0, g, Rg, b, gas)
-                          : eval_compressible(p, Pt0, Tt0, g, Rg, b, gas);
+                          : eval_compressible(p, Pt0, Tt0, g, Rg, b, gas, exit_choked_at_face);
+}
+
+double exit_margin_at(double M, double Pt0, double Tt0, const Branch& b, const Gas& gas) {
+    return eval_compressible<double>(M, Pt0, Tt0, gas.g, gas.Rg, b, gas, true).exit_margin;
+}
+
+double solve_exit_choke_mach(double Pt0, double Tt0, const Branch& b, const Gas& gas) {
+    double hi = 1.0;
+    double lo = 0.5;
+    for (int i = 0; i < 200 && exit_margin_at(lo, Pt0, Tt0, b, gas) <= 0.0; ++i) {
+        hi = lo;
+        lo *= 0.5;
+    }
+    double u_lo = std::log(lo);
+    double u_hi = std::log(hi);
+    double u = 0.5 * (u_lo + u_hi);
+    for (int it = 0; it < inner_solve::kAreaChangeMaxIter; ++it) {
+        const double M = std::exp(u);
+        using D1 = DualN<1>;
+        const auto e = eval_compressible<D1>(D1::seed(M, 0), D1::constant(Pt0), D1::constant(Tt0),
+                                             D1::constant(gas.g), D1::constant(gas.Rg), b, gas,
+                                             true);
+        const double f = e.exit_margin.v;
+        if (f > 0.0) {
+            u_lo = u;
+        } else {
+            u_hi = u;
+        }
+        const double fp = e.exit_margin.d[0] * M;
+        double u_new = (fp < 0.0) ? u - f / fp : 0.5 * (u_lo + u_hi);
+        if (!(u_new > u_lo && u_new < u_hi)) {
+            u_new = 0.5 * (u_lo + u_hi);
+        }
+        if (std::abs(u_new - u) <= 1e-15 * std::max(1.0, std::abs(u)) || u_hi - u_lo < 1e-15) {
+            return std::exp(u_new);
+        }
+        u = u_new;
+    }
+    return std::exp(u);
 }
 
 double loss_at(bool inc, double p, double Pt0, double Tt0, const Branch& b, const Gas& gas) {
@@ -645,39 +781,61 @@ RawFlow raw_flow(double drive, double Pt0, double Tt0, const Branch& b, const Ga
                  bool with_derivatives) {
     RawFlow out;
     double p = 0.0;
+    bool exit_choked_at_face = false;
+    const double zeta_est =
+        std::max(b.zeta_inc + (b.exit_head_lost ? b.r_exit * b.r_exit : 0.0), 1e-3);
     if (inc) {
         const double rho = Pt0 / (gas.Rg * Tt0);
-        const double guess = std::sqrt(2.0 * rho * drive / std::max(b.zeta_inc, 1e-3));
+        const double guess = std::sqrt(2.0 * rho * drive / zeta_est);
         double hi = 2.0 * guess + kEps;
         for (int i = 0; i < 200 && loss_at(true, hi, Pt0, Tt0, b, gas) < drive; ++i) {
             hi *= 4.0;
         }
         p = solve_param(true, drive, hi, guess, Pt0, Tt0, b, gas);
     } else {
-        // The sonic loss: above it the closure is choked at M = 1.
-        if (loss_at(false, 1.0, Pt0, Tt0, b, gas) <= drive) {
-            p = 1.0;
+        // The sonic limit: closure choke at M = 1, or (at low Re with
+        // exit_head_lost) exit-face choke at M_max < 1 where exit_margin = 0.
+        double M_max = 1.0;
+        if (b.exit_head_lost && exit_margin_at(1.0, Pt0, Tt0, b, gas) < 0.0) {
+            M_max = solve_exit_choke_mach(Pt0, Tt0, b, gas);
+            exit_choked_at_face = true;
+        }
+        const double drive_max =
+            eval_compressible<double>(M_max, Pt0, Tt0, gas.g, gas.Rg, b, gas, exit_choked_at_face)
+                .loss;
+        if (drive_max <= drive) {
+            p = M_max;
             out.choked = true;
         } else {
-            const double guess =
-                std::sqrt(2.0 * drive / (gas.g * Pt0 * std::max(b.zeta_inc, 1e-3)));
-            p = solve_param(false, drive, 1.0, std::min(guess, 0.5), Pt0, Tt0, b, gas);
+            exit_choked_at_face = false;
+            const double guess = std::sqrt(2.0 * drive / (gas.g * Pt0 * zeta_est));
+            p = solve_param(false, drive, M_max, std::min(guess, 0.5 * M_max), Pt0, Tt0, b, gas);
         }
     }
     const auto e = eval_branch<D6>(inc, D6::seed(p, kP), D6::seed(Pt0, kPt), D6::seed(Tt0, kTt),
-                                   D6::seed(gas.g, kG), D6::seed(gas.Rg, kR), b, gas);
+                                   D6::seed(gas.g, kG), D6::seed(gas.Rg, kR), b, gas,
+                                   out.choked && exit_choked_at_face);
     out.m = b.F_small * e.G_small.v;
     out.mach = e.mach;
     out.Re = e.Re.v;
-    out.zeta = (e.q_small > 0.0) ? e.loss.v / e.q_small : 0.0;
+    out.zeta = (e.q_small > 0.0) ? e.dPt_loss / e.q_small : 0.0;
     out.T_mu = inc ? Tt0 : Tt0 / (1.0 + 0.5 * (gas.g - 1.0) * e.mach * e.mach);
     if (!with_derivatives) {
         return out;
     }
-    // loss(p; q) = drive: dp/dq = -L_q / L_p, dp/d(drive) = 1 / L_p; choked,
-    // p is pinned at M = 1.
+    // loss(p; q) = drive: dp/dq = -L_q / L_p, dp/d(drive) = 1 / L_p.
+    // Choked at closure (M = 1): p is pinned (dp = 0).
+    // Choked at exit face (exit_margin(M; q) = 0): dp/dq = -margin_q / margin_p.
     const double L_p = e.loss.d[kP];
-    auto dp = [&](int q) { return out.choked ? 0.0 : -e.loss.d[q] / L_p; };
+    auto dp = [&](int q) {
+        if (!out.choked) {
+            return -e.loss.d[q] / L_p;
+        }
+        if (exit_choked_at_face) {
+            return -e.exit_margin.d[q] / e.exit_margin.d[kP];
+        }
+        return 0.0;
+    };
     auto dm = [&](int q) { return b.F_small * (e.G_small.d[q] + e.G_small.d[kP] * dp(q)); };
     out.dm_ddrive = out.choked ? 0.0 : b.F_small * e.G_small.d[kP] / L_p;
     out.dm_dPt0 = dm(kPt);
@@ -830,11 +988,11 @@ AreaChangeLoss area_change_loss(double m_dot_abs, double Pt0, double Tt0,
 AreaChangeFlow area_change_flow(double Pt0, double Tt0, const std::vector<double>& Y,
                                 double Pt_target, double F_in, double F_out,
                                 const std::string& model, double length, double D_h,
-                                bool incompressible, bool with_derivatives) {
+                                bool incompressible, bool with_derivatives, bool exit_head_lost) {
     if (!(Pt0 > 0.0) || !(Tt0 > 0.0)) {
         throw std::invalid_argument("area_change_flow: Pt0 and Tt0 must be positive");
     }
-    const Branch b = make_branch(F_in, F_out, model, length, D_h);
+    const Branch b = make_branch(F_in, F_out, model, length, D_h, exit_head_lost);
     const Gas gas = make_gas(Tt0, Pt0, Y, with_derivatives);
     // Odd in the drive: a negative drive runs the same branch backwards,
     // m(-d) = -m(d) at the same source state.
@@ -852,17 +1010,17 @@ AreaChangeFlow area_change_flow(double Pt0, double Tt0, const std::vector<double
         // odd, h(1) = 1, h'(1) = sigma, h'(0) = exp((1 - sigma)/2) > 0, and
         // monotone for every sigma > 0. sigma is the incompressible law's
         // exponent d ln m / d ln(drive) at the floor: 1/2 for a quadratic loss
-        // (contraction, cone), 1/e(Re) for a sudden expansion, e the exponent
-        // of zeta Re^2 (1 laminar, 2 Borda-Carnot, 0.06 ... 2.6 between). It is
-        // analytic in the state through Re, so every partial is exact; the
-        // compressible law's own exponent differs by O(M^2) at the floor, the
-        // size of the slope's step there.
-        const RawFlow at = raw_flow(b.floor, Pt0, Tt0, b, gas, incompressible,
-                                    true);
+        // (contraction, cone), 1/e(Re) for a sudden expansion/contraction, e
+        // the exponent of (zeta + exit_head) Re^2. It is analytic in the state
+        // through Re, so every partial is exact; the compressible law's own
+        // exponent differs by O(M^2) at the floor, the size of the slope's step
+        // there.
+        const RawFlow at = raw_flow(b.floor, Pt0, Tt0, b, gas, incompressible, true);
         double sigma = 0.5;
         double dsig_dRe = 0.0;
         if (b.low_re) {
-            const auto [e, de] = table_exponent(b.table, at.Re, b.n);
+            const double offset = b.exit_head_lost ? (b.r_exit * b.r_exit) / b.zeta_inc : 0.0;
+            const auto [e, de] = table_exponent(b.table, at.Re, b.n, offset);
             sigma = 1.0 / e;
             dsig_dRe = -de / (e * e);
         }
@@ -931,10 +1089,12 @@ AreaChangeElementFlow area_change_element_flow(double Pt_a, double Tt_a,
                                                double Tt_b, const std::vector<double>& Y_b,
                                                double F_a, double F_b, const std::string& model,
                                                double length, double D_h, bool incompressible,
-                                               bool with_derivatives) {
+                                               bool with_derivatives, bool exit_head_lost_b,
+                                               bool exit_head_lost_a) {
     // The blend's width: the smaller of the two directions' drive floors.
-    const double width = std::min(make_branch(F_a, F_b, model, length, D_h).floor,
-                                  make_branch(F_b, F_a, model, length, D_h).floor);
+    const double width =
+        std::min(make_branch(F_a, F_b, model, length, D_h, exit_head_lost_b).floor,
+                 make_branch(F_b, F_a, model, length, D_h, exit_head_lost_a).floor);
     const double s = (Pt_a - Pt_b) / width;
     double w = 1.0;
     double dw_ds = 0.0;
@@ -950,12 +1110,12 @@ AreaChangeElementFlow area_change_element_flow(double Pt_a, double Tt_a,
     AreaChangeFlow ab;
     AreaChangeFlow ba;
     if (w > 0.0) {
-        ab = area_change_flow(Pt_a, Tt_a, Y_a, Pt_b, F_a, F_b, model, length, D_h,
-                              incompressible, with_derivatives);
+        ab = area_change_flow(Pt_a, Tt_a, Y_a, Pt_b, F_a, F_b, model, length, D_h, incompressible,
+                              with_derivatives, exit_head_lost_b);
     }
     if (w < 1.0) {
-        ba = area_change_flow(Pt_b, Tt_b, Y_b, Pt_a, F_b, F_a, model, length, D_h,
-                              incompressible, with_derivatives);
+        ba = area_change_flow(Pt_b, Tt_b, Y_b, Pt_a, F_b, F_a, model, length, D_h, incompressible,
+                              with_derivatives, exit_head_lost_a);
     }
     // In the element's orientation the b -> a flow is negative.
     const double m_ab = ab.m_dot;
