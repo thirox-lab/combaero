@@ -583,3 +583,22 @@ def test_cd_nozzle_flow_and_slope_have_no_cancellation_near_zero_drive(
     dref = mpmath.diff(flux, mpmath.mpf(p_py))
     assert j.mdot == pytest.approx(float(ref), rel=1e-8)
     assert j.dmdot_dp_py == pytest.approx(float(dref), rel=1e-8)
+
+
+def test_python_cd_nozzle_mirror_matches_cpp_across_sub_floor_band() -> None:
+    """Pin _ejector_huang1999.cd_nozzle_mass_flow to the C++ kernel across +-floor.
+
+    Catches silent drift in the Python mirror's jet_floor (1e-3 Pa) or odd cubic
+    (1.25 t - 0.25 t^3) relative to C++ (#1269).
+    """
+    from combaero.network._ejector_huang1999 import cd_nozzle_mass_flow
+
+    Pt, Tt, At, Ae, g, R, eta, eps = 1.0e5, 300.0, 1.0e-4, 1.0e-4, 1.4, 287.058, 0.95, 1e-3
+    floor = 1.0e-3
+    for frac in (-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0):
+        p_py = Pt - frac * floor
+        py_val = cd_nozzle_mass_flow(Pt, Tt, p_py, At, Ae, g, R, eta, eps)
+        cpp_val = cb._core.ejector_cd_nozzle_mass_flow_and_jacobian(
+            Pt, Tt, p_py, At, Ae, g, R, eta, eps
+        ).mdot
+        assert py_val == pytest.approx(cpp_val, rel=1e-11, abs=1e-15), f"frac={frac}"
