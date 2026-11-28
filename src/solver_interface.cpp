@@ -1696,7 +1696,11 @@ ChannelResult channel_residuals_and_jacobian(double m_dot, double P_total_up,
 
   // Composition: rho = P MW / (R_u T), so drho/dX_j = rho W_j / MW at fixed
   // (T, P), as the orifice's (#964); mu by viscosity_dX. Both chained to the
-  // mass fractions along steps that keep sum X = 1 (mole_gradient_to_mass).
+  // mass fractions along steps that keep sum X = 1 (mole_gradient_to_mass),
+  // then to the raw Y_up the kernel reads: normalize_fractions divides by
+  // S = sum max(Y, 0), so d/dY_k is that gradient over S, and 0 for a
+  // fraction clamped at a negative value. A Newton iterate need not sum to 1
+  // (#1352 review: at S = 0.7 the unscaled column was 0.7x the true one).
   std::vector<double> drho_dX(X_up.size(), 0.0);
   const double mw_up = combaero::mwmix(X_up);
   for (std::size_t j = 0; j < X_up.size(); ++j) {
@@ -1704,13 +1708,24 @@ ChannelResult channel_residuals_and_jacobian(double m_dot, double P_total_up,
   }
   const std::vector<double> drho_dY = combaero::mole_gradient_to_mass(X_up, drho_dX);
   const std::vector<double> dmu_dY = viscosity_mass_gradient(Tt_up, P_static_up, X_up);
+  double y_sum = 0.0;
+  for (const double y : Y_up) {
+    y_sum += std::max(y, 0.0);
+  }
+  // Below 1e-10 normalize_fractions returns Y as it is (an all-zero state).
+  const bool normalised = y_sum >= 1.0e-10;
+  const double inv_sum = normalised ? 1.0 / y_sum : 1.0;
   res.d_dP_dY_up.resize(Y_up.size(), 0.0);
   for (std::size_t i = 0; i < Y_up.size(); ++i) {
+    if (normalised && Y_up[i] < 0.0) {
+      continue;
+    }
     res.d_dP_dY_up[i] = d_drop(drho_dY[i], dmu_dY[i]);
     if (exit_head_lost) {
       // q = m|m| / (2 rho A^2) depends on Y only through rho.
       res.d_dP_dY_up[i] -= 0.5 * m_dot * abs_m / (rho * rho * area * area) * drho_dY[i];
     }
+    res.d_dP_dY_up[i] *= inv_sum;
   }
 
   if (exit_head_lost) {

@@ -2,9 +2,9 @@
 partials are the chain rule through rho and mu, not differences (#1211).
 
 The references are Richardson-extrapolated central differences of the drop
-itself, resolved to well below the tolerances here. Until #1211 the kernel
-differenced the drop internally: forward in Y (up to 6e-6 off), central in P
-and Tt.
+itself, resolved to well below the tolerances here, in the raw inputs the kernel
+reads (Y need not sum to 1). Until #1211 the kernel differenced the drop
+internally: forward in Y (up to 6e-6 off), central in P and Tt.
 """
 
 from __future__ import annotations
@@ -26,9 +26,11 @@ def _air_with_fuel() -> list[float]:
     return Y
 
 
-def _drop(m: float, P: float, T: float, Y: list[float], model: str, head: bool) -> float:
+def _drop(
+    m: float, P: float, T: float, Y: list[float], model: str, head: bool, fmult: float = 1.0
+) -> float:
     r = _solver_tools.channel_residuals_and_jacobian(
-        m, P, P, T, Y, P - 1.0, L, D, 1e-5, model, 1.0, head
+        m, P, P, T, Y, P - 1.0, L, D, 1e-5, model, fmult, head
     )
     return r.dP_calc
 
@@ -51,39 +53,53 @@ def _one_sided(g, h: float) -> float:
 
 
 def _y_step(Y: list[float], k: int, t: float) -> list[float]:
-    """Y + t e_k renormalised: the step mole_gradient_to_mass's gradient is along."""
+    """Y + t e_k, raw: the kernel normalises its input, and a Newton iterate
+    need not sum to 1, so the column is the derivative in the raw Y."""
     Ys = list(Y)
     Ys[k] += t
-    s = sum(Ys)
-    return [y / s for y in Ys]
+    return Ys
 
 
 CASES = [
-    # m [kg/s]: laminar (Re ~ 70), transitional, turbulent (Re ~ 1.4e5).
-    (1e-5, "haaland"),
-    (3e-3, "haaland"),
-    (2e-2, "haaland"),
-    (2e-2, "colebrook"),
-    (-3e-3, "haaland"),  # reversed flow: the drop is odd in m
+    # (m [kg/s], model, f_multiplier, sum of Y). On the 1 cm air duct: laminar
+    # (Re ~ 70), inside the laminar-turbulent blend (Re ~ 2.1e3, m = 3e-4),
+    # turbulent (Re ~ 2.1e4 and 1.4e5), every registry model, reversed flow
+    # (the drop is odd in m), a friction multiplier, and a Y that does not sum
+    # to 1 (#1352 review: the column must be the raw-Y derivative).
+    (1e-5, "haaland", 1.0, 1.0),
+    (3e-4, "haaland", 1.0, 1.0),
+    (3e-4, "petukhov", 1.0, 1.0),
+    (3e-3, "haaland", 1.0, 1.0),
+    (2e-2, "haaland", 1.0, 1.0),
+    (2e-2, "colebrook", 1.0, 1.0),
+    (2e-2, "serghides", 1.0, 1.0),
+    (2e-2, "petukhov", 1.0, 1.0),
+    (-3e-3, "haaland", 1.0, 1.0),
+    (3e-3, "haaland", 1.3, 1.0),
+    (3e-4, "colebrook", 1.3, 1.0),
+    (3e-3, "haaland", 1.0, 0.7),
+    (3e-3, "haaland", 1.0, 1.3),
 ]
 
 
 @pytest.mark.parametrize("head", [False, True])
-@pytest.mark.parametrize(("m", "model"), CASES)
-def test_the_drop_partials_match_resolved_differences(m: float, model: str, head: bool) -> None:
-    Y = _air_with_fuel()
+@pytest.mark.parametrize(("m", "model", "fmult", "y_sum"), CASES)
+def test_the_drop_partials_match_resolved_differences(
+    m: float, model: str, fmult: float, y_sum: float, head: bool
+) -> None:
+    Y = [y_sum * y for y in _air_with_fuel()]
     r = _solver_tools.channel_residuals_and_jacobian(
-        m, P_UP, P_UP, T_UP, Y, P_UP - 1.0, L, D, 1e-5, model, 1.0, head
+        m, P_UP, P_UP, T_UP, Y, P_UP - 1.0, L, D, 1e-5, model, fmult, head
     )
     scale = abs(r.dP_calc)
-    fd_P = _richardson(lambda t: _drop(m, P_UP + t, T_UP, Y, model, head), 50.0)
-    fd_T = _richardson(lambda t: _drop(m, P_UP, T_UP + t, Y, model, head), 0.05)
+    fd_P = _richardson(lambda t: _drop(m, P_UP + t, T_UP, Y, model, head, fmult), 50.0)
+    fd_T = _richardson(lambda t: _drop(m, P_UP, T_UP + t, Y, model, head, fmult), 0.05)
     assert r.d_dP_dP_static_up == pytest.approx(fd_P, rel=1e-8, abs=1e-12 * scale / P_UP)
     assert r.d_dP_dTt_up == pytest.approx(fd_T, rel=1e-8, abs=1e-12 * scale / T_UP)
     # Every species, present or absent: a row's composition columns are all
     # of them (an absent species arrives with an inflow at zero flow).
     for k in range(cb.num_species()):
-        g = lambda t, k=k: _drop(m, P_UP, T_UP, _y_step(Y, k, t), model, head)  # noqa: E731
+        g = lambda t, k=k: _drop(m, P_UP, T_UP, _y_step(Y, k, t), model, head, fmult)  # noqa: E731
         fd_Y = _richardson(g, 1e-4) if Y[k] > 1e-3 else _one_sided(g, 1e-4)
         assert r.d_dP_dY_up[k] == pytest.approx(fd_Y, rel=1e-7, abs=1e-9 * scale), cb.species_name(
             k
