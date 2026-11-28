@@ -763,6 +763,16 @@ template <int N>
 DualT<N> fanno_length_between_t(const DualT<N>& G, const DualT<N>& Tt, double M1, double M2,
                                 const MixTangent<N>& m, double D, double roughness,
                                 const std::string& friction_model, double f_multiplier) {
+  // The value function's checks, so the tangent refuses what it refuses: a
+  // frictionless duct whose inlet Mach passes the exit's by round-off threw
+  // there and must not divide by f = 0 here (#1354 review).
+  if (!(M1 > 0.0) || !(M2 >= M1) || !(M2 <= 1.0)) {
+    throw std::invalid_argument("fanno_length_between: need 0 < M1 <= M2 <= 1");
+  }
+  if (!validation::is_finite(D)) {
+    throw std::invalid_argument("fanno_length_between: D must be finite");
+  }
+  check_friction(roughness, f_multiplier);
   if (M2 == M1) {
     return DualT<N>::constant(0.0);
   }

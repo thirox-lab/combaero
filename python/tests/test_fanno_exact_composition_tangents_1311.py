@@ -108,3 +108,15 @@ def test_dG_ddir_is_linear_in_the_direction(heated: bool, drive: float) -> None:
     r = _flow(Y_AIR, drive, False, heated, [O2_N2, O2, _dir(N2=1.0)])
     a, b, c = r.dG_ddir
     assert a == pytest.approx(0.5 * (b - c), rel=1e-7)
+
+
+@pytest.mark.parametrize("drive", [0.5, 0.9])
+def test_a_frictionless_duct_below_the_floor_is_refused_not_nan(drive: float) -> None:
+    """The tangent length keeps the value function's checks (#1354 review):
+    with f = 0 the inlet Mach can pass the exit's by round-off, which
+    fanno_length_between refuses; the tangent version returned G = NaN."""
+    X = cb.mass_to_mole(Y_AIR)
+    with pytest.raises(ValueError, match="need 0 < M1 <= M2 <= 1"):
+        cb.fanno_channel_flow(
+            PT0, TT0, X, PT0 - drive, False, L, D, 0.0, "fixed", 0.0, -1.0, [], False
+        )
