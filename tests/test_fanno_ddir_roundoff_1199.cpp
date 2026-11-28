@@ -13,12 +13,14 @@
 using namespace combaero;
 
 // ---------------------------------------------------------------------------
-// dG_ddir differences the duct along a mass-fraction direction v. Where the
-// central step would take a fraction below zero it is one-sided. A component
+// dG_ddir differenced the duct along a mass-fraction direction v. Where the
+// central step would take a fraction below zero it was one-sided. A component
 // of -2.2e-20 on an absent species (round-off in the solver's orthonormal
 // basis) switched the stencil, and a first-order one at that: J moved by
-// 2.3e-5 relative (stress random 30, #1199). A round-off component now no
-// longer decides the stencil, and the one-sided stencil is second order.
+// 2.3e-5 relative (stress random 30, #1199). Since #1311/#1310 dG_ddir is the
+// exact tangent along v, linear in v, so there is no stencil to switch: a
+// round-off component moves it by round-off. The stencil cases below now
+// check the exact tangent's values against the same references.
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -62,7 +64,7 @@ double ddir(const std::vector<double>& Y, const std::vector<double>& v, double P
 
 }  // namespace
 
-TEST(FannoDdirRoundoff1199, RoundoffComponentOnAnAbsentSpeciesDoesNotMoveTheResult) {
+TEST(FannoDdirRoundoff1199, RoundoffComponentOnAnAbsentSpeciesMovesTheResultByRoundoff) {
   const std::vector<double> Y = air_without_co2();
   const std::size_t i_co2 = species_index_from_name("CO2");
   for (const bool heated : {false, true}) {
@@ -73,8 +75,9 @@ TEST(FannoDdirRoundoff1199, RoundoffComponentOnAnAbsentSpeciesDoesNotMoveTheResu
       ASSERT_NE(exact, 0.0);
       for (const double c : {-2.2e-20, 2.2e-20, -1e-14, 1e-300}) {
         v[i_co2] = c;
-        // Bit for bit: the component is dropped from the step.
-        EXPECT_EQ(ddir(Y, v, P, heated), exact) << "heated " << heated << " P " << P << " c " << c;
+        // Linear in v: c times dG/dY_CO2, at most ~1e-14 of the result.
+        EXPECT_NEAR(ddir(Y, v, P, heated), exact, 1e-12 * std::abs(exact))
+            << "heated " << heated << " P " << P << " c " << c;
       }
     }
   }

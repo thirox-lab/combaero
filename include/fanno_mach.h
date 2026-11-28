@@ -50,9 +50,10 @@ struct FannoDuctResult {
 // ~1e-8 floor that kinks in mu(T) set once f depends on Re.
 constexpr double kFannoMachRelTol = 1e-10;
 
-// Composition directional derivatives (dG_ddir; fanno_mach.cpp d_ddir): the
-// step along a direction v, as a mass-fraction change of its largest
-// component.
+// Differenced composition derivatives (fanno_mach.cpp d_ddir; dG_ddir itself
+// is exact since #1311/#1310, but the throat-choked Rayleigh branch and the
+// sub-floor sigma slopes, #1317, still difference): the step along a
+// direction v, as a mass-fraction change of its largest component.
 constexpr double kFannoDirStep = 1e-5;
 // A component of v at or below this fraction of its largest is round-off (an
 // orthonormal basis of a node's dY/dx carries ~1e-16 of noise). Where it would
@@ -132,11 +133,7 @@ double fanno_choked_mass_flux(double Pt, double Tt,
 //     in [0, at.G] for all r = low_1.G / at.G > 0 and s >= 0, with floor-slope
 //     derivatives ds/dtheta via internal central FDs so value and partials
 //     hand off continuously at drive = kFannoFlowDriveFloor away from
-//     pre-existing compressible branch flips such as #1307; note that on
-//     adiabatic static-exit ducts at low Mach (e.g. Pt0 = 2e5 Pa, Tt0 = 400 K,
-//     L = 0.5 m, D = 0.01 m), raw_flow's pre-existing 1 Pa d_ddir cancellation
-//     noise (+8.5e-5 / 1.28x at 1.000 Pa) is inherited proportionally into
-//     sub-floor dG_ddir (analytic/FD = 0.967, 0.923, 1.93 at 0.3, 0.5, 0.9 Pa)).
+//     pre-existing compressible branch flips such as #1307).
 //     When vanishing length (L -> 0) or f_multiplier -> 0 chokes the duct well
 //     below kFannoFlowDriveFloor, the incompressible floor drop fraction
 //     chi = dp_inc(at.G) / kFannoFlowDriveFloor falls below the exact Fanno
@@ -168,8 +165,9 @@ struct FannoChannelFlow {
   double dG_dTt_exit = 0.0;    // [kg/(m^2 s K)]; 0 from the adiabatic kernel
   // dG/ds [kg/(m^2 s)] along each of dY_directions (Y -> Y + s v, X
   // renormalised); empty when none are passed. Chained by a network element
-  // through an orthonormal basis of its feeding node's dY/dx (see
-  // fanno_mach.cpp d_ddir); a unit vector e_k gives dG/dY_k at fixed others.
+  // through an orthonormal basis of its feeding node's dY/dx; exact (forward
+  // mode along v, #1311/#1310) and linear in v, so a unit vector e_k gives
+  // dG/dY_k at fixed others.
   std::vector<double> dG_ddir;
 };
 
