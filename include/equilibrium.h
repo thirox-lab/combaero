@@ -204,7 +204,9 @@ EquilibriumResult combustion_equilibrium(const State &reactants,
 // direction): the trace states that take the one-sided limit are seeded along
 // it, so J dX_dir is that direction's slope. Without it they are seeded as a
 // fixed trace of each fed species, and J holds a slope along each reactant
-// alone only where those slopes add. Elsewhere dX_dir changes nothing.
+// alone only where those slopes add. Elsewhere dX_dir changes nothing; at
+// such a state J dX_dir is its slope, and the other columns are those of
+// the trace state seeded along it (not a matrix for other directions).
 struct EquilibriumJacobian {
     State state;                                // as combustion_equilibrium
     double dT_dT_in = 0.0;

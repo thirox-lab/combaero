@@ -172,7 +172,9 @@ def test_a_lean_two_fuel_trace_converges(T: float, h2o: float) -> None:
     looked representable from the stalled iterate. After a failed solve the
     hydrocarbons are now reformed completely, the rest solved, and each added
     back at its own equilibrium amount there (or left 0 below the normal
-    range). T is as before #1241 to 1e-9 K (a reformed 8e-18 trace)."""
+    range). T is as before #1241 to 1e-9 K (a reformed 8e-18 trace). The
+    482 K state needs the fallback; the 404 K one converges without it
+    (it guards the humid variant, not the fallback)."""
     X = _vec({"N2": 0.7791, "O2": 0.2090, "AR": 0.00928, "CO2": 0.001397, "H2O": h2o,
               "CH4": 9.979e-05, "NC7H16": 9.979e-05})  # fmt: skip
     r = _core.combustion_equilibrium(T, X, 1e4)
