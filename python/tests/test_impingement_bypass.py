@@ -306,7 +306,7 @@ def _series() -> FlowNetwork:
 
 
 def _jacobian_error(
-    net: FlowNetwork,
+    net: FlowNetwork, flow_rel: float = 1e-5
 ) -> tuple[float, int, NetworkSolver, np.ndarray, np.ndarray, np.ndarray]:
     """Worst relative error of the analytic Jacobian against central
     differences at the solved point, over each row's significant entries,
@@ -319,11 +319,12 @@ def _jacobian_error(
     # Fanno iteration repeats to ~1e-12 (see test_impingement_plate_element).
     # Richardson-extrapolate flow columns (h and 2h) so sub-floor inertial
     # curvature (#1216) does not require shrinking h into the repeatability floor.
-    rel = np.array([1e-5 if n.endswith(".m_dot") else 1e-7 for n in s.unknown_names])
+    is_flow = np.array([n.endswith(".m_dot") for n in s.unknown_names])
+    rel = np.where(is_flow, flow_rel, 1e-7)
     fd = fd_jacobian(s, x, rel=rel, floor=1e-10)
     flow_cols = [j for j, n in enumerate(s.unknown_names) if n.endswith(".m_dot")]
     if flow_cols:
-        fd_2h = fd_jacobian(s, x, rel=np.where(rel == 1e-5, 2e-5, rel), floor=1e-10)
+        fd_2h = fd_jacobian(s, x, rel=np.where(is_flow, 2.0 * flow_rel, rel), floor=1e-10)
         fd = fd.copy()
         fd[:, flow_cols] = (4.0 * fd[:, flow_cols] - fd_2h[:, flow_cols]) / 3.0
     jac = s._residuals_and_jacobian(x)[1].toarray()
@@ -351,7 +352,16 @@ def test_the_jacobian_is_analytic_and_complete(case: str, regime: str) -> None:
         "series": _series,
         "reversed": lambda: _pressure_fed(1.0005e5),
     }[case]()
-    worst, missing, *_ = _jacobian_error(_set_regime(net, regime))
+    # The compressible series case takes a 1e-4 flow step. At 1e-5 its
+    # reference is the Fanno iteration's noise, not the Jacobian's error:
+    # nudging the solved x by 1e-12 moved its worst entry from 1.7e-5 to
+    # 1.0e-4 (a round-off change elsewhere put Linux CI at 1.33e-4, #1352).
+    # At 1e-4, Richardson-extrapolated, it is 2.4e-6 to 6.8e-6 under the same
+    # nudges, on main and on #1352 alike. The reversed case keeps 1e-5: its
+    # gap drains at a near-zero drive, whose sub-floor curvature a 1e-4 step
+    # does not resolve (1.9e-2).
+    flow_rel = 1e-4 if (case, regime) == ("series", "compressible") else 1e-5
+    worst, missing, *_ = _jacobian_error(_set_regime(net, regime), flow_rel)
     assert missing == 0
     assert worst < (1e-6 if regime == "incompressible" else 1e-4), worst
 
