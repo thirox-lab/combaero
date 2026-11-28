@@ -851,8 +851,7 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // sonic bound (chi in [kFannoLowMachDropLo = 0.125, kFannoLowMachDropHi = 0.25])
 // into the odd cubic of flow_drive_floor.h when vanishing length (L -> 0) or
 // f_multiplier -> 0 chokes the duct deep below 1 Pa; fixed/frictionless ducts
-// use the odd cubic directly. Note: adiabatic static-exit sub-floor dG_ddir
-// inherits raw_flow's pre-existing 1 Pa d_ddir cancellation noise.
+// use the odd cubic directly.
 // At exactly zero drive G = 0 with the branch's finite slope in dG/dP_target
 // and dG/dPt0 (#1209), where M_in and M_exit are re-evaluated at the blended G
 // (#1017) and M_exit_root keeps the floor root's exit Mach (the warm start for
@@ -860,13 +859,10 @@ double fanno_choked_mass_flux(double Pt, double Tt, const std::vector<double>& X
 // the exit Mach (P_exit is linear in G at fixed M, so G(M_exit) is explicit)
 // and differentiates implicitly, well conditioned up to the choke.
 // dY_directions: mass-fraction directions v; dG_ddir returns dG/ds along each
-// (Y -> Y + s v, X renormalised), about two length integrals per direction:
-// central, step kFannoDirStep = 1e-5 on v's largest component; one-sided
-// second order where the central step would take a fraction below zero (an
-// absent or trace species), at half the step where the doubled step is
-// infeasible too (0 where neither side is feasible). A component at or below kFannoDirRoundoff = 1e-12 of the
-// largest that would take its fraction below zero is round-off and is
-// dropped from the step, so it cannot switch the stencil (#1199). A
+// (Y -> Y + s v, X renormalised), exact: forward mode along v through the
+// mixture's cp, h, MW and viscosity, about one length integral per direction
+// (#1311; the Fanno-Rayleigh kernel's march likewise, #1310). Linear in v, and
+// for an absent species the one-sided derivative as it enters. A
 // unit vector e_k gives dG/dY_k at fixed others. ChannelElement passes an
 // orthonormal basis of its feeding node's dY/dx -- usually one vector -- and
 // projects back onto "{node}.Y[k]" keys. with_derivatives = false computes G,
