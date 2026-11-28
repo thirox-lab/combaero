@@ -1886,7 +1886,9 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
       // its start: heptane's equilibrium (subnormal at 450 K) looked
       // representable from the stalled iterate.
       if (!conv && with_reforming && allow_fallback) {
-        std::vector<double> n_h = n_out;
+        // From the solve's input, not the rounds' state (the rounds can have
+        // used up the steam the complete reforming needs).
+        std::vector<double> n_h = n0;
         bool ok = false;
         for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
           const std::size_t i = cfg.hc_indices[k];
@@ -1927,18 +1929,36 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
             n_add[cfg.i_H2] -= m * a;
             n_add[cfg.i_H2O] += nC * a;
           }
-          std::vector<double> n_fin;
-          std::vector<JointReaction> rx_fin;
-          std::vector<std::size_t> act_fin;
-          ok = solve_reforming_wgs_joint(n_add, T, P, cfg, true, n_fin, &rx_fin, &act_fin,
-                                         false);
-          if (ok && elements_conserved(n0, n_fin)) {
+          // Newton from that near-equilibrium state first, in a basis chosen
+          // there: the full solve's start-up rounds can overshoot from it
+          // (dry air at 1100 K with 5e-13 of ethane and 2e-18 of H2: the
+          // rounds formed every alkane at about 1e-15 and used up the steam,
+          // and Newton stalled there, 61 of 140 such states refused; Gemini's
+          // review of #1349). Then the full solve, as a last resort.
+          choose_basis(n_add);
+          std::vector<double> n_fin = n_add;
+          std::vector<std::size_t> act_fin = joint_active(rx, n_fin);
+          if (joint_newton(n_fin, P, rx, act_fin, lnK, REFORMING_NEWTON_MAX_IT) &&
+              elements_conserved(n0, n_fin)) {
             n_try = n_fin;
-            rx = rx_fin;
-            lnK.assign(rx.size(), 0.0);
-            for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
             act = act_fin;
             conv = true;
+          } else {
+            std::vector<JointReaction> rx_fin;
+            n_fin.clear();
+            ok = solve_reforming_wgs_joint(n_add, T, P, cfg, true, n_fin, &rx_fin, &act_fin,
+                                           false);
+            if (ok && elements_conserved(n0, n_fin)) {
+              n_try = n_fin;
+              rx = rx_fin;
+              lnK.assign(rx.size(), 0.0);
+              for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
+              act = act_fin;
+              conv = true;
+            } else {
+              choose_basis(n_try);  // back to the basis of the state kept
+              act = joint_active(rx, n_try);
+            }
           }
         }
       }
@@ -2211,9 +2231,19 @@ double jacobian_gap(const EquilibriumJacobian &a, const EquilibriumJacobian &b,
       }
     }
     gap = rel(ta, tb, std::max(std::abs(ta), std::abs(tb)));
+    // Each X_out component relative to its own size: a trace one can still
+    // be on its way to the limit while the vector's norm has settled. N2
+    // arriving at CO with 1e-15 H2: dX_NH3 grows as t^-1/2 from 1e-14 at
+    // t = 1e-26 and saturates only near 1e-56, where dT is 3849 against the
+    // 1993 K plateau (Gemini's review of #1349). Components below the
+    // vector's round-off (DBL_EPSILON of its largest) carry no digits.
     double sx = 0.0;
     for (std::size_t j = 0; j < ns; ++j) sx = std::max({sx, std::abs(xa[j]), std::abs(xb[j])});
-    for (std::size_t j = 0; j < ns; ++j) gap = std::max(gap, rel(xa[j], xb[j], sx));
+    const double floor_x = std::numeric_limits<double>::epsilon() * sx;
+    for (std::size_t j = 0; j < ns; ++j) {
+      const double sj = std::max(std::abs(xa[j]), std::abs(xb[j]));
+      if (sj > floor_x) gap = std::max(gap, rel(xa[j], xb[j], sj));
+    }
     return gap;
   }
   double st = 0.0, sx = 0.0;
@@ -2260,6 +2290,11 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
   // species absent from n0 counts as present. At exactly zero air a
   // fuel-only burn holds no N2, so the value path leaves NH3 synthesis out,
   // while with any air it runs on the pyrolysis H2.
+  if (dX_dir != nullptr && dX_dir->size() != ns) {
+    throw std::invalid_argument("combustion_equilibrium_and_jacobian: dX_dir has " +
+                                std::to_string(dX_dir->size()) + " entries, expected " +
+                                std::to_string(ns));
+  }
   std::vector<double> dn0_dir;
   std::vector<double> n0_later = n0;
   if (dX_dir != nullptr) {

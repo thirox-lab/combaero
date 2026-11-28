@@ -23,6 +23,9 @@ slope, on 2026-11-27.
 - **The limit.** `REFORMING_JACOBIAN_LIMIT_RTOL`.
   - From the first converging trace, the ladder steps down by 100 until two traces' derivatives agree to 1e-8: along the direction if one is given, else over the matrix, each relative to its own infinity-norm.
   - The kept derivatives are the larger trace's, so where the first trace is already in the limit's regime J is as before.
+  - Along `dX_dir`, the gap compares each component of X_out with its own size, so a trace component still on its way to the limit keeps the ladder going (Gemini's review: N2 arriving at CO with 1e-15 H2).
+    - The limit there, saturation near t = 1e-56, still lies below the range the trace solve can reach (it fails at about 1e-32).
+    - So J there is the plateau value, 1993 K, against the limit's 3849 K; recorded on #1345.
   - The step-down runs only along `dX_dir`. Without a direction, the seed is the same trace of every fed species, which is no reactant's direction, so its limit means nothing.
   - The floor is sqrt(DBL_MIN): a species quadratic in the trace (N2 beside the NH3 it forms) stays normal.
 - **Light-first fallback.** After the bound, a solve that still fails:
@@ -32,6 +35,10 @@ slope, on 2026-11-27.
   - the set is solved once more, without the fallback.
 
   Representability is judged at a converged state, not at the stalled iterate. The nightly search found the case: CH4 and heptane smoothing traces of 8e-18 at 500 K and 0.1 bar.
+
+  Gemini's review of #1349 refined it:
+  - The fallback starts from the solve's input, because the start-up rounds can use up the steam (dry air at 1100 K with 5e-13 ethane and 2e-18 H2: 61 of 140 states refused).
+  - It finishes with Newton from its near-equilibrium state, and the full solve only as a last resort.
 - **The NH3 start.** `solve_nh3_decomposition_isothermal` returns its bracketed iterate at the iteration cap instead of throwing. It is a start; the joint solve decides convergence.
 
 ## Ground truth

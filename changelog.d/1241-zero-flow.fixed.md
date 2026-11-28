@@ -9,3 +9,6 @@
 - **A lean burn's smoothing traces converge (#1241).** CH4 and n-heptane at 1e-4 each in air at 0.1 bar leave 8e-18 of each unburnt. The joint solve stalled there, because heptane's equilibrium amount, below the double range at 500 K, looked representable from the stalled iterate.
   - **Now:** after a failed solve, the hydrocarbons are reformed completely and the rest is solved. Each hydrocarbon is then added back at its own equilibrium amount at that converged state, or left at 0 below the normal range.
   - **Effect:** T is as before to 3e-13 K.
+- **Warm air with a hydrocarbon trace and a hydrogen impurity converges (#1241).** Dry air at 1000 to 1400 K with 1e-12 of ethane or propane and 4e-18 of H2 or NH3 was refused in 61 of 140 states.
+  - **Cause:** the start-up rounds used up the steam that the light-first fallback's complete reforming needs.
+  - **Now:** the fallback starts from the solve's input and finishes by Newton from its near-equilibrium state. All 140 converge.

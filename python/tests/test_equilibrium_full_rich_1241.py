@@ -180,3 +180,32 @@ def test_a_lean_two_fuel_trace_converges(T: float, h2o: float) -> None:
     r = _core.combustion_equilibrium(T, X, 1e4)
     assert r.converged
     _core.combustion_equilibrium_and_jacobian(T, X, 1e4)
+
+
+def test_a_direction_of_the_wrong_length_is_refused() -> None:
+    """dX_dir is read at every species index: a shorter vector read past its
+    end (Gemini's review of #1349) and now raises."""
+    x = np.asarray(cb.species.dry_air())
+    with pytest.raises(ValueError, match="dX_dir has 2 entries"):
+        _core.combustion_equilibrium_and_jacobian(500.0, x, 1e5, dX_dir=[1.0, -1.0])
+
+
+@pytest.mark.parametrize("T", [1000.0, 1100.0, 1200.0, 1400.0])
+@pytest.mark.parametrize("P", [5e3, 1e5])
+@pytest.mark.parametrize(("hc", "trace"), [("C2H6", "H2"), ("C3H8", "H2"), ("C2H6", "NH3")])
+def test_warm_air_with_a_hydrocarbon_and_a_hydrogen_trace_converges(
+    T: float, P: float, hc: str, trace: str
+) -> None:
+    """Gemini's review of #1349: dry air at 1000-1400 K with 1e-12 of ethane
+    or propane and 4e-18 of H2 or NH3 was refused in 61 of 140 states (main:
+    0). The start-up rounds formed every alkane at about 1e-15 and used up
+    the steam, and the light-first fallback started from that state, where
+    complete reforming had no steam left. It now starts from the solve's
+    input, and finishes by Newton from its near-equilibrium state."""
+    X = np.array(cb.species.dry_air())
+    X[_NAMES.index(hc)] += 1e-12
+    X[_NAMES.index(trace)] += 4e-18
+    X /= X.sum()
+    r = _core.combustion_equilibrium(T, X, P)
+    assert r.converged
+    _core.combustion_equilibrium_and_jacobian(T, X, P)
