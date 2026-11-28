@@ -22,16 +22,20 @@ from validation.cooling.schema import load_dataset  # noqa: E402
 # With the default hole-angle Cd term (Idelchik 3-2 on these cylindrical 20 and
 # 30 deg holes, default since the 2026-11-10 hole-Cd audit): Cd 0.82-0.84 ->
 # 0.74-0.77, coolant flow -9%, plateau eta -0.4 to -0.9 points.
+# Re-pinned under #1128 (static exit head lost at PressureBoundary(coupling="auto")
+# on tail LosslessConnectionElement, same abs=1e-3 band width; cross-source
+# model change, not tuning): chamber P sits at p_h instead of p_h - q_gas,
+# reducing plateau eta by 0.0004-0.0024 (closer to measured).
 PINNED = {
-    "fig9_eta_tot_E20_dp2": (0.922, 0.852),
-    "fig9_eta_tot_E20_dp3": (0.930, 0.867),
-    "fig9_eta_tot_E20_dp4": (0.936, 0.876),
-    "fig6_eta_tot_E30_Tc470": (0.920, 0.848),
-    "fig6_eta_tot_E30_Tc540": (0.921, 0.850),
-    "fig6_eta_tot_E30_Tc580": (0.920, 0.849),
-    "fig10_eta_tot_E30_5bar_dp2": (0.911, 0.832),
-    "fig10_eta_tot_E30_10bar_dp3": (0.909, 0.830),
-    "fig10_eta_tot_E30_10bar_dp2": (0.901, 0.816),
+    "fig9_eta_tot_E20_dp2": (0.921, 0.850),
+    "fig9_eta_tot_E20_dp3": (0.930, 0.866),
+    "fig9_eta_tot_E20_dp4": (0.935, 0.876),
+    "fig6_eta_tot_E30_Tc470": (0.919, 0.847),
+    "fig6_eta_tot_E30_Tc540": (0.920, 0.848),
+    "fig6_eta_tot_E30_Tc580": (0.919, 0.847),
+    "fig10_eta_tot_E30_5bar_dp2": (0.909, 0.830),
+    "fig10_eta_tot_E30_10bar_dp3": (0.909, 0.829),
+    "fig10_eta_tot_E30_10bar_dp2": (0.899, 0.814),
 }
 
 
@@ -115,16 +119,16 @@ def test_the_trends(dataset) -> None:
         assert abs(tc[b]) < 2e-3
         assert dp[b] > 0.0
         assert p3[b] < 0.0 and p2[b] < 0.0
-    # The flat plate overshoots the dp trend (1.6x) where the chamber
-    # undershoots it (0.90x), and closes most of the pressure trend's gap.
-    assert dp["chamber"] / dp["measured"] == pytest.approx(0.90, abs=0.03)
-    assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.60, abs=0.05)
+    # The flat plate overshoots the dp trend (1.67x) where the chamber
+    # undershoots it (0.94x), and closes most of the pressure trend's gap.
+    assert dp["chamber"] / dp["measured"] == pytest.approx(0.94, abs=0.03)
+    assert dp["flat_plate"] / dp["measured"] == pytest.approx(1.67, abs=0.05)
     assert p3["flat_plate"] / p3["measured"] == pytest.approx(0.71, abs=0.05)
     # Gas radiation (#1071) grows with pressure (eps_g 0.14 -> 0.26), so it
     # closes most of the flat plate's pressure trend; it also steepens the
-    # dp trend, whose overshoot grows to 1.9x.
+    # dp trend, whose overshoot grows to 1.97x.
     assert p3["flat_plate+rad"] / p3["measured"] == pytest.approx(0.89, abs=0.05)
-    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.89, abs=0.06)
+    assert dp["flat_plate+rad"] / dp["measured"] == pytest.approx(1.97, abs=0.06)
 
 
 def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> None:
@@ -153,15 +157,15 @@ def test_the_start_length_moves_the_score_and_the_duct_area_does_not(series) -> 
 # Plateau predictions with gas radiation (rig beam length, eps_w 0.9):
 # (chamber, flat plate), and the plate's hot-face radiative flux [kW/m^2].
 PINNED_RAD = {
-    "fig9_eta_tot_E20_dp2": (0.890, 0.824, 38.0),
-    "fig9_eta_tot_E20_dp3": (0.902, 0.841, 38.4),
-    "fig9_eta_tot_E20_dp4": (0.909, 0.852, 38.6),
-    "fig6_eta_tot_E30_Tc470": (0.888, 0.820, 39.1),
-    "fig6_eta_tot_E30_Tc540": (0.888, 0.821, 37.9),
-    "fig6_eta_tot_E30_Tc580": (0.887, 0.819, 37.1),
-    "fig10_eta_tot_E30_5bar_dp2": (0.876, 0.802, 38.7),
-    "fig10_eta_tot_E30_10bar_dp3": (0.872, 0.798, 67.0),
-    "fig10_eta_tot_E30_10bar_dp2": (0.860, 0.781, 66.3),
+    "fig9_eta_tot_E20_dp2": (0.889, 0.822, 38.0),
+    "fig9_eta_tot_E20_dp3": (0.901, 0.840, 38.4),
+    "fig9_eta_tot_E20_dp4": (0.909, 0.851, 38.6),
+    "fig6_eta_tot_E30_Tc470": (0.887, 0.819, 39.1),
+    "fig6_eta_tot_E30_Tc540": (0.887, 0.819, 37.9),
+    "fig6_eta_tot_E30_Tc580": (0.886, 0.818, 37.1),
+    "fig10_eta_tot_E30_5bar_dp2": (0.874, 0.799, 38.7),
+    "fig10_eta_tot_E30_10bar_dp3": (0.871, 0.797, 67.0),
+    "fig10_eta_tot_E30_10bar_dp2": (0.859, 0.778, 66.3),
 }
 
 
@@ -186,15 +190,15 @@ def test_the_radiation_rows_are_pinned_and_score_apart(series) -> None:
 # hole Cd's default inclination term (2026-11-10 audit): every eta 0.5-0.9
 # point lower than before it.
 PINNED_RAD_BORDBAR = {
-    "fig9_eta_tot_E20_dp2": (0.891, 0.825, 36.8, 0.132),
-    "fig9_eta_tot_E20_dp3": (0.903, 0.842, 37.2, 0.132),
-    "fig9_eta_tot_E20_dp4": (0.910, 0.853, 37.4, 0.132),
-    "fig6_eta_tot_E30_Tc470": (0.889, 0.821, 37.9, 0.132),
-    "fig6_eta_tot_E30_Tc540": (0.889, 0.822, 36.8, 0.132),
-    "fig6_eta_tot_E30_Tc580": (0.888, 0.820, 36.0, 0.132),
-    "fig10_eta_tot_E30_5bar_dp2": (0.877, 0.803, 37.5, 0.132),
-    "fig10_eta_tot_E30_10bar_dp3": (0.881, 0.806, 50.9, 0.198),
-    "fig10_eta_tot_E30_10bar_dp2": (0.870, 0.789, 50.4, 0.198),
+    "fig9_eta_tot_E20_dp2": (0.890, 0.822, 36.8, 0.132),
+    "fig9_eta_tot_E20_dp3": (0.902, 0.840, 37.2, 0.132),
+    "fig9_eta_tot_E20_dp4": (0.909, 0.852, 37.4, 0.132),
+    "fig6_eta_tot_E30_Tc470": (0.888, 0.820, 37.9, 0.132),
+    "fig6_eta_tot_E30_Tc540": (0.888, 0.820, 36.8, 0.132),
+    "fig6_eta_tot_E30_Tc580": (0.887, 0.819, 36.0, 0.132),
+    "fig10_eta_tot_E30_5bar_dp2": (0.875, 0.800, 37.5, 0.132),
+    "fig10_eta_tot_E30_10bar_dp3": (0.880, 0.804, 50.9, 0.198),
+    "fig10_eta_tot_E30_10bar_dp2": (0.869, 0.787, 50.4, 0.198),
 }
 
 

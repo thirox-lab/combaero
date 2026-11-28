@@ -79,12 +79,12 @@ def _s1(node_kind: str) -> dict:
     return _solve(g)
 
 
-def _s4(kind: str) -> dict:
+def _s4(kind: str, coupling: str = "auto") -> dict:
     """S4: PB 1.05e5 -> channel -> a (chamber, area A) -> X -> outflow PB 1.0e5."""
     g = FlowNetwork()
     g.add_node(PressureBoundary("in", Pt=1.05e5, Tt=300.0, Y=Y_AIR))
     g.add_node(MomentumChamberNode("a", area=A))
-    g.add_node(PressureBoundary("out", Pt=1.0e5, Tt=300.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("out", Pt=1.0e5, Tt=300.0, Y=Y_AIR, coupling=coupling))
     g.add_element(ChannelElement("c", "in", "a", length=0.5, diameter=D))
     if kind == "area_change":
         g.add_element(AreaChangeElement("x", "a", "out", F0=A, F1=4.0 * A))
@@ -113,11 +113,14 @@ def test_s1_channel_into_momentum_chamber_of_its_area_is_zero() -> None:
 
 @pytest.mark.parametrize(("kind", "area"), [("loss", A), ("area_change", 4.0 * A)])
 def test_s4_total_receiving_element_into_outflow_boundary(kind: str, area: float) -> None:
-    """PressureLoss and AreaChange do not read exit_head_lost: the outflow
-    boundary recovers their head, at the exit area (F1 for the change)."""
-    r = _s4(kind)
-    m = r["x.m_dot"]
-    q = r["__element_diag__"]["x"][KEY]
+    """PressureLoss and AreaChange honour exit_head_lost (#1128): under default
+    coupling='auto' the exit head is lost (reports 0); under coupling='total'
+    the boundary recovers it, at the exit area (F1 for the change)."""
+    r_lost = _s4(kind, coupling="auto")
+    assert r_lost["__element_diag__"]["x"][KEY] == 0.0
+    r_tot = _s4(kind, coupling="total")
+    m = r_tot["x.m_dot"]
+    q = r_tot["__element_diag__"]["x"][KEY]
     assert q > 0.0
     assert q == pytest.approx(_q_isentropic(m, area, 1.0e5, 300.0), rel=2e-3)
 

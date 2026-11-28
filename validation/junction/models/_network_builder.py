@@ -181,7 +181,7 @@ def build_separating_network_skeleton(
     Y = _DRY_AIR_Y
     net.add_node(MassFlowBoundary("mb_in", m_dot=m_in, Tt=_TT_REF, Y=Y))
     net.add_node(MassFlowBoundary("mb_lat", m_dot=m_lateral, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_str", Pt=Pt_ref, Tt=_TT_REF, Y=Y))
+    net.add_node(PressureBoundary("pb_str", Pt=Pt_ref, Tt=_TT_REF, Y=Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_str", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_bra", area=_F_C, regime=_REGIME))
@@ -212,9 +212,9 @@ def build_separating_three_pb_skeleton(
     Pt_str = Pt_com - K_straight_target * q_dyn
     net = FlowNetwork()
     Y = _DRY_AIR_Y
-    net.add_node(PressureBoundary("pb_com", Pt=Pt_com, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=Pt_lat, Tt=_TT_REF, Y=Y))
+    net.add_node(PressureBoundary("pb_com", Pt=Pt_com, Tt=_TT_REF, Y=Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=Pt_lat, Tt=_TT_REF, Y=Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_str", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_bra", area=_F_C, regime=_REGIME))
@@ -242,8 +242,8 @@ def build_separating_mfb_two_pb_skeleton(
     net = FlowNetwork()
     Y = _DRY_AIR_Y
     net.add_node(MassFlowBoundary("mb_in", m_dot=m_in, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=Pt_lat, Tt=_TT_REF, Y=Y))
+    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=Pt_lat, Tt=_TT_REF, Y=Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_str", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_bra", area=_F_C, regime=_REGIME))
@@ -271,7 +271,7 @@ def build_joining_imposed_q_skeleton(
     Y = _DRY_AIR_Y
     net.add_node(MassFlowBoundary("mb_str", m_dot=m_straight, Tt=_TT_REF, Y=Y))
     net.add_node(MassFlowBoundary("mb_bra", m_dot=m_lateral, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_com", Pt=Pt_ref, Tt=_TT_REF, Y=Y))
+    net.add_node(PressureBoundary("pb_com", Pt=Pt_ref, Tt=_TT_REF, Y=Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_str", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_bra", area=_F_C, regime=_REGIME))
@@ -297,9 +297,9 @@ def build_joining_three_pb_skeleton(
     Pt_bra = Pt_com + K12_target * q_dyn
     net = FlowNetwork()
     Y = _DRY_AIR_Y
-    net.add_node(PressureBoundary("pb_com", Pt=Pt_com, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=Pt_bra, Tt=_TT_REF, Y=Y))
+    net.add_node(PressureBoundary("pb_com", Pt=Pt_com, Tt=_TT_REF, Y=Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=Pt_bra, Tt=_TT_REF, Y=Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_str", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_bra", area=_F_C, regime=_REGIME))
@@ -327,8 +327,8 @@ def build_joining_mfb_two_pb_skeleton(
     net = FlowNetwork()
     Y = _DRY_AIR_Y
     net.add_node(MassFlowBoundary("mb_com", m_dot=m_in, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=Pt_bra, Tt=_TT_REF, Y=Y))
+    net.add_node(PressureBoundary("pb_str", Pt=Pt_str, Tt=_TT_REF, Y=Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=Pt_bra, Tt=_TT_REF, Y=Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_str", area=_F_C, regime=_REGIME))
     net.add_node(MomentumChamberNode("port_bra", area=_F_C, regime=_REGIME))

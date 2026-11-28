@@ -241,28 +241,32 @@ unscored. `gas_augmentation`, `internal_Nu_multiplier` and the chamber's
   Re_x 1.6-2.9e4 (5 bar) and 3.2-5.9e4 (10 bar) are below the Stanford data's
   1.5e5, so these rows are out-of-domain by the kernel's own flag.
 
-Plateau means (x/d 18-50), predicted at gas_augmentation 1.0, with the hole
-Cd's default inclination term (Idelchik diagram 3-2 on these cylindrical 20
-and 30 deg holes, default since the 2026-11-10 hole-Cd audit; it lowers the
-Cd from 0.82-0.84 to 0.74-0.77 and the coolant flow by about 9%):
+Plateau means (x/d 18-50), predicted at gas_augmentation 1.0 (**accuracy,
+cross-source**), with the hole Cd's default inclination term (Idelchik diagram
+3-2 on these cylindrical 20 and 30 deg holes, default since the 2026-11-10
+hole-Cd audit; it lowers the Cd from 0.82-0.84 to 0.74-0.77 and the coolant
+flow by about 9%) and static outflow discharge on the chamber's `tail` link
+(#1128, 2026-11-28, Option A: `ch.P = p_h` instead of `p_h - q_gas`, lowering
+the plate's coolant drive by `q_gas ~ 0.09%` and moving `eta_overall` down by
+`0.0005-0.0025` from the pre-#1128 `main` `e427b904` values):
 
 | curve | measured | chamber | err | flat plate | err | h0 chamber / flat [W/m2K] |
 |---|---|---|---|---|---|---|
-| E20 dp 2% Tc 540 K | 0.790 | 0.922 | +16.7% | 0.852 | +7.9% | 94 / 193 |
-| E20 dp 3% Tc 540 K | 0.800 | 0.930 | +16.3% | 0.867 | +8.4% | 94 / 193 |
-| E20 dp 4% Tc 540 K | 0.805 | 0.936 | +16.2% | 0.876 | +8.8% | 94 / 193 |
-| E30 dp 3% Tc 470 K | 0.778 | 0.920 | +18.2% | 0.848 | +9.0% | 94 / 193 |
-| E30 dp 3.1% Tc 540 K | 0.727 | 0.921 | +26.7% | 0.850 | +16.9% | 94 / 193 |
-| E30 dp 3% Tc 580 K | 0.688 | 0.920 | +33.7% | 0.849 | +23.3% | 94 / 193 |
-| E30 dp 2% Tc 470 K | 0.768 | 0.911 | +18.5% | 0.832 | +8.4% | 94 / 193 |
-| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.909 | +20.8% | 0.830 | +10.3% | 163 / 334 |
-| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.901 | +22.4% | 0.816 | +10.8% | 163 / 334 |
+| E20 dp 2% Tc 540 K | 0.790 | 0.921 | +16.6% | 0.850 | +7.6% | 94 / 193 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.930 | +16.3% | 0.866 | +8.3% | 94 / 193 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.935 | +16.2% | 0.876 | +8.8% | 94 / 193 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.919 | +18.1% | 0.847 | +8.9% | 94 / 193 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.920 | +26.6% | 0.848 | +16.8% | 94 / 193 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.919 | +33.6% | 0.847 | +23.1% | 94 / 193 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.909 | +18.4% | 0.830 | +8.1% | 94 / 193 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.909 | +20.7% | 0.829 | +10.1% | 163 / 334 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.899 | +22.2% | 0.814 | +10.6% | 163 / 334 |
 
-Mean +21.1% (chamber) and +11.5% (flat plate); per vertex (821 points, the
-scorecard rows) +21.2% and +11.6%. Without the inclination term (the
-default before the audit) they were +21.6% / +12.5% and +21.8% / +12.6%. No curve is inside the authors' 3%
-band on either baseline. The restarted boundary layer halves the miss and does
-not close it.
+Mean +21.0% (chamber, was +21.1% before #1128) and +11.4% (flat plate, was
++11.5%); per vertex (821 points, the scorecard rows) +21.1% and +11.4% (was
++21.2% and +11.6% before #1128; without the inclination term they were +21.6% /
++12.5% and +21.8% / +12.6%). No curve is inside the authors' 3% band on either
+baseline. The restarted boundary layer halves the miss and does not close it.
 
 Trends, plateau differences (measured / chamber / flat plate):
 
@@ -270,21 +274,22 @@ Trends, plateau differences (measured / chamber / flat plate):
 |---|---|---|---|
 | angle 20 -> 30 deg (TC1 dp 3% Tc 540 K) | -0.073 | -0.010 | -0.017 |
 | T_c 470 -> 580 K (E30 TC1 dp 3%) | -0.090 | +0.000 | +0.000 |
-| dp 2 -> 4% (E20 TC1 Tc 540 K) | +0.015 | +0.014 | +0.024 |
+| dp 2 -> 4% (E20 TC1 Tc 540 K) | +0.015 | +0.014 | +0.025 |
 | p_h 5 -> 10 bar (E30 dp 3%) | -0.025 | -0.010 | -0.018 |
 | p_h 5 -> 10 bar (E30 dp ~2%) | -0.032 | -0.010 | -0.017 |
 
 Every sign is right except T_c, which both miss entirely: the two-resistance
 closure is T_c-invariant to first order. The flat plate raises the gas-side
-weight, so the internal-side trends (dp) grow past the measurement (1.6x)
-and the pressure trend closes from 0.3-0.4x to 0.5-0.7x. The angle effect
-(the authors: 46% less wall-normal jet momentum at 20 deg) stays at 0.1-0.2x:
-the element has no angle-dependent gas side.
+weight, so the internal-side trends (dp) grow past the measurement (1.7x, was
+1.6x before #1128) and the pressure trend closes from 0.3-0.4x to 0.5-0.7x. The
+angle effect (the authors: 46% less wall-normal jet momentum at 20 deg) stays at
+0.1-0.2x: the element has no angle-dependent gas side.
 
 Sensitivity (reported, never chosen; `sensitivity()`):
 
-- **Start length moves the score.** Bleed at 10.5 d / 21 d / 42 d: eta 0.843 /
-  0.848 / 0.857 (E30 Tc 470 K); from the sample's own leading edge 0.835.
+- **Start length moves the score.** Bleed at 10.5 d / 21 d / 42 d: eta 0.841 /
+  0.847 / 0.856 (E30 Tc 470 K; was 0.843 / 0.848 / 0.857); from the sample's own
+  leading edge 0.833 (was 0.835).
 - **Duct area (80e3 vs 8e3 mm2, Dh 319 vs 89 mm) moves only the chamber
   baseline** (-0.02 in eta); the flat plate does not see Dh (identical to 1e-9).
 - **Whole sample as one panel** (x/d 0-143): flat-plate eta +0.009 against the
@@ -306,26 +311,27 @@ choices made on the score:
 
 | curve | measured | chamber + rad | err | flat + rad | err | q_rad [kW/m2] | eps_g |
 |---|---|---|---|---|---|---|---|
-| E20 dp 2% Tc 540 K | 0.790 | 0.890 | +12.7% | 0.824 | +4.3% | 38 | 0.137 |
-| E20 dp 3% Tc 540 K | 0.800 | 0.902 | +12.8% | 0.841 | +5.2% | 38 | 0.137 |
-| E20 dp 4% Tc 540 K | 0.805 | 0.909 | +12.9% | 0.852 | +5.9% | 39 | 0.137 |
-| E30 dp 3% Tc 470 K | 0.778 | 0.888 | +14.2% | 0.820 | +5.4% | 39 | 0.137 |
-| E30 dp 3.1% Tc 540 K | 0.727 | 0.888 | +22.2% | 0.821 | +13.0% | 38 | 0.137 |
-| E30 dp 3% Tc 580 K | 0.688 | 0.887 | +28.8% | 0.819 | +19.0% | 37 | 0.137 |
-| E30 dp 2% Tc 470 K | 0.768 | 0.876 | +14.0% | 0.802 | +4.4% | 39 | 0.137 |
-| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.872 | +15.9% | 0.798 | +6.0% | 67 | 0.262 |
-| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.860 | +16.9% | 0.781 | +6.1% | 66 | 0.262 |
+| E20 dp 2% Tc 540 K | 0.790 | 0.889 | +12.5% | 0.822 | +4.0% | 38 | 0.137 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.901 | +12.6% | 0.840 | +5.0% | 38 | 0.137 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.909 | +12.8% | 0.851 | +5.7% | 39 | 0.137 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.887 | +14.1% | 0.819 | +5.2% | 39 | 0.137 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.887 | +22.1% | 0.819 | +12.8% | 38 | 0.137 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.886 | +28.7% | 0.818 | +18.8% | 37 | 0.137 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.874 | +13.8% | 0.799 | +4.1% | 39 | 0.137 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.871 | +15.7% | 0.797 | +5.8% | 67 | 0.262 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.859 | +16.7% | 0.778 | +5.8% | 66 | 0.262 |
 
-Per vertex (821 points): +16.8% (chamber) and +7.8% (flat plate), against
-+21.2% and +11.6% without radiation (before the inclination default: +17.6%
-and +8.9%). Still no curve inside the 3% band. The
-radiative flux is about 23% of the convective one at both pressures.
+Per vertex (821 points, cross-source accuracy): +16.7% (chamber, was +16.8%
+before #1128) and +7.5% (flat plate, was +7.8%), against +21.1% and +11.4%
+without radiation (before the inclination default: +17.6% and +8.9%). Still no
+curve inside the 3% band. The radiative flux is about 23% of the convective one
+at both pressures.
 
 Trends with radiation (chamber / flat plate): angle -0.014 / -0.020; T_c
--0.002 / -0.001; dp +0.019 / +0.029; p_h dp 3% -0.016 / -0.022; p_h dp ~2%
--0.015 / -0.021. The pressure trend closes to 0.6 / 0.89x, since eps_g
-nearly doubles from 5 to 10 bar. The dp overshoot grows (flat plate 1.9x),
-and the T_c and angle trends stay missed.
+-0.002 / -0.001; dp +0.020 / +0.030 (was +0.019 / +0.029); p_h dp 3% -0.016 /
+-0.022; p_h dp ~2% -0.015 / -0.021. The pressure trend closes to 0.6 / 0.89x,
+since eps_g nearly doubles from 5 to 10 bar. The dp overshoot grows (flat plate
+2.0x, was 1.9x before #1128), and the T_c and angle trends stay missed.
 
 Sensitivity (flat plate, `sensitivity()`): the 80 x 100 mm beam length
 (0.076 m) or a 0.7 emissivity raises eta by 0.003-0.006, so the radiative
@@ -350,27 +356,28 @@ above are unchanged.
 
 | curve | measured | chamber + rad | err | flat + rad | err | q_rad [kW/m2] | eps_g |
 |---|---|---|---|---|---|---|---|
-| E20 dp 2% Tc 540 K | 0.790 | 0.891 | +12.8% | 0.825 | +4.4% | 37 | 0.132 |
-| E20 dp 3% Tc 540 K | 0.800 | 0.903 | +12.9% | 0.842 | +5.3% | 37 | 0.132 |
-| E20 dp 4% Tc 540 K | 0.805 | 0.910 | +13.0% | 0.853 | +5.9% | 37 | 0.132 |
-| E30 dp 3% Tc 470 K | 0.778 | 0.889 | +14.3% | 0.821 | +5.5% | 38 | 0.132 |
-| E30 dp 3.1% Tc 540 K | 0.727 | 0.889 | +22.4% | 0.822 | +13.1% | 37 | 0.132 |
-| E30 dp 3% Tc 580 K | 0.688 | 0.888 | +29.0% | 0.820 | +19.1% | 36 | 0.132 |
-| E30 dp 2% Tc 470 K | 0.768 | 0.877 | +14.1% | 0.803 | +4.5% | 38 | 0.132 |
-| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.881 | +17.1% | 0.806 | +7.0% | 51 | 0.198 |
-| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.870 | +18.3% | 0.789 | +7.3% | 50 | 0.198 |
+| E20 dp 2% Tc 540 K | 0.790 | 0.890 | +12.6% | 0.822 | +4.1% | 37 | 0.132 |
+| E20 dp 3% Tc 540 K | 0.800 | 0.902 | +12.8% | 0.840 | +5.1% | 37 | 0.132 |
+| E20 dp 4% Tc 540 K | 0.805 | 0.909 | +12.9% | 0.852 | +5.8% | 37 | 0.132 |
+| E30 dp 3% Tc 470 K | 0.778 | 0.888 | +14.2% | 0.820 | +5.4% | 38 | 0.132 |
+| E30 dp 3.1% Tc 540 K | 0.727 | 0.888 | +22.3% | 0.820 | +12.9% | 37 | 0.132 |
+| E30 dp 3% Tc 580 K | 0.688 | 0.887 | +28.8% | 0.819 | +18.9% | 36 | 0.132 |
+| E30 dp 2% Tc 470 K | 0.768 | 0.875 | +13.9% | 0.800 | +4.2% | 38 | 0.132 |
+| E30 10 bar dp 3% Tc 480 K | 0.753 | 0.880 | +16.9% | 0.804 | +6.8% | 51 | 0.198 |
+| E30 10 bar dp 2.1% Tc 480 K | 0.736 | 0.869 | +18.0% | 0.787 | +6.9% | 50 | 0.198 |
 
-Per vertex (821 points): +17.2% (chamber) and +8.1% (flat plate), against
-+16.8% / +7.8% with Eq. 8.11 and +21.2% / +11.6% without radiation (all with
-the inclination default of the 2026-11-10 hole-Cd audit; before it +18.0% /
-+9.2%, +17.6% / +8.9% and +21.8% / +12.6%). At 5 bar
-the two emissivities nearly agree (0.132 against 0.137); at 10 bar the WSGG
-is 24% lower (0.198 against 0.262) and so is the radiative flux. The
-pressure trend therefore closes less: p_h dp 3% -0.008 / -0.015 (0.32 /
-0.61x measured) against Eq. 8.11's 0.63 / 0.89x and 0.42 / 0.71x without
-radiation: from 5 to 10 bar the WSGG flux grows 1.35x while the convective
-one grows faster, so radiation's share falls with pressure and the trend
-ends below the no-radiation one. The other trends move by less than 0.0003.
+Per vertex (821 points, cross-source accuracy): +17.1% (chamber, was +17.2%
+before #1128) and +7.9% (flat plate, was +8.1%), against +16.7% / +7.5% with
+Eq. 8.11 and +21.1% / +11.4% without radiation (all with the inclination default
+of the 2026-11-10 hole-Cd audit; before it +18.0% / +9.2%, +17.6% / +8.9% and
++21.8% / +12.6%). At 5 bar the two emissivities nearly agree (0.132 against
+0.137); at 10 bar the WSGG is 24% lower (0.198 against 0.262) and so is the
+radiative flux. The pressure trend therefore closes less: p_h dp 3% -0.008 /
+-0.015 (0.31 / 0.61x measured) against Eq. 8.11's 0.63 / 0.89x and 0.42 / 0.72x
+without radiation: from 5 to 10 bar the WSGG flux grows 1.35x while the
+convective one grows faster, so radiation's share falls with pressure and the
+trend ends below the no-radiation one. The other trends move by less than
+0.0003.
 
 Reading. The composition-based emissivity does not improve the score: it
 removes part of the radiation that Eq. 8.11's pressure scaling supplied and
@@ -406,3 +413,12 @@ approximate, footnote 3). Neither is a tuning target.
 - 2026-11-10: re-scored with the hole Cd's inclination term on by default for
   cylindrical holes (stage 1 of the hole-Cd audit, user-approved). Every
   curve moves down 0.4-0.9 points; nothing else in the closure changed.
+- 2026-11-28: re-scored (cross-source accuracy) under #1128 Option A (owner
+  decision): `tail` `LosslessConnectionElement` out of `MomentumChamberNode("ch")`
+  now honours `PressureBoundary(coupling="auto").exit_head_lost`, putting
+  chamber static at `p_h` instead of `p_h - q_gas` (`q_gas ~ 0.09% p_h`).
+  Every curve shifts down by `0.0005-0.0025` (per-vertex means: chamber
+  `+21.2% -> +21.1%`, flat plate `+11.6% -> +11.4%`; Eq. 8.11 `+16.8% -> +16.7%`
+  / `+7.8% -> +7.5%`; Bordbar 2021 `+17.2% -> +17.1%` / `+8.1% -> +7.9%`);
+  flat-plate dp trend ratio moves `1.6x -> 1.7x` (`1.9x -> 2.0x` with radiation).
+  Band widths in `python/tests/test_effusion_network_runner.py` are unchanged.

@@ -74,7 +74,7 @@ def _band_net(element: OrificeElement, dp: float) -> FlowNetwork:
     5e5 (1 + dp) discharges into it."""
     g = FlowNetwork()
     g.add_node(MassFlowBoundary("gas_in", m_dot=2.0, Tt=1500.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR, coupling="total"))
     g.add_node(PressureBoundary("cool", Pt=P_GAS * (1.0 + dp), Tt=600.0, Y=Y_AIR))
     g.add_node(MomentumChamberNode("ch", area=0.01, main_inlet="feed"))
     g.add_element(LosslessConnectionElement("feed", "gas_in", "ch"))
@@ -333,7 +333,7 @@ def _side_net(dp: float, tail_channel: bool, in_pipe: bool = True) -> FlowNetwor
     channel. The supply at Pt = 5e5 (1 + dp)."""
     g = FlowNetwork()
     g.add_node(MassFlowBoundary("gas_in", m_dot=2.0, Tt=1500.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR, coupling="total"))
     g.add_node(PressureBoundary("cool", Pt=P_GAS * (1.0 + dp), Tt=600.0, Y=Y_AIR))
     g.add_node(MomentumChamberNode("ch", main_inlet="duct"))
     g.add_element(ChannelElement("duct", "gas_in", "ch", length=0.05, diameter=0.1128))
@@ -421,7 +421,7 @@ def _approach_net(dp: float, **orifice_kw) -> FlowNetwork:
     beta = 0.4), discharging into the flowing chamber of _band_net."""
     g = FlowNetwork()
     g.add_node(MassFlowBoundary("gas_in", m_dot=2.0, Tt=1500.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exit", Pt=P_GAS, Tt=1500.0, Y=Y_AIR, coupling="total"))
     g.add_node(PressureBoundary("cool", Pt=P_GAS * (1.0 + dp), Tt=600.0, Y=Y_AIR))
     g.add_node(MomentumChamberNode("ch", area=0.01, main_inlet="feed"))
     g.add_node(MomentumChamberNode("a", area=7.85e-5))
@@ -479,7 +479,7 @@ def _two_chambers(p_a: float) -> FlowNetwork:
     g = FlowNetwork()
     g.add_node(PressureBoundary("supA", Pt=p_a, Tt=500.0, Y=Y_AIR))
     g.add_node(MassFlowBoundary("inB", m_dot=2.0, Tt=1400.0, Y=Y_AIR))
-    g.add_node(PressureBoundary("exB", Pt=P_GAS, Tt=1400.0, Y=Y_AIR))
+    g.add_node(PressureBoundary("exB", Pt=P_GAS, Tt=1400.0, Y=Y_AIR, coupling="total"))
     g.add_node(MomentumChamberNode("chA", main_inlet="fA"))
     g.add_node(MomentumChamberNode("chB", area=0.01, main_inlet="fB"))
     g.add_element(DiameterDischargeCoefficientConnectionElement("fA", "supA", "chA", 0.02, Cd=0.8))

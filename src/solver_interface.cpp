@@ -2579,6 +2579,102 @@ ApproachStatic approach_static_pressure(double Pt, double Tt, double G,
   return out;
 }
 
+DischargeTotal discharge_total_pressure(double P_static, double Tt, double G,
+                                        const std::vector<double>& Y,
+                                        bool incompressible) {
+  const bool P_floored = !(P_static > combaero::thermo::P_FLOOR);
+  const bool T_floored = !(Tt > combaero::thermo::T_FLOOR);
+  const double P = P_floored ? combaero::thermo::P_FLOOR : P_static;
+  const double T0 = T_floored ? combaero::thermo::T_FLOOR : Tt;
+  const double Gabs = std::abs(G);
+  const double sgn = (G >= 0.0) ? 1.0 : -1.0;
+
+  std::vector<double> Y_safe = Y;
+  double sum_Y = 0.0;
+  for (double y : Y) {
+    sum_Y += y;
+  }
+  const bool valid_Y = sum_Y >= 1e-10;
+  if (!valid_Y) {
+    Y_safe.assign(Y.size(), 0.0);
+    Y_safe[combaero::species_index_from_name("N2")] = 0.767;
+    Y_safe[combaero::species_index_from_name("O2")] = 0.233;
+  }
+  const std::vector<double> X = combaero::mass_to_mole(combaero::normalize_fractions(Y_safe));
+
+  DischargeTotal out{};
+  out.dPt_dY.assign(Y.size(), 0.0);
+
+  if (incompressible) {
+    const double R = combaero::specific_gas_constant(X);
+    const double q = 0.5 * Gabs * Gabs * R * T0 / P;
+    out.Pt = P + q;
+    out.choked = false;
+    out.dPt_dP = P_floored ? 0.0 : (1.0 - q / P);
+    out.dPt_dTt = T_floored ? 0.0 : (q / T0);
+    out.dPt_dG = (Gabs > 0.0) ? (Gabs * R * T0 / P) * sgn : 0.0;
+    if (valid_Y && !P_floored && !T_floored && Gabs > 0.0) {
+      const std::vector<double> dR = combaero::specific_gas_constant_dY(X);
+      for (std::size_t k = 0; k < Y.size(); ++k) {
+        out.dPt_dY[k] = (q / R) * dR[k];
+      }
+    }
+    return out;
+  }
+
+  if (Gabs == 0.0) {
+    out.Pt = P;
+    out.dPt_dP = P_floored ? 0.0 : 1.0;
+    out.dPt_dTt = 0.0;
+    out.dPt_dG = 0.0;
+    out.choked = false;
+    return out;
+  }
+
+  // Compare against sonic static pressure P*(T0, Gabs, X) first so extreme G
+  // probes never enter deep-supersonic chamber_static_state solves.
+  const combaero::SonicStaticState son = combaero::sonic_static_state(T0, Gabs, X);
+  if (P < son.P) {
+    // Choked (under-expanded) exit: P_exit = P*, Pt = Pt*(T0, Gabs, X).
+    // Envelope theorem: d(Pt_cl)/dP = 0 at P*, so partials are chamber_static_state's
+    // at P* directly, C1 with the subsonic branch.
+    const ChamberStaticState ss = chamber_static_state(T0, son.P, Gabs, X);
+    const double Pt_star = son.P * std::exp(ss.lnPtP);
+    out.Pt = Pt_star;
+    out.choked = true;
+    out.dPt_dP = 0.0;
+    out.dPt_dTt = T_floored ? 0.0 : Pt_star * ss.dln_dTt;
+    out.dPt_dG = Pt_star * ss.dln_dG * sgn;
+    if (valid_Y && !T_floored) {
+      const ChamberStaticStateDX cs = chamber_static_state_dX(T0, son.P, Gabs, X);
+      std::vector<double> g_Pt(X.size(), 0.0);
+      for (std::size_t k = 0; k < X.size(); ++k) {
+        g_Pt[k] = Pt_star * cs.dlnPtP_dX[k];
+      }
+      out.dPt_dY = combaero::mole_gradient_to_mass(X, g_Pt);
+    }
+    return out;
+  }
+
+  // Subsonic exit: P_exit = P, Pt = P * exp(lnPtP(T0, P, Gabs, X)).
+  const ChamberStaticState st = chamber_static_state(T0, P, Gabs, X);
+  const double Pt = P * std::exp(st.lnPtP);
+  out.Pt = Pt;
+  out.choked = false;
+  out.dPt_dP = P_floored ? 0.0 : Pt * (1.0 / P + st.dln_dP);
+  out.dPt_dTt = T_floored ? 0.0 : Pt * st.dln_dTt;
+  out.dPt_dG = Pt * st.dln_dG * sgn;
+  if (valid_Y && !P_floored && !T_floored) {
+    const ChamberStaticStateDX cx = chamber_static_state_dX(T0, P, Gabs, X);
+    std::vector<double> g_Pt(X.size(), 0.0);
+    for (std::size_t k = 0; k < X.size(); ++k) {
+      g_Pt[k] = Pt * cx.dlnPtP_dX[k];
+    }
+    out.dPt_dY = combaero::mole_gradient_to_mass(X, g_Pt);
+  }
+  return out;
+}
+
 OrificeTapPressure orifice_tap_pressure_and_jacobian(double P_static_up,
                                                      double Pt_up,
                                                      double Pt_down,

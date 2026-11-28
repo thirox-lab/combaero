@@ -1768,6 +1768,20 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         "Static pressure of the flow at mass flux G from stagnation (Pt, Tt):\n"
         "duct_static_state compressible, Pt = P + G^2 R Tt / (2 P)\n"
         "incompressible. The approach state of an orifice with E (#651).");
+  py::class_<solver::DischargeTotal>(
+      m, "DischargeTotal",
+      "Exit stagnation pressure of a stream discharging into a static boundary (#1128)")
+      .def_readonly("Pt", &solver::DischargeTotal::Pt)
+      .def_readonly("dPt_dP", &solver::DischargeTotal::dPt_dP)
+      .def_readonly("dPt_dTt", &solver::DischargeTotal::dPt_dTt)
+      .def_readonly("dPt_dG", &solver::DischargeTotal::dPt_dG)
+      .def_readonly("dPt_dY", &solver::DischargeTotal::dPt_dY)
+      .def_readonly("choked", &solver::DischargeTotal::choked);
+  m.def("discharge_total_pressure", &solver::discharge_total_pressure,
+        py::arg("P_static"), py::arg("Tt"), py::arg("G"), py::arg("Y"),
+        py::arg("incompressible") = false,
+        "Exit stagnation pressure Pt_exit of a stream at (Tt, G, Y) discharging\n"
+        "into static pressure P_static (C1 across sonic choke, analytic partials, #1128).");
   py::class_<solver::OrificeTapPressure>(
       m, "OrificeTapPressure",
       "Downstream tap pressure of an orifice plate between pipes (#645)")
@@ -2267,10 +2281,10 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         py::arg("Pt0"), py::arg("Tt0"), py::arg("Y"), py::arg("Pt_target"),
         py::arg("F_in"), py::arg("F_out"), py::arg("model") = "sharp",
         py::arg("length") = 0.0, py::arg("D_h") = 0.0, py::arg("incompressible") = false,
-        py::arg("with_derivatives") = true,
-        "Mass flow of an area change from F_in to F_out whose loss is the drive\n"
-        "Pt0 - Pt_target (odd in it), saturating at the sonic flow, with its\n"
-        "analytic partials. Returns AreaChangeFlow.");
+        py::arg("with_derivatives") = true, py::arg("exit_head_lost") = false,
+        "Mass flow of an area change from F_in to F_out whose drive is\n"
+        "Pt0 - Pt_target (odd in it, total-to-static when exit_head_lost=True),\n"
+        "saturating at the sonic flow, with analytic partials. Returns AreaChangeFlow.");
 
   py::class_<combaero::AreaChangeElementFlow>(m, "AreaChangeElementFlow",
                                               "Area change element flow between two nodes")
@@ -2290,9 +2304,11 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
         py::arg("Pt_a"), py::arg("Tt_a"), py::arg("Y_a"), py::arg("Pt_b"), py::arg("Tt_b"),
         py::arg("Y_b"), py::arg("F_a"), py::arg("F_b"), py::arg("model") = "sharp",
         py::arg("length") = 0.0, py::arg("D_h") = 0.0, py::arg("incompressible") = false,
-        py::arg("with_derivatives") = true,
+        py::arg("with_derivatives") = true, py::arg("exit_head_lost_b") = false,
+        py::arg("exit_head_lost_a") = false,
         "The area change element's flow from node a (face F_a) to node b, both\n"
-        "directions blended C1 through zero drive. Returns AreaChangeElementFlow.");
+        "directions blended C1 through zero drive (static exit when exit_head_lost\n"
+        "is set for that direction). Returns AreaChangeElementFlow.");
 
   // Compression and expansion along a path of given efficiency (#893).
   py::class_<combaero::TurbomachinePath>(

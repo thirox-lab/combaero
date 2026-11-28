@@ -38,13 +38,15 @@ Y_AIR = list(cb.mole_to_mass(cb.species.dry_air()))
 
 @pytest.mark.slow
 def test_a_draw_the_homotopy_left_is_rescued_by_the_ramp() -> None:
-    """Stress random 111: the cold solve, its retries and the homotopy all
-    fail; the ramp solves it, in under 2 s. (Random 34 was the draw until the
+    """Stress random 48: the cold solve, its retries and the homotopy all
+    fail; the ramp solves it. (Random 34 was the draw until the
     cold start learnt its compressible elements' kernels (#971), random 35
-    until it seeded a fraction loss as its own ratio (#989), and random 19
-    until #1002 replaced its loop-closing fraction loss with a head loss: all
-    three now converge before the ramp.)"""
-    net, _ = FAMILIES["random"](111)
+    until it seeded a fraction loss as its own ratio (#989), random 19
+    until #1002 replaced its loop-closing fraction loss with a head loss,
+    and random 111 until #1128 routed static-discharge and unanchored
+    fraction losses through the LM fallback: all four now converge before
+    the ramp.)"""
+    net, _ = FAMILIES["random"](48)
     s = NetworkSolver(net)
     s.homotopy_retry = True
     s.bc_ramp_retry = True

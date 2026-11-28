@@ -51,9 +51,9 @@ _A = 0.01
 def _net(pt_str: float, pt_bra: float, area_bra: float = _A) -> FlowNetwork:
     """Common inlet at 1 bar, two pressure-driven outlets."""
     net = FlowNetwork()
-    net.add_node(PressureBoundary("pb_in", Pt=1.0e5, Tt=300.0, Y=_Y))
-    net.add_node(PressureBoundary("pb_str", Pt=pt_str, Tt=300.0, Y=_Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=pt_bra, Tt=300.0, Y=_Y))
+    net.add_node(PressureBoundary("pb_in", Pt=1.0e5, Tt=300.0, Y=_Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_str", Pt=pt_str, Tt=300.0, Y=_Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=pt_bra, Tt=300.0, Y=_Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_A))
     net.add_node(MomentumChamberNode("port_str", area=_A))
     net.add_node(MomentumChamberNode("port_bra", area=area_bra))
@@ -152,8 +152,8 @@ def test_an_imposed_common_flow_sets_the_level():
 
     net = FlowNetwork()
     net.add_node(MassFlowBoundary("mb_in", m_dot=0.08, Tt=300.0, Y=_Y))
-    net.add_node(PressureBoundary("pb_str", Pt=99_980.0, Tt=300.0, Y=_Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=99_950.0, Tt=300.0, Y=_Y))
+    net.add_node(PressureBoundary("pb_str", Pt=99_980.0, Tt=300.0, Y=_Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=99_950.0, Tt=300.0, Y=_Y, coupling="total"))
     for n in ("port_com", "port_str", "port_bra"):
         net.add_node(MomentumChamberNode(n, area=_A))
     net.add_element(LosslessConnectionElement("lc_com", "mb_in", "port_com"))
@@ -213,9 +213,9 @@ def test_a_channel_wired_junction_still_gets_a_forward_seed():
     channel, so it carries the older Bernoulli override, and the junction seed
     must not fight it into a reversed start."""
     net = FlowNetwork()
-    net.add_node(PressureBoundary("pb_in", Pt=1.0e5, Tt=300.0, Y=_Y))
-    net.add_node(PressureBoundary("pb_str", Pt=99_980.0, Tt=300.0, Y=_Y))
-    net.add_node(PressureBoundary("pb_bra", Pt=99_950.0, Tt=300.0, Y=_Y))
+    net.add_node(PressureBoundary("pb_in", Pt=1.0e5, Tt=300.0, Y=_Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_str", Pt=99_980.0, Tt=300.0, Y=_Y, coupling="total"))
+    net.add_node(PressureBoundary("pb_bra", Pt=99_950.0, Tt=300.0, Y=_Y, coupling="total"))
     net.add_node(MomentumChamberNode("port_com", area=_A))
     net.add_node(MomentumChamberNode("port_str", area=_A))
     net.add_node(MomentumChamberNode("port_bra", area=_A))

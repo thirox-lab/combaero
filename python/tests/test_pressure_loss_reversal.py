@@ -37,7 +37,13 @@ from combaero.network.pressure_loss import (
 Y = list(cb.species.dry_air_mass())
 
 
-def _net(correlation, P_a: float, P_b: float, mirrored: bool = False) -> FlowNetwork:
+def _net(
+    correlation,
+    P_a: float,
+    P_b: float,
+    mirrored: bool = False,
+    coupling: str = "auto",
+) -> FlowNetwork:
     """a -> loss -> p -> partner -> b; ``mirrored`` declares both elements the
     other way, b -> partner -> p -> loss -> a.
 
@@ -46,8 +52,8 @@ def _net(correlation, P_a: float, P_b: float, mirrored: bool = False) -> FlowNet
     declared inlet (#554) and mirrors only approximately.
     """
     g = FlowNetwork()
-    g.add_node(PressureBoundary("a", Pt=P_a, Tt=300.0, Y=Y))
-    g.add_node(PressureBoundary("b", Pt=P_b, Tt=300.0, Y=Y))
+    g.add_node(PressureBoundary("a", Pt=P_a, Tt=300.0, Y=Y, coupling=coupling))
+    g.add_node(PressureBoundary("b", Pt=P_b, Tt=300.0, Y=Y, coupling=coupling))
     g.add_node(PlenumNode("p"))
     loss, part = (("p", "a"), ("b", "p")) if mirrored else (("a", "p"), ("p", "b"))
     g.add_element(PressureLossElement("loss", *loss, correlation=correlation, area=1e-3))
@@ -66,8 +72,10 @@ def _solve(g: FlowNetwork) -> dict:
 
 
 def test_a_reversed_fraction_loss_loses_total_pressure_along_the_flow() -> None:
-    """Flow b -> a through a loss declared a -> p: Pt_a = (1 - xi) Pt_p."""
-    r = _solve(_net(ConstantFractionLoss(xi=0.2, m_ref=0.05), 1.0e5, 2.0e5))
+    """Flow b -> a through a loss declared a -> p: Pt_a = (1 - xi) Pt_p under
+    total coupling (under auto/static coupling the exit head at a is also lost,
+    #1128)."""
+    r = _solve(_net(ConstantFractionLoss(xi=0.2, m_ref=0.05), 1.0e5, 2.0e5, coupling="total"))
     assert r["loss.m_dot"] < 0.0
     assert r["p.Pt"] == pytest.approx(1.0e5 / 0.8, rel=1e-9)
     assert r["loss.xi"] == pytest.approx(0.2)

@@ -325,6 +325,29 @@ ApproachStatic approach_static_pressure(double Pt, double Tt, double G,
                                         const std::vector<double>& Y,
                                         bool incompressible);
 
+// Exit stagnation pressure Pt_exit of a stream at stagnation Tt, mass flux G,
+// and composition Y discharging into a static pressure boundary P_static (#1128).
+//
+// Subsonic (P_static >= P*): P_exit = P_static, Pt = P_static * exp(lnPtP)
+// from chamber_static_state (thermally perfect gas, variable cp).
+// Choked (P_static < P*): P_exit = P*(Tt, G, X), Pt = Pt*(Tt, G, X),
+// independent of P_static. Because d(Pt)/dP = 0 at P* (envelope theorem), the
+// two branches meet C1 in (P_static, Tt, G, Y) with no smoothing parameter.
+// Incompressible: Pt = P_static + G^2 R Tt / (2 P_static), no choke.
+// All derivatives analytic (no finite differences).
+struct DischargeTotal {
+  double Pt;
+  double dPt_dP;
+  double dPt_dTt;
+  double dPt_dG;
+  std::vector<double> dPt_dY;
+  bool choked;
+};
+
+DischargeTotal discharge_total_pressure(double P_static, double Tt, double G,
+                                        const std::vector<double>& Y,
+                                        bool incompressible = false);
+
 inline constexpr double ORIFICE_TAP_PRESSURE_FLOOR = 0.1;
 inline constexpr double ORIFICE_RECOVERY_MIN_PRESSURE_RATIO = 0.75;
 

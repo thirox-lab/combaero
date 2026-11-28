@@ -66,7 +66,10 @@ def _net(
     n.add_node(MassFlowBoundary("fuel", m_dot=1.0, Tt=300.0, Y=Y_CH4))
     n.add_node(PlenumNode("pl"))
     n.add_node(CombustorNode("cmb"))
-    n.add_node(PressureBoundary("out", Pt=exit_Pt, Tt=300.0, Y=Y_AIR))
+    # Pass-through bore tests (#788) impose Pt = exit_Pt at the junction;
+    # coupling="total" preserves that Pt-imposing boundary semantics (#1128).
+    out_coupling = "total" if bore is not None else "auto"
+    n.add_node(PressureBoundary("out", Pt=exit_Pt, Tt=300.0, Y=Y_AIR, coupling=out_coupling))
     n.add_element(LosslessConnectionElement("ea", "air", "pl"))
     n.add_element(OrificeElement("of", "fuel", "pl", Cd=0.6, diameter=0.02, correlation="fixed"))
     n.add_element(LosslessConnectionElement("ep", "pl", "cmb"))
@@ -371,3 +374,24 @@ def test_a_start_on_the_subsonic_side_is_not_moved() -> None:
             assert c.bounded and abs(c.residual) < 1e-6 * st.Pt
         else:
             assert st.Pt == st.P and not c.bounded
+
+
+def test_a_bore_equal_to_the_pipe_under_auto_coupling_matches_plain_channel() -> None:
+    """Under coupling='auto' (#1128), a pass-through orifice (bore == pipe)
+    discharging into the outlet loses its exit dynamic head (choking at Pt*
+    above P_OUT rather than pinning jct.Pt = P_OUT as a choked-bounded
+    junction), while cmb.Pt matches the plain channel-into-outlet reference."""
+    net = _net(0.1)
+    net.nodes["out"].coupling = "auto"
+    _, r = _solve(net)
+    assert r["__success__"], r["__message__"]
+    _, ref = _solve(_net(None))
+    assert ref["__success__"], ref["__message__"]
+    assert r["cmb.Pt"] == pytest.approx(ref["cmb.Pt"], rel=1e-11)
+    # Binds OrificeElement._pass_through_exit_head_spec: without it, the
+    # pass-through orifice pins jct.Pt = P_OUT (20 bar) and enters
+    # choked-bounded mode; with it, discharge_total_pressure chokes the exit
+    # face at Pt* ~ 48.7 bar (P* ~ 26.8 bar > P_OUT) and jct is subsonic.
+    assert r[f"{JCT}.Pt"] == pytest.approx(4871106.0, rel=1e-3)
+    assert r[f"{JCT}.P"] > 1.2 * P_OUT
+    assert r["__choked_bounded_junctions__"] == []

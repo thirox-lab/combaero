@@ -188,14 +188,16 @@ def build(case: Case, model: Model = "mynard", loss_factor: float = 1.0) -> Flow
             net.add_node(
                 MassFlowBoundary("b_bra", m_dot=case.split * m_com, Tt=case.Tt, Y=_Y)
             )
-            net.add_node(PressureBoundary("b_com", Pt=case.Pt, Tt=case.Tt, Y=_Y))
+            net.add_node(PressureBoundary("b_com", Pt=case.Pt, Tt=case.Tt, Y=_Y, coupling="total"))
         else:
-            net.add_node(PressureBoundary("b_str", Pt=Pt_str, Tt=case.Tt, Y=_Y))
-            net.add_node(PressureBoundary("b_bra", Pt=Pt_bra, Tt=case.Tt, Y=_Y))
+            net.add_node(PressureBoundary("b_str", Pt=Pt_str, Tt=case.Tt, Y=_Y, coupling="total"))
+            net.add_node(PressureBoundary("b_bra", Pt=Pt_bra, Tt=case.Tt, Y=_Y, coupling="total"))
             if case.drive == "flow_and_pressures":
                 net.add_node(MassFlowBoundary("b_com", m_dot=m_com, Tt=case.Tt, Y=_Y))
             else:
-                net.add_node(PressureBoundary("b_com", Pt=case.Pt, Tt=case.Tt, Y=_Y))
+                net.add_node(
+                    PressureBoundary("b_com", Pt=case.Pt, Tt=case.Tt, Y=_Y, coupling="total")
+                )
         net.add_element(LosslessConnectionElement("lc_str", "b_str", "port_str"))
         net.add_element(LosslessConnectionElement("lc_bra", "b_bra", "port_bra"))
         net.add_element(LosslessConnectionElement("lc_com", "port_com", "b_com"))
@@ -216,14 +218,16 @@ def build(case: Case, model: Model = "mynard", loss_factor: float = 1.0) -> Flow
             net.add_node(
                 MassFlowBoundary("b_bra", m_dot=case.split * m_com, Tt=case.Tt, Y=_Y)
             )
-            net.add_node(PressureBoundary("b_str", Pt=Pt_str, Tt=case.Tt, Y=_Y))
+            net.add_node(PressureBoundary("b_str", Pt=Pt_str, Tt=case.Tt, Y=_Y, coupling="total"))
         else:
-            net.add_node(PressureBoundary("b_str", Pt=Pt_str, Tt=case.Tt, Y=_Y))
-            net.add_node(PressureBoundary("b_bra", Pt=Pt_bra, Tt=case.Tt, Y=_Y))
+            net.add_node(PressureBoundary("b_str", Pt=Pt_str, Tt=case.Tt, Y=_Y, coupling="total"))
+            net.add_node(PressureBoundary("b_bra", Pt=Pt_bra, Tt=case.Tt, Y=_Y, coupling="total"))
             if case.drive == "flow_and_pressures":
                 net.add_node(MassFlowBoundary("b_com", m_dot=m_com, Tt=case.Tt, Y=_Y))
             else:
-                net.add_node(PressureBoundary("b_com", Pt=case.Pt, Tt=case.Tt, Y=_Y))
+                net.add_node(
+                    PressureBoundary("b_com", Pt=case.Pt, Tt=case.Tt, Y=_Y, coupling="total")
+                )
         net.add_element(LosslessConnectionElement("lc_com", "b_com", "port_com"))
         net.add_element(LosslessConnectionElement("lc_str", "port_str", "b_str"))
         net.add_element(LosslessConnectionElement("lc_bra", "port_bra", "b_bra"))

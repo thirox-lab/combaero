@@ -120,8 +120,13 @@ def test_a_bore_equal_to_its_chamber_is_no_orifice(bore: float, chamber_upstream
     ref = NetworkSolver(_net(None, chamber_upstream=chamber_upstream)).solve()
     assert r["__success__"] and ref["__success__"]
     assert r["o.m_dot"] == pytest.approx(ref["o.m_dot"], rel=1e-9)
-    a, b = ("ch", "out") if chamber_upstream else ("in", "ch")
-    assert r[f"{a}.Pt"] == pytest.approx(r[f"{b}.Pt"], rel=1e-12)
+    assert r["ch.Pt"] == pytest.approx(ref["ch.Pt"], rel=1e-12)
+    if chamber_upstream:
+        # Outflow into PressureBoundary(coupling="auto") loses the chamber
+        # exit dynamic head identically to LosslessConnectionElement (#1128).
+        assert r["ch.P"] == pytest.approx(r["out.Pt"], rel=1e-12)
+    else:
+        assert r["in.Pt"] == pytest.approx(r["ch.Pt"], rel=1e-12)
 
 
 # --- smaller: unchanged ----------------------------------------------------------

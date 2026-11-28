@@ -1548,7 +1548,10 @@ class NetworkSolver:
         # its resistance would take more than xi Pt_up; below that it stays a
         # resistance (with a design flow m_ref, the dynamic head the loss fades
         # with). Between two fixed ends the flow is not its to set: its K.
+        from .components import _node_exit_head_lost
+
         frac: dict[int, tuple[float, float | None]] = {}
+        frac_q_exit: dict[int, tuple[float, float]] = {}
         for k, e in enumerate(els):
             law = e._seed_fraction() if isinstance(e, PressureLossElement) else None
             if (
@@ -1557,6 +1560,17 @@ class NetworkSolver:
                 and not (e.from_node in fixed and e.to_node in fixed)
             ):
                 frac[k] = law
+                # When a fraction loss carries an exit velocity area into a
+                # static-coupled boundary (#1128), its drop is xi Pt_up + q_exit
+                # rather than flow-independent xi Pt_up; keep q_k = 1/(2 rho A^2)
+                # on the ratio row's diagonal so the seed respects exit head.
+                exit_area = e._exit_head_area()
+                if exit_area is not None:
+                    q_k = 1.0 / (2.0 * rho * exit_area * exit_area)
+                    q_fwd = q_k if _node_exit_head_lost(net.nodes.get(e.to_node)) else 0.0
+                    q_rev = q_k if _node_exit_head_lost(net.nodes.get(e.from_node)) else 0.0
+                    if q_fwd > 0.0 or q_rev > 0.0:
+                        frac_q_exit[k] = (q_fwd, q_rev)
         sized = [k for k in range(len(els)) if k not in frac and K[k] > 0.0]
         K[K == 0.0] = SEED_LOSSLESS_FRACTION * (K[sized] if sized else K[K > 0.0]).min()
 
@@ -1653,6 +1667,11 @@ class NetworkSolver:
                             L[col, node] += coef
                         else:
                             b[col] -= coef * fix
+                    q_pair = frac_q_exit.get(k)
+                    if q_pair is not None:
+                        q_dir = q_pair[0] if mode[k] == 1 else q_pair[1]
+                        if q_dir > 0.0:
+                            L[col, col] += mode[k] * q_dir * (abs(m[k]) + SEED_MDOT_FLOOR)
                 # A free node no element reaches (or one only through walls)
                 # keeps the reference pressure.
                 diag = np.diag(L)[:n_free].copy()
@@ -5224,6 +5243,8 @@ class NetworkSolver:
         """
         depth = getattr(self, "_solve_depth", 0)
         self._solve_depth = depth + 1
+        if depth == 0:
+            self._tee_forward_retried = False
         t_start = time.time()
         try:
             # A fuel controller's target proven unreachable (#1114): refused
@@ -5246,6 +5267,7 @@ class NetworkSolver:
             if auto_retry:
                 left = None if timeout is None else timeout - (time.time() - t_start)
                 sol = self._retry_legacy_tees_forward(sol, left, method, options, use_jac)
+            self._tee_forward_retried = False
             sol = self._mark_fraction_unanchored(sol)
         return sol
 
@@ -5257,34 +5279,41 @@ class NetworkSolver:
         options: dict[str, Any] | None,
         use_jac: bool,
     ) -> dict[str, Any]:
-        """A root a legacy tee refused for a leg against its tee_type (#1231),
-        retried once from a forward start (#1234).
+        """A failed solve whose best iterate leaves a legacy tee reversed
+        against its tee_type (#1231, #1128), retried once from a forward start
+        (#1234).
 
         Outside the tee's flow pattern Bassett's coefficients are extrapolated
-        and have roots of their own, and a cold solve can land there although
-        the forward root exists: the residuals of a tee with every leg forward
-        are those of #1230, whose solve found it. The start is the refused
-        root with each tee's legs mirrored into the tee_type's direction
-        (their magnitudes kept, the common leg their sum). Only that demotion
-        triggers it; the retry's own result is returned only when it
-        succeeds, else the refused root stands, and the solver's last iterate
-        and diagnostics stay the refused solve's. ``timeout`` is the time left
-        of the caller's budget; ``auto_retry=False`` skips it. Only a port node
-        joined by exactly one two-port has that element's flow mirrored too;
-        any other is left as the refused root had it.
+        and have roots of their own (or, under static boundary discharge, stall
+        past sonic on the reversed branch), so a cold solve can get trapped
+        there although the forward root exists: the residuals of a tee with
+        every leg forward are those of #1230, whose solve found it. The start
+        is the failed solve's best iterate with each reversed tee's legs
+        mirrored into the tee_type's direction (their magnitudes kept, the
+        common leg their sum). Both refused reversed roots
+        (``__inconsistent_elements__``) and non-converged solves whose best
+        iterate has reversed tee legs trigger it; the retry's own result is
+        returned only when it succeeds, else the original failed result stands,
+        and the solver's last iterate and diagnostics stay the original
+        solve's. ``timeout`` is the time left of the caller's budget;
+        ``auto_retry=False`` skips it. Only a port node joined by exactly one
+        two-port has that element's flow mirrored too; any other is left as the
+        failed iterate had it.
         """
         from .components import TEE_REVERSE_FLOW_TOL, TeeJunctionElement
 
-        bad = sol.get("__inconsistent_elements__") or []
         x = sol.get("__x_solution__")
-        if not bad or x is None or sol.get("__success__", False):
+        if x is None or sol.get("__success__", False):
             return sol
-        if getattr(self, "_in_tee_forward_retry", False):
+        if getattr(self, "_in_tee_forward_retry", False) or getattr(
+            self, "_tee_forward_retried", False
+        ):
             return sol
         x = np.array(x, dtype=float)
+        if len(x) != len(self.unknown_names):
+            return sol
         tees = []
-        for eid in bad:
-            e = self.network.elements.get(eid)
+        for eid, e in self.network.elements.items():
             ind = self._unknown_indices.get(eid, [])
             if (
                 isinstance(e, TeeJunctionElement)
@@ -5292,7 +5321,7 @@ class NetworkSolver:
                 and e.reversed_legs(x, ind, TEE_REVERSE_FLOW_TOL)
             ):
                 tees.append((eid, ind))
-        if not tees or len(x) != len(self.unknown_names):
+        if not tees:
             return sol
         two = self._two_port_mdot_indices()
         for eid, ind in tees:
@@ -5320,6 +5349,7 @@ class NetworkSolver:
             return sol
         saved = {k: getattr(self, k) for k in ("_last_x", "_diagnostic_data") if hasattr(self, k)}
         self._in_tee_forward_retry = True
+        self._tee_forward_retried = True
         try:
             retry = self.solve(
                 method=method, timeout=timeout, options=options, use_jac=use_jac, x0=x
@@ -5429,6 +5459,13 @@ class NetworkSolver:
             # (an unphysical junction root, an open ledger) is a different
             # failure, and a homotopy from the same guess tends to find it again.
             if sol.get("__success__", False) or sol.get("__converged__", False):
+                return sol
+            # If the failed cold solve stranded a legacy tee on reversed legs
+            # (#1231, #1128), mirror it to a forward start BEFORE burning the
+            # budget on homotopy / BC-ramp retries.
+            _left_tee = None if timeout is None else timeout - (time.time() - _h0)
+            sol = self._retry_legacy_tees_forward(sol, _left_tee, method, options, use_jac)
+            if sol.get("__success__", False):
                 return sol
             if self.homotopy_retry:
                 # With the ramp to follow, an uncapped homotopy takes half of
@@ -6914,6 +6951,20 @@ class NetworkSolver:
         _has_merge = any(
             getattr(n, "main_inlet", None) is not None for n in self.network.nodes.values()
         )
+        # Blocked unanchored fraction losses (#1004/#1128) have dF/dm = 0
+        # outside the narrow zero-flow reversal blend, where hybr exits fast
+        # with NO_PROGRESS after 10 rejections while LM converges to ~1e-11.
+        # Gate ONLY the post-failure LM fallback (below), never hybr's 65%
+        # budget cut or stall handover, so incompressible proxy solves and
+        # ordinary PressureLoss networks keep their full hybr budget.
+        _has_unanchored_fraction = (
+            method == "hybr"
+            and not getattr(self, "_in_warmstart_proxy", False)
+            and any(
+                isinstance(e, PressureLossElement) and e.unanchored_fraction
+                for e in self.network.elements.values()
+            )
+        )
         _has_compressible = method == "hybr" and (
             bool(self._compressible_element_overrides()) or _has_tee or _has_mpce or _has_merge
         )
@@ -6972,6 +7023,7 @@ class NetworkSolver:
         start_time = time.perf_counter()
         best_x = x0_use.copy()
         best_res_norm = np.linalg.norm(res0)
+        best_scaled_norm = float(np.linalg.norm(res0 * inv_D_f))
         last_exception: Exception | None = None
         # Last PHYSICAL evaluation (scaled F, scaled J): what a rejected
         # probe is answered with (see the except branch below).
@@ -7004,7 +7056,7 @@ class NetworkSolver:
             return f
 
         def _residuals_scaled(x_scaled: np.ndarray) -> Any:
-            nonlocal best_x, best_res_norm, last_exception
+            nonlocal best_x, best_res_norm, best_scaled_norm, last_exception
 
             # Check timeout
             if _timeout_eff[0] is not None and (time.perf_counter() - start_time) > _timeout_eff[0]:
@@ -7024,6 +7076,7 @@ class NetworkSolver:
                 _improved = res_norm < best_res_norm
                 if _improved:
                     best_res_norm = res_norm
+                    best_scaled_norm = float(np.linalg.norm(res * inv_D_f))
                     best_x = x_real.copy()
 
                 # Record convergence history point
@@ -7213,7 +7266,10 @@ class NetworkSolver:
             # is 0/0 and hybr reports "not making good progress" from the
             # root itself. A residual at machine level IS the solution (#582:
             # a row linear in its own unknown reaches |F| = 1e-19 in one step).
-            if not success and final_norm <= _EXACT_ROOT_TOL:
+            if not success and (
+                final_norm <= _EXACT_ROOT_TOL
+                or (best_scaled_norm <= _EXACT_ROOT_TOL and final_norm <= _RESIDUAL_TOL)
+            ):
                 success = True
                 outcome = SolveOutcome.CONVERGED
                 message = (
@@ -7275,14 +7331,19 @@ class NetworkSolver:
         # LM fallback for hybr oscillation on compressible networks.
         # Levenberg-Marquardt's (J^TJ + lI) regularisation prevents the
         # ill-conditioned Newton step that causes hybr to bounce near a
-        # choked solution without making progress.  Start from the best
-        # iterate hybr found; restore the full timeout so LM gets the
-        # remaining 35% of the budget. Also for ANY network where hybr
-        # reported success at a non-root (its xtol test on a Broyden-updated
-        # Jacobian): an 8-row impingement array with the epsilon-NTU wall heat
-        # stopped there at |F| = 1.7e-3, where LM from its best iterate reaches
-        # 3e-11 (#627). Only a failed solve gets the extra phase.
-        if not success and (_has_compressible or outcome == SolveOutcome.RESIDUAL_TOO_LARGE):
+        # choked solution or across a sharp reversal blend without making
+        # progress.  Start from the best iterate hybr found; restore the full
+        # timeout so LM gets the remaining 35% of the budget. Also for ANY
+        # network where hybr reported success at a non-root (its xtol test on
+        # a Broyden-updated Jacobian): an 8-row impingement array with the
+        # epsilon-NTU wall heat stopped there at |F| = 1.7e-3, where LM from
+        # its best iterate reaches 3e-11 (#627). Only a failed solve gets the
+        # extra phase.
+        if not success and (
+            _has_compressible
+            or _has_unanchored_fraction
+            or outcome == SolveOutcome.RESIDUAL_TOO_LARGE
+        ):
             _elapsed = time.perf_counter() - start_time
             _remaining = (timeout - _elapsed) if timeout is not None else None
             if _remaining is None or _remaining > 2.0:
