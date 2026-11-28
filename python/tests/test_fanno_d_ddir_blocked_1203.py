@@ -10,6 +10,11 @@ parts are summed. The references: that linearity (sum_k v_k dG/dY_k from
 per-species unit directions -- for an all-blocked direction this is the same
 arithmetic, so it only shows the entry is no longer 0), and, independent of
 d_ddir, the limit of plain central differences along v from feasible traces.
+
+Since #1311 fanno_channel_flow takes these tangents exactly (forward mode
+along v, no step), so the cases below are value checks of the exact
+tangent, and so for the Fanno-Rayleigh kernel since #1310. d_ddir still
+serves the throat-choked Rayleigh branch and the sub-floor sigma slopes.
 """
 
 import subprocess
@@ -112,20 +117,28 @@ def test_the_split_matches_the_limit_of_feasible_differences(direction: dict[str
 
 def test_a_negative_fraction_does_not_recurse() -> None:
     """A state off the simplex (a -1e-20 fraction, only from a direct kernel
-    call: the network clamps Y to [0, 1]) blocks every direction, so no split
-    shrinks; it keeps the 0 it had instead of recursing until the process
-    dies. Run in a subprocess so a regression fails here rather than killing
-    the test session."""
+    call: the network clamps Y to [0, 1]) blocked every d_ddir direction, so no
+    split shrank, and once recursed until the process died. Both Fanno kernels
+    now take the exact tangent (#1311, #1310), which needs no step: it is the
+    derivative there, equal to the one at the clamped fraction 0. Run in a
+    subprocess so a regression fails here rather than killing the session."""
     code = (
         "import combaero as cb\n"
         "N=[cb.species_name(i) for i in range(cb.num_species())]\n"
         "X=[0.0]*len(N)\n"
         "for k,x in {'N2':0.78084,'O2':0.20946,'AR':0.00934}.items(): X[N.index(k)]=x\n"
+        "X0=list(X)\n"
         "X[N.index('CO2')]=-1e-20\n"
         "v=[0.0]*len(N); v[N.index('O2')]=0.5; v[N.index('N2')]=-0.5\n"
-        "r=cb._core.fanno_channel_flow(2e5,600.0,X,1.5e5,False,0.5,0.02,0.0,'haaland',1.0,-1.0,[v])\n"
-        "print(r.dG_ddir[0])\n"
+        "a=lambda Xs: cb._core.fanno_channel_flow(2e5,600.0,Xs,1.5e5,False,0.5,0.02,0.0,"
+        "'haaland',1.0,-1.0,[v]).dG_ddir[0]\n"
+        "r=lambda Xs: cb._core.fanno_rayleigh_channel_flow(2e5,600.0,700.0,Xs,1.5e5,False,0.5,"
+        "0.02,0.0,'haaland',1.0,-1.0,[v]).dG_ddir[0]\n"
+        "print(a(X), a(X0), r(X), r(X0))\n"
     )
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, (done.returncode, done.stderr[-500:])
-    assert float(done.stdout.split()[-1]) == 0.0
+    adiabatic, adiabatic_0, rayleigh, rayleigh_0 = (float(t) for t in done.stdout.split()[-4:])
+    assert adiabatic != 0.0 and rayleigh != 0.0
+    assert adiabatic == pytest.approx(adiabatic_0, rel=1e-12)
+    assert rayleigh == pytest.approx(rayleigh_0, rel=1e-12)

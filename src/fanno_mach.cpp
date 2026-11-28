@@ -525,6 +525,271 @@ PhiSlopes exit_per_flux_slopes(double Me, double Tt, const std::vector<double>& 
   return s;
 }
 
+// ---------------------------------------------------------------------------
+// Exact tangents of the Fanno pieces at fixed Mach limits (#1311, #1310).
+//
+// raw_flow's implicit derivatives combine the pieces below (the exit pressure
+// per unit flux, the isentropic inlet flux, the length between two Mach
+// numbers) in sums that cancel to drive / P at low drive (5e-6 at 1 Pa on
+// 2 bar), twice for a composition direction. Differenced, each piece carried
+// ~1e-8 relative error, which the cancellation amplified to 1-3 % in dG/dY
+// near the 1 Pa floor (#1311), whatever the step: a larger one trades
+// round-off for truncation. Forward mode carries round-off only.
+//
+// Slots: a DualN<N> whose slot i is a state seed (G, Tt0) has comp[i] = 0; a
+// composition slot has comp[i] = 1 and takes the X partials along dX. A
+// direction v in the mass fractions moves the mole fractions by
+//   dX_i = MW (v_i / W_i - X_i sum_k v_k / W_k),
+// the step mass_to_mole(Y + t v) takes (it keeps sum X = 1). The mixture's
+// molar cp, h, dcp/dT, d2cp/dT2 and MW are linear in X, so each one's
+// derivative along dX is the same sum with dX in place of X. For an absent
+// species it is the one-sided derivative as the species enters, the limit
+// d_ddir's one-sided stencils approximated.
+// ---------------------------------------------------------------------------
+
+template <int N>
+using DualT = solver::DualN<N>;
+
+template <int N>
+struct MixTangent {
+  const std::vector<double>* X = nullptr;
+  std::vector<double> dX;   // along the composition slot's direction (empty: none)
+  double mw = 0.0;          // [g/mol]
+  double mw_v = 0.0;        // d MW along dX
+  std::array<double, N> comp{};
+
+  bool has_comp() const { return !dX.empty(); }
+};
+
+template <int N>
+MixTangent<N> mix_tangent(const std::vector<double>& X, const std::vector<double>* v, int slot) {
+  MixTangent<N> m;
+  m.X = &X;
+  m.mw = mwmix(X);
+  if (v == nullptr) {
+    return m;
+  }
+  if (v->size() != X.size()) {
+    throw std::invalid_argument("fanno_channel_flow: a dY direction has the wrong length");
+  }
+  double s = 0.0;
+  for (std::size_t k = 0; k < X.size(); ++k) {
+    s += (*v)[k] / species_molar_mass(k);
+  }
+  m.dX.assign(X.size(), 0.0);
+  for (std::size_t k = 0; k < X.size(); ++k) {
+    m.dX[k] = m.mw * ((*v)[k] / species_molar_mass(k) - X[k] * s);
+  }
+  m.mw_v = mwmix(m.dX);
+  m.comp[slot] = 1.0;
+  return m;
+}
+
+// val with slope d_dT along T and d_dv along the composition slot.
+template <int N>
+DualT<N> lift_tx(double val, double d_dT, const DualT<N>& T, double d_dv, const MixTangent<N>& m) {
+  DualT<N> r;
+  r.v = val;
+  for (int i = 0; i < N; ++i) {
+    r.d[i] = d_dT * T.d[i] + d_dv * m.comp[i];
+  }
+  return r;
+}
+
+template <int N>
+DualT<N> gas_constant_t(const MixTangent<N>& m) {
+  const double R = specific_gas_constant(*m.X);
+  return lift_tx(R, 0.0, DualT<N>::constant(0.0), m.has_comp() ? -R * m.mw_v / m.mw : 0.0, m);
+}
+
+// Molar cp [J/(mol K)] and its T-slope, each with its composition partial.
+template <int N>
+DualT<N> cp_molar_t(const DualT<N>& T, const MixTangent<N>& m) {
+  return lift_tx(cp(T.v, *m.X), dcp_dT(T.v, *m.X), T, m.has_comp() ? cp(T.v, m.dX) : 0.0, m);
+}
+
+template <int N>
+DualT<N> dcp_molar_dT_t(const DualT<N>& T, const MixTangent<N>& m) {
+  return lift_tx(dcp_dT(T.v, *m.X), d2cp_dT2(T.v, *m.X), T,
+                 m.has_comp() ? dcp_dT(T.v, m.dX) : 0.0, m);
+}
+
+// A mass-based property from its molar one: q / MW * 1000.
+template <int N>
+DualT<N> per_mass_t(const DualT<N>& q_molar, const MixTangent<N>& m) {
+  DualT<N> r = q_molar * (1000.0 / m.mw);
+  if (m.has_comp()) {
+    for (int i = 0; i < N; ++i) {
+      r.d[i] -= r.v * (m.mw_v / m.mw) * m.comp[i];
+    }
+  }
+  return r;
+}
+
+template <int N>
+DualT<N> h_mass_t(const DualT<N>& T, const MixTangent<N>& m) {
+  const DualT<N> h_mol =
+      lift_tx(h(T.v, *m.X), cp(T.v, *m.X), T, m.has_comp() ? h(T.v, m.dX) : 0.0, m);
+  return per_mass_t(h_mol, m);
+}
+
+template <int N>
+DualT<N> cp_mass_t(const DualT<N>& T, const MixTangent<N>& m) {
+  return per_mass_t(cp_molar_t(T, m), m);
+}
+
+// a^2 = gamma R T and d(a^2)/dT = R (gamma + T dgamma/dT), gamma = cp/(cp - R_u).
+template <int N>
+DualT<N> sound_speed_sq_t(const DualT<N>& T, const MixTangent<N>& m) {
+  const DualT<N> c = cp_molar_t(T, m);
+  return c / (c - thermo::R_GAS) * gas_constant_t(m) * T;
+}
+
+template <int N>
+DualT<N> sound_speed_sq_dT_t(const DualT<N>& T, const MixTangent<N>& m) {
+  const DualT<N> c = cp_molar_t(T, m);
+  const DualT<N> cv = c - thermo::R_GAS;
+  const DualT<N> dgamma = -thermo::R_GAS * dcp_molar_dT_t(T, m) / (cv * cv);
+  return gas_constant_t(m) * (c / cv + T * dgamma);
+}
+
+// (s(T1) - s(T2)) / R at fixed composition and pressure: the mixing terms
+// cancel, so it is sum_k X_k (s_k(T1) - s_k(T2)) / R_u, linear in X.
+template <int N>
+DualT<N> entropy_rise_over_R_t(const DualT<N>& T1, const DualT<N>& T2, const MixTangent<N>& m) {
+  const std::vector<double>& X = *m.X;
+  const double val =
+      (s_mass(T1.v, X, 101325.0) - s_mass(T2.v, X, 101325.0)) / specific_gas_constant(X);
+  double dv = 0.0;
+  if (m.has_comp()) {
+    for (std::size_t k = 0; k < X.size(); ++k) {
+      if (m.dX[k] != 0.0) {
+        dv += m.dX[k] * (s_species(k, T1.v) - s_species(k, T2.v));
+      }
+    }
+    dv /= thermo::R_GAS;
+  }
+  DualT<N> r;
+  r.v = val;
+  const double s1 = cp(T1.v, X) / (thermo::R_GAS * T1.v);
+  const double s2 = cp(T2.v, X) / (thermo::R_GAS * T2.v);
+  for (int i = 0; i < N; ++i) {
+    r.d[i] = s1 * T1.d[i] - s2 * T2.d[i] + dv * m.comp[i];
+  }
+  return r;
+}
+
+// static_T with its tangent: h(T) + M^2 a^2(T) / 2 = h(Tt), differentiated
+// implicitly. The value is static_T's own.
+template <int N>
+DualT<N> static_T_t(const DualT<N>& Tt, const DualT<N>& M, const MixTangent<N>& m) {
+  const std::vector<double>& X = *m.X;
+  const double T_v = static_T(Tt.v, M.v, X);
+  const DualT<N> T0 = DualT<N>::constant(T_v);
+  // F at the root with T held: its tangent is everything but the T term.
+  const DualT<N> F = h_mass_t(T0, m) + 0.5 * M * M * sound_speed_sq_t(T0, m) - h_mass_t(Tt, m);
+  const double F_T = cp_mass(T_v, X) + 0.5 * M.v * M.v * sound_speed_sq_dT(T_v, X);
+  DualT<N> T;
+  T.v = T_v;
+  for (int i = 0; i < N; ++i) {
+    T.d[i] = -F.d[i] / F_T;
+  }
+  return T;
+}
+
+template <int N>
+DualT<N> exit_per_flux_t(const DualT<N>& Me, const DualT<N>& Tt, const MixTangent<N>& m,
+                         bool exit_total) {
+  const DualT<N> T = static_T_t(Tt, Me, m);
+  const DualT<N> u = Me * solver::dsqrt(sound_speed_sq_t(T, m));
+  const DualT<N> P = gas_constant_t(m) * T / u;
+  if (!exit_total) {
+    return P;
+  }
+  return P * solver::dexp(entropy_rise_over_R_t(Tt, T, m));
+}
+
+template <int N>
+DualT<N> isentropic_flux_t(double Pt, const DualT<N>& Tt, const DualT<N>& M,
+                           const MixTangent<N>& m) {
+  const DualT<N> T = static_T_t(Tt, M, m);
+  const DualT<N> P = Pt * solver::dexp(entropy_rise_over_R_t(T, Tt, m));
+  return P / (gas_constant_t(m) * T) * M * solver::dsqrt(sound_speed_sq_t(T, m));
+}
+
+// fanno_dx_dmach at a fixed M, with tangents in G, Tt and composition.
+template <int N>
+DualT<N> fanno_dx_dmach_t(const DualT<N>& G, const DualT<N>& Tt, double M,
+                          const MixTangent<N>& m, double D, double roughness,
+                          const std::string& friction_model, double f_multiplier) {
+  const DualT<N> Md = DualT<N>::constant(M);
+  const DualT<N> R = gas_constant_t(m);
+  const DualT<N> T = static_T_t(Tt, Md, m);
+  const DualT<N> a2 = sound_speed_sq_t(T, m);
+  const DualT<N> a = solver::dsqrt(a2);
+  const DualT<N> u = M * a;
+  const DualT<N> rho = G / u;
+  const DualT<N> P = rho * R * T;
+  const DualT<N> da2_dT = sound_speed_sq_dT_t(T, m);
+  const DualT<N> dT_dM = -M * a2 / (cp_mass_t(T, m) + 0.5 * M * M * da2_dT);
+  const DualT<N> du_dM = a + M * da2_dT / (2.0 * a) * dT_dM;
+  const DualT<N> drho_dM = -G * du_dM / (u * u);
+  const DualT<N> dP_dM = R * (drho_dM * T + rho * dT_dM);
+  DualT<N> f = DualT<N>::constant(f_multiplier);
+  if (friction_model != "fixed") {
+    const TransportDerivatives tr = transport_and_dT(T.v, P.v, *m.X);
+    double dmu_dv = 0.0;
+    if (m.has_comp()) {
+      const std::vector<double> g = viscosity_dX(T.v, P.v, *m.X);
+      for (std::size_t k = 0; k < g.size(); ++k) {
+        dmu_dv += g[k] * m.dX[k];
+      }
+    }
+    const DualT<N> mu = lift_tx(tr.mu, tr.dmu_dT, T, dmu_dv, m);
+    const DualT<N> Re = G * D / mu;
+    const auto [f0, df_dRe] =
+        solver::friction_and_jacobian(friction_model, Re.v, roughness / D).result;
+    f.v = f0 * f_multiplier;
+    for (int i = 0; i < N; ++i) {
+      f.d[i] = df_dRe * f_multiplier * Re.d[i];
+    }
+  }
+  return -(dP_dM + G * du_dM) * 2.0 * D / (f * G * u);
+}
+
+// fanno_length_between at fixed Mach limits: the same fixed rule applied to
+// the integrand's tangent is the exact tangent of the rule's sum.
+template <int N>
+DualT<N> fanno_length_between_t(const DualT<N>& G, const DualT<N>& Tt, double M1, double M2,
+                                const MixTangent<N>& m, double D, double roughness,
+                                const std::string& friction_model, double f_multiplier) {
+  if (M2 == M1) {
+    return DualT<N>::constant(0.0);
+  }
+  const double a = 1.0 / (M2 * M2);
+  const double b = 1.0 / (M1 * M1);
+  const double ratio = std::pow(b / a, 1.0 / kFannoPanels);
+  DualT<N> total = DualT<N>::constant(0.0);
+  double lo = a;
+  for (int k = 0; k < kFannoPanels; ++k) {
+    const double hi = (k == kFannoPanels - 1) ? b : lo * ratio;
+    const double c = 0.5 * (lo + hi);
+    const double hw = 0.5 * (hi - lo);
+    DualT<N> acc = DualT<N>::constant(0.0);
+    for (std::size_t j = 0; j < kGlX.size(); ++j) {
+      for (const double s : {c - hw * kGlX[j], c + hw * kGlX[j]}) {
+        const double M = 1.0 / std::sqrt(s);
+        acc = acc + kGlW[j] * 0.5 * M * M * M *
+                        fanno_dx_dmach_t(G, Tt, M, m, D, roughness, friction_model,
+                                         f_multiplier);
+      }
+    }
+    total = total + acc * hw;
+    lo = hi;
+  }
+  return total;
+}
+
 struct FlowProblem {
   double Pt0, Tt0, P, L, D, rough, fmult;
   const std::vector<double>* X;
@@ -721,9 +986,13 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
       out.dG_dPt0 = G / pb.Pt0;
       out.dG_dTt0 = isentropic_flux_slopes(pb.Pt0, pb.Tt0, 1.0, X).dTt;
       if (!pb.dirs->empty()) {
-        out.dG_ddir = d_ddir(X, *pb.dirs, [&](const std::vector<double>& Xk) {
-          return fanno_sonic_mass_flux(pb.Pt0, pb.Tt0, Xk);
-        });
+        out.dG_ddir.assign(pb.dirs->size(), 0.0);
+        for (std::size_t i = 0; i < pb.dirs->size(); ++i) {
+          out.dG_ddir[i] = isentropic_flux_t(pb.Pt0, DualT<1>::constant(pb.Tt0),
+                                             DualT<1>::constant(1.0),
+                                             mix_tangent<1>(X, &(*pb.dirs)[i], 0))
+                               .d[0];
+        }
       }
       return out;
     }
@@ -731,7 +1000,7 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
     // as the unchoked psi below (Leibniz): the inlet limit M_in(G, Pt0, Tt0, Y)
     // of the length to sonic is taken exactly, -dx/dM(M_in) dM_in/d(.), with
     // dM_in/d(.) from the isentropic inlet flux(Pt0, Tt0, M_in, Y) = G, and
-    // only the length at FIXED limits is differenced (in G, Tt0, Y).
+    // the length at FIXED limits carries its own exact tangent (in G, Tt0, Y).
     //
     // Differencing L* through a re-solved M_in instead (#1019) broke on a
     // short duct: there the choked flux sits within ~1e-6 of the sonic one
@@ -739,20 +1008,18 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
     // stencil past sonic, where M_in clamps to 1 and L* to 0. At L = 1 um
     // dG/dTt0 came out 17% high and dG/dY up to 65%.
     const std::string& model = *pb.model;
-    auto ell = [&](double Gx, double Ttx, const std::vector<double>& Xx) {
-      return fanno_length_between(Gx, Ttx, Mi, 1.0, Xx, pb.D, pb.rough, model, pb.fmult);
-    };
-    const double hG = 1e-6 * G;
-    const double hT = 1e-6 * pb.Tt0;
     const double dx_Mi = fanno_dx_dmach(G, pb.Tt0, Mi, X, pb.D, pb.rough, model, pb.fmult);
     // flux is proportional to Pt0 at fixed (Tt0, M), so flux_Pt = G / Pt0.
     const double dMi_dG = 1.0 / fs.dM;
     const double dMi_dPt = -(G / pb.Pt0) / fs.dM;
     const double dMi_dT = -fs.dTt / fs.dM;
-    const double Lam_G =
-        (ell(G + hG, pb.Tt0, X) - ell(G - hG, pb.Tt0, X)) / (2.0 * hG) - dx_Mi * dMi_dG;
-    const double Lam_T = (ell(G, pb.Tt0 + hT, X) - ell(G, pb.Tt0 - hT, X)) / (2.0 * hT) -
-                         dx_Mi * dMi_dT;
+    // The length at fixed limits, exact in G and Tt0 (#1311).
+    const MixTangent<2> mix_s = mix_tangent<2>(X, nullptr, 0);
+    const DualT<2> ell_s =
+        fanno_length_between_t(DualT<2>::seed(G, 0), DualT<2>::seed(pb.Tt0, 1), Mi, 1.0, mix_s,
+                               pb.D, pb.rough, model, pb.fmult);
+    const double Lam_G = ell_s.d[0] - dx_Mi * dMi_dG;
+    const double Lam_T = ell_s.d[1] - dx_Mi * dMi_dT;
     const double Lam_Pt = -dx_Mi * dMi_dPt;
     out.dG_dPt0 = -Lam_Pt / Lam_G;
     out.dG_dTt0 = -Lam_T / Lam_G;
@@ -761,13 +1028,16 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
     }
     // Along each direction v: Lam_v = ell_v + dx/dM(M_in) flux_v / flux_M.
     const std::vector<std::vector<double>>& dirs = *pb.dirs;
-    const auto ell_v = d_ddir(X, dirs, [&](const std::vector<double>& Xk) { return ell(G, pb.Tt0, Xk); });
-    const auto flux_v = d_ddir(X, dirs, [&](const std::vector<double>& Xk) {
-      return isentropic_flux(pb.Pt0, pb.Tt0, Mi, Xk);
-    });
     out.dG_ddir.assign(dirs.size(), 0.0);
     for (std::size_t i = 0; i < dirs.size(); ++i) {
-      out.dG_ddir[i] = -(ell_v[i] + dx_Mi * flux_v[i] / fs.dM) / Lam_G;
+      const MixTangent<1> mix_v = mix_tangent<1>(X, &dirs[i], 0);
+      const DualT<1> Tt0_c = DualT<1>::constant(pb.Tt0);
+      const double ell_v = fanno_length_between_t(DualT<1>::constant(G), Tt0_c, Mi, 1.0, mix_v,
+                                                  pb.D, pb.rough, model, pb.fmult)
+                               .d[0];
+      const double flux_v =
+          isentropic_flux_t(pb.Pt0, Tt0_c, DualT<1>::constant(Mi), mix_v).d[0];
+      out.dG_ddir[i] = -(ell_v + dx_Mi * flux_v / fs.dM) / Lam_G;
     }
     return out;
   }
@@ -833,7 +1103,8 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   // are taken exactly -- d Lam/d Me = dx/dM at Me, and every parameter that
   // moves M_in contributes -dx/dM(M_in) dM_in/d(.), with dM_in/d(.) from the
   // isentropic inlet flux(Pt0, Tt0, M_in, Y) = G -- and only the length at
-  // FIXED limits is differenced (in G, Tt0, Y), with the smooth inlet flux.
+  // FIXED limits carries its own exact tangent (in G, Tt0, Y), with the smooth
+  // inlet flux.
   //
   // Differencing the length through a re-solved M_in instead is ill
   // conditioned at low drive: (Me - M_in)/Me ~ drive/P, 7e-6 at 1.5 Pa on
@@ -844,11 +1115,6 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   const double G = out.G;
   const double Mi = out.M_in;
   const std::string& model = *pb.model;
-  auto ell = [&](double Gx, double Ttx, const std::vector<double>& Xx) {
-    return fanno_length_between(Gx, Ttx, Mi, Me, Xx, pb.D, pb.rough, model, pb.fmult);
-  };
-  const double hG = 1e-6 * G;
-  const double hT = 1e-6 * pb.Tt0;
   const double dx_Mi = fanno_dx_dmach(G, pb.Tt0, Mi, X, pb.D, pb.rough, model, pb.fmult);
   const FluxSlopes fs = isentropic_flux_slopes(pb.Pt0, pb.Tt0, Mi, X);
   const double flux_M = fs.dM;
@@ -857,10 +1123,14 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   const double dMi_dG = 1.0 / flux_M;
   const double dMi_dPt = -(G / pb.Pt0) / flux_M;
   const double dMi_dT = -flux_T / flux_M;
-  const double Lam_G = (ell(G + hG, pb.Tt0, X) - ell(G - hG, pb.Tt0, X)) / (2.0 * hG) -
-                       dx_Mi * dMi_dG;
-  const double Lam_T = (ell(G, pb.Tt0 + hT, X) - ell(G, pb.Tt0 - hT, X)) / (2.0 * hT) -
-                       dx_Mi * dMi_dT;
+  // The length at fixed limits, with exact tangents in G and Tt0 (#1311;
+  // central differences at 1e-6 until then).
+  const MixTangent<2> mix_s = mix_tangent<2>(X, nullptr, 0);
+  const DualT<2> ell_s =
+      fanno_length_between_t(DualT<2>::seed(G, 0), DualT<2>::seed(pb.Tt0, 1), Mi, Me, mix_s,
+                             pb.D, pb.rough, model, pb.fmult);
+  const double Lam_G = ell_s.d[0] - dx_Mi * dMi_dG;
+  const double Lam_T = ell_s.d[1] - dx_Mi * dMi_dT;
   const double Lam_Pt = -dx_Mi * dMi_dPt;
   const double Lam_Me = fanno_dx_dmach(G, pb.Tt0, Me, X, pb.D, pb.rough, model, pb.fmult);
   // G = P / phi(Me, Tt0)
@@ -886,18 +1156,23 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   // Composition, the same way along each direction v: psi_v = Lam_G G_v +
   // Lam_v at fixed Me, with G_v = -P phi_v / phi^2 and
   // Lam_v = ell_v - dx/dM(M_in) dM_in/dv.
+  // Each piece's tangent along v is exact (#1311): d_ddir's differences of
+  // them, amplified by the cancellation above, left 1-3 % in dG/dY near the
+  // 1 Pa floor.
   const std::vector<std::vector<double>>& dirs = *pb.dirs;
-  const auto phi_v = d_ddir(X, dirs, [&](const std::vector<double>& Xk) {
-    return exit_per_flux(Me, pb.Tt0, Xk, pb.exit_total);
-  });
-  const auto ell_v = d_ddir(X, dirs, [&](const std::vector<double>& Xk) { return ell(G, pb.Tt0, Xk); });
-  const auto flux_v = d_ddir(X, dirs, [&](const std::vector<double>& Xk) {
-    return isentropic_flux(pb.Pt0, pb.Tt0, Mi, Xk);
-  });
   out.dG_ddir.assign(dirs.size(), 0.0);
   for (std::size_t i = 0; i < dirs.size(); ++i) {
-    const double G_v = -pb.P * phi_v[i] / (phi * phi);
-    const double psi_v = Lam_G * G_v + ell_v[i] + dx_Mi * flux_v[i] / flux_M;
+    const MixTangent<1> mix_v = mix_tangent<1>(X, &dirs[i], 0);
+    const DualT<1> Me_c = DualT<1>::constant(Me);
+    const DualT<1> Tt0_c = DualT<1>::constant(pb.Tt0);
+    const double phi_v = exit_per_flux_t(Me_c, Tt0_c, mix_v, pb.exit_total).d[0];
+    const double ell_v = fanno_length_between_t(DualT<1>::constant(G), Tt0_c, Mi, Me, mix_v,
+                                                pb.D, pb.rough, model, pb.fmult)
+                             .d[0];
+    const double flux_v =
+        isentropic_flux_t(pb.Pt0, Tt0_c, DualT<1>::constant(Mi), mix_v).d[0];
+    const double G_v = -pb.P * phi_v / (phi * phi);
+    const double psi_v = Lam_G * G_v + ell_v + dx_Mi * flux_v / flux_M;
     out.dG_ddir[i] = G_v - G_M * psi_v / psi_M;
   }
   return out;
@@ -927,6 +1202,43 @@ void blend_end_states(FannoChannelFlow& out, const FannoChannelFlow& at, double 
 // Solves Delta P_inc(G) = drive directly in drive (no Pt0 - P cancellation),
 // using friction_f_re_and_jacobian (no laminar re_floor), so G -> Hagen-
 // Poiseuille (1 - w(0)) as drive -> 0 across all L/D and pressures.
+// d(dp)/dv at fixed G of the low-Mach drop below, dp = F + A (or the
+// subsonic-cap form F sqrt(F / (F - 2 A)) where A < 0), along a mass-fraction
+// direction v, exact (#1311; d_ddir's difference until then). Composition
+// enters only through R, in both prefactors (c_acc and fric_pref are each
+// proportional to R), and through each node's mu: with Re = G D / mu,
+// d(mu F_Re(Re))/dmu = F_Re - Re F_Re'.
+double low_mach_drop_ddir(double G, double c_acc, double fric_pref, int n_nodes,
+                          const double* w_gl, const double* Tt_n, const double* mu_n,
+                          const std::string& model, double e_D, double D, double Pt0,
+                          const std::vector<double>& X, const std::vector<double>& v) {
+  const MixTangent<1> m = mix_tangent<1>(X, &v, 0);
+  const double R_rel = -m.mw_v / m.mw;  // dR/dv / R
+  double I_fric = 0.0;
+  double I_fric_v = 0.0;
+  for (int i = 0; i < n_nodes; ++i) {
+    const std::vector<double> g = viscosity_dX(Tt_n[i], Pt0, X);
+    double dmu_v = 0.0;
+    for (std::size_t k = 0; k < g.size(); ++k) {
+      dmu_v += g[k] * m.dX[k];
+    }
+    const double Re = G * D / mu_n[i];
+    const auto [F_Re, dF_dRe] = solver::friction_f_re_and_jacobian(model, Re, e_D);
+    I_fric += w_gl[i] * mu_n[i] * Tt_n[i] * F_Re;
+    I_fric_v += w_gl[i] * Tt_n[i] * (F_Re - Re * dF_dRe) * dmu_v;
+  }
+  const double F = fric_pref * G * I_fric;
+  const double F_v = F * R_rel + fric_pref * G * I_fric_v;
+  const double A = c_acc * G * G;
+  const double A_v = A * R_rel;
+  if (A >= 0.0 || !(F > 0.0)) {
+    return F_v + A_v;
+  }
+  const double den = F - 2.0 * A;
+  const double sq = std::sqrt(F / den);
+  return sq * (F - 3.0 * A) / den * F_v + sq * F / den * A_v;
+}
+
 struct LowMachSolution {
   bool valid = false;
   double G = 0.0;
@@ -1153,25 +1465,11 @@ LowMachSolution low_mach_duct_flow(double Pt0, double Tt0, double Tt_exit,
   if (!dirs.empty()) {
     sol.dG_ddir.assign(dirs.size(), 0.0);
     if (G > 0.0) {
-      auto dp_at_X = [&](const std::vector<double>& Xk) {
-        const double Rk = specific_gas_constant(Xk);
-        const double c_acc_k = (Rk / Pt0) * ((exit_total ? 0.5 : 1.0) * Tt_exit - 0.5 * Tt0);
-        const double fric_pref_k = fmult * L * Rk / (2.0 * Pt0 * D * D);
-        double I_fric = 0.0;
-        for (int i = 0; i < n_nodes; ++i) {
-          const double muk = viscosity(Tt_n[i], Pt0, Xk);
-          const double Re = G * D / muk;
-          const auto [F_Re, dF_dRe] = solver::friction_f_re_and_jacobian(model, Re, e_D);
-          (void)dF_dRe;
-          I_fric += w_gl[i] * muk * Tt_n[i] * F_Re;
-        }
-        const double Fk = fric_pref_k * G * I_fric;
-        const double Ak = c_acc_k * G * G;
-        return (Ak >= 0.0 || !(Fk > 0.0)) ? (Fk + Ak) : (Fk * std::sqrt(Fk / (Fk - 2.0 * Ak)));
-      };
-      const std::vector<double> dp_v = d_ddir(X, dirs, dp_at_X);
       for (std::size_t i = 0; i < dirs.size(); ++i) {
-        sol.dG_ddir[i] = -dp_v[i] / ddp_dG;
+        sol.dG_ddir[i] = -low_mach_drop_ddir(G, c_acc, fric_pref, n_nodes, w_gl.data(),
+                                             Tt_n.data(), mu_n.data(), model, e_D, D, Pt0, X,
+                                             dirs[i]) /
+                         ddp_dG;
       }
     }
   }
@@ -1401,23 +1699,12 @@ LowMachDpAtG low_mach_dp_at_G(double Pt0, double Tt0, double Tt_exit, const std:
     out.ddp_dTt_exit = ddp_dTt_exit;
   }
   if (!dirs.empty()) {
-    auto dp_at_X = [&](const std::vector<double>& Xk) {
-      const double Rk = specific_gas_constant(Xk);
-      const double c_acc_k = (Rk / Pt0) * ((exit_total ? 0.5 : 1.0) * Tt_exit - 0.5 * Tt0);
-      const double fric_pref_k = fmult * L * Rk / (2.0 * Pt0 * D * D);
-      double I_f = 0.0;
-      for (int i = 0; i < n_nodes; ++i) {
-        const double muk = viscosity(Tt_n[i], Pt0, Xk);
-        const double Re = G * D / muk;
-        const auto [F_Re, dF_dRe] = solver::friction_f_re_and_jacobian(model, Re, e_D);
-        (void)dF_dRe;
-        I_f += w_gl[i] * muk * Tt_n[i] * F_Re;
-      }
-      const double Fk = fric_pref_k * G * I_f;
-      const double Ak = c_acc_k * G * G;
-      return (Ak >= 0.0 || !(Fk > 0.0)) ? (Fk + Ak) : (Fk * std::sqrt(Fk / (Fk - 2.0 * Ak)));
-    };
-    out.ddp_ddir = d_ddir(X, dirs, dp_at_X);
+    out.ddp_ddir.assign(dirs.size(), 0.0);
+    for (std::size_t i = 0; i < dirs.size(); ++i) {
+      out.ddp_ddir[i] = low_mach_drop_ddir(G, c_acc, fric_pref, n_nodes, w_gl.data(),
+                                           Tt_n.data(), mu_n.data(), model, e_D, D, Pt0, X,
+                                           dirs[i]);
+    }
   }
   return out;
 }
@@ -1713,17 +2000,12 @@ constexpr double kRayleighGrading = 3.0;
 // carries subsonically (rayleigh_raw_flow, #1161): well inside the ~3e-7 by
 // which the march's own sonic point falls short of the choke relation's flux.
 constexpr double kRayleighSubsonicEndTol = 1e-12;
-// Composition-direction steps (d_ddir) of an unchoked duct move the march's
-// zeta by at most this fraction of itself; a step that moves it further is cut,
-// at most kRayleighStepCuts times (rayleigh_raw_flow, #1161).
-constexpr double kRayleighZetaStepFrac = 0.02;
 // A flux counts as carried subsonically while the march's zeta_min exceeds
 // this (rayleigh_raw_flow, #1161). On a static-pressure exit the fluxes this
 // excludes (within ~1e-10 of the march's sonic flux) span 0.1-8 Pa of drive
 // below the choke (1e-6 to 5e-6 of it), now reported choked; on a
 // total-pressure exit at most 1e-5 Pa. G there is within 3e-7 of Gc either way.
 constexpr double kRayleighZetaFloor = 1e-10;
-constexpr int kRayleighStepCuts = 8;
 // A cooled duct's excess can fall through zero and rise again inside one
 // ln-2 bracket of the cold scan (#1167; see rayleigh_raw_flow). Its slope at
 // a bracket end is a backward difference over this step in log G (0.1% of
@@ -2238,6 +2520,131 @@ Dual4 rayleigh_exit_pressure_dual(const RayleighDuct& d, const Dual4& theta_exit
   }
   phi.d[3] += ps.dTt;
   return G_dual * phi;
+}
+
+// Composition tangents of the march (#1310), on the mixture primitives of
+// #1311: the same fixed 32-step RK4 grid, so the tangent of the discrete
+// march is exact, one pass per direction v at fixed (G, Pt0, Tt0, Tt_exit).
+// They replace d_ddir's step-cut differences of the relation, whose
+// cancellation in E(G; X) left up to 2.8e-3 in dG/dY at 1.5 Pa drive.
+template <int N>
+DualT<N> mach2_of_theta_t(const DualT<N>& theta) {
+  const double disc = 1.0 - 2.0 * theta.v;
+  if (!(disc > 0.0)) {
+    return DualT<N>::constant(1.0);
+  }
+  const double s = std::sqrt(disc);
+  DualT<N> r;
+  r.v = 2.0 * theta.v / (1.0 + s);
+  for (int i = 0; i < N; ++i) {
+    r.d[i] = theta.d[i] / s;
+  }
+  return r;
+}
+
+template <int N>
+DualT<N> rayleigh_dtheta_dx_t(const DualT<N>& theta, const DualT<N>& Tt, double dTt_dx, double G,
+                              const RayleighDuct& d, const MixTangent<N>& m) {
+  const DualT<N> M2 = mach2_of_theta_t(theta);
+  if (!(M2.v > 0.0)) {
+    return DualT<N>::constant(0.0);
+  }
+  const DualT<N> M = solver::dsqrt(M2);
+  const DualT<N> T = static_T_t(Tt, M, m);
+  const DualT<N> R = gas_constant_t(m);
+  const DualT<N> cpT = cp_mass_t(T, m);
+  const DualT<N> cpTt = cp_mass_t(Tt, m);
+  const DualT<N> a2 = sound_speed_sq_t(T, m);
+  const DualT<N> da2 = sound_speed_sq_dT_t(T, m);
+  const DualT<N> a = solver::dsqrt(a2);
+  const DualT<N> a_T = 0.5 * da2 / a;
+  const DualT<N> cv = cpT - R;
+  const DualT<N> k = cpT + 0.5 * M2 * da2;
+  const DualT<N> u = M * a;
+  DualT<N> f = DualT<N>::constant(d.fmult);
+  if (*d.model != "fixed") {
+    const double P_v = G * R.v * T.v / u.v;
+    const TransportDerivatives tr = transport_and_dT(T.v, P_v, *m.X);
+    double dmu_dv = 0.0;
+    if (m.has_comp()) {
+      const std::vector<double> g = viscosity_dX(T.v, P_v, *m.X);
+      for (std::size_t j = 0; j < g.size(); ++j) {
+        dmu_dv += g[j] * m.dX[j];
+      }
+    }
+    const DualT<N> mu = lift_tx(tr.mu, tr.dmu_dT, T, dmu_dv, m);
+    const DualT<N> Re = G * d.D / mu;
+    const auto [f0, df_dRe] = solver::friction_and_jacobian(*d.model, Re.v, d.rough / d.D).result;
+    f.v = f0 * d.fmult;
+    for (int i = 0; i < N; ++i) {
+      f.d[i] = df_dRe * d.fmult * Re.d[i];
+    }
+  }
+  const DualT<N> gamma = cpT / cv;
+  const DualT<N> C = (cpTt / k) * (R / u + M * a_T * (1.0 - 1.0 / (gamma * M2)));
+  return 2.0 * k * M2 * M * (f * u / (2.0 * d.D) + C * dTt_dx) / (a * cv);
+}
+
+// theta_in along v: isentropic_flux(Pt0, Tt0, M_in, X) = G at fixed G, so
+// dM_in/dv = -flux_v / flux_M.
+DualT<1> inlet_theta_comp(double Pt0, double Tt0, double G, const MixTangent<1>& m) {
+  const std::vector<double>& X = *m.X;
+  const double M = fanno_inlet_mach(Pt0, Tt0, G, X);
+  const double M2 = M * M;
+  DualT<1> out = DualT<1>::constant(M2 - 0.5 * M2 * M2);
+  if (M <= 0.0 || M >= 1.0) {
+    return out;
+  }
+  const double flux_v =
+      isentropic_flux_t(Pt0, DualT<1>::constant(Tt0), DualT<1>::constant(M), m).d[0];
+  out.d[0] = -2.0 * M * (1.0 - M2) * flux_v / isentropic_flux_slopes(Pt0, Tt0, M, X).dM;
+  return out;
+}
+
+// The RK4 march along v, forward from the inlet or backward from a sonic
+// exit, on the grid of march_theta_exit_dual / back_theta_inlet_dual.
+DualT<1> march_theta_comp(const RayleighDuct& d, double Pt0, const MixTangent<1>& m,
+                          bool backward) {
+  const double dTt_dx = (d.Tt_exit - d.Tt0) / d.L;
+  auto x_at = [&](int i) {
+    const double s = 1.0 - static_cast<double>(i) / kRayleighSteps;
+    return d.L * (1.0 - std::pow(s, kRayleighGrading));
+  };
+  auto Tt_at = [&](double x) { return DualT<1>::constant(d.Tt0 + dTt_dx * x); };
+  auto step = [&](const DualT<1>& theta, double x0, double h) {
+    const DualT<1> k1 = rayleigh_dtheta_dx_t(theta, Tt_at(x0), dTt_dx, d.G, d, m);
+    const DualT<1> k2 =
+        rayleigh_dtheta_dx_t(theta + 0.5 * h * k1, Tt_at(x0 + 0.5 * h), dTt_dx, d.G, d, m);
+    const DualT<1> k3 =
+        rayleigh_dtheta_dx_t(theta + 0.5 * h * k2, Tt_at(x0 + 0.5 * h), dTt_dx, d.G, d, m);
+    const DualT<1> k4 = rayleigh_dtheta_dx_t(theta + h * k3, Tt_at(x0 + h), dTt_dx, d.G, d, m);
+    return theta + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+  };
+  if (backward) {
+    DualT<1> theta = DualT<1>::constant(0.5);
+    for (int i = kRayleighSteps; i > 0; --i) {
+      theta = step(theta, x_at(i), x_at(i - 1) - x_at(i));
+    }
+    return theta;
+  }
+  DualT<1> theta = inlet_theta_comp(Pt0, d.Tt0, d.G, m);
+  for (int i = 0; i < kRayleighSteps; ++i) {
+    theta = step(theta, x_at(i), x_at(i + 1) - x_at(i));
+  }
+  return theta;
+}
+
+// d(relation)/dv at fixed G: the exit pressure G phi(M_exit, Tt_exit)
+// unchoked, Psi = theta_back(0) - theta_inlet for an exit choke.
+double rayleigh_relation_ddir(const RayleighDuct& d, double Pt0, bool exit_choked,
+                              bool exit_total, const std::vector<double>& v) {
+  const MixTangent<1> m = mix_tangent<1>(*d.X, &v, 0);
+  if (exit_choked) {
+    return march_theta_comp(d, Pt0, m, true).d[0] - inlet_theta_comp(Pt0, d.Tt0, d.G, m).d[0];
+  }
+  const DualT<1> theta_exit = march_theta_comp(d, Pt0, m, false);
+  const DualT<1> Me = solver::dsqrt(mach2_of_theta_t(theta_exit));
+  return d.G * exit_per_flux_t(Me, DualT<1>::constant(d.Tt_exit), m, exit_total).d[0];
 }
 
 // Where the duct chokes, which sets the relation that defines the choked flux:
@@ -2790,9 +3197,13 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     out.dG_dTt_exit = 0.0;
     out.dG_dP_target = 0.0;
     if (!pb.dirs->empty()) {
-      out.dG_ddir = d_ddir(X, *pb.dirs, [&](const std::vector<double>& Xk) {
-        return fanno_sonic_mass_flux(pb.Pt0, pb.Tt0, Xk);
-      });
+      out.dG_ddir.assign(pb.dirs->size(), 0.0);
+      for (std::size_t i = 0; i < pb.dirs->size(); ++i) {
+        out.dG_ddir[i] = isentropic_flux_t(pb.Pt0, DualT<1>::constant(pb.Tt0),
+                                           DualT<1>::constant(1.0),
+                                           mix_tangent<1>(X, &(*pb.dirs)[i], 0))
+                             .d[0];
+      }
     }
     return out;
   }
@@ -2841,38 +3252,12 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     return out;
   }
 
-  // Composition directions (dY_directions): keep step-cut directional FD of
-  // the relation at fixed G, dividing by the exact discrete tangent R_G.
-  const double z0_min = m.zeta_min;
-  const double z0_exit = 1.0 - 2.0 * m.theta_exit;
-  double zeta_move = 0.0;
-  auto rel_X = [&](const std::vector<double>& Xx) {
-    const RayleighDuct d = pb.duct(G, pb.Tt0, pb.Tt_exit, &Xx);
-    if (choked) {
-      return choke_relation(mode, G, pb.Pt0, d);
-    }
-    const MarchEnd me = march_zeta(d, pb.Pt0);
-    if (z0_min > 0.0 && z0_exit > 0.0) {
-      zeta_move = std::max({zeta_move, std::abs(me.zeta_min - z0_min) / z0_min,
-                            std::abs(1.0 - 2.0 * me.theta_exit - z0_exit) / z0_exit});
-    }
-    return rayleigh_exit_pressure(d, me, pb.exit_total);
-  };
-  auto step_cut = [&](auto&& estimate) {
-    double scale = 1.0;
-    for (int k = 0;; ++k) {
-      zeta_move = 0.0;
-      auto v = estimate(scale);
-      if (choked || zeta_move <= kRayleighZetaStepFrac || k == kRayleighStepCuts) {
-        return v;
-      }
-      scale *= std::max(0.5 * kRayleighZetaStepFrac / zeta_move, 1e-3);
-    }
-  };
+  // Composition directions: the exact tangent of the relation at fixed G
+  // along v (#1310), over the exact discrete tangent R_G.
   out.dG_ddir.assign(pb.dirs->size(), 0.0);
   for (std::size_t i = 0; i < pb.dirs->size(); ++i) {
-    const std::vector<std::vector<double>> dir_i{(*pb.dirs)[i]};
-    const double R_v = step_cut([&](double scale) { return d_ddir(X, dir_i, rel_X, scale)[0]; });
+    const double R_v =
+        rayleigh_relation_ddir(d_root, pb.Pt0, choked, pb.exit_total, (*pb.dirs)[i]);
     out.dG_ddir[i] = -R_v / R_G;
   }
   return out;

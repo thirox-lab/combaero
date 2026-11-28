@@ -259,10 +259,13 @@ def _trade(a: str, b: str) -> np.ndarray:
 
 
 @pytest.mark.parametrize("P_target", [1.5e5, 0.5e5])
-def test_ddir_roundoff_component_on_absent_species_is_dropped(P_target: float) -> None:
-    """A round-off component on an absent species does not switch dG_ddir to a
-    one-sided difference (#1199): -2.2e-20 moved it by 2.3e-5 relative in a
-    network (stress random 30). Bit-identical to the exact-zero direction."""
+def test_a_roundoff_component_on_an_absent_species_moves_dG_ddir_by_roundoff(
+    P_target: float,
+) -> None:
+    """A round-off component on an absent species moves dG_ddir linearly, by
+    round-off. Under d_ddir its sign alone chose a one-sided stencil and moved
+    the entry by 2.3e-5 relative in a network (#1199, stress random 30); the
+    exact tangent (#1311) is linear in v, so nothing switches."""
     Y = _air_without_co2()
     X = list(cb.mass_to_mole(Y))
     v = _trade("O2", "N2")
@@ -271,7 +274,7 @@ def test_ddir_roundoff_component_on_absent_species_is_dropped(P_target: float) -
     for c in (-2.2e-20, 2.2e-20, -1e-14):
         w = v.copy()
         w[cb.species_index_from_name("CO2")] = c
-        assert _flow(X, P_target, dirs=[list(w)]).dG_ddir[0] == exact
+        assert _flow(X, P_target, dirs=[list(w)]).dG_ddir[0] == pytest.approx(exact, rel=1e-12)
 
 
 def test_ddir_one_sided_is_second_order() -> None:
