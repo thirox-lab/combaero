@@ -246,21 +246,26 @@ TEST(FannoChokeBracket1337, FrictionStretchingAndGradingAccuracyGuard) {
   EXPECT_NEAR(Gc_hot, 1222.6722372531, 5e-7 * 1222.6722372531);
 
   // Low-Mach heated and cooled ducts against independent primitive-variable
-  // DOP853 (rtol=1e-12) exit pressures. Ungated alpha = ln(1 + fL/D) degrades
-  // the cooled reproducer to 0.17 Pa error (6.5x worse than main); gating
-  // forward alpha by lam / (lam + w_in) recovers main-level accuracy across
-  // all five heated/cooled low-Mach cases.
+  // DOP853 (rtol=1e-12) exit pressures. Removing the sonic-proximity gate
+  // (ungated alpha = ln(1 + fL/D)) degrades repro_cooled_laminar to 0.17 Pa
+  // error. With the gated forward mesh, the three cooled ducts match main
+  // (cooled_high_Pt's 1.12 Pa on a 6.56 Pa drive is pre-existing on main,
+  // #1348), while the two heated ducts carry a known low-Mach cost of the w
+  // coordinate itself (heated_high_Pt 0.143 Pa vs main's 0.022 Pa, 6.6x;
+  // heated_laminar_long 0.024 Pa vs main's 0.008 Pa, 2.9x). Tolerances are
+  // set to ~1.25x the measured w32 errors (0.0260, 0.0242, 1.118, 0.143,
+  // 0.389 Pa) to leave ~25% headroom for cross-platform rounding.
   struct LowMachRef {
     const char* name;
     double Pt0, Tt0, Tt_exit, L, D, G, P_ref, tol_pa;
   };
   const std::vector<LowMachRef> low_mach_refs = {
       {"repro_cooled_laminar", 122079.76, 1819.51, 592.05, 3.00828, 0.0184026, 0.112876,
-       122075.148984, 0.05},
-      {"heated_laminar_long", 2.0e5, 400.0, 1200.0, 2.0, 0.004, 0.05, 199991.094041, 0.05},
-      {"cooled_high_Pt", 2.0e6, 1600.0, 500.0, 1.5, 0.01, 2.0, 1999993.440008, 2.0},
-      {"heated_high_Pt", 1.5e6, 350.0, 1100.0, 0.8, 0.008, 1.5, 1499996.569450, 0.5},
-      {"cooled_very_long", 3.0e5, 1400.0, 400.0, 5.0, 0.01, 0.15, 299991.261121, 0.8},
+       122075.148984, 0.033},
+      {"heated_laminar_long", 2.0e5, 400.0, 1200.0, 2.0, 0.004, 0.05, 199991.094041, 0.031},
+      {"cooled_high_Pt", 2.0e6, 1600.0, 500.0, 1.5, 0.01, 2.0, 1999993.440008, 1.40},
+      {"heated_high_Pt", 1.5e6, 350.0, 1100.0, 0.8, 0.008, 1.5, 1499996.569450, 0.18},
+      {"cooled_very_long", 3.0e5, 1400.0, 400.0, 5.0, 0.01, 0.15, 299991.261121, 0.49},
   };
   for (const auto& c : low_mach_refs) {
     const FannoRayleighMarch m_low = fanno_rayleigh_march(c.G, c.Pt0, c.Tt0, c.Tt_exit, X, c.L, c.D,
