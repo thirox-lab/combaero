@@ -114,3 +114,41 @@ def test_the_partials_at_exactly_zero_flow_are_zero() -> None:
     assert r.d_dP_dP_static_up == 0.0
     assert r.d_dP_dTt_up == 0.0
     assert all(v == 0.0 for v in r.d_dP_dY_up)
+
+
+def test_a_negative_fraction_has_slope_zero() -> None:
+    """A fraction clamped at a negative value (a Newton iterate's round-off)
+    has slope 0: normalize_fractions holds it at 0 for any small step. The
+    other columns are unchanged by the clamp."""
+    Y = _air_with_fuel()
+    k_neg = cb.species_index_from_name("CO2")
+    Y[k_neg] = -2e-12
+    r = _solver_tools.channel_residuals_and_jacobian(
+        3e-3, P_UP, P_UP, T_UP, Y, P_UP - 1.0, L, D, 1e-5, "haaland", 1.0, True
+    )
+    assert r.d_dP_dY_up[k_neg] == 0.0
+    scale = abs(r.dP_calc)
+    for name in ("N2", "CH4"):
+        k = cb.species_index_from_name(name)
+        fd = _richardson(
+            lambda t, k=k: _drop(3e-3, P_UP, T_UP, _y_step(Y, k, t), "haaland", True), 1e-4
+        )
+        assert r.d_dP_dY_up[k] == pytest.approx(fd, rel=1e-7, abs=1e-9 * scale), name
+
+
+def test_a_sum_below_the_normalisation_floor_keeps_the_raw_derivative() -> None:
+    """Below a sum of 1e-10 normalize_fractions returns Y as it is, but
+    mass_to_mole still normalises, so the drop stays homogeneous of degree 0
+    in Y and the column is the gradient over the raw sum (#1352 review round
+    2: it was 1e10 too small, a jump in J across the floor where F has none)."""
+    s = 5e-11
+    Y = [s * y for y in _air_with_fuel()]
+    r = _solver_tools.channel_residuals_and_jacobian(
+        3e-3, P_UP, P_UP, T_UP, Y, P_UP - 1.0, L, D, 1e-5, "haaland", 1.0, True
+    )
+    for name in ("N2", "CH4", "H2O"):
+        k = cb.species_index_from_name(name)
+        fd = _richardson(
+            lambda t, k=k: _drop(3e-3, P_UP, T_UP, _y_step(Y, k, t), "haaland", True), 1e-4 * Y[k]
+        )
+        assert r.d_dP_dY_up[k] == pytest.approx(fd, rel=1e-6), name

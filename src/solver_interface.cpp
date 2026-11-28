@@ -1709,12 +1709,17 @@ ChannelResult channel_residuals_and_jacobian(double m_dot, double P_total_up,
   const std::vector<double> drho_dY = combaero::mole_gradient_to_mass(X_up, drho_dX);
   const std::vector<double> dmu_dY = viscosity_mass_gradient(Tt_up, P_static_up, X_up);
   double y_sum = 0.0;
+  double raw_sum = 0.0;
   for (const double y : Y_up) {
     y_sum += std::max(y, 0.0);
+    raw_sum += y;
   }
-  // Below 1e-10 normalize_fractions returns Y as it is (an all-zero state).
+  // Below 1e-10 normalize_fractions returns Y as it is, unclamped, but
+  // mass_to_mole still divides by its sum, so the drop is homogeneous of
+  // degree 0 in the raw Y there too: the column is the gradient over the raw
+  // sum, and no entry is clamped (#1352 review round 2).
   const bool normalised = y_sum >= 1.0e-10;
-  const double inv_sum = normalised ? 1.0 / y_sum : 1.0;
+  const double inv_sum = normalised ? 1.0 / y_sum : 1.0 / raw_sum;
   res.d_dP_dY_up.resize(Y_up.size(), 0.0);
   for (std::size_t i = 0; i < Y_up.size(); ++i) {
     if (normalised && Y_up[i] < 0.0) {
