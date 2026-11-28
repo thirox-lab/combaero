@@ -245,13 +245,28 @@ TEST(FannoChokeBracket1337, FrictionStretchingAndGradingAccuracyGuard) {
                                                         0.008, 0.0, "haaland", 1.0);
   EXPECT_NEAR(Gc_hot, 1222.6722372531, 5e-7 * 1222.6722372531);
 
-  // Low-Mach strongly cooled laminar duct (PR #1346 review reproducer):
-  // independent primitive-variable DOP853 (rtol=1e-12) exit pressure is
-  // 122075.148984 Pa (4.61 Pa drive). Ungated alpha = ln(1 + fL/D) errs by
-  // 0.17 Pa here; sonic-proximity gating recovers main's 0.026 Pa accuracy.
-  const FannoRayleighMarch m_low = fanno_rayleigh_march(
-      0.112876, 122079.76, 1819.51, 592.05, X, 3.00828, 0.0184026, 0.0, "haaland", 1.0);
-  EXPECT_NEAR(m_low.P_exit, 122075.148984, 0.05);
+  // Low-Mach heated and cooled ducts against independent primitive-variable
+  // DOP853 (rtol=1e-12) exit pressures. Ungated alpha = ln(1 + fL/D) degrades
+  // the cooled reproducer to 0.17 Pa error (6.5x worse than main); gating
+  // forward alpha by lam / (lam + w_in) recovers main-level accuracy across
+  // all five heated/cooled low-Mach cases.
+  struct LowMachRef {
+    const char* name;
+    double Pt0, Tt0, Tt_exit, L, D, G, P_ref, tol_pa;
+  };
+  const std::vector<LowMachRef> low_mach_refs = {
+      {"repro_cooled_laminar", 122079.76, 1819.51, 592.05, 3.00828, 0.0184026, 0.112876,
+       122075.148984, 0.05},
+      {"heated_laminar_long", 2.0e5, 400.0, 1200.0, 2.0, 0.004, 0.05, 199991.094041, 0.05},
+      {"cooled_high_Pt", 2.0e6, 1600.0, 500.0, 1.5, 0.01, 2.0, 1999993.440008, 2.0},
+      {"heated_high_Pt", 1.5e6, 350.0, 1100.0, 0.8, 0.008, 1.5, 1499996.569450, 0.5},
+      {"cooled_very_long", 3.0e5, 1400.0, 400.0, 5.0, 0.01, 0.15, 299991.261121, 0.8},
+  };
+  for (const auto& c : low_mach_refs) {
+    const FannoRayleighMarch m_low = fanno_rayleigh_march(c.G, c.Pt0, c.Tt0, c.Tt_exit, X, c.L, c.D,
+                                                          0.0, "haaland", 1.0);
+    EXPECT_NEAR(m_low.P_exit, c.P_ref, c.tol_pa) << c.name;
+  }
 }
 
 }  // namespace combaero

@@ -1747,18 +1747,17 @@ namespace {
 // Fixed RK4 march on a smooth mesh graded toward the exit (#1337):
 //   x_i = L (1 - t_i^p * exp(-alpha * (1 - t_i)^p)),  t_i = 1 - i / N,
 //   alpha_back = ln(1 + lam),  lam = f_ref L / D,
-//   alpha_fwd  = ln(1 + lam_eff),  lam_eff = lam / (1 + w_scale / lam),
-//   w_scale    = w_in * (Tt0 / Tt_exit).
+//   alpha_fwd  = ln(1 + lam_eff),  lam_eff = lam / (1 + w_in / lam).
 // A FIXED step count and C-infinity map, so the march is smooth in all
 // arguments and Dual4 differentiates the grid and ODE stages exactly.
 //   - Backward sonic march (back_w_inlet): exit is sonic (w_exit = 0), so
 //     alpha = ln(1 + lam) scales exit steps as (D / f) / N^p to resolve the
 //     O(D / f) sonic acceleration layer on arbitrarily long laminar ducts.
-//   - Forward march (march_zeta): scales lam by the dimensionless sonic-
-//     proximity ratio lam / (lam + w_scale). Near choke (w_scale ~ gamma lam)
-//     alpha_fwd ~ ln(1 + lam / (1 + gamma)) resolves the sonic layer; at low
-//     Mach (w_scale >> lam) lam_eff -> 0 so nodes stay spread across the duct
-//     instead of crowding the exit on heated/cooled low-Re ducts.
+//   - Forward march (march_zeta): smooth rational gate lam / (lam + w_in) on
+//     lam. Near choke (w_in ~ gamma lam) alpha_fwd ~ ln(1 + lam / (1 + gamma))
+//     resolves the sonic layer; at low Mach (w_in >> lam) lam_eff -> 0 so nodes
+//     stay spread across the duct instead of crowding the exit on heated/cooled
+//     low-Re ducts.
 //
 // The state marched is the Fanno-regular coordinate w = 1/M^2 - 1 + ln(M^2) >= 0:
 // near M = 1, w ~ (1 - M^2)^2 / 2 = zeta / 2 (regular at sonic); at low Mach
@@ -2086,28 +2085,25 @@ Scalar rayleigh_grid_alpha_back(const RayleighDuct& d, const Scalar& G_val, cons
 }
 
 // Forward-march stretching exponent gated by sonic proximity:
-//   lam_eff = lam / (1 + w_scale / lam),  w_scale = w_in * (Tt0 / Tt_exit),
-//   alpha   = ln(1 + lam_eff).
-// Matches alpha_back at w_in = 0, stays O(ln(lam)) near choke where w_scale ~
-// gamma * lam, and vanishes smoothly as lam^2 / w_scale at low Mach.
+//   lam_eff = lam / (1 + w_in / lam),  alpha = ln(1 + lam_eff).
+// Matches alpha_back at w_in = 0, stays O(ln(lam)) near choke where w_in ~
+// gamma * lam, and vanishes smoothly as lam^2 / w_in at low Mach.
 template <typename Scalar>
-Scalar rayleigh_grid_alpha_fwd(const RayleighDuct& d, const Scalar& G_val, const Scalar& Tt0_val,
-                               const Scalar& Tte_val, const Scalar& w_in, double Pt0) {
+Scalar rayleigh_grid_alpha_fwd(const RayleighDuct& d, const Scalar& G_val, const Scalar& Tte_val,
+                               const Scalar& w_in, double Pt0) {
   constexpr bool kIsDual = !std::is_same_v<Scalar, double>;
   const Scalar lam = rayleigh_friction_length<Scalar>(d, G_val, Tte_val, Pt0);
   if constexpr (kIsDual) {
     if (!(lam.v > 0.0)) {
       return Dual4::constant(0.0);
     }
-    const Dual4 w_scale = w_in * (Tt0_val / Tte_val);
-    const Dual4 lam_eff = lam / (1.0 + w_scale / lam);
+    const Dual4 lam_eff = lam / (1.0 + w_in / lam);
     return lift_dual(std::log1p(lam_eff.v), 1.0 / (1.0 + lam_eff.v), lam_eff);
   } else {
     if (!(lam > 0.0)) {
       return 0.0;
     }
-    const double w_scale = w_in * (Tt0_val / Tte_val);
-    const double lam_eff = lam / (1.0 + w_scale / lam);
+    const double lam_eff = lam / (1.0 + w_in / lam);
     return std::log1p(lam_eff);
   }
 }
@@ -2264,7 +2260,7 @@ MarchEnd march_zeta(const RayleighDuct& d, double Pt0) {
   std::array<double, kRayleighSteps + 1> dws{};
   ws[0] = w;
   const double dTt_dx = (d.Tt_exit - d.Tt0) / d.L;
-  const double alpha = rayleigh_grid_alpha_fwd<double>(d, d.G, d.Tt0, d.Tt_exit, w, Pt0);
+  const double alpha = rayleigh_grid_alpha_fwd<double>(d, d.G, d.Tt_exit, w, Pt0);
   auto x_at = [&](int i) { return rayleigh_node_x<double>(i, d.L, alpha); };
   auto Tt_at = [&](double x) { return d.Tt0 + dTt_dx * x; };
   for (int i = 0; i < kRayleighSteps; ++i) {
@@ -2406,7 +2402,7 @@ Dual4 march_w_exit_dual(const RayleighDuct& d, double Pt0) {
   const Dual4 dTt_dx = (Tte_dual - Tt0_dual) / d.L;
 
   Dual4 w = inlet_w_dual(Pt0, d.Tt0, d.G, *d.X);
-  const Dual4 alpha = rayleigh_grid_alpha_fwd<Dual4>(d, G_dual, Tt0_dual, Tte_dual, w, Pt0);
+  const Dual4 alpha = rayleigh_grid_alpha_fwd<Dual4>(d, G_dual, Tte_dual, w, Pt0);
   auto x_at = [&](int i) { return rayleigh_node_x<Dual4>(i, d.L, alpha); };
   auto Tt_at = [&](const Dual4& x) { return Tt0_dual + dTt_dx * x; };
 
@@ -2528,8 +2524,7 @@ Choke choked_flux(const RayleighProblem& pb, double Pt0, double Tt0, double Tt_e
     // that already reaches sonic is a throat. (Its value alone cannot tell:
     // near sonic the forward march's own error is ~1e-5 in zeta.)
     const MarchEnd me = march_zeta(pb.duct(Ge, Tt0, Tt_ex, &X), Pt0);
-    const MarchEnd me_sub = march_zeta(pb.duct(0.5 * Ge, Tt0, Tt_ex, &X), Pt0);
-    if (!(me.max_inside && me.zeta_min < 0.0) && me_sub.zeta_min > 0.0) {
+    if (!(me.max_inside && me.zeta_min < 0.0)) {
       return Choke{Ge, ChokeMode::kExit};
     }
   }
