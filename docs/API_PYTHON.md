@@ -227,13 +227,19 @@ Also: `set_equivalence_ratio_mass`, `bilger_stoich_mixture_fraction_mass`,
 inverse solvers.
 
 ### Chemical Equilibrium
-Partial equilibrium by design: complete combustion, then steam reforming, the
-water-gas shift and, where NH3 is present, its decomposition 2 NH3 = N2 + 3 H2
-(#1314). No NO/NO2 (no NOx), no dissociation, no soot; N2 is inert without NH3.
-Scope and limits: the Chemical Equilibrium section of [API_CPP.md](API_CPP.md).
+Partial equilibrium by design: complete combustion, then steam reforming
+(both ways: methanation), the water-gas shift and NH3 synthesis and
+decomposition 2 NH3 = N2 + 3 H2, each wherever its elements and a reducing
+species are present, at any amount (#1314, #1241). No NO/NO2 (no NOx), no
+dissociation, no soot. Scope and limits: the Chemical Equilibrium section of
+[API_CPP.md](API_CPP.md).
 ```python
 # T, P constant equilibrium
 eq_state = cb.combustion_equilibrium(T=300.0, X=X, P=101325.0, smooth=True)
+
+# With analytic derivatives; dX_dir, the direction they will be applied along,
+# where a reactant arrives at a state lacking a species it feeds (#1241)
+jac = cb.combustion_equilibrium_and_jacobian(T=300.0, X=X, P=101325.0, dX_dir=None)
 
 # Water-gas shift
 wgs = cb.wgs_equilibrium(state)
@@ -3222,8 +3228,9 @@ still returns, with `converged` set accordingly.
 - **Where it does not:** heptane in air beyond phi 350 in part (most below
   500 K); isobutane at phi 1000 and above at 250 K; C2H6, C3H8, iC4H10 and
   a natural-gas blend with oxygen at 3e-24 or less (exactly 0 and 1e-20
-  converge); fuel-only heptane with any trace of oxygen, at every
-  temperature.
+  converge); near-pure CO with a hydrogen trace and about 1e-40 of air
+  (#1343). Fuel-only heptane with a trace of air below 3e-21 converges since
+  0.13.0 (#1290).
 
 ### MixtureState for Network Data
 ```python

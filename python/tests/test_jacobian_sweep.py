@@ -178,7 +178,8 @@ def _halve_orifice_rows(s: NetworkSolver, J: np.ndarray) -> None:
     ("case", "desc"),
     [
         (Case("combustor", 1, 0, 0), "start vector"),
-        # A point #1241 covers: the bug must still be new there.
+        # A fuel stream at exactly zero flow (#1241's point, fixed): the bug
+        # must be new there too.
         (Case("combustor", 1, 0, 0), "inj.m_dot = 0"),
     ],
 )

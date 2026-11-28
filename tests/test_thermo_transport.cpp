@@ -1249,6 +1249,18 @@ TEST_F(ThermoTransportTest, RichCombustionNaturalGasUnburnedHC) {
 // =============================================================================
 
 // Test reforming equilibrium at high temperature with CH4 only
+// Nitrogen as N2-equivalent moles, N2 + NH3 / 2: the reference the reforming
+// tests normalise by. N2 alone is not inert: NH3 synthesis, 2 NH3 = N2 + 3 H2,
+// is always equilibrated (#1241), and moves N2 by up to 1e-6 of itself here.
+static double n2_equiv(const std::vector<double> &X) {
+    return X[species_index_from_name("N2")] + 0.5 * X[species_index_from_name("NH3")];
+}
+
+// H in NH3, for the H balances below (#1241).
+static double h_in_nh3(const std::vector<double> &X) {
+    return 3.0 * X[species_index_from_name("NH3")];
+}
+
 TEST_F(ThermoTransportTest, ReformingCh4Isothermal) {
     const std::size_t n = species_names.size();
     const std::size_t idx_CH4 = species_index_from_name("CH4");
@@ -1287,15 +1299,15 @@ TEST_F(ThermoTransportTest, ReformingCh4Isothermal) {
 
     // Element balance: use N2 as reference (inert)
     // SMR changes total moles, so ratios to N2 should be conserved
-    double n2_in = in.X[idx_N2];
-    double n2_out = out.state.X[idx_N2];
+    double n2_in = n2_equiv(in.X);
+    double n2_out = n2_equiv(out.state.X);
 
     double C_per_N2_in = (in.X[idx_CH4] + in.X[idx_CO] + in.X[idx_CO2]) / n2_in;
     double C_per_N2_out = (out.state.X[idx_CH4] + out.state.X[idx_CO] + out.state.X[idx_CO2]) / n2_out;
     EXPECT_NEAR(C_per_N2_in, C_per_N2_out, 1e-6);
 
-    double H_per_N2_in = (4.0 * in.X[idx_CH4] + 2.0 * in.X[idx_H2O] + 2.0 * in.X[idx_H2]) / n2_in;
-    double H_per_N2_out = (4.0 * out.state.X[idx_CH4] + 2.0 * out.state.X[idx_H2O] + 2.0 * out.state.X[idx_H2]) / n2_out;
+    double H_per_N2_in = (4.0 * in.X[idx_CH4] + 2.0 * in.X[idx_H2O] + 2.0 * in.X[idx_H2] + h_in_nh3(in.X)) / n2_in;
+    double H_per_N2_out = (4.0 * out.state.X[idx_CH4] + 2.0 * out.state.X[idx_H2O] + 2.0 * out.state.X[idx_H2] + h_in_nh3(out.state.X)) / n2_out;
     EXPECT_NEAR(H_per_N2_in, H_per_N2_out, 1e-6);
 }
 
@@ -1327,8 +1339,8 @@ TEST_F(ThermoTransportTest, ReformingCh4Adiabatic) {
     // Enthalpy per mole of N2 should be conserved (N2 is inert)
     // H_total / n_N2 = h(T,X) / X_N2 should be constant
     // Note: tolerance is ~5% due to nested Newton solver convergence
-    double H_per_N2_in = h(in.T, in.X) / in.X[idx_N2];
-    double H_per_N2_out = h(out.state.T, out.state.X) / out.state.X[idx_N2];
+    double H_per_N2_in = h(in.T, in.X) / n2_equiv(in.X);
+    double H_per_N2_out = h(out.state.T, out.state.X) / n2_equiv(out.state.X);
     EXPECT_NEAR(H_per_N2_in, H_per_N2_out, std::abs(H_per_N2_in) * 0.05);
 }
 
@@ -1400,9 +1412,8 @@ TEST_F(ThermoTransportTest, ReformingCh4RichCombustion) {
     // Enthalpy per mole of N2 should be conserved
     // Note: tolerance is relaxed due to adiabatic solver convergence and
     // differences between NASA-7 and NASA-9 thermodynamic data
-    const std::size_t idx_N2 = species_index_from_name("N2");
-    double H_per_N2_burned = h(burned.T, burned.X) / burned.X[idx_N2];
-    double H_per_N2_eq = h(eq.state.T, eq.state.X) / eq.state.X[idx_N2];
+    double H_per_N2_burned = h(burned.T, burned.X) / n2_equiv(burned.X);
+    double H_per_N2_eq = h(eq.state.T, eq.state.X) / n2_equiv(eq.state.X);
     // Check that enthalpy is in the same ballpark (within factor of 2)
     // Exact conservation is difficult due to nested solver convergence
     EXPECT_LT(std::abs(H_per_N2_burned - H_per_N2_eq), std::abs(H_per_N2_burned) * 1.0);
@@ -1443,8 +1454,8 @@ TEST_F(ThermoTransportTest, ReformingEquilibriumMultipleHydrocarbons) {
     EXPECT_GT(out.state.X[idx_H2], 0.01);
 
     // Element balance using N2 as reference
-    double n2_in = in.X[idx_N2];
-    double n2_out = out.state.X[idx_N2];
+    double n2_in = n2_equiv(in.X);
+    double n2_out = n2_equiv(out.state.X);
 
     // C atoms: CH4 + 2*C2H6 + 3*C3H8 + CO + CO2
     double C_per_N2_in = (in.X[idx_CH4] + 2*in.X[idx_C2H6] + 3*in.X[idx_C3H8]
@@ -1521,8 +1532,8 @@ TEST_F(ThermoTransportTest, ReformingNaturalGasCombustion) {
     EXPECT_GT(out.state.X[idx_H2], 0.01);
 
     // Inerts should be unchanged (relative to total moles via N2 reference)
-    double ar_per_n2_in = in.X[idx_AR] / in.X[idx_N2];
-    double ar_per_n2_out = out.state.X[idx_AR] / out.state.X[idx_N2];
+    double ar_per_n2_in = in.X[idx_AR] / n2_equiv(in.X);
+    double ar_per_n2_out = out.state.X[idx_AR] / n2_equiv(out.state.X);
     EXPECT_NEAR(ar_per_n2_in, ar_per_n2_out, 1e-10);
 
     // Temperature should drop (endothermic reforming)
@@ -1569,8 +1580,8 @@ TEST_F(ThermoTransportTest, ReformingHeavyHydrocarbons) {
     EXPECT_GT(out.state.X[idx_H2], 0.01);
 
     // Element balance: C atoms per N2 should be conserved
-    double n2_in = in.X[idx_N2];
-    double n2_out = out.state.X[idx_N2];
+    double n2_in = n2_equiv(in.X);
+    double n2_out = n2_equiv(out.state.X);
 
     // C atoms: 1*CH4 + 3*C3H8 + 4*iC4H10 + 5*nC5H12 + CO + CO2
     double C_per_N2_in = (in.X[idx_CH4] + 3*in.X[idx_C3H8] + 4*in.X[idx_IC4H10]
@@ -1582,9 +1593,9 @@ TEST_F(ThermoTransportTest, ReformingHeavyHydrocarbons) {
     // H atoms per N2 should be conserved
     // H atoms: 4*CH4 + 8*C3H8 + 10*iC4H10 + 12*nC5H12 + 2*H2O + 2*H2
     double H_per_N2_in = (4*in.X[idx_CH4] + 8*in.X[idx_C3H8] + 10*in.X[idx_IC4H10]
-                        + 12*in.X[idx_NC5H12] + 2*in.X[idx_H2O] + 2*in.X[idx_H2]) / n2_in;
+                        + 12*in.X[idx_NC5H12] + 2*in.X[idx_H2O] + 2*in.X[idx_H2] + h_in_nh3(in.X)) / n2_in;
     double H_per_N2_out = (4*out.state.X[idx_CH4] + 8*out.state.X[idx_C3H8] + 10*out.state.X[idx_IC4H10]
-                         + 12*out.state.X[idx_NC5H12] + 2*out.state.X[idx_H2O] + 2*out.state.X[idx_H2]) / n2_out;
+                         + 12*out.state.X[idx_NC5H12] + 2*out.state.X[idx_H2O] + 2*out.state.X[idx_H2] + h_in_nh3(out.state.X)) / n2_out;
     EXPECT_NEAR(H_per_N2_in, H_per_N2_out, 1e-6);
 
     // Ar should be unchanged relative to N2
@@ -1627,8 +1638,8 @@ TEST_F(ThermoTransportTest, ReformingC2PlusOnly) {
     EXPECT_GT(out.state.X[idx_H2], 0.01);
 
     // Element balance: C atoms per N2
-    double n2_in = in.X[idx_N2];
-    double n2_out = out.state.X[idx_N2];
+    double n2_in = n2_equiv(in.X);
+    double n2_out = n2_equiv(out.state.X);
     double C_per_N2_in = (in.X[idx_CH4] + 2*in.X[idx_C2H6] + 3*in.X[idx_C3H8]
                         + in.X[idx_CO] + in.X[idx_CO2]) / n2_in;
     double C_per_N2_out = (out.state.X[idx_CH4] + 2*out.state.X[idx_C2H6] + 3*out.state.X[idx_C3H8]
@@ -1672,8 +1683,8 @@ TEST_F(ThermoTransportTest, ReformingWithExistingCOH2) {
     EXPECT_GT(out.state.X[idx_H2], in.X[idx_H2]);
 
     // Element balance
-    double n2_in = in.X[idx_N2];
-    double n2_out = out.state.X[idx_N2];
+    double n2_in = n2_equiv(in.X);
+    double n2_out = n2_equiv(out.state.X);
 
     double C_per_N2_in = (in.X[idx_CH4] + 2*in.X[idx_C2H6] + in.X[idx_CO] + in.X[idx_CO2]) / n2_in;
     double C_per_N2_out = (out.state.X[idx_CH4] + 2*out.state.X[idx_C2H6] + out.state.X[idx_CO] + out.state.X[idx_CO2]) / n2_out;
@@ -1710,10 +1721,10 @@ TEST_F(ThermoTransportTest, ReformingCh4ElementConservation) {
 
         EquilibriumResult out = reforming_equilibrium(in);
 
-        // Use N2 as reference (inert, doesn't participate in reactions)
+        // Nitrogen as the reference (n2_equiv: conserved with NH3 synthesis)
         // Element ratios relative to N2 should be conserved
-        double n2_in = in.X[idx_N2];
-        double n2_out = out.state.X[idx_N2];
+        double n2_in = n2_equiv(in.X);
+        double n2_out = n2_equiv(out.state.X);
 
         // C atoms per N2: (CH4 + CO + CO2) / N2
         double C_per_N2_in = (in.X[idx_CH4] + in.X[idx_CO] + in.X[idx_CO2]) / n2_in;
@@ -1721,8 +1732,8 @@ TEST_F(ThermoTransportTest, ReformingCh4ElementConservation) {
         EXPECT_NEAR(C_per_N2_in, C_per_N2_out, 1e-6) << "C/N2 not conserved at T=" << T;
 
         // H atoms per N2: (4*CH4 + 2*H2O + 2*H2) / N2
-        double H_per_N2_in = (4.0 * in.X[idx_CH4] + 2.0 * in.X[idx_H2O] + 2.0 * in.X[idx_H2]) / n2_in;
-        double H_per_N2_out = (4.0 * out.state.X[idx_CH4] + 2.0 * out.state.X[idx_H2O] + 2.0 * out.state.X[idx_H2]) / n2_out;
+        double H_per_N2_in = (4.0 * in.X[idx_CH4] + 2.0 * in.X[idx_H2O] + 2.0 * in.X[idx_H2] + h_in_nh3(in.X)) / n2_in;
+        double H_per_N2_out = (4.0 * out.state.X[idx_CH4] + 2.0 * out.state.X[idx_H2O] + 2.0 * out.state.X[idx_H2] + h_in_nh3(out.state.X)) / n2_out;
         EXPECT_NEAR(H_per_N2_in, H_per_N2_out, 1e-6) << "H/N2 not conserved at T=" << T;
 
         // O atoms per N2: (H2O + CO + 2*CO2) / N2

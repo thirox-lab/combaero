@@ -378,16 +378,24 @@ _ZERO_AIR_FUELS = {
 def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow(
     fuel: str, Ta: float, Tf: float, P: float
 ) -> None:
-    """The equilibrium leg of the test above (#1251): J at exactly zero air
-    flow against the forward one-sided difference (the arriving side). The
-    oxygen carriers are absent there and their reactions left out, so J kept
-    them at 0: 2.260e6 against 2.357e6 K per kg/s for methane, 34-45 % off for
-    ethane, propane and a blend (at a 1e-30 trace their solve did not
-    converge and the no-trace J was kept, review 4). J is now taken at the
-    same state with them at the smallest converging trace from 1e-20,
-    equilibrated. Checked against the best of steps 1e-15 to 1e-11 kg/s, to
-    1e-3: the difference bends from 1e-14 on for the blend at 20 bar (4e-3
-    at 1e-13, against 8e-5 at 1e-15)."""
+    """The equilibrium leg of the test above (#1251, #1241): J at exactly zero
+    air flow is the one-sided limit, J(0) = lim J(0+), the slope of an
+    ordinary state an instant later (air at 1e-40 kg/s, no trace ladder): to
+    1e-7 (2.5e-9 at worst measured).
+
+    No difference over a step a solver takes resolves that limit. With NH3
+    synthesis always on (#1241), the N2 of the first air all becomes NH3 only
+    below about 1e-17 kg/s (methane) to 1e-28 kg/s (the blend, whose burned
+    H2 is 6e-10), and the steam and CO2 of its oxygen reform completely beside
+    the fuel only that far down too. A difference over 1e-15 to 1e-11 kg/s
+    (what this test compared before #1241) sees the burn's slope beyond that
+    bend, up to 90 times the limit's (blend, 300 K: 1.39e6 against 1.53e4 K
+    per kg/s, partial oxidation in the limit). The trace ladder therefore
+    steps down until its derivatives settle (REFORMING_JACOBIAN_LIMIT_RTOL,
+    1e-8): at 1e-5 instead, the continuity gap here is 3.3e-6 and this test
+    fails. NH3, absent at zero air, resolves the limit by a plain forward
+    difference at 1e-38 kg/s: J's NH3 column matches it to 1e-7 (5e-10
+    measured)."""
     Yf = _fuel_Y(_ZERO_AIR_FUELS[fuel])
 
     def burn(ma: float):
@@ -396,15 +404,11 @@ def test_a_fuel_only_equilibrium_combustor_moves_with_the_air_flow(
 
     r = burn(0.0)
     an = r.dTt_mix_d_stream[0].d_mdot
-    errs = [
-        abs(an - (burn(h).Tt_mix - r.Tt_mix) / h) / abs(an)
-        for h in (1e-15, 1e-14, 1e-13, 1e-12, 1e-11)
-    ]
-    assert min(errs) < 1e-3, (fuel, an, errs)
-    # Noise free: the analytic J at an ordinary state an instant later (air
-    # at 1e-18 kg/s, oxygen present) is J(0) to 1e-7 (review 5 measured
-    # 1.2e-8 at worst).
-    assert burn(1e-18).dTt_mix_d_stream[0].d_mdot == pytest.approx(an, rel=1e-7)
+    assert burn(1e-40).dTt_mix_d_stream[0].d_mdot == pytest.approx(an, rel=1e-7)
+    i_nh3 = _cb.species_index_from_name("NH3")
+    h = 1e-38
+    fd_nh3 = (burn(h).Y_mix[i_nh3] - r.Y_mix[i_nh3]) / h
+    assert r.dY_mix_d_stream[i_nh3][0].d_mdot == pytest.approx(fd_nh3, rel=1e-7)
 
 
 def test_a_zero_air_heptane_combustor_takes_the_arriving_side() -> None:
@@ -554,16 +558,38 @@ def test_trace_oxygen_equilibrium_jacobian_is_exact() -> None:
 def test_an_unconverged_equilibrium_is_refused() -> None:
     """The combustor never takes a state, or its Jacobian, the solve did not
     converge to (#1262): combustion_equilibrium_and_jacobian raises there,
-    which the network takes as an unphysical probe. Heptane with a 1e-22 trace
-    of air is one state the solve still misses: its steam lies below the
-    smallest double (#1290). Very lean methane at 208.5 K (#1285) and heptane
-    with 1e-20 of air (#1287), the states this used before, converge."""
+    which the network takes as an unphysical probe. CO with 2e-5 H2 and 3e-40
+    of air at 277 K is one state the solve still misses (#1343). Very lean
+    methane at 208.5 K (#1285), heptane with 1e-20 of air (#1287) and with
+    1e-22 (#1290, since the representable bound of #1241), the states this
+    used before, converge."""
+    X = np.zeros(_cb.num_species())
+    X[_cb.species_index_from_name("CO")] = 1.0
+    X[_cb.species_index_from_name("H2")] = 2e-5
+    X /= X.sum()
+    X = (1.0 - 3e-40) * X + 3e-40 * np.array(_X_AIR)
+    assert not _cb._core.combustion_equilibrium(277.0, X, 6.7e5).converged
+    with pytest.raises(RuntimeError, match="did not converge"):
+        _cb._core.combustion_equilibrium_and_jacobian(277.0, X, 6.7e5)
+
+
+@pytest.mark.parametrize("x_air", [3e-21, 1e-22, 1e-30, 1e-60, 1e-100])
+@pytest.mark.parametrize("T", [250.0, 300.0, 500.0, 650.0, 900.0])
+@pytest.mark.parametrize("P", [2e5, 2e6])
+def test_heptane_with_air_below_the_steam_floor_converges(x_air: float, T: float, P: float) -> None:
+    """#1290: heptane with dry air below about 3e-21 was refused at every
+    state of the issue's table (10 per level), because its steam's equilibrium
+    amount (about e^-800 at 300 K and 1e-22 air) is no double. Keys whose
+    equilibrium amount is below the normal range are boxed at 0 since #1241
+    (joint_key_unrepresentable), and the states converge, with their
+    Jacobian. Heptane stays at 1 - x_air to 1e-12 (Cantera agrees: 1.0000)."""
     X = np.zeros(_cb.num_species())
     X[_cb.species_index_from_name("NC7H16")] = 1.0
-    X = (1.0 - 1e-22) * X + 1e-22 * np.array(_X_AIR)
-    assert not _cb._core.combustion_equilibrium(300.0, X, 2e5).converged
-    with pytest.raises(RuntimeError, match="did not converge"):
-        _cb._core.combustion_equilibrium_and_jacobian(300.0, X, 2e5)
+    X = (1.0 - x_air) * X + x_air * np.array(_X_AIR)
+    r = _cb._core.combustion_equilibrium(T, X, P)
+    assert r.converged
+    assert r.state.X[_cb.species_index_from_name("NC7H16")] == pytest.approx(1.0, abs=1e-12)
+    _cb._core.combustion_equilibrium_and_jacobian(T, X, P)
 
 
 def _fuel_in_air(fuel: str, phi: float, vitiated: bool = False) -> np.ndarray:
@@ -628,9 +654,16 @@ def _elements(X: np.ndarray) -> np.ndarray:
     a = np.zeros(3)
     for j, x in enumerate(X):
         st = _cb.species_name(j)
-        if st in ("N2", "AR", "NH3", "O2"):
+        if st in ("N2", "AR", "O2"):
             continue
-        counts = {"CO2": (1, 0, 2), "H2O": (0, 2, 1), "CO": (1, 0, 1), "H2": (0, 2, 0)}
+        # NH3 carries hydrogen: synthesis from N2 and H2 is always on (#1241).
+        counts = {
+            "CO2": (1, 0, 2),
+            "H2O": (0, 2, 1),
+            "CO": (1, 0, 1),
+            "H2": (0, 2, 0),
+            "NH3": (0, 3, 0),
+        }
         if st in counts:
             a += x * np.array(counts[st])
         else:  # alkanes CnH(2n+2) and isobutane

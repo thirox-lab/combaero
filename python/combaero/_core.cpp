@@ -4444,13 +4444,17 @@ number runs linearly in Tt from M_in to M_out. Variable cp throughout.)doc");
   m.def(
       "combustion_equilibrium_and_jacobian",
       [make_state](double T, py::array_t<double, py::array::c_style | py::array::forcecast> X_arr,
-                   double P, bool smooth, double k0) {
-        return combaero::combustion_equilibrium_and_jacobian(make_state(T, P, X_arr), smooth, k0);
+                   double P, bool smooth, double k0, std::optional<std::vector<double>> dX_dir) {
+        return combaero::combustion_equilibrium_and_jacobian(
+            make_state(T, P, X_arr), smooth, k0, dX_dir ? &*dX_dir : nullptr);
       },
       py::arg("T"), py::arg("X"), py::arg("P") = 101325.0, py::arg("smooth") = true,
-      py::arg("k0") = combaero::SMOOTHING_K_PHI0,
+      py::arg("k0") = combaero::SMOOTHING_K_PHI0, py::arg("dX_dir") = py::none(),
       "combustion_equilibrium with analytic derivatives of T and the product\n"
-      "mole fractions in the reactant T, P and X (implicit in the extents).");
+      "mole fractions in the reactant T, P and X (implicit in the extents).\n"
+      "dX_dir: the direction the derivatives will be applied along; where a\n"
+      "reactant feeds a species the burned state lacks, the one-sided slope\n"
+      "along it is J @ dX_dir (#1241).");
 
   // Combustion + Equilibrium (convenience function)
   m.def(

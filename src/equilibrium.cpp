@@ -390,8 +390,9 @@ struct ReformingConfig {
   std::vector<int> hc_C; // number of C atoms
   std::vector<int> hc_H; // number of H atoms
 
-  // Whether NH3 decomposition, 2 NH3 = N2 + 3 H2, is equilibrated (NH3 is
-  // present: EQUILIBRIUM_NH3_MIN_FRACTION; #1314). Without it N2 is inert.
+  // Whether NH3 synthesis and decomposition, 2 NH3 = N2 + 3 H2, is
+  // equilibrated (#1314, #1241: a reducing species, N and H present; see
+  // reforming_species_present). Without it N2 is inert.
   bool nh3 = false;
 };
 
@@ -672,9 +673,13 @@ static double solve_nh3_decomposition_isothermal(const std::vector<double> &n0, 
     if (!(xi_new > lo && xi_new < hi)) return xi;
     xi = xi_new;
   }
-  if (inner_solve::cap_exit_is_root(hi - lo, xi)) return xi;
-  inner_solve::throw_no_convergence("solve_nh3_decomposition_isothermal",
-                                    inner_solve::kReformingExtentMaxIter, "ln(Q/K)", F);
+  // Out of iterations with the root still bracketed: below the representable
+  // range when the adiabatic search probes EQUILIBRIUM_T_MIN (very rich NH3
+  // at 10 K without N2: the N2 its decomposition forms is about e^-1000, and
+  // bisection reached 4e-139 after the budget; #1241). This is a start for
+  // the joint solve, which decides convergence: the bracketed iterate is
+  // returned, not thrown (an exception here aborted the whole equilibrium).
+  return xi;
 }
 
 // NH3 decomposition to its own equilibrium at n (in place), if equilibrated.
@@ -1641,12 +1646,71 @@ static bool element_potential_start(
 // element was a trace: oxygen at 1e-12 left the combination's system with a
 // condition number of 1e12, and H/C moved by 2.8e-5.) Returns whether any
 // was; runnable (if given) receives whether one could still be.
+// The amount of reaction r's key at which its residual vanishes, every other
+// amount held at n, as a log: ln n_k = (ln K - ln Q') / nu_k, Q' the quotient
+// without the key. -inf or NaN where another of its species is absent.
+static double joint_key_ln_equilibrium(const JointReaction &r, const std::vector<double> &n,
+                                       double P, double lnK) {
+  double nt = 0.0;
+  for (double v : n) nt += v;
+  double lnQ = r.dn * (std::log(P / EQUILIBRIUM_P_REF) - std::log(nt));
+  for (std::size_t e = 0; e < r.nu.size(); ++e) {
+    if (e != r.key) lnQ += r.nu[e].second * std::log(n[r.nu[e].first]);
+  }
+  return (lnK - lnQ) / r.nu[r.key].second;
+}
+
+// Whether reaction r's key has an equilibrium amount no double holds (#1241):
+// below the smallest positive one, so it rounds to 0. A trace of fuel in warm
+// air (CH4 at 1e-15, 700 K) holds n-heptane at about 1e-391 at equilibrium:
+// its log step underflowed to 0, the step was not finite, and Newton stalled
+// with every hydrocarbon row unsolved (151 refused states between 1e-20 and
+// 1e-13 of fuel, 500-900 K). Such a key is exactly 0 in double precision, its
+// reaction boxed there: a machine limit, not a tolerance.
+static bool joint_key_unrepresentable(const JointReaction &r, const std::vector<double> &n,
+                                      double P, double lnK) {
+  // Only a finite prediction: with another of its species absent the key's
+  // amount is set by that species' arrival, not by this quotient.
+  const double ln_min = std::log(std::numeric_limits<double>::min());
+  const double ln_k = joint_key_ln_equilibrium(r, n, P, lnK);
+  return std::isfinite(ln_k) && ln_k < ln_min;
+}
+
+// Each reaction whose key is unrepresentable (joint_key_unrepresentable) run
+// to completion away from it: the key to exactly 0, every element conserved
+// exactly. Returns whether any was.
+static bool drop_unrepresentable_keys(std::vector<double> &n, const std::vector<JointReaction> &rx,
+                                      double P, const std::vector<double> &lnK) {
+  bool dropped = false;
+  for (std::size_t r = 0; r < rx.size(); ++r) {
+    const auto &key = rx[r].nu[rx[r].key];
+    if (!(n[key.first] > 0.0) || !joint_key_unrepresentable(rx[r], n, P, lnK[r])) continue;
+    const double xi = -n[key.first] / key.second;  // the key's whole amount
+    bool ok = true;
+    for (const auto &p : rx[r].nu) {
+      if (p.first != key.first && !(n[p.first] + p.second * xi >= 0.0)) ok = false;
+    }
+    if (!ok) continue;
+    for (const auto &p : rx[r].nu) n[p.first] += p.second * xi;
+    n[key.first] = 0.0;
+    dropped = true;
+  }
+  return dropped;
+}
+
 static bool seed_absent_species(std::vector<double> &n, const std::vector<JointReaction> &rx,
-                                bool *runnable = nullptr) {
+                                bool *runnable = nullptr, double P = 0.0,
+                                const std::vector<double> *lnK = nullptr) {
   double nt = 0.0;
   for (double v : n) nt += v;
   bool seeded = false, can = false;
-  for (const auto &r : rx) {
+  for (std::size_t ir = 0; ir < rx.size(); ++ir) {
+    const JointReaction &r = rx[ir];
+    // An absent key with an unrepresentable equilibrium amount stays 0.
+    if (lnK != nullptr && !(n[r.nu[r.key].first] > 0.0) &&
+        joint_key_unrepresentable(r, n, P, (*lnK)[ir])) {
+      continue;
+    }
     bool any_absent = false, lhs = true, rhs = true;
     for (const auto &p : r.nu) {
       if (!(n[p.first] > 0.0)) {
@@ -1703,7 +1767,8 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
                                       const ReformingConfig &cfg, bool with_reforming,
                                       std::vector<double> &n_out,
                                       std::vector<JointReaction> *rx_out = nullptr,
-                                      std::vector<std::size_t> *active_out = nullptr) {
+                                      std::vector<std::size_t> *active_out = nullptr,
+                                      bool allow_fallback = true) {
   std::vector<JointReaction> rx = joint_reactions(cfg, with_reforming);
   std::vector<double> lnK;
 
@@ -1800,6 +1865,103 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
         choose_basis(n_try);
         act = joint_active(rx, n_try);
       }
+      // Keys whose equilibrium amount no double holds, boxed at 0, and the
+      // rest solved again (joint_key_unrepresentable). Only where the solve
+      // failed: a state that converges is as before, bit for bit.
+      for (std::size_t k = 0; !conv && k < rx.size(); ++k) {
+        if (!drop_unrepresentable_keys(n_try, rx, P, lnK)) break;
+        act = joint_active(rx, n_try);
+        conv = joint_newton(n_try, P, rx, act, lnK, REFORMING_NEWTON_MAX_IT) &&
+               elements_conserved(n0, n_try);
+      }
+      // Still failed: decide representability at a converged state, not at
+      // the stalled iterate (#1241). Every hydrocarbon is reformed
+      // completely with steam (CnHm + n H2O -> n CO + (n + m/2) H2), the
+      // shift and NH3 solved without reforming, and each hydrocarbon's own
+      // reforming equilibrium at that solution gives its amount: below the
+      // normal range it stays 0, else it is formed back from CO and H2, and
+      // the whole set is solved once more from there (without this fallback).
+      // A lean burn's phi = 0 smoothing traces (CH4 and n-heptane at 8e-18
+      // beside major steam, 500 K, 0.1 bar) stalled with every alkane near
+      // its start: heptane's equilibrium (subnormal at 450 K) looked
+      // representable from the stalled iterate.
+      if (!conv && with_reforming && allow_fallback) {
+        // From the solve's input, not the rounds' state (the rounds can have
+        // used up the steam the complete reforming needs).
+        std::vector<double> n_h = n0;
+        bool ok = false;
+        for (std::size_t k = 0; k < cfg.hc_indices.size(); ++k) {
+          const std::size_t i = cfg.hc_indices[k];
+          const double a = n_h[i];
+          if (!(a > 0.0)) continue;
+          ok = true;
+          n_h[i] = 0.0;
+          n_h[cfg.i_CO] += cfg.hc_C[k] * a;
+          n_h[cfg.i_H2] += (cfg.hc_C[k] + 0.5 * cfg.hc_H[k]) * a;
+          n_h[cfg.i_H2O] -= cfg.hc_C[k] * a;
+        }
+        ok = ok && n_h[cfg.i_H2O] >= 0.0;
+        if (ok) {
+          std::vector<double> n_red;
+          ok = solve_reforming_wgs_joint(n_h, T, P, cfg, false, n_red);
+          if (ok) n_h = n_red;
+        }
+        if (ok) {
+          double nt = 0.0;
+          for (double v : n_h) nt += v;
+          const double x_CO = n_h[cfg.i_CO] / nt, x_H2 = n_h[cfg.i_H2] / nt;
+          const double x_H2O = n_h[cfg.i_H2O] / nt;
+          const double ln_P = std::log(P / EQUILIBRIUM_P_REF);
+          const double ln_min = std::log(std::numeric_limits<double>::min());
+          std::vector<double> n_add = n_h;
+          for (std::size_t k = 0; ok && k < cfg.hc_indices.size(); ++k) {
+            if (!(x_CO > 0.0 && x_H2 > 0.0 && x_H2O > 0.0)) break;
+            const double nC = cfg.hc_C[k], m = nC + 0.5 * cfg.hc_H[k];
+            const double ln_n = std::log(nt) + nC * std::log(x_CO) + m * std::log(x_H2) -
+                                nC * std::log(x_H2O) + (m - 1.0) * ln_P -
+                                lnKp_reforming(T, cfg.hc_indices[k], cfg.hc_C[k],
+                                               cfg.hc_H[k], cfg);
+            if (!(ln_n >= ln_min)) continue;  // no double holds it: stays 0
+            double a = std::exp(ln_n);
+            a = std::min({a, 0.5 * n_add[cfg.i_CO] / nC, 0.5 * n_add[cfg.i_H2] / m});
+            n_add[cfg.hc_indices[k]] += a;
+            n_add[cfg.i_CO] -= nC * a;
+            n_add[cfg.i_H2] -= m * a;
+            n_add[cfg.i_H2O] += nC * a;
+          }
+          // Newton from that near-equilibrium state first, in a basis chosen
+          // there: the full solve's start-up rounds can overshoot from it
+          // (dry air at 1100 K with 5e-13 of ethane and 2e-18 of H2: the
+          // rounds formed every alkane at about 1e-15 and used up the steam,
+          // and Newton stalled there, 61 of 140 such states refused; Gemini's
+          // review of #1349). Then the full solve, as a last resort.
+          choose_basis(n_add);
+          std::vector<double> n_fin = n_add;
+          std::vector<std::size_t> act_fin = joint_active(rx, n_fin);
+          if (joint_newton(n_fin, P, rx, act_fin, lnK, REFORMING_NEWTON_MAX_IT) &&
+              elements_conserved(n0, n_fin)) {
+            n_try = n_fin;
+            act = act_fin;
+            conv = true;
+          } else {
+            std::vector<JointReaction> rx_fin;
+            n_fin.clear();
+            ok = solve_reforming_wgs_joint(n_add, T, P, cfg, true, n_fin, &rx_fin, &act_fin,
+                                           false);
+            if (ok && elements_conserved(n0, n_fin)) {
+              n_try = n_fin;
+              rx = rx_fin;
+              lnK.assign(rx.size(), 0.0);
+              for (std::size_t r = 0; r < rx.size(); ++r) lnK[r] = joint_lnK(rx[r], T);
+              act = act_fin;
+              conv = true;
+            } else {
+              choose_basis(n_try);  // back to the basis of the state kept
+              act = joint_active(rx, n_try);
+            }
+          }
+        }
+      }
     }
     n_out = n_try;
     if (act.size() == rx.size()) break;
@@ -1815,11 +1977,11 @@ static bool solve_reforming_wgs_joint(const std::vector<double> &n0, double T, d
     if (!conv) break;
     if (seed_pass == REFORMING_SEED_PASSES) {
       bool runnable = false;
-      seed_absent_species(n_out, rx, &runnable);
+      seed_absent_species(n_out, rx, &runnable, P, &lnK);
       if (runnable) conv = false;  // still driven toward an absent species
       break;
     }
-    if (!seed_absent_species(n_out, rx)) break;
+    if (!seed_absent_species(n_out, rx, nullptr, P, &lnK)) break;
     conv = false;
     choose_basis(n_out);
   }
@@ -1840,15 +2002,27 @@ static bool solve_reforming_wgs_isothermal(const std::vector<double> &n0,
   return solve_reforming_wgs_joint(n0, T, P, cfg, with_reforming, n_out);
 }
 
-// Whether a hydrocarbon is present (reforming is equilibrated), and set
-// cfg.nh3 where NH3 is (#1314), from the mole fractions X.
+// Whether reforming (with methanation) is equilibrated, and set cfg.nh3
+// (NH3 synthesis and decomposition), from the mole fractions X (#1241): both
+// need a reducing species (H2, CO, a hydrocarbon or NH3) in the burned state,
+// reforming carbon and hydrogen, NH3 nitrogen and hydrogen. No threshold:
+// any amount counts, so nothing switches as a trace goes to zero. Without a
+// reducing species neither can move, and the caller keeps the shift-only
+// path, bit for bit as before.
 static bool reforming_species_present(const std::vector<double> &X, ReformingConfig &cfg) {
-  bool has_hc = false;
-  for (std::size_t i_hc : cfg.hc_indices) {
-    if (X[i_hc] > EQUILIBRIUM_HC_MIN_FRACTION) has_hc = true;
+  bool any_hc = false;
+  for (std::size_t i_hc : cfg.hc_indices) any_hc = any_hc || X[i_hc] > 0.0;
+  const bool reducing =
+      any_hc || X[cfg.i_H2] > 0.0 || X[cfg.i_CO] > 0.0 || X[cfg.i_NH3] > 0.0;
+  if (!reducing) {
+    cfg.nh3 = false;
+    return false;
   }
-  cfg.nh3 = X[cfg.i_NH3] > EQUILIBRIUM_NH3_MIN_FRACTION;
-  return has_hc;
+  const bool carbon = any_hc || X[cfg.i_CO] > 0.0 || X[cfg.i_CO2] > 0.0;
+  const bool hydrogen = any_hc || X[cfg.i_H2] > 0.0 || X[cfg.i_H2O] > 0.0 || X[cfg.i_NH3] > 0.0;
+  const bool nitrogen = X[cfg.i_N2] > 0.0 || X[cfg.i_NH3] > 0.0;
+  cfg.nh3 = nitrogen && hydrogen;
+  return carbon && hydrogen;
 }
 
 // Adiabatic solver functor for general reforming + WGS
@@ -1979,8 +2153,8 @@ EquilibriumResult combustion_equilibrium(const State &in, bool smooth_phi0, doub
   // without the softmin T keeps complete combustion's kink at Phi = 1 (one-sided
   // slopes +1450 and -960 K per unit Phi for CH4-air). The softmin is about
   // 1/SMOOTHING_K_PHI1 wide, as on the complete path. On its lean side it leaves
-  // a trace of fuel, which reforming_equilibrium_adiabatic stops reforming once
-  // below 1e-10 (|Phi - 1| ~ 5e-4): a step of about 1e-6 K in T there.
+  // a trace of fuel, which reforming_equilibrium_adiabatic reforms at any size
+  // (#1241; up to 0.12.0 not below 1e-10, a step of about 1e-6 K there).
   State burned = complete_combustion(in, smooth_phi0, true, k0, SMOOTHING_K_PHI1);
 
   // Step 2: Reforming + WGS equilibrium on combustion products
@@ -2033,8 +2207,66 @@ DV dv_lift(double f, double s, const DV &a) {
 
 }  // namespace
 
+namespace {
+
+// The largest difference between two trace states' derivatives, relative to
+// each quantity's own size: along dX_dir if given (dT and dX_out along it),
+// else every column of dT/dX and dX_out/dX (#1241).
+double jacobian_gap(const EquilibriumJacobian &a, const EquilibriumJacobian &b,
+                    const std::vector<double> *dX_dir) {
+  const std::size_t ns = a.dT_dX.size();
+  auto rel = [](double x, double y, double scale) {
+    return scale > 0.0 ? std::abs(x - y) / scale : 0.0;
+  };
+  double gap = 0.0;
+  if (dX_dir != nullptr) {
+    double ta = 0.0, tb = 0.0;
+    std::vector<double> xa(ns, 0.0), xb(ns, 0.0);
+    for (std::size_t k = 0; k < ns; ++k) {
+      ta += a.dT_dX[k] * (*dX_dir)[k];
+      tb += b.dT_dX[k] * (*dX_dir)[k];
+      for (std::size_t j = 0; j < ns; ++j) {
+        xa[j] += a.dXout_dX[j][k] * (*dX_dir)[k];
+        xb[j] += b.dXout_dX[j][k] * (*dX_dir)[k];
+      }
+    }
+    gap = rel(ta, tb, std::max(std::abs(ta), std::abs(tb)));
+    // Each X_out component relative to its own size: a trace one can still
+    // be on its way to the limit while the vector's norm has settled. N2
+    // arriving at CO with 1e-15 H2: dX_NH3 grows as t^-1/2 from 1e-14 at
+    // t = 1e-26 and saturates only near 1e-56, where dT is 3849 against the
+    // 1993 K plateau (Gemini's review of #1349). Components below the
+    // vector's round-off (DBL_EPSILON of its largest) carry no digits.
+    double sx = 0.0;
+    for (std::size_t j = 0; j < ns; ++j) sx = std::max({sx, std::abs(xa[j]), std::abs(xb[j])});
+    const double floor_x = std::numeric_limits<double>::epsilon() * sx;
+    for (std::size_t j = 0; j < ns; ++j) {
+      const double sj = std::max(std::abs(xa[j]), std::abs(xb[j]));
+      if (sj > floor_x) gap = std::max(gap, rel(xa[j], xb[j], sj));
+    }
+    return gap;
+  }
+  double st = 0.0, sx = 0.0;
+  for (std::size_t k = 0; k < ns; ++k) {
+    st = std::max({st, std::abs(a.dT_dX[k]), std::abs(b.dT_dX[k])});
+    for (std::size_t j = 0; j < ns; ++j) {
+      sx = std::max({sx, std::abs(a.dXout_dX[j][k]), std::abs(b.dXout_dX[j][k])});
+    }
+  }
+  for (std::size_t k = 0; k < ns; ++k) {
+    gap = std::max(gap, rel(a.dT_dX[k], b.dT_dX[k], st));
+    for (std::size_t j = 0; j < ns; ++j) {
+      gap = std::max(gap, rel(a.dXout_dX[j][k], b.dXout_dX[j][k], sx));
+    }
+  }
+  return gap;
+}
+
+}  // namespace
+
 EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool smooth_phi0,
-                                                        double k0) {
+                                                        double k0,
+                                                        const std::vector<double> *dX_dir) {
   const std::size_t ns = in.X.size();
   const std::size_t iT = ns, iP = ns + 1, N = ns + 2;
   EquilibriumJacobian out;
@@ -2053,7 +2285,26 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
   // alone (as reforming_equilibrium_adiabatic); NH3 decomposition where it
   // has NH3 (#1314).
   ReformingConfig cfg = make_reforming_config();
-  const bool has_hc = reforming_species_present(n0, cfg);
+  // Along dX_dir (#1241), the burned amounts move by dn0 = dXb/dX dX_dir, and
+  // the reactions are those of the state an instant later along it: a fed
+  // species absent from n0 counts as present. At exactly zero air a
+  // fuel-only burn holds no N2, so the value path leaves NH3 synthesis out,
+  // while with any air it runs on the pyrolysis H2.
+  if (dX_dir != nullptr && dX_dir->size() != ns) {
+    throw std::invalid_argument("combustion_equilibrium_and_jacobian: dX_dir has " +
+                                std::to_string(dX_dir->size()) + " entries, expected " +
+                                std::to_string(ns));
+  }
+  std::vector<double> dn0_dir;
+  std::vector<double> n0_later = n0;
+  if (dX_dir != nullptr) {
+    dn0_dir.assign(ns, 0.0);
+    for (std::size_t j = 0; j < ns; ++j) {
+      for (std::size_t k = 0; k < ns; ++k) dn0_dir[j] += cj.dXb_dX[j][k] * (*dX_dir)[k];
+      if (!(n0_later[j] > 0.0) && dn0_dir[j] > 0.0) n0_later[j] = 1.0;
+    }
+  }
+  const bool has_hc = reforming_species_present(n0_later, cfg);
   std::vector<double> nv;
   std::vector<JointReaction> rx;
   std::vector<std::size_t> act;
@@ -2078,6 +2329,191 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
   // at a trace of the total (REFORMING_JACOBIAN_TRACE, up by 100 until the
   // solve converges) and equilibrated: the one-sided limit to that order. The
   // value stays the solution's.
+  // The implicit-function derivatives at a solved state (nvq, rxq, actq):
+  // at the solution, or at a trace state of the ladder below.
+  auto ift = [&](const std::vector<double> &nvq, const std::vector<JointReaction> &rxq,
+                 const std::vector<std::size_t> &actq) {
+    EquilibriumJacobian jo;
+    jo.state = res.state;
+    // Implicit function theorem on F(xi; n0, T, P) = 0 at the solution,
+    // n = n0 + N xi: J dxi = -(dF/dn0 dn0 + dF/dT dT + dF/dP dP), with
+    //   dF_a/dn0_l = nu_al / n_l - dn_a / n_t,
+    //   dF_a/dT    = -d ln K_a/dT = -sum_j nu_aj h_j/(R T^2),
+    //   dF_a/dP    = dn_a / P.
+    // A reaction left jo of the solve (a species absent, so it cannot move)
+    // keeps its extent: zero derivative.
+    const std::size_t m = actq.size();
+    double nt_sol = 0.0;
+    for (double v : nvq) nt_sol += v;
+    std::vector<double> dxi(m * N, 0.0);  // [a][q]
+    if (m > 0) {
+      std::vector<double> lnK(rxq.size(), 0.0), F, J;
+      joint_residual(rxq, actq, nvq, P, lnK, F, &J);  // J only; F unused
+      for (std::size_t a = 0; a < m; ++a) {
+        const JointReaction &r = rxq[actq[a]];
+        for (std::size_t l = 0; l < ns; ++l) dxi[a * N + l] = r.dn / nt_sol;
+        double dlnK_dT = 0.0;
+        for (const auto &p : r.nu) {
+          dxi[a * N + p.first] -= p.second / nvq[p.first];
+          dlnK_dT += p.second * h_RT(p.first, T_ad) / T_ad;
+        }
+        dxi[a * N + iT] = dlnK_dT;      // -dF/dT
+        dxi[a * N + iP] = -r.dn / P;    // -dF/dP
+      }
+      // Scaled symmetrically (s_a = 1/sqrt(J_aa)): a trace species' rows carry
+      // 1/n_j, up to 1e30 at the Jacobian's trace state above.
+      // A subnormal key (subnormal_key_scale) has J_aa = inf and an inf
+      // -nu_k / n_k on its own column of the right-hand side; both are taken
+      // scaled, from the finite forms.
+      std::vector<double> sc(m);
+      for (std::size_t a = 0; a < m; ++a) sc[a] = 1.0 / std::sqrt(std::max(J[a * m + a], 1e-300));
+      for (std::size_t a = 0; a < m; ++a) {
+        const bool inf_diag = !std::isfinite(J[a * m + a]);
+        double s_over_nk = 0.0;
+        if (inf_diag) sc[a] = subnormal_key_scale(rxq[actq[a]], nvq, nt_sol, &s_over_nk);
+        for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+        if (inf_diag) {
+          const auto &kp = rxq[actq[a]].nu[rxq[actq[a]].key];
+          dxi[a * N + kp.first] = sc[a] * rxq[actq[a]].dn / nt_sol - kp.second * s_over_nk;
+        }
+      }
+      for (std::size_t a = 0; a < m; ++a) {
+        for (std::size_t b = 0; b < m; ++b) J[a * m + b] *= sc[a] * sc[b];
+        if (!std::isfinite(J[a * m + a])) J[a * m + a] = 1.0;
+      }
+      solve_dense(J, dxi, m, N);
+      for (std::size_t a = 0; a < m; ++a) {
+        for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
+      }
+    }
+    std::vector<DV> n(ns);
+    for (std::size_t j = 0; j < ns; ++j) {
+      n[j] = dv_const(nvq[j], N);
+      n[j].d[j] = 1.0;
+    }
+    for (std::size_t a = 0; a < m; ++a) {
+      for (const auto &p : rxq[actq[a]].nu) {
+        for (std::size_t q = 0; q < N; ++q) n[p.first].d[q] += p.second * dxi[a * N + q];
+      }
+    }
+    // A key boxed at 0 because no double holds its equilibrium amount (#1241):
+    // an amount of it fed goes through its reaction completely (heptane fed to
+    // a fuel-free burn reforms to CO and H2, its equilibrium 1e-391), so the
+    // burned amounts the solve sees are R n0, R's column k = e_k - nu / nu_k.
+    // The derivatives in n0_k are those of that column: the others are R's
+    // identity columns (a key is in its own reaction only).
+    for (std::size_t r = 0; r < rxq.size(); ++r) {
+      if (std::find(actq.begin(), actq.end(), r) != actq.end()) continue;
+      const auto &kp = rxq[r].nu[rxq[r].key];
+      if (nvq[kp.first] > 0.0 || !joint_key_unrepresentable(rxq[r], nvq, P, joint_lnK(rxq[r], T_ad))) {
+        continue;
+      }
+      for (std::size_t j = 0; j < ns; ++j) {
+        double v = 0.0;
+        for (const auto &p : rxq[r].nu) {
+          if (p.first != kp.first) v -= n[j].d[p.first] * p.second / kp.second;
+        }
+        n[j].d[kp.first] = v;
+      }
+    }
+    const DV T = [&]() {
+      DV t = dv_const(T_ad, N);
+      t.d[iT] = 1.0;
+      return t;
+    }();
+    // Stage 3: the adiabatic root F(T) = h(T, X_out)/MW_out - H_in = 0.
+    DV h_mol = dv_const(0.0, N);
+    DV mw = dv_const(0.0, N);
+    for (std::size_t j = 0; j < ns; ++j) {
+      const DV hj = dv_lift(h_species(j, T_ad), cp_species(j, T_ad), T);
+      h_mol = h_mol + n[j] * hj;
+      mw = mw + species_molar_mass(j) * n[j];
+    }
+    const DV H_mass = h_mol / mw;  // n/nt cancels in h/MW
+    const double F_T = H_mass.d[iT];
+    const double mw_in = mwmix(in.X);
+    const double h_in = h(in.T, in.X);
+    const double H_in = h_in / mw_in;
+
+    jo.dT_dT_in = cp(in.T, in.X) / mw_in / F_T;
+    jo.dT_dP = -H_mass.d[iP] / F_T;
+    jo.dT_dX.assign(ns, 0.0);
+    for (std::size_t k = 0; k < ns; ++k) {
+      double dF = 0.0;
+      for (std::size_t j = 0; j < ns; ++j) dF += H_mass.d[j] * cj.dXb_dX[j][k];
+      const double dH = (h_species(k, in.T) - H_in * species_molar_mass(k)) / mw_in;
+      jo.dT_dX[k] = (dH - dF) / F_T;
+    }
+
+    // Product mole fractions: n_out(n0, T, P), T = T_ad(X, T_in, P).
+    std::vector<double> nvals(ns);
+    double ntv = 0.0;
+    for (std::size_t j = 0; j < ns; ++j) {
+      nvals[j] = n[j].v;
+      ntv += n[j].v;
+    }
+    // Rewrites dn in place: a fresh std::vector<double>(ns) here tripped GCC 14's
+    // -Wstringop-overflow at -O3 (a false positive), failing the manylinux wheel.
+    auto dX_from_dn = [&](std::vector<double> dn) {
+      double dN = 0.0;
+      for (double x : dn) dN += x;
+      for (std::size_t j = 0; j < dn.size(); ++j) dn[j] = (dn[j] - nvals[j] / ntv * dN) / ntv;
+      return dn;
+    };
+    jo.dXout_dX.assign(ns, std::vector<double>(ns, 0.0));
+    for (std::size_t k = 0; k < ns; ++k) {
+      std::vector<double> dn(ns, 0.0);
+      for (std::size_t j = 0; j < ns; ++j) {
+        double v = n[j].d[iT] * jo.dT_dX[k];
+        for (std::size_t l = 0; l < ns; ++l) v += n[j].d[l] * cj.dXb_dX[l][k];
+        dn[j] = v;
+      }
+      const auto dX = dX_from_dn(std::move(dn));
+      for (std::size_t j = 0; j < ns; ++j) jo.dXout_dX[j][k] = dX[j];
+    }
+    std::vector<double> dn_T(ns), dn_P(ns);
+    for (std::size_t j = 0; j < ns; ++j) {
+      dn_T[j] = n[j].d[iT] * jo.dT_dT_in;
+      dn_P[j] = n[j].d[iT] * jo.dT_dP + n[j].d[iP];
+    }
+    jo.dXout_dT_in = dX_from_dn(std::move(dn_T));
+    jo.dXout_dP = dX_from_dn(std::move(dn_P));
+    return jo;
+  };
+
+  // A burned state that holds none of an element the direction feeds (carbon
+  // arriving in carbon-free air, or in a rich H2 or NH3 burn): its component
+  // basis has no reaction holding the species the direction feeds (none at
+  // all in plain air), so the derivatives below kept them as fed, where a CO
+  // fed to rich H2 methanates (J -1805 against -8270 K). The reactions an
+  // instant later are then the plain set, for the trace ladder below
+  // (#1241). Only along dX_dir: n0_later is n0 otherwise.
+  {
+    std::vector<bool> in_rx(ns, false);
+    for (const auto &r : rx) {
+      for (const auto &p : r.nu) in_rx[p.first] = true;
+    }
+    bool uncovered = false;
+    for (std::size_t j = 0; j < ns; ++j) {
+      if (!(n0[j] > 0.0) && n0_later[j] > 0.0 && !in_rx[j]) uncovered = true;
+    }
+    if (uncovered && (has_hc || cfg.nh3)) {
+      std::vector<JointReaction> plain = joint_reactions(cfg, has_hc);
+      std::vector<bool> in_plain(ns, false);
+      for (const auto &r : plain) {
+        for (const auto &p : r.nu) in_plain[p.first] = true;
+      }
+      // Kept where the plain set holds no more of them (an inert fed).
+      bool more = false;
+      for (std::size_t j = 0; j < ns; ++j) {
+        if (!(n0[j] > 0.0) && n0_later[j] > 0.0 && !in_rx[j] && in_plain[j]) more = true;
+      }
+      if (more) {
+        rx = plain;
+        act = joint_active(rx, nv);
+      }
+    }
+  }
   if (act.size() < rx.size()) {
     double nt0 = 0.0;
     for (double v : n0) nt0 += v;
@@ -2087,17 +2523,37 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
     std::vector<bool> in_left_out(ns, false);
     for (std::size_t r = 0; r < rx.size(); ++r) {
       if (std::find(act.begin(), act.end(), r) != act.end()) continue;
+      // A key boxed at 0 because no double holds its equilibrium amount
+      // (#1241) stays 0 an instant later too: its extent has no derivative.
+      if (!(nv[rx[r].nu[rx[r].key].first] > 0.0) &&
+          joint_key_unrepresentable(rx[r], nv, P, joint_lnK(rx[r], T_ad))) {
+        continue;
+      }
       for (const auto &p : rx[r].nu) in_left_out[p.first] = true;
     }
     std::vector<bool> n0v_fed(ns, false);
     bool fed = false;
+    // Along dX_dir, the species it feeds, seeded in its own ratios (scaled
+    // to the largest): the limit of a vanishing step along it.
+    std::vector<double> seed_w(ns, 1.0);
+    double w_max = 0.0;
     for (std::size_t j = 0; j < ns; ++j) {
       if (nv[j] > 0.0 || !in_left_out[j]) continue;
       bool any = false;
-      for (std::size_t k = 0; k < ns; ++k) any = any || cj.dXb_dX[j][k] != 0.0;
+      if (dX_dir != nullptr) {
+        any = dn0_dir[j] > 0.0;
+        if (any) w_max = std::max(w_max, dn0_dir[j]);
+      } else {
+        for (std::size_t k = 0; k < ns; ++k) any = any || cj.dXb_dX[j][k] != 0.0;
+      }
       if (any) {
         n0v_fed[j] = true;
         fed = true;
+      }
+    }
+    if (dX_dir != nullptr && w_max > 0.0) {
+      for (std::size_t j = 0; j < ns; ++j) {
+        if (n0v_fed[j]) seed_w[j] = dn0_dir[j] / w_max;
       }
     }
     if (fed) {
@@ -2111,16 +2567,53 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
            trace *= 100.0) {
         std::vector<double> n0v = n0;
         for (std::size_t j = 0; j < ns; ++j) {
-          if (n0v_fed[j]) n0v[j] += trace * nt0;
+          if (n0v_fed[j]) n0v[j] += trace * nt0 * seed_w[j];
         }
         std::vector<double> nv2;
         std::vector<JointReaction> rx2;
         std::vector<std::size_t> act2;
         if (solve_reforming_wgs_joint(n0v, T_ad, P, cfg, has_hc, nv2, &rx2, &act2) &&
             act2.size() > act.size()) {
-          nv = nv2;
-          rx = rx2;
-          act = act2;
+          // Then down by 100 until the next trace gives the same derivatives
+          // (#1241): the first converging trace need not be in the limit's
+          // regime. A trace of N2 reaching a fuel-only blend (burned H2 at
+          // 6e-10) is all synthesised to NH3 only below about 1e-25 of the
+          // total, so at 1e-20 dY_NH3/dm_air was 75.5 against the limit's
+          // 1594. Where the next trace agrees, this trace's derivatives are
+          // kept (as before #1241). Down to sqrt(DBL_MIN): a species
+          // quadratic in the trace (N2 beside the NH3 it forms) stays normal.
+          // Along dX_dir only: without a direction the seed is the same trace
+          // of every fed species, no reactant's direction, and the limit of
+          // stepping it down has no meaning; the first converging trace is
+          // kept, as before #1241.
+          EquilibriumJacobian j_prev = ift(nv2, rx2, act2);
+          std::vector<double> nv_k = nv2;
+          std::vector<JointReaction> rx_k = rx2;
+          std::vector<std::size_t> act_k = act2;
+          const double trace_min = std::sqrt(std::numeric_limits<double>::min());
+          for (double t = trace / 100.0; dX_dir != nullptr && t >= trace_min; t /= 100.0) {
+            std::vector<double> n0w = n0;
+            for (std::size_t j = 0; j < ns; ++j) {
+              if (n0v_fed[j]) n0w[j] += t * nt0 * seed_w[j];
+            }
+            std::vector<double> nv3;
+            std::vector<JointReaction> rx3;
+            std::vector<std::size_t> act3;
+            if (!solve_reforming_wgs_joint(n0w, T_ad, P, cfg, has_hc, nv3, &rx3, &act3) ||
+                act3.size() != act2.size()) {
+              break;  // the smallest trace solved is the best estimate
+            }
+            const EquilibriumJacobian j_next = ift(nv3, rx3, act3);
+            const double gap = jacobian_gap(j_prev, j_next, dX_dir);
+            if (gap <= REFORMING_JACOBIAN_LIMIT_RTOL) break;
+            j_prev = j_next;
+            nv_k = nv3;
+            rx_k = rx3;
+            act_k = act3;
+          }
+          nv = nv_k;
+          rx = rx_k;
+          act = act_k;
           got = true;
           break;
         }
@@ -2140,7 +2633,7 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
         if (!runnable) {
           std::vector<double> nvs = nv;
           for (std::size_t j = 0; j < ns; ++j) {
-            if (n0v_fed[j]) nvs[j] += REFORMING_JACOBIAN_TRACE * nt0;
+            if (n0v_fed[j]) nvs[j] += REFORMING_JACOBIAN_TRACE * nt0 * seed_w[j];
           }
           for (std::size_t r = 0; r < rx.size() && !runnable; ++r) {
             if (std::find(act.begin(), act.end(), r) != act.end()) continue;
@@ -2162,129 +2655,7 @@ EquilibriumJacobian combustion_equilibrium_and_jacobian(const State &in, bool sm
     }
   }
 
-  // Implicit function theorem on F(xi; n0, T, P) = 0 at the solution,
-  // n = n0 + N xi: J dxi = -(dF/dn0 dn0 + dF/dT dT + dF/dP dP), with
-  //   dF_a/dn0_l = nu_al / n_l - dn_a / n_t,
-  //   dF_a/dT    = -d ln K_a/dT = -sum_j nu_aj h_j/(R T^2),
-  //   dF_a/dP    = dn_a / P.
-  // A reaction left out of the solve (a species absent, so it cannot move)
-  // keeps its extent: zero derivative.
-  const std::size_t m = act.size();
-  double nt_sol = 0.0;
-  for (double v : nv) nt_sol += v;
-  std::vector<double> dxi(m * N, 0.0);  // [a][q]
-  if (m > 0) {
-    std::vector<double> lnK(rx.size(), 0.0), F, J;
-    joint_residual(rx, act, nv, P, lnK, F, &J);  // J only; F unused
-    for (std::size_t a = 0; a < m; ++a) {
-      const JointReaction &r = rx[act[a]];
-      for (std::size_t l = 0; l < ns; ++l) dxi[a * N + l] = r.dn / nt_sol;
-      double dlnK_dT = 0.0;
-      for (const auto &p : r.nu) {
-        dxi[a * N + p.first] -= p.second / nv[p.first];
-        dlnK_dT += p.second * h_RT(p.first, T_ad) / T_ad;
-      }
-      dxi[a * N + iT] = dlnK_dT;      // -dF/dT
-      dxi[a * N + iP] = -r.dn / P;    // -dF/dP
-    }
-    // Scaled symmetrically (s_a = 1/sqrt(J_aa)): a trace species' rows carry
-    // 1/n_j, up to 1e30 at the Jacobian's trace state above.
-    // A subnormal key (subnormal_key_scale) has J_aa = inf and an inf
-    // -nu_k / n_k on its own column of the right-hand side; both are taken
-    // scaled, from the finite forms.
-    std::vector<double> sc(m);
-    for (std::size_t a = 0; a < m; ++a) sc[a] = 1.0 / std::sqrt(std::max(J[a * m + a], 1e-300));
-    for (std::size_t a = 0; a < m; ++a) {
-      const bool inf_diag = !std::isfinite(J[a * m + a]);
-      double s_over_nk = 0.0;
-      if (inf_diag) sc[a] = subnormal_key_scale(rx[act[a]], nv, nt_sol, &s_over_nk);
-      for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
-      if (inf_diag) {
-        const auto &kp = rx[act[a]].nu[rx[act[a]].key];
-        dxi[a * N + kp.first] = sc[a] * rx[act[a]].dn / nt_sol - kp.second * s_over_nk;
-      }
-    }
-    for (std::size_t a = 0; a < m; ++a) {
-      for (std::size_t b = 0; b < m; ++b) J[a * m + b] *= sc[a] * sc[b];
-      if (!std::isfinite(J[a * m + a])) J[a * m + a] = 1.0;
-    }
-    solve_dense(J, dxi, m, N);
-    for (std::size_t a = 0; a < m; ++a) {
-      for (std::size_t q = 0; q < N; ++q) dxi[a * N + q] *= sc[a];
-    }
-  }
-  std::vector<DV> n(ns);
-  for (std::size_t j = 0; j < ns; ++j) {
-    n[j] = dv_const(nv[j], N);
-    n[j].d[j] = 1.0;
-  }
-  for (std::size_t a = 0; a < m; ++a) {
-    for (const auto &p : rx[act[a]].nu) {
-      for (std::size_t q = 0; q < N; ++q) n[p.first].d[q] += p.second * dxi[a * N + q];
-    }
-  }
-  const DV T = [&]() {
-    DV t = dv_const(T_ad, N);
-    t.d[iT] = 1.0;
-    return t;
-  }();
-  // Stage 3: the adiabatic root F(T) = h(T, X_out)/MW_out - H_in = 0.
-  DV h_mol = dv_const(0.0, N);
-  DV mw = dv_const(0.0, N);
-  for (std::size_t j = 0; j < ns; ++j) {
-    const DV hj = dv_lift(h_species(j, T_ad), cp_species(j, T_ad), T);
-    h_mol = h_mol + n[j] * hj;
-    mw = mw + species_molar_mass(j) * n[j];
-  }
-  const DV H_mass = h_mol / mw;  // n/nt cancels in h/MW
-  const double F_T = H_mass.d[iT];
-  const double mw_in = mwmix(in.X);
-  const double h_in = h(in.T, in.X);
-  const double H_in = h_in / mw_in;
-
-  out.dT_dT_in = cp(in.T, in.X) / mw_in / F_T;
-  out.dT_dP = -H_mass.d[iP] / F_T;
-  out.dT_dX.assign(ns, 0.0);
-  for (std::size_t k = 0; k < ns; ++k) {
-    double dF = 0.0;
-    for (std::size_t j = 0; j < ns; ++j) dF += H_mass.d[j] * cj.dXb_dX[j][k];
-    const double dH = (h_species(k, in.T) - H_in * species_molar_mass(k)) / mw_in;
-    out.dT_dX[k] = (dH - dF) / F_T;
-  }
-
-  // Product mole fractions: n_out(n0, T, P), T = T_ad(X, T_in, P).
-  std::vector<double> nvals(ns);
-  double ntv = 0.0;
-  for (std::size_t j = 0; j < ns; ++j) {
-    nvals[j] = n[j].v;
-    ntv += n[j].v;
-  }
-  // Rewrites dn in place: a fresh std::vector<double>(ns) here tripped GCC 14's
-  // -Wstringop-overflow at -O3 (a false positive), failing the manylinux wheel.
-  auto dX_from_dn = [&](std::vector<double> dn) {
-    double dN = 0.0;
-    for (double x : dn) dN += x;
-    for (std::size_t j = 0; j < dn.size(); ++j) dn[j] = (dn[j] - nvals[j] / ntv * dN) / ntv;
-    return dn;
-  };
-  out.dXout_dX.assign(ns, std::vector<double>(ns, 0.0));
-  for (std::size_t k = 0; k < ns; ++k) {
-    std::vector<double> dn(ns, 0.0);
-    for (std::size_t j = 0; j < ns; ++j) {
-      double v = n[j].d[iT] * out.dT_dX[k];
-      for (std::size_t l = 0; l < ns; ++l) v += n[j].d[l] * cj.dXb_dX[l][k];
-      dn[j] = v;
-    }
-    const auto dX = dX_from_dn(std::move(dn));
-    for (std::size_t j = 0; j < ns; ++j) out.dXout_dX[j][k] = dX[j];
-  }
-  std::vector<double> dn_T(ns), dn_P(ns);
-  for (std::size_t j = 0; j < ns; ++j) {
-    dn_T[j] = n[j].d[iT] * out.dT_dT_in;
-    dn_P[j] = n[j].d[iT] * out.dT_dP + n[j].d[iP];
-  }
-  out.dXout_dT_in = dX_from_dn(std::move(dn_T));
-  out.dXout_dP = dX_from_dn(std::move(dn_P));
+  out = ift(nv, rx, act);
   return out;
 }
 

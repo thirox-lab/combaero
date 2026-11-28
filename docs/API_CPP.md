@@ -539,30 +539,27 @@ PressureLossResult pressure_loss_compose(const PressureLossModel& model,
 ## Chemical Equilibrium (equilibrium.h)
 
 > **Scope: a partial equilibrium, by design.** The equilibrium starts from
-> complete combustion and then equilibrates only steam reforming of each
-> hydrocarbon, the water-gas shift and, where NH3 is present, its
-> decomposition 2 NH3 = N2 + 3 H2 (#1314). Its products are CO2, H2O, CO, H2,
-> the hydrocarbons, NH3, N2 and the inert Ar. There is no dissociation (no O,
-> H, OH), no oxidised nitrogen (no NO, NO2 or N2O, so there is no NOx and no
-> thermal-NO heat release) and no soot. Rich, the NH3 that complete
-> combustion leaves unburnt is equilibrated with N2 and H2 (cracked to 1e-5
-> to 1e-7 at combustor temperatures, kept where it is cold and at pressure).
-> Lean, NH3 burns completely to N2 and H2O, except for the fuel fraction the
-> phi = 0 softmin (`smooth_phi0`, phi below 3e-3) and the phi = 1 softmin
-> (phi above 0.9994) leave unburnt: that trace (up to 1e-5) is cracked beside
-> the O2, as a hydrocarbon trace is reformed there (T moves by at most
-> 3e-2 K). N2 is inert where the burned state holds no more NH3 than
-> `EQUILIBRIUM_NH3_MIN_FRACTION` (1e-10), and no NH3 is formed from N2 and
-> H2 there, although true equilibrium forms it in a rich burn at pressure. A
-> NH3 trace that crosses the threshold therefore switches the synthesis on
-> in a step (measured, burned NH3 0.99e-10 -> 1.01e-10, 300 K inlet, dry
-> air): H2 phi 4 at 100 bar forms NH3 1.05e-3 and T rises 1.64 K; CH4 phi 2
-> at 100 bar 2.8e-4 and +0.44 K; H2 phi 4 at 1 bar +0.017 K; phi 1.3 at
-> 1 bar +3e-4 K. dT/dX moves by 0.1-0.6 % (8-51 % in the NH3 column), and
-> dT/dP of an H2 burn from 0 to finite. Always-on NH3 synthesis, with the
-> methanation of #1241, is planned for 0.13.0. Nor is a
-> hydrocarbon formed where the burned state holds none (no methanation of
-> syngas or of NH3 + CO). For a full equilibrium, use Cantera.
+> complete combustion and then equilibrates steam reforming of each
+> hydrocarbon (both ways: methanation forms them from CO and H2), the
+> water-gas shift and NH3 synthesis and decomposition 2 NH3 = N2 + 3 H2
+> (#759, #1314, #1241). Its products are CO2, H2O, CO, H2, the hydrocarbons,
+> NH3, N2 and the inert Ar. There is no dissociation (no O, H, OH), no
+> oxidised nitrogen (no NO, NO2 or N2O, so there is no NOx and no thermal-NO
+> heat release) and no soot. Within that set it is the full equilibrium:
+> where the burned state holds a reducing species (H2, CO, a hydrocarbon or
+> NH3), reforming runs wherever carbon and hydrogen are present and NH3
+> synthesis wherever nitrogen and hydrogen are, at any amount, so nothing
+> switches as a trace goes to zero. A burned state with none (a complete
+> lean burn, a fuel-free mix) is left as it is, as in 0.12.0 bit for bit.
+> Against Cantera on the same species and data, rich states without O2
+> dissociation match to 1e-3 K (H2/CO at phi 14 and 32.7 bar: 1223.855 K,
+> 5 % CH4, where 0.12.0's 1e-10 cut gave 903.4 K). Up to 0.12.0 reforming
+> and NH3 decomposition ran only above 1e-10 of the burned state
+> (`EQUILIBRIUM_HC_MIN_FRACTION`, `EQUILIBRIUM_NH3_MIN_FRACTION`, removed).
+> Equilibrium amounts below the normal double range (n-heptane at about
+> 1e-391 beside a 1e-15 fuel trace in warm air) are held at exactly 0, their
+> reaction run to completion (#1241). For dissociation, NOx or soot, use
+> Cantera.
 >
 > **Adding a species does not extend the equilibrium.** The reaction set is
 > written for the current species table. A species added to it (NO, NO2, OH, ...)
@@ -585,8 +582,18 @@ struct EquilibriumJacobian {
     State state; double dT_dT_in, dT_dP; std::vector<double> dT_dX;
     std::vector<std::vector<double>> dXout_dX; std::vector<double> dXout_dT_in, dXout_dP;
 };
+// dX_dir (#1241): where the burned state lacks a species an arriving reactant
+// feeds (fuel reaching a fuel-free mix, air reaching a fuel-only one, carbon
+// reaching a carbon-free burn), T has a one-sided slope along each direction
+// but, in dry air, no matrix holds them (the slopes along two fuels do not
+// add). Given dX_dir, the trace states taking that limit are seeded along it,
+// and dT_dX . dX_dir is its slope; elsewhere dX_dir changes nothing. The
+// combustor kernel passes each zero-flow stream's mixing direction. The
+// limit is taken by stepping the trace down by 100 until the derivatives
+// settle (REFORMING_JACOBIAN_LIMIT_RTOL, 1e-8).
 EquilibriumJacobian combustion_equilibrium_and_jacobian(const State& in, bool smooth_phi0 = true,
-                                                        double k0 = SMOOTHING_K_PHI0);
+                                                        double k0 = SMOOTHING_K_PHI0,
+                                                        const std::vector<double>* dX_dir = nullptr);
 
 // Shift and reforming reactions
 State wgs_equilibrium(const State& in);
