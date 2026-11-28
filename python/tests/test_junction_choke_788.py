@@ -378,8 +378,9 @@ def test_a_start_on_the_subsonic_side_is_not_moved() -> None:
 
 def test_a_bore_equal_to_the_pipe_under_auto_coupling_matches_plain_channel() -> None:
     """Under coupling='auto' (#1128), a pass-through orifice (bore == pipe)
-    discharging into the outlet loses its exit dynamic head just like the
-    plain channel-into-outlet reference, so cmb.Pt matches to 1e-11."""
+    discharging into the outlet loses its exit dynamic head (choking at Pt*
+    above P_OUT rather than pinning jct.Pt = P_OUT as a choked-bounded
+    junction), while cmb.Pt matches the plain channel-into-outlet reference."""
     net = _net(0.1)
     net.nodes["out"].coupling = "auto"
     _, r = _solve(net)
@@ -387,3 +388,10 @@ def test_a_bore_equal_to_the_pipe_under_auto_coupling_matches_plain_channel() ->
     _, ref = _solve(_net(None))
     assert ref["__success__"], ref["__message__"]
     assert r["cmb.Pt"] == pytest.approx(ref["cmb.Pt"], rel=1e-11)
+    # Binds OrificeElement._pass_through_exit_head_spec: without it, the
+    # pass-through orifice pins jct.Pt = P_OUT (20 bar) and enters
+    # choked-bounded mode; with it, discharge_total_pressure chokes the exit
+    # face at Pt* ~ 48.7 bar (P* ~ 26.8 bar > P_OUT) and jct is subsonic.
+    assert r[f"{JCT}.Pt"] == pytest.approx(4871106.0, rel=1e-3)
+    assert r[f"{JCT}.P"] > 1.2 * P_OUT
+    assert r["__choked_bounded_junctions__"] == []

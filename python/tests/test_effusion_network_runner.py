@@ -31,11 +31,11 @@ PINNED = {
     "fig9_eta_tot_E20_dp3": (0.930, 0.866),
     "fig9_eta_tot_E20_dp4": (0.935, 0.876),
     "fig6_eta_tot_E30_Tc470": (0.919, 0.847),
-    "fig6_eta_tot_E30_Tc540": (0.920, 0.849),
+    "fig6_eta_tot_E30_Tc540": (0.920, 0.848),
     "fig6_eta_tot_E30_Tc580": (0.919, 0.847),
-    "fig10_eta_tot_E30_5bar_dp2": (0.910, 0.830),
+    "fig10_eta_tot_E30_5bar_dp2": (0.909, 0.830),
     "fig10_eta_tot_E30_10bar_dp3": (0.909, 0.829),
-    "fig10_eta_tot_E30_10bar_dp2": (0.900, 0.814),
+    "fig10_eta_tot_E30_10bar_dp2": (0.899, 0.814),
 }
 
 
@@ -165,7 +165,7 @@ PINNED_RAD = {
     "fig6_eta_tot_E30_Tc580": (0.886, 0.818, 37.1),
     "fig10_eta_tot_E30_5bar_dp2": (0.874, 0.799, 38.7),
     "fig10_eta_tot_E30_10bar_dp3": (0.871, 0.797, 67.0),
-    "fig10_eta_tot_E30_10bar_dp2": (0.859, 0.779, 66.3),
+    "fig10_eta_tot_E30_10bar_dp2": (0.859, 0.778, 66.3),
 }
 
 

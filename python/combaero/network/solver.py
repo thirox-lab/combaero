@@ -5243,6 +5243,8 @@ class NetworkSolver:
         """
         depth = getattr(self, "_solve_depth", 0)
         self._solve_depth = depth + 1
+        if depth == 0:
+            self._tee_forward_retried = False
         t_start = time.time()
         try:
             # A fuel controller's target proven unreachable (#1114): refused
@@ -5265,6 +5267,7 @@ class NetworkSolver:
             if auto_retry:
                 left = None if timeout is None else timeout - (time.time() - t_start)
                 sol = self._retry_legacy_tees_forward(sol, left, method, options, use_jac)
+            self._tee_forward_retried = False
             sol = self._mark_fraction_unanchored(sol)
         return sol
 
@@ -5302,7 +5305,9 @@ class NetworkSolver:
         x = sol.get("__x_solution__")
         if x is None or sol.get("__success__", False):
             return sol
-        if getattr(self, "_in_tee_forward_retry", False):
+        if getattr(self, "_in_tee_forward_retry", False) or getattr(
+            self, "_tee_forward_retried", False
+        ):
             return sol
         x = np.array(x, dtype=float)
         if len(x) != len(self.unknown_names):
@@ -5344,6 +5349,7 @@ class NetworkSolver:
             return sol
         saved = {k: getattr(self, k) for k in ("_last_x", "_diagnostic_data") if hasattr(self, k)}
         self._in_tee_forward_retry = True
+        self._tee_forward_retried = True
         try:
             retry = self.solve(
                 method=method, timeout=timeout, options=options, use_jac=use_jac, x0=x

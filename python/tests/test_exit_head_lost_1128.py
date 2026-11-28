@@ -6,7 +6,9 @@ boundaries, with analytic Jacobians (C1 across sonic choke).
 from __future__ import annotations
 
 import math
+import sys
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -577,3 +579,60 @@ def test_discharge_total_row_reversed_leg_m_sign_jacobian(kind: str) -> None:
     if kind != "orifice_passthrough":
         assert r["__element_diag__"]["x"][KEY] == 0.0
     _check_network_jacobian(g, np.array(r["__x_solution__"], dtype=float), tol=1e-6)
+
+
+def _stress_families():
+    stress_dir = str(Path(__file__).resolve().parents[2] / "scripts" / "stress")
+    if stress_dir not in sys.path:
+        sys.path.insert(0, stress_dir)
+    from networks import FAMILIES
+
+    return FAMILIES
+
+
+def test_legacy_tee_34_recovers_forward_root_after_failed_reversed_solve() -> None:
+    """Binds the #1128/#1234 forward-start retry trigger on failed reversed
+    iterates: under static outflow discharge, legacy_tee 34's cold solve stalls
+    past sonic on the reversed leg (no_progress rather than inconsistent).
+    Running _retry_legacy_tees_forward on failed reversed iterates before
+    homotopy/BC-ramp recovers main's exact forward root."""
+    g, _ = _stress_families()["legacy_tee"](34)
+    s = NetworkSolver(g)
+    s.homotopy_retry = True
+    s.bc_ramp_retry = True
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = s.solve(timeout=20.0)
+    assert r["__success__"], r.get("__message__")
+    assert r["ls.m_dot"] == pytest.approx(2.80953, rel=1e-4)
+    assert r["lc.m_dot"] == pytest.approx(3.19314, rel=1e-4)
+
+
+def test_legacy_tee_30_forward_retry_runs_at_most_once() -> None:
+    """Binds the single-shot guard on _retry_legacy_tees_forward: when a
+    failed reversed legacy tee has no forward root, the retry runs once before
+    homotopy and is not repeated at depth 0."""
+    g, _ = _stress_families()["legacy_tee"](30)
+    s = NetworkSolver(g)
+    s.homotopy_retry = True
+    s.bc_ramp_retry = False
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = s.solve(timeout=5.0)
+    assert not r["__success__"]
+    assert r["__message__"].count("A retry from a forward start") == 1
+
+
+def test_random_35_converges_cold_with_exit_head_seed_term() -> None:
+    """Binds the exit-head diagonal term in _resistance_network_guess's Picard
+    fraction-ratio row: without it, random 35's unanchored ConstantFractionLoss
+    seeds at ~34.5 kg/s (145x its choked root) and the cold solve fails at
+    |F| ~ 2.3e4; with it, the cold solve converges in < 1 s to the choked
+    physical root (e14.m_dot ~ 0.2376 kg/s)."""
+    g, _ = _stress_families()["random"](35)
+    s = NetworkSolver(g)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        r = s.solve(timeout=5.0, auto_retry=False)
+    assert r["__success__"], r.get("__message__")
+    assert r["e14.m_dot"] == pytest.approx(0.237638, rel=1e-3)
