@@ -1102,6 +1102,16 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
   // Me. A caller's guess (the previous solve) gives a tight bracket, widened
   // geometrically until it holds a sign change; without one the bracket is
   // grown down from Me = 1 by halving.
+  //
+  // IEEE-754 machine-range guard for the cold halving loop (#1242):
+  // fanno_length_between integrates in s = 1 / M^2 up to 1 / M_in^2, and at
+  // low Mach M_in ~ Me * (P / Pt0), so 1 / M_in^2 <= DBL_MAX requires
+  // Me >= (Pt0 / P) / sqrt(DBL_MAX). Keeping the warm-start loop identical to
+  // main preserves bit-identity on every ordinary duct (Me > 2^-20, cold and
+  // warm); only the cold halving loop extends below 1e-6 down to kMachMin.
+  const double inv_sqrt_max = 1.0 / std::sqrt(std::numeric_limits<double>::max());
+  const double kMachMin = (pb.P > 0.0) ? std::max((pb.Pt0 / pb.P) * inv_sqrt_max, inv_sqrt_max)
+                                       : inv_sqrt_max;
   auto f = [&](double Me) { return psi(Me, pb.P, pb.Pt0, pb.Tt0, pb); };
   double lo = 0.0, hi = 0.0, f_lo = 0.0, f_hi = 0.0;
   bool bracketed = false;
@@ -1137,10 +1147,10 @@ FannoChannelFlow raw_flow(const FlowProblem& pb) {
     lo = 0.5;
     f_lo = f(lo);
   }
-  while (f_lo <= 0.0 && lo > 1e-6) {
+  while (f_lo <= 0.0 && lo > kMachMin) {
     hi = lo;
     f_hi = f_lo;
-    lo *= 0.5;
+    lo = std::max(lo * 0.5, kMachMin);
     f_lo = f(lo);
   }
   const double Me = brent(f, lo, hi, f_lo, f_hi, 1e-13);

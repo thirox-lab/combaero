@@ -290,33 +290,48 @@ def cd_nozzle_mass_flow(
     zero exit flux was flat in P_py, which let zero flow at any P_py above both
     supplies close the ejector rows -- a spurious root at P_py ~ 1e13 Pa.
     """
-    if p_static_down > p0:
-        cap0 = choked_mass_flow(p0, t0, area_throat, gamma, r_gas, eta)
-        offset = math.sqrt(cap0 * cap0 + (eps_frac * cap0) ** 2) - cap0
-        return (
-            -cd_nozzle_mass_flow(
-                p_static_down, t0, p0, area_throat, area_exit, gamma, r_gas, eta, eps_frac
+    # Shared zero-drive sub-floor law (include/flow_drive_floor.h; #1259, #1269):
+    # below kJetDriveFloor (1e-3 Pa) of drive, scale the floor's flow by the odd
+    # cubic h(t) = 1.25 t - 0.25 t^3 (exponent kJetFloorExponent = 1/2).
+    jet_floor = 1.0e-3
+
+    def _forward_raw(p_up: float, p_down: float) -> float:
+        cap = choked_mass_flow(p_up, t0, area_throat, gamma, r_gas, eta)
+        r = p_down / p_up
+        if r >= 1.0:
+            exit_flux = 0.0
+        else:
+            gm1 = gamma - 1.0
+            gp1 = gamma + 1.0
+            x = (p_down - p_up) / p_up
+            mach = math.sqrt(2.0 / gm1 * math.expm1((-gm1 / gamma) * math.log1p(x)))
+            # Below the critical ratio the throat is choked: hold the exit flux at
+            # its sonic maximum (C1, flux'(M = 1) = 0). The supersonic-exit flux
+            # falls with M and dipped under the cap at deep expansion (#619).
+            mach = min(mach, 1.0)
+            flux = mach * (1.0 + 0.5 * gm1 * mach * mach) ** (-gp1 / (2.0 * gm1))
+            exit_flux = (
+                area_exit * p_up / math.sqrt(t0) * math.sqrt(gamma / r_gas) * flux * math.sqrt(eta)
             )
-            - offset
-        )
-    cap = choked_mass_flow(p0, t0, area_throat, gamma, r_gas, eta)
-    r = p_static_down / p0
-    if r >= 1.0:
-        exit_flux = 0.0
-    else:
-        gm1 = gamma - 1.0
-        gp1 = gamma + 1.0
-        mach = math.sqrt(2.0 / gm1 * (r ** (-gm1 / gamma) - 1.0))
-        # Below the critical ratio the throat is choked: hold the exit flux at
-        # its sonic maximum (C1, flux'(M = 1) = 0). The supersonic-exit flux
-        # falls with M and dipped under the cap at deep expansion (#619).
-        mach = min(mach, 1.0)
-        flux = mach * (1.0 + 0.5 * gm1 * mach * mach) ** (-gp1 / (2.0 * gm1))
-        exit_flux = (
-            area_exit * p0 / math.sqrt(t0) * math.sqrt(gamma / r_gas) * flux * math.sqrt(eta)
-        )
-    eps = eps_frac * cap
-    return 0.5 * (exit_flux + cap - math.sqrt((exit_flux - cap) ** 2 + eps * eps))
+        eps = eps_frac * cap
+        return 0.5 * (exit_flux + cap - math.sqrt((exit_flux - cap) ** 2 + eps * eps))
+
+    def _forward(p_up: float, p_down: float) -> float:
+        drive = p_up - p_down
+        if drive >= jet_floor or not (p_up > jet_floor):
+            return _forward_raw(p_up, p_down)
+        m_floor = _forward_raw(p_up, p_up - jet_floor)
+        t = drive / jet_floor
+        h = 1.25 * t - 0.25 * t * t * t
+        return m_floor * h
+
+    if p_static_down <= p0:
+        return _forward(p0, p_static_down)
+    if p0 > jet_floor:
+        return -_forward(p_static_down, p0)
+    cap0 = choked_mass_flow(p0, t0, area_throat, gamma, r_gas, eta)
+    offset = math.sqrt(cap0 * cap0 + (eps_frac * cap0) ** 2) - cap0
+    return -_forward(p_static_down, p0) - offset
 
 
 def cd_nozzle_exit_static(

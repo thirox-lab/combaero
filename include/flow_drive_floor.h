@@ -27,8 +27,8 @@
 
 namespace combaero {
 
-// Drive [Pa] below which the compressible jet kernels (the nozzle orifice and
-// Jobson's) take the cubic. What it guarantees: below it there is no
+// Drive [Pa] below which the compressible jet kernels (the nozzle orifice,
+// Jobson's, and the ejector C-D nozzle) take the cubic. What it guarantees: below it there is no
 // staircase at any pressure and the slope is finite (1.25 G(floor) / floor at
 // zero). Above it the jet law is main's, and so is its round-off: the
 // nozzle's staircase (flat treads in G against the drive, measured in the
@@ -47,7 +47,10 @@ constexpr double kJetDriveFloor = 1.0e-3;
 // sigma matched to the law's slope moves with the state, and its own partials
 // would need the law's second derivatives). The flow is then continuous at the
 // floor but its slope steps there: the nozzle's by 4e-7 at 1 bar and 6.1e-5 at
-// 100 bar; Jobson's, with an approach, by up to 27% (see jobson_eval).
+// 100 bar; the ejector C-D nozzle's (At = Ae, eps_frac = 1e-3, from the
+// smooth-min bias offset / (2 m_floor)) by 1.2e-3 at 1 bar, 1.2e-2 at 100 bar,
+// and 3.8e-2 at 1000 bar; Jobson's, with an approach, by up to 27% (see
+// jobson_eval).
 constexpr double kJetFloorExponent = 0.5;
 
 // Largest local exponent the cubic accepts: h is monotone for sigma < 3.
