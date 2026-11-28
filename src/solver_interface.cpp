@@ -1671,59 +1671,66 @@ ChannelResult channel_residuals_and_jacobian(double m_dot, double P_total_up,
                       (2.0 * rho * area * area * dRe_dmdot);
   }
 
-  const double eps_P = 1.0;
-  auto [rho_p, drho_dT_p, drho_dP_p] = density_and_jacobians(Tt_up, P_static_up + eps_P, X_up);
-  auto [mu_p, dmu_dT_p, dmu_dP_p] = viscosity_and_jacobians(Tt_up, P_static_up + eps_P, X_up);
-  auto [rho_m, drho_dT_m, drho_dP_m] = density_and_jacobians(Tt_up, P_static_up - eps_P, X_up);
-  auto [mu_m, dmu_dT_m, dmu_dP_m] = viscosity_and_jacobians(Tt_up, P_static_up - eps_P, X_up);
-  double v_p = m_dot / (rho_p * area);
-  double v_m = m_dot / (rho_m * area);
-  double Re_p = rho_p * std::abs(v_p) * D / mu_p;
-  double Re_m = rho_m * std::abs(v_m) * D / mu_m;
-  auto [f_p, df_dRe_p] = friction_and_jacobian(friction_model, Re_p, roughness / D).result;
-  auto [f_m, df_dRe_m] = friction_and_jacobian(friction_model, Re_m, roughness / D).result;
-  f_p *= f_multiplier;
-  f_m *= f_multiplier;
-  double dP_p = f_p * (L / D) * (0.5 * rho_p * v_p * std::abs(v_p));
-  double dP_m = f_m * (L / D) * (0.5 * rho_m * v_m * std::abs(v_m));
-  res.d_dP_dP_static_up = (dP_p - dP_m) / (2.0 * eps_P);
+  // Partials at fixed m, by the chain rule (#1211; central and forward
+  // differences of the whole drop until then, the composition column off by
+  // up to 6e-6). Re = |m| D / (mu A) holds no rho, so the drop
+  // dP = f(Re) (L/D) m|m| / (2 rho A^2) moves through rho directly and
+  // through mu in Re:
+  //   d dP = (L/D) m|m| / (2 rho A^2) f'(Re) dRe - dP drho / rho,
+  //   dRe = -Re dmu / mu.
+  // At m = 0 the drop is 0 whatever the state, and so are its partials
+  // (f'(Re) Re would read inf * 0 there).
+  const double fric_scale = (L / D) * 0.5 * m_dot * abs_m / (rho * area * area);
+  // Plain copies: a lambda cannot capture structured bindings in C++17.
+  const double rho_up = rho;
+  const double mu_up = mu;
+  const double f_slope = df_dRe;
+  auto d_drop = [&](double drho, double dmu) {
+    if (abs_m == 0.0) {
+      return 0.0;
+    }
+    return fric_scale * f_slope * (-Re * dmu / mu_up) - dP_calc * drho / rho_up;
+  };
+  res.d_dP_dP_static_up = d_drop(drho_dP, dmu_dP);
+  res.d_dP_dTt_up = d_drop(drho_dT, dmu_dT);
 
-  const double eps_T = 1e-3;
-  auto [rho_T_p, drho_dT_T_p, drho_dP_T_p] = density_and_jacobians(Tt_up + eps_T, P_static_up, X_up);
-  auto [mu_T_p, dmu_dT_T_p, dmu_dP_T_p] = viscosity_and_jacobians(Tt_up + eps_T, P_static_up, X_up);
-  auto [rho_T_m, drho_dT_T_m, drho_dP_T_m] = density_and_jacobians(Tt_up - eps_T, P_static_up, X_up);
-  auto [mu_T_m, dmu_dT_T_m, dmu_dP_T_m] = viscosity_and_jacobians(Tt_up - eps_T, P_static_up, X_up);
-  double v_T_p = m_dot / (rho_T_p * area);
-  double v_T_m = m_dot / (rho_T_m * area);
-  double Re_T_p = rho_T_p * std::abs(v_T_p) * D / mu_T_p;
-  double Re_T_m = rho_T_m * std::abs(v_T_m) * D / mu_T_m;
-  auto [f_T_p, df_dRe_T_p] = friction_and_jacobian(friction_model, Re_T_p, roughness / D).result;
-  auto [f_T_m, df_dRe_T_m] = friction_and_jacobian(friction_model, Re_T_m, roughness / D).result;
-  f_T_p *= f_multiplier;
-  f_T_m *= f_multiplier;
-  double dP_T_p = f_T_p * (L / D) * (0.5 * rho_T_p * v_T_p * std::abs(v_T_p));
-  double dP_T_m = f_T_m * (L / D) * (0.5 * rho_T_m * v_T_m * std::abs(v_T_m));
-  res.d_dP_dTt_up = (dP_T_p - dP_T_m) / (2.0 * eps_T);
-
+  // Composition: rho = P MW / (R_u T), so drho/dX_j = rho W_j / MW at fixed
+  // (T, P), as the orifice's (#964); mu by viscosity_dX. Both chained to the
+  // mass fractions along steps that keep sum X = 1 (mole_gradient_to_mass),
+  // then to the raw Y_up the kernel reads: normalize_fractions divides by
+  // S = sum max(Y, 0), so d/dY_k is that gradient over S, and 0 for a
+  // fraction clamped at a negative value. A Newton iterate need not sum to 1
+  // (#1352 review: at S = 0.7 the unscaled column was 0.7x the true one).
+  std::vector<double> drho_dX(X_up.size(), 0.0);
+  const double mw_up = combaero::mwmix(X_up);
+  for (std::size_t j = 0; j < X_up.size(); ++j) {
+    drho_dX[j] = rho * combaero::species_molar_mass(j) / mw_up;
+  }
+  const std::vector<double> drho_dY = combaero::mole_gradient_to_mass(X_up, drho_dX);
+  const std::vector<double> dmu_dY = viscosity_mass_gradient(Tt_up, P_static_up, X_up);
+  double y_sum = 0.0;
+  double raw_sum = 0.0;
+  for (const double y : Y_up) {
+    y_sum += std::max(y, 0.0);
+    raw_sum += y;
+  }
+  // Below 1e-10 normalize_fractions returns Y as it is, unclamped, but
+  // mass_to_mole still divides by its sum, so the drop is homogeneous of
+  // degree 0 in the raw Y there too: the column is the gradient over the raw
+  // sum, and no entry is clamped (#1352 review round 2).
+  const bool normalised = y_sum >= 1.0e-10;
+  const double inv_sum = normalised ? 1.0 / y_sum : 1.0 / raw_sum;
   res.d_dP_dY_up.resize(Y_up.size(), 0.0);
-  const double eps_Y = 1e-6;
   for (std::size_t i = 0; i < Y_up.size(); ++i) {
-    std::vector<double> Y_plus = Y_up;
-    Y_plus[i] += eps_Y;
-    auto X_plus = combaero::mass_to_mole(combaero::normalize_fractions(Y_plus));
-    double rho_plus = std::get<0>(density_and_jacobians(Tt_up, P_static_up, X_plus));
-    double mu_plus = std::get<0>(viscosity_and_jacobians(Tt_up, P_static_up, X_plus));
-    double v_plus = m_dot / (rho_plus * area);
-    double Re_plus = rho_plus * std::abs(v_plus) * D / mu_plus;
-    auto [f_plus, dummy] = friction_and_jacobian(friction_model, Re_plus, roughness / D).result;
-    f_plus *= f_multiplier;
-    double dP_plus = f_plus * (L / D) * (0.5 * rho_plus * v_plus * std::abs(v_plus));
-    res.d_dP_dY_up[i] = (dP_plus - dP_calc) / eps_Y;
+    if (normalised && Y_up[i] < 0.0) {
+      continue;
+    }
+    res.d_dP_dY_up[i] = d_drop(drho_dY[i], dmu_dY[i]);
     if (exit_head_lost) {
       // q = m|m| / (2 rho A^2) depends on Y only through rho.
-      res.d_dP_dY_up[i] += 0.5 * m_dot * abs_m / (area * area) *
-                           (1.0 / rho_plus - 1.0 / rho) / eps_Y;
+      res.d_dP_dY_up[i] -= 0.5 * m_dot * abs_m / (rho * rho * area * area) * drho_dY[i];
     }
+    res.d_dP_dY_up[i] *= inv_sum;
   }
 
   if (exit_head_lost) {
