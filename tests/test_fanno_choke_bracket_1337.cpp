@@ -224,8 +224,12 @@ TEST(FannoChokeBracket1337, FrictionStretchingAndGradingAccuracyGuard) {
   // Guards both grid parameters against degradation:
   //   - Dropping alpha -> 0 (un-stretched t^3 mesh) pushes L/D = 1e5 choked
   //     flux error from ~5e-9 to >1e-7 and leaves w_exit(Gc) ~ 6e-3.
+  //   - Removing sonic-proximity gating from forward alpha degrades the low-
+  //     Mach cooled duct below from 0.026 Pa error to 0.17 Pa error against
+  //     the converged ODE reference.
   //   - Lowering kRayleighGrading from 3 to 2 degrades near-sonic static exit
-  //     accuracy on kIssueStatic (see also test_fanno_rayleigh_cold_scan_1161).
+  //     accuracy (caught by test_fanno_rayleigh_cold_scan_1161); p = 1 and
+  //     p = 4 fail the near-sonic heated choke pin below.
   const std::vector<double> X = dry_air();
   const double Gc_ad = fanno_choked_mass_flux(1.0e5, 300.0, X, 100.0, 1.0e-3, 0.0, "haaland", 1.0);
   const double Gc_ray = fanno_rayleigh_choked_mass_flux(1.0e5, 300.0, 300.0, X, 100.0, 1.0e-3, 0.0,
@@ -235,11 +239,19 @@ TEST(FannoChokeBracket1337, FrictionStretchingAndGradingAccuracyGuard) {
       fanno_rayleigh_march(Gc_ray, 1.0e5, 300.0, 300.0, X, 100.0, 1.0e-3, 0.0, "haaland", 1.0);
   EXPECT_LT(m_lam.zeta_min, 1e-4);
 
-  // Near-sonic heated duct: Gc agrees with the 512-step reference
-  // (1222.6722372531 kg/(m^2 s)) within 5e-7 (alpha=0 or p=1 fails badly).
+  // Near-sonic heated duct: Gc agrees with the 512-step / DOP853 reference
+  // (1222.6722372531 kg/(m^2 s)) within 5e-7 (alpha=0 or p=1 or p=4 fails).
   const double Gc_hot = fanno_rayleigh_choked_mass_flux(1.0e6, 300.0, 697.9029088757375, X, 0.2,
                                                         0.008, 0.0, "haaland", 1.0);
   EXPECT_NEAR(Gc_hot, 1222.6722372531, 5e-7 * 1222.6722372531);
+
+  // Low-Mach strongly cooled laminar duct (PR #1346 review reproducer):
+  // independent primitive-variable DOP853 (rtol=1e-12) exit pressure is
+  // 122075.148984 Pa (4.61 Pa drive). Ungated alpha = ln(1 + fL/D) errs by
+  // 0.17 Pa here; sonic-proximity gating recovers main's 0.026 Pa accuracy.
+  const FannoRayleighMarch m_low = fanno_rayleigh_march(
+      0.112876, 122079.76, 1819.51, 592.05, X, 3.00828, 0.0184026, 0.0, "haaland", 1.0);
+  EXPECT_NEAR(m_low.P_exit, 122075.148984, 0.05);
 }
 
 }  // namespace combaero

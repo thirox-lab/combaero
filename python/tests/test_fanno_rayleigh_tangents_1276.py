@@ -64,10 +64,13 @@ def test_unchoked_discrete_tangents_match_march_fd(
         m = cb.fanno_rayleigh_march(Gx, Ptx, T0x, Tex, air, L, D, rough, model, fmult)
         return m.Pt_exit if exit_total else m.P_exit
 
-    e_g = _rfd(lambda v: e_of(v, Pt0, Tt0, Tt_ex), r.G, 1e-4 * r.G)
-    e_pt = _rfd(lambda v: e_of(r.G, v, Tt0, Tt_ex), Pt0, 1e-4 * Pt0)
-    e_t0 = _rfd(lambda v: e_of(r.G, Pt0, v, Tt_ex), Tt0, 1e-4 * Tt0)
-    e_te = _rfd(lambda v: e_of(r.G, Pt0, Tt0, v), Tt_ex, 1e-4 * Tt_ex)
+    # Step 2e-4 avoids both the NASA-9 [950, 1050] K C2 bridge edge (straddled
+    # by heated_haaland's RK4 stage at 5e-4, causing a 3.5x jump in d^3E/dTt0^3
+    # at Tt0 = 799.75 K) and Colebrook's 1e-10 solver noise floor at 1e-4.
+    e_g = _rfd(lambda v: e_of(v, Pt0, Tt0, Tt_ex), r.G, 2e-4 * r.G)
+    e_pt = _rfd(lambda v: e_of(r.G, v, Tt0, Tt_ex), Pt0, 2e-4 * Pt0)
+    e_t0 = _rfd(lambda v: e_of(r.G, Pt0, v, Tt_ex), Tt0, 2e-4 * Tt0)
+    e_te = _rfd(lambda v: e_of(r.G, Pt0, Tt0, v), Tt_ex, 2e-4 * Tt_ex)
 
     assert r.dG_dP_target == pytest.approx(1.0 / e_g, rel=1e-8)
     assert r.dG_dPt0 == pytest.approx(-e_pt / e_g, rel=1e-8)

@@ -1746,14 +1746,19 @@ namespace {
 
 // Fixed RK4 march on a smooth mesh graded toward the exit (#1337):
 //   x_i = L (1 - t_i^p * exp(-alpha * (1 - t_i)^p)),  t_i = 1 - i / N,
-//   alpha = 0.5 * ln(1 + (f_ref L / D)^2) = ln(sqrt(1 + (f_ref L / D)^2)).
+//   alpha_back = ln(1 + lam),  lam = f_ref L / D,
+//   alpha_fwd  = ln(1 + lam_eff),  lam_eff = lam / (1 + w_scale / lam),
+//   w_scale    = w_in * (Tt0 / Tt_exit).
 // A FIXED step count and C-infinity map, so the march is smooth in all
-// arguments and Dual4 differentiates the grid and ODE stages exactly. At
-// small f L / D (short ducts where the sonic acceleration layer D / f spans
-// the whole duct) exp(alpha) = 1 + O((f L / D)^2) preserves the t^p mesh; at
-// large f L / D (long laminar ducts) the inlet slope stays p while exit steps
-// scale as L / ((f L / D) N^p) = (D / f) / N^p, resolving both bulk heat
-// transfer and the O(D / f) sonic acceleration layer.
+// arguments and Dual4 differentiates the grid and ODE stages exactly.
+//   - Backward sonic march (back_w_inlet): exit is sonic (w_exit = 0), so
+//     alpha = ln(1 + lam) scales exit steps as (D / f) / N^p to resolve the
+//     O(D / f) sonic acceleration layer on arbitrarily long laminar ducts.
+//   - Forward march (march_zeta): scales lam by the dimensionless sonic-
+//     proximity ratio lam / (lam + w_scale). Near choke (w_scale ~ gamma lam)
+//     alpha_fwd ~ ln(1 + lam / (1 + gamma)) resolves the sonic layer; at low
+//     Mach (w_scale >> lam) lam_eff -> 0 so nodes stay spread across the duct
+//     instead of crowding the exit on heated/cooled low-Re ducts.
 //
 // The state marched is the Fanno-regular coordinate w = 1/M^2 - 1 + ln(M^2) >= 0:
 // near M = 1, w ~ (1 - M^2)^2 / 2 = zeta / 2 (regular at sonic); at low Mach
@@ -2029,25 +2034,19 @@ double zeta_of_w(double w) {
   return r * r;
 }
 
-// Dimensionless friction-length stretching exponent
-//   alpha = 0.5 * ln(1 + (f_ref L / D)^2) = ln(sqrt(1 + (f_ref L / D)^2))
-// for the smooth exit-graded Rayleigh mesh
-//   x_i = L (1 - t_i^kRayleighGrading * exp(-alpha * (1 - t_i)^kRayleighGrading)),
-//   t_i = 1 - i / kRayleighSteps (#1337).
-// The Pythagorean norm sqrt(1 + (L / l_sonic)^2) with l_sonic = D / f_ref
-// preserves the existing t^3 mesh for short/low-friction ducts (f L / D << 1,
-// where acceleration spans L) while scaling exit steps as (D / f) / N^3 on
-// long/laminar ducts (f L / D >> 1), smoothly in (G, Tt_exit).
+// Dimensionless friction length lam = f_ref L / D evaluated at exit stagnation
+// temperature (ideal-gas viscosity is pressure-independent; Pt0 is passed for
+// consistency with choked_flux_scale).
 template <typename Scalar>
-Scalar rayleigh_grid_alpha(const RayleighDuct& d, const Scalar& G_val, const Scalar& Tte_val) {
+Scalar rayleigh_friction_length(const RayleighDuct& d, const Scalar& G_val, const Scalar& Tte_val,
+                                double Pt0) {
   constexpr bool kIsDual = !std::is_same_v<Scalar, double>;
   if (*d.model == "fixed") {
     const double lam = std::max(d.fmult, 0.0) * d.L / d.D;
-    const double a = 0.5 * std::log1p(lam * lam);
     if constexpr (kIsDual) {
-      return Dual4::constant(a);
+      return Dual4::constant(lam);
     } else {
-      return a;
+      return lam;
     }
   }
   if (!(d.fmult > 0.0)) {
@@ -2059,19 +2058,57 @@ Scalar rayleigh_grid_alpha(const RayleighDuct& d, const Scalar& G_val, const Sca
   }
   const std::vector<double>& X = *d.X;
   if constexpr (kIsDual) {
-    const TransportDerivatives tr = transport_and_dT(Tte_val.v, 101325.0, X);
+    const TransportDerivatives tr = transport_and_dT(Tte_val.v, Pt0, X);
     const Dual4 mu = lift_dual(tr.mu, tr.dmu_dT, Tte_val);
     const Dual4 Re = G_val * d.D / mu;
     const auto [f0, df_dRe] = solver::friction_and_jacobian(*d.model, Re.v, d.rough / d.D).result;
     const Dual4 f_ref = lift_dual(f0 * d.fmult, df_dRe * d.fmult, Re);
-    const Dual4 lam = f_ref * (d.L / d.D);
-    const double lam2 = lam.v * lam.v;
-    return lift_dual(0.5 * std::log1p(lam2), lam.v / (1.0 + lam2), lam);
+    return f_ref * (d.L / d.D);
   } else {
-    const double mu = viscosity(Tte_val, 101325.0, X);
+    const double mu = viscosity(Tte_val, Pt0, X);
     const double f_ref = friction(G_val * d.D / mu, d.rough / d.D, *d.model, d.fmult);
-    const double lam = f_ref * d.L / d.D;
-    return 0.5 * std::log1p(lam * lam);
+    return f_ref * d.L / d.D;
+  }
+}
+
+// Backward-march stretching exponent (sonic exit, w_exit = 0):
+//   alpha = ln(1 + f_ref L / D).
+template <typename Scalar>
+Scalar rayleigh_grid_alpha_back(const RayleighDuct& d, const Scalar& G_val, const Scalar& Tte_val,
+                                double Pt0) {
+  constexpr bool kIsDual = !std::is_same_v<Scalar, double>;
+  const Scalar lam = rayleigh_friction_length<Scalar>(d, G_val, Tte_val, Pt0);
+  if constexpr (kIsDual) {
+    return lift_dual(std::log1p(lam.v), 1.0 / (1.0 + lam.v), lam);
+  } else {
+    return std::log1p(lam);
+  }
+}
+
+// Forward-march stretching exponent gated by sonic proximity:
+//   lam_eff = lam / (1 + w_scale / lam),  w_scale = w_in * (Tt0 / Tt_exit),
+//   alpha   = ln(1 + lam_eff).
+// Matches alpha_back at w_in = 0, stays O(ln(lam)) near choke where w_scale ~
+// gamma * lam, and vanishes smoothly as lam^2 / w_scale at low Mach.
+template <typename Scalar>
+Scalar rayleigh_grid_alpha_fwd(const RayleighDuct& d, const Scalar& G_val, const Scalar& Tt0_val,
+                               const Scalar& Tte_val, const Scalar& w_in, double Pt0) {
+  constexpr bool kIsDual = !std::is_same_v<Scalar, double>;
+  const Scalar lam = rayleigh_friction_length<Scalar>(d, G_val, Tte_val, Pt0);
+  if constexpr (kIsDual) {
+    if (!(lam.v > 0.0)) {
+      return Dual4::constant(0.0);
+    }
+    const Dual4 w_scale = w_in * (Tt0_val / Tte_val);
+    const Dual4 lam_eff = lam / (1.0 + w_scale / lam);
+    return lift_dual(std::log1p(lam_eff.v), 1.0 / (1.0 + lam_eff.v), lam_eff);
+  } else {
+    if (!(lam > 0.0)) {
+      return 0.0;
+    }
+    const double w_scale = w_in * (Tt0_val / Tte_val);
+    const double lam_eff = lam / (1.0 + w_scale / lam);
+    return std::log1p(lam_eff);
   }
 }
 
@@ -2227,7 +2264,7 @@ MarchEnd march_zeta(const RayleighDuct& d, double Pt0) {
   std::array<double, kRayleighSteps + 1> dws{};
   ws[0] = w;
   const double dTt_dx = (d.Tt_exit - d.Tt0) / d.L;
-  const double alpha = rayleigh_grid_alpha<double>(d, d.G, d.Tt_exit);
+  const double alpha = rayleigh_grid_alpha_fwd<double>(d, d.G, d.Tt0, d.Tt_exit, w, Pt0);
   auto x_at = [&](int i) { return rayleigh_node_x<double>(i, d.L, alpha); };
   auto Tt_at = [&](double x) { return d.Tt0 + dTt_dx * x; };
   for (int i = 0; i < kRayleighSteps; ++i) {
@@ -2309,10 +2346,10 @@ struct RayleighProblem {
 // at a reachable sonic exit), smoothly and linearly in x for Fanno friction
 // across arbitrary f L / D (#1337), so no stage ever leaves the subsonic
 // branch or overshoots M = 0.
-double back_w_inlet(const RayleighDuct& d) {
+double back_w_inlet(const RayleighDuct& d, double Pt0) {
   double w = 0.0;
   const double dTt_dx = (d.Tt_exit - d.Tt0) / d.L;
-  const double alpha = rayleigh_grid_alpha<double>(d, d.G, d.Tt_exit);
+  const double alpha = rayleigh_grid_alpha_back<double>(d, d.G, d.Tt_exit, Pt0);
   auto x_at = [&](int i) { return rayleigh_node_x<double>(i, d.L, alpha); };
   auto Tt_at = [&](double x) { return d.Tt0 + dTt_dx * x; };
   for (int i = kRayleighSteps; i > 0; --i) {
@@ -2367,9 +2404,9 @@ Dual4 march_w_exit_dual(const RayleighDuct& d, double Pt0) {
   const Dual4 Tt0_dual = Dual4::seed(d.Tt0, 2);
   const Dual4 Tte_dual = Dual4::seed(d.Tt_exit, 3);
   const Dual4 dTt_dx = (Tte_dual - Tt0_dual) / d.L;
-  const Dual4 alpha = rayleigh_grid_alpha<Dual4>(d, G_dual, Tte_dual);
 
   Dual4 w = inlet_w_dual(Pt0, d.Tt0, d.G, *d.X);
+  const Dual4 alpha = rayleigh_grid_alpha_fwd<Dual4>(d, G_dual, Tt0_dual, Tte_dual, w, Pt0);
   auto x_at = [&](int i) { return rayleigh_node_x<Dual4>(i, d.L, alpha); };
   auto Tt_at = [&](const Dual4& x) { return Tt0_dual + dTt_dx * x; };
 
@@ -2388,12 +2425,12 @@ Dual4 march_w_exit_dual(const RayleighDuct& d, double Pt0) {
   return w;
 }
 
-Dual4 back_w_inlet_dual(const RayleighDuct& d) {
+Dual4 back_w_inlet_dual(const RayleighDuct& d, double Pt0) {
   const Dual4 G_dual = Dual4::seed(d.G, 0);
   const Dual4 Tt0_dual = Dual4::seed(d.Tt0, 2);
   const Dual4 Tte_dual = Dual4::seed(d.Tt_exit, 3);
   const Dual4 dTt_dx = (Tte_dual - Tt0_dual) / d.L;
-  const Dual4 alpha = rayleigh_grid_alpha<Dual4>(d, G_dual, Tte_dual);
+  const Dual4 alpha = rayleigh_grid_alpha_back<Dual4>(d, G_dual, Tte_dual, Pt0);
 
   Dual4 w = Dual4::constant(0.0);
   auto x_at = [&](int i) { return rayleigh_node_x<Dual4>(i, d.L, alpha); };
@@ -2447,7 +2484,7 @@ double choke_relation(ChokeMode mode, double G, double Pt0, const RayleighDuct& 
     case ChokeMode::kInlet:
       return G - fanno_sonic_mass_flux(Pt0, d.Tt0, X);
     case ChokeMode::kExit:
-      return inlet_w(Pt0, d.Tt0, G, X) - back_w_inlet(d);
+      return inlet_w(Pt0, d.Tt0, G, X) - back_w_inlet(d, Pt0);
     case ChokeMode::kThroat:
       return march_zeta(d, Pt0).zeta_peak;
   }
@@ -2607,12 +2644,15 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
     double lo = 0.0, f_lo = 0.0, hi = 0.0, f_hi = 0.0;
     double root = std::nan("");  // log G of the root, where already solved
   };
+  const double log_G_min = std::log(G_max) + 0.5 * std::log(std::numeric_limits<double>::min());
   auto first_fall = [&](double top) {
-    double lo = top - 7.0;
+    double lo = std::max(top - 7.0, log_G_min);
     double f_lo = F(lo);
-    while (f_lo <= 0.0 && lo > top - 60.0) {
-      lo -= 7.0;
+    double step = 7.0;
+    while (f_lo <= 0.0 && lo > log_G_min) {
+      lo = std::max(lo - step, log_G_min);
       f_lo = F(lo);
+      step *= 2.0;
     }
     if (f_lo <= 0.0) {
       throw std::runtime_error("fanno-rayleigh (first_fall): no sign change");
@@ -3072,7 +3112,7 @@ FannoChannelFlow rayleigh_raw_flow(const RayleighProblem& pb) {
   Dual4 rel_dual;
   if (choked) {
     // ChokeMode::kExit: Psi = inlet_w(Pt0, Tt0, G) - back_w_inlet(G, Tt0, Tt_exit) = 0.
-    rel_dual = inlet_w_dual(pb.Pt0, pb.Tt0, G, X) - back_w_inlet_dual(d_root);
+    rel_dual = inlet_w_dual(pb.Pt0, pb.Tt0, G, X) - back_w_inlet_dual(d_root, pb.Pt0);
   } else {
     const Dual4 w_exit = march_w_exit_dual(d_root, pb.Pt0);
     rel_dual = rayleigh_exit_pressure_dual(d_root, w_exit, pb.exit_total);

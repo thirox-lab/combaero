@@ -108,7 +108,7 @@ TEST(FannoRayleighFold1167, IssueCasesFindTheFirstCrossing) {
   const double Gi = choked_flux(kInterior);
   const FannoChannelFlow c = flow(kInterior, 100.0);
   EXPECT_FALSE(c.choked);
-  EXPECT_NEAR(c.G / Gi, 0.12232, 1e-5);
+  EXPECT_NEAR(c.G / Gi, 0.12215, 1e-5);
   // Both land on the first fall (within 2e-12 of a bisected reference here);
   // they differ by the root's rounding at 100 Pa on 2 bar, ~2e-12 on clang
   // and 1.7e-11 on MSVC. 1e-9 is the bound measured over 41k kernel calls
