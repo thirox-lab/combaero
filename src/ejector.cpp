@@ -4,6 +4,7 @@
 #include "ejector.h"
 
 #include "dual_number.h"
+#include "flow_drive_floor.h"
 #include "input_validation.h"
 #include <algorithm>
 #include <array>
@@ -273,11 +274,11 @@ ejector_choked_mass_flow_and_jacobian_raw(double Pt, double Tt, double area_thro
 
 namespace {
 
-// Forward C-D nozzle flow from stagnation p_up to exit static p_down <= p_up:
+// Raw forward C-D nozzle flow from stagnation p_up to exit static p_down < p_up:
 // the subsonic exit flux smooth-min'd with the sonic-throat cap.
-double cd_nozzle_forward(double p_up, double Tt, double p_down, double area_throat,
-                         double area_exit, double gamma, double r_gas, double eta,
-                         double eps_frac) {
+double cd_nozzle_forward_raw(double p_up, double Tt, double p_down, double area_throat,
+                             double area_exit, double gamma, double r_gas, double eta,
+                             double eps_frac) {
   double cap = ejector_choked_mass_flow_raw(p_up, Tt, area_throat, gamma, r_gas, eta);
   double exit_flux = 0.0;
   double r = p_down / p_up;
@@ -302,6 +303,26 @@ double cd_nozzle_forward(double p_up, double Tt, double p_down, double area_thro
   return 0.5 * (exit_flux + cap - std::sqrt(diff * diff + eps * eps));
 }
 
+// Forward C-D nozzle flow with the shared zero-drive sub-floor law
+// (flow_drive_floor.h; #1259, #1269): below kJetDriveFloor of drive
+// p_up - p_down (when p_up > kJetDriveFloor), the flow is the floor's flow
+// times the odd cubic h(t) with exponent kJetFloorExponent (1/2). Above the
+// floor it is bit-identical to cd_nozzle_forward_raw; at zero drive (r = 1)
+// the flow vanishes with finite slope 1.25 * m(floor) / floor.
+double cd_nozzle_forward(double p_up, double Tt, double p_down, double area_throat,
+                         double area_exit, double gamma, double r_gas, double eta,
+                         double eps_frac) {
+  const double drive = p_up - p_down;
+  if (drive >= kJetDriveFloor || !(p_up > kJetDriveFloor)) {
+    return cd_nozzle_forward_raw(p_up, Tt, p_down, area_throat, area_exit, gamma, r_gas, eta,
+                                 eps_frac);
+  }
+  const double m_floor = cd_nozzle_forward_raw(p_up, Tt, p_up - kJetDriveFloor, area_throat,
+                                               area_exit, gamma, r_gas, eta, eps_frac);
+  const DriveFloorCubic c = drive_floor_cubic(drive / kJetDriveFloor, kJetFloorExponent);
+  return m_floor * c.h;
+}
+
 } // namespace
 
 static double ejector_cd_nozzle_mass_flow_raw(double Pt, double Tt, double p_static_down,
@@ -313,10 +334,14 @@ static double ejector_cd_nozzle_mass_flow_raw(double Pt, double Tt, double p_sta
                              eps_frac);
   }
   // Exit static above the supply (#619): the nozzle passes REVERSE flow, the
-  // same closure from p_static_down back into Pt, shifted by the smooth-min's
-  // r = 1 value so the flow is continuous there. The former zero exit flux
-  // was flat in P_py, which let zero flow at any P_py above both supplies
-  // close the ejector rows (a spurious root at P_py ~ 1e13 Pa).
+  // same closure from p_static_down back into Pt. With the sub-floor cubic
+  // (#1269), forward(Pt, Pt) = 0 with a finite slope matching the reverse side
+  // at r = 1 (when Pt > kJetDriveFloor); for an unphysical reservoir below the
+  // floor, retain the smooth-min r = 1 offset for continuity.
+  if (Pt > kJetDriveFloor) {
+    return -cd_nozzle_forward(p_static_down, Tt, Pt, area_throat, area_exit, gamma, r_gas, eta,
+                              eps_frac);
+  }
   double cap = ejector_choked_mass_flow_raw(Pt, Tt, area_throat, gamma, r_gas, eta);
   double eps = eps_frac * cap;
   double offset = std::sqrt(cap * cap + eps * eps) - cap;
@@ -351,11 +376,11 @@ DualN<N> cd_nozzle_d(const DualN<N>& p0, const DualN<N>& t0, const DualN<N>& p_p
   };
   // eps = eps_frac * cap depends on (p_up, t0); differentiate it too (FD of
   // the Python value function does), else the Jacobian would be inconsistent.
-  auto forward = [&](const D& p_up, const D& p_down) {
+  auto forward_raw = [&](const D& p_up, const D& p_down) {
     D cap = cap_of(p_up);
     D exit_flux = D::constant(0.0);
     if (p_down.v < p_up.v) {
-      // Cancellation-free as r = p_down / p_up -> 1 (see cd_nozzle_forward).
+      // Cancellation-free as r = p_down / p_up -> 1 (see cd_nozzle_forward_raw).
       D x = (p_down - p_up) / p_up;
       D mach_sq = (2.0 / gm1) * dexpm1((-gm1 / gamma) * dlog1p(x));
       D mach = dsqrt(mach_sq);
@@ -367,12 +392,32 @@ DualN<N> cd_nozzle_d(const DualN<N>& p0, const DualN<N>& t0, const DualN<N>& p_p
     D diff = exit_flux - cap;
     return 0.5 * (exit_flux + cap - dsqrt(diff * diff + eps * eps));
   };
+  auto forward = [&](const D& p_up, const D& p_down) {
+    const double drive = p_up.v - p_down.v;
+    if (drive >= kJetDriveFloor || !(p_up.v > kJetDriveFloor)) {
+      return forward_raw(p_up, p_down);
+    }
+    // Sub-floor odd cubic (#1259, #1269): p_floor = p_up - kJetDriveFloor
+    // carries p_up's dual seeds automatically so every partial (p0, t0, p_py,
+    // gamma, r_gas) is exact across the band and at zero drive (r = 1).
+    const D p_floor = p_up - kJetDriveFloor;
+    const D m_floor = forward_raw(p_up, p_floor);
+    const D t = (p_up - p_down) / kJetDriveFloor;
+    const DriveFloorCubic c = drive_floor_cubic(t.v, kJetFloorExponent);
+    D h = D::constant(c.h);
+    for (int i = 0; i < N; ++i) {
+      h.d[i] = c.dh * t.d[i];
+    }
+    return m_floor * h;
+  };
 
   if (p_py.v <= p0.v) {
     return forward(p0, p_py);
   }
-  // Reverse flow above the supply (#619), continuous at P_py = p0: see
-  // ejector_cd_nozzle_mass_flow.
+  // Reverse flow above the supply (#619, #1269): see ejector_cd_nozzle_mass_flow_raw.
+  if (p0.v > kJetDriveFloor) {
+    return -forward(p_py, p0);
+  }
   D cap = cap_of(p0);
   D eps = eps_frac * cap;
   return -forward(p_py, p0) - (dsqrt(cap * cap + eps * eps) - cap);

@@ -136,7 +136,12 @@ double ejector_choked_mass_flow(double Pt, double Tt, double area_throat,
 // (area_exit, exit static p_static_down) smooth-min'd with the sonic-throat cap
 // (area_throat); the two are equal at the choke threshold so the min is
 // continuous, and the C1 sqrt-smoothing (eps = eps_frac * cap) rounds the
-// corner. 1:1 with cd_nozzle_mass_flow in _ejector_huang1999.py.
+// corner. Below kJetDriveFloor (1e-3 Pa, flow_drive_floor.h) of drive
+// |Pt - p_static_down| (for reservoirs above kJetDriveFloor), the flow takes
+// the shared sub-floor odd cubic m(floor) * h(drive / floor) with exponent
+// kJetFloorExponent (1/2), giving zero flow and a finite, odd-symmetric slope
+// at r = 1 (#1259, #1269); above the floor forward flow is bit-identical to the
+// raw closure. 1:1 with cd_nozzle_mass_flow in _ejector_huang1999.py.
 double ejector_cd_nozzle_mass_flow(double Pt, double Tt, double p_static_down,
                                    double area_throat, double area_exit,
                                    double gamma, double r_gas, double eta,

@@ -531,29 +531,50 @@ def test_full_network_solves_and_conserves_mass():
     assert sol["mc_outlet.Pt"] <= sol["ej1.P_jct"] * 1.01
 
 
-@pytest.mark.parametrize("gap", [1e-6, 1e-9, 1e-12])
-def test_cd_nozzle_flow_and_slope_have_no_cancellation_near_zero_drive(gap: float) -> None:
+@pytest.mark.parametrize(
+    ("Pt", "gap"),
+    [
+        (2.0e5, 1e-6),  # above kJetDriveFloor (drive = 0.2 Pa): raw closure
+        (1.0e7, 1e-9),  # above kJetDriveFloor (drive = 0.01 Pa): raw closure at 1-r = 1e-9
+        (1.0e10, 1e-12),  # above kJetDriveFloor (drive = 0.01 Pa): raw closure at 1-r = 1e-12
+        (2.0e5, 1e-9),  # below kJetDriveFloor (drive = 2e-4 Pa): #1269 sub-floor cubic
+        (2.0e5, 1e-12),  # below kJetDriveFloor (drive = 2e-7 Pa): #1269 sub-floor cubic
+    ],
+)
+def test_cd_nozzle_flow_and_slope_have_no_cancellation_near_zero_drive(
+    Pt: float, gap: float
+) -> None:
     """The C-D nozzle's subsonic exit Mach, M^2 = 2/(g-1) (r^(-(g-1)/g) - 1),
     cancelled as r = P_py / Pt -> 1: a relative error ~ eps / (1 - r) in the
     flow and its P_py slope (1.5e-7 at 1 - r = 1e-9, 1e-4 at 1e-12). Written
-    with expm1/log1p it stays at rounding; checked against a 40-digit
-    evaluation of the same closure (subsonic flux smooth-min'd with the cap)."""
+    with expm1/log1p it stays at rounding above kJetDriveFloor (1e-3 Pa), and
+    below kJetDriveFloor takes the #1259/#1269 odd-cubic sub-floor law; both
+    are checked against a 40-digit evaluation of the same closure."""
     mpmath = pytest.importorskip("mpmath")
     from combaero import _solver_tools
 
     mpmath.mp.dps = 40
-    g, R, eta, Pt, Tt, At, Ae = 1.4, 287.0, 0.95, 2.0e5, 300.0, 3.14e-5, 1.0e-4
+    g, R, eta, Tt, At, Ae = 1.4, 287.0, 0.95, 300.0, 3.14e-5, 1.0e-4
+    floor = mpmath.mpf("1e-3")
     p_py = Pt * (1.0 - gap)
 
-    def flux(p):
+    def flux_raw(p):
         gm, r = mpmath.mpf(g), mpmath.mpf(p) / mpmath.mpf(Pt)
         m = mpmath.sqrt(2 / (gm - 1) * (r ** (-(gm - 1) / gm) - 1))
         f = m * (1 + (gm - 1) / 2 * m * m) ** (-(gm + 1) / (2 * (gm - 1)))
-        ex = Ae * mpmath.sqrt(gm / R) * mpmath.sqrt(eta) * Pt / mpmath.sqrt(Tt) * f
+        ex = Ae * mpmath.sqrt(gm / R) * mpmath.sqrt(eta) * mpmath.mpf(Pt) / mpmath.sqrt(Tt) * f
         cc = mpmath.sqrt(gm / R * (2 / (gm + 1)) ** ((gm + 1) / (gm - 1)))
-        cap = cc * At * mpmath.sqrt(eta) * Pt / mpmath.sqrt(Tt)
-        e = mpmath.mpf(1e-3) * cap
+        cap = cc * At * mpmath.sqrt(eta) * mpmath.mpf(Pt) / mpmath.sqrt(Tt)
+        e = mpmath.mpf("1e-3") * cap
         return (ex + cap - mpmath.sqrt((ex - cap) ** 2 + e * e)) / 2
+
+    def flux(p):
+        drive = mpmath.mpf(Pt) - p
+        if drive >= floor:
+            return flux_raw(p)
+        t = drive / floor
+        h = mpmath.mpf("1.25") * t - mpmath.mpf("0.25") * t * t * t
+        return flux_raw(mpmath.mpf(Pt) - floor) * h
 
     j = _solver_tools.ejector_cd_nozzle_mass_flow_and_jacobian(
         Pt, Tt, p_py, At, Ae, g, R, eta, 1e-3
@@ -562,3 +583,22 @@ def test_cd_nozzle_flow_and_slope_have_no_cancellation_near_zero_drive(gap: floa
     dref = mpmath.diff(flux, mpmath.mpf(p_py))
     assert j.mdot == pytest.approx(float(ref), rel=1e-8)
     assert j.dmdot_dp_py == pytest.approx(float(dref), rel=1e-8)
+
+
+def test_python_cd_nozzle_mirror_matches_cpp_across_sub_floor_band() -> None:
+    """Pin _ejector_huang1999.cd_nozzle_mass_flow to the C++ kernel across +-floor.
+
+    Catches silent drift in the Python mirror's jet_floor (1e-3 Pa) or odd cubic
+    (1.25 t - 0.25 t^3) relative to C++ (#1269).
+    """
+    from combaero.network._ejector_huang1999 import cd_nozzle_mass_flow
+
+    Pt, Tt, At, Ae, g, R, eta, eps = 1.0e5, 300.0, 1.0e-4, 1.0e-4, 1.4, 287.058, 0.95, 1e-3
+    floor = 1.0e-3
+    for frac in (-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0):
+        p_py = Pt - frac * floor
+        py_val = cd_nozzle_mass_flow(Pt, Tt, p_py, At, Ae, g, R, eta, eps)
+        cpp_val = cb._core.ejector_cd_nozzle_mass_flow_and_jacobian(
+            Pt, Tt, p_py, At, Ae, g, R, eta, eps
+        ).mdot
+        assert py_val == pytest.approx(cpp_val, rel=1e-11, abs=1e-15), f"frac={frac}"
