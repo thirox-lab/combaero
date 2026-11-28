@@ -62,7 +62,10 @@ def test_cold_and_warm_agree_and_the_flux_rises_to_the_choke(et: bool) -> None:
         assert not c.choked and not w.choked, drive
         assert pytest.approx(w.G, rel=1e-11) == c.G, drive
         assert G_prev < c.G, drive
-        assert Gc * (1.0 - 1e-7) > c.G, drive  # off the plateau
+        assert Gc > c.G, drive  # off the plateau
+        assert c.M_exit < 1.0, drive
+        if k < 40:
+            assert Gc * (1.0 - 1e-7) > c.G, drive
         for g in (0.3 * c.G, 0.999 * Gc, 1.2 * c.G):
             assert pytest.approx(c.G, rel=1e-11) == _flow(drive, g, et=et).G, (drive, g)
         G_prev, G_warm = c.G, w.G

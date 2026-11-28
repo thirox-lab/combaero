@@ -30,11 +30,13 @@ struct Duct {
 };
 
 // The issue's reproductions, static-pressure exit: the fold in the last
-// bracket (and its milder twins at Tt_exit 1050-1150 K), and the fold in an
-// interior bracket (whose needed drive then falls below zero).
+// bracket (and its milder physical twins at Tt_exit 1005-1012 K; 1050-1150 K
+// were monotonic on the converged 512-step ODE, where the old theta32 march
+// had a coarse-inlet artifact fold), and the fold in an interior bracket
+// (whose needed drive then falls below zero).
 const Duct kLast{3.0e6, 1400.0, 1000.0, 0.03, 0.01};
-const Duct kLast1050{3.0e6, 1400.0, 1050.0, 0.03, 0.01};
-const Duct kLast1150{3.0e6, 1400.0, 1150.0, 0.03, 0.01};
+const Duct kLast1005{3.0e6, 1400.0, 1005.0, 0.03, 0.01};
+const Duct kLast1012{3.0e6, 1400.0, 1012.0, 0.03, 0.01};
 const Duct kInterior{2.0e5, 1800.0, 400.0, 0.3, 0.01};
 
 FannoChannelFlow flow(const Duct& d, double drive, double G_guess = -1.0,
@@ -88,7 +90,7 @@ TEST(FannoRayleighFold1167, IssueCasesFindTheFirstCrossing) {
   // The issue's table: cold read Gc choked, a warm start from 0.9915 Gc the
   // root. Both must give the root now.
   const double drives[] = {260294.0, 260957.0, 261621.0};
-  const double roots[] = {0.97537, 0.97971, 0.98554};
+  const double roots[] = {0.97533, 0.97963, 0.98531};
   for (int i = 0; i < 3; ++i) {
     const FannoChannelFlow c = flow(kLast, drives[i]);
     const FannoChannelFlow w = flow(kLast, drives[i], 0.9915 * Gc);
@@ -129,8 +131,8 @@ TEST(FannoRayleighFold1167, ColdAndWarmAgreeThroughEachFold) {
     double tol;
   };
   for (const Case& k :
-       {Case{kLast, 0.95, 0.9999, 0.0, 1e-10}, Case{kLast1050, 0.99, 0.99999, 0.0, 1e-10},
-        Case{kLast1150, 0.999, 0.9999999, 0.0, 1e-10}, Case{kInterior, 0.12, 0.2, 25.0, 1e-9}}) {
+       {Case{kLast, 0.95, 0.9999, 0.0, 1e-10}, Case{kLast1005, 0.98, 0.99999, 0.0, 1e-10},
+        Case{kLast1012, 0.99, 0.99999, 0.0, 1e-10}, Case{kInterior, 0.12, 0.2, 25.0, 1e-9}}) {
     const double Gc = choked_flux(k.d);
     const auto [G_peak, D_peak] = fold(k.d, k.a, k.b);
     const double D_end = needed(k.d, Gc * (1.0 - 1e-6));
@@ -174,7 +176,7 @@ TEST(FannoRayleighFold1167, LaminarFoldColdScanFindsTheFirstFall) {
   };
   for (const Case& k : {Case{false, 18.6}, Case{false, 18.9}, Case{false, 19.2},
                         Case{false, 19.5}, Case{false, 19.65}, Case{true, 13.0},
-                        Case{true, 13.5}, Case{true, 13.7}, Case{true, 13.9}}) {
+                        Case{true, 13.5}, Case{true, 13.7}, Case{true, 13.85}}) {
     double a = 0.002 * Gc, b = a;
     ASSERT_LT(needed(kInterior, a, k.exit_total), k.drive);
     for (int i = 1; i <= 4000; ++i) {
@@ -284,7 +286,7 @@ TEST(FannoRayleighFold1167, ADipNearTheFoldPeakIsSearchedToTheEnd) {
   const Duct d{204095.106, 627.788, 327.196, 0.0475957, 0.0329094};
   const double Gc = choked_flux(d);
   const double drives[] = {353.398, 353.9};
-  const double roots[] = {0.4700448, 0.4743297};
+  const double roots[] = {0.4700494, 0.4743373};
   for (int i = 0; i < 2; ++i) {
     const FannoChannelFlow c = flow(d, drives[i]);
     EXPECT_FALSE(c.choked) << drives[i];

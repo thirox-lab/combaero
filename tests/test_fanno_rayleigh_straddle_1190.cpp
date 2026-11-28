@@ -96,9 +96,10 @@ TEST(FannoRayleighStraddle1190, IssueDriveReturnsTheFirstFall) {
   const double Gc = choked_flux(kIssue);
   const FannoChannelFlow c = flow(kIssue, 2.145);
   EXPECT_FALSE(c.choked);
-  // The issue's table: the first fall at 0.0150235 Gc; the third crossing,
-  // which the scan returned, at 0.021177 Gc.
-  EXPECT_NEAR(c.G / Gc, 0.0150235, 1e-6);
+  // The issue's table: the first fall at 0.0150297 Gc (w32 march, closer to
+  // the 512-step reference 0.0151077 than the old theta32 0.0150235); the
+  // third crossing, which the scan returned, at 0.021177 Gc.
+  EXPECT_NEAR(c.G / Gc, 0.0150297, 1e-6);
   // The root itself is defined only to the march's rounding at 2 Pa of
   // drive on 2 bar: needed - drive changes sign within up to 3.3e-7 of it in
   // ln G over this duct's drives (measured, macOS clang), and another

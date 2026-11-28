@@ -10,7 +10,7 @@ A duct's flux G solves an implicit relation, and its composition column dG/dv (v
   - the exit pressure per unit flux phi(Me, Tt0, X);
   - the isentropic inlet flux(Pt0, Tt0, M_in, X);
   - the length between the two Mach numbers at fixed limits, ell(G, Tt0, X).
-- **Heated or cooled** (`rayleigh_raw_flow`): E(G; X) = P_exit after the fixed 32-step RK4 march in theta = M^2 - M^4/2.
+- **Heated or cooled** (`rayleigh_raw_flow`): E(G; X) = P_exit after the fixed 32-step RK4 march in w = 1/M^2 - 1 + ln M^2 (#1337; theta = M^2 - M^4/2 before it).
 
 At low drive these sums cancel to about drive / P, and twice for a composition direction: inside psi_v, then in G_v - G_M psi_v / psi_M. That is 5e-6 at 1 Pa on 2 bar.
 
@@ -31,7 +31,7 @@ Forward mode along v, with no step. In `src/fanno_mach.cpp`: `MixTangent`, the `
 - **Viscosity.** `viscosity_dX` (Wilke) contracted with dX.
 - **The static temperature.** Implicit in h(T) + M^2 a^2(T) / 2 = h(Tt).
 - **The adiabatic length.** The same fixed 4-panel Gauss-Legendre rule applied to the integrand's tangent, which is the exact tangent of the rule's sum. The length's G and Tt0 slopes, central differences until now, take the same pass with seeds (G, Tt0).
-- **The Fanno-Rayleigh march.** The same RK4 grid with a composition slot, one pass per direction, for:
+- **The Fanno-Rayleigh march.** The same RK4 grid in #1337's w coordinate with a composition slot, one pass per direction. Since #1337 the grid's stretching moves with composition too: through the friction length (mu at Tt_exit) and, forward, the inlet w. Its tangent is carried, but it is below what any difference resolves: dropping it moves dG/dY by under 1e-8 on the measured ducts, because RK4 makes the march nearly independent of its node positions. It is kept for the exactness of the discrete tangent, and no test binds it. The pass covers:
   - the unchoked exit relation;
   - the exit-choked relation (the backward march from sonic less the inlet theta);
   - the inlet-choked sonic flux.

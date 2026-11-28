@@ -36,12 +36,12 @@ NEAR_PEAK = (204095.106, 627.788, 327.196, 0.0475957, 0.0329094)
 @pytest.mark.parametrize(
     ("duct", "drive", "et", "root"),
     [
-        (LAST, 260294.0, False, 0.97537),  # the fold in the last bracket
-        (LAST, 260957.0, False, 0.97970),
-        (LAST, 261621.0, False, 0.98554),
+        (LAST, 260294.0, False, 0.97533),  # the fold in the last bracket
+        (LAST, 260957.0, False, 0.97963),
+        (LAST, 261621.0, False, 0.98531),
         (INTERIOR, 100.0, False, 0.12215),  # the fold in an interior bracket
         (INTERIOR, 13.7, True, None),  # the laminar fold, total-pressure exit
-        (NEAR_PEAK, 353.9, False, 0.47433),  # 0.3 Pa below a fold's peak
+        (NEAR_PEAK, 353.9, False, 0.47434),  # 0.3 Pa below a fold's peak
     ],
 )
 def test_cold_finds_the_first_crossing_and_warm_agrees(
