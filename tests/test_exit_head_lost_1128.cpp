@@ -95,7 +95,7 @@ TEST(ExitHeadLost1128, AreaChangeFlowExitHeadLostPartialsAndLowReExitChoke) {
   const double Tt_a = 420.0;
   const double Tt_b = 600.0;
 
-  for (const std::string& model : {"sharp", "conical"}) {
+  for (const char* model : {"sharp", "conical"}) {
     for (const bool inc : {false, true}) {
       for (const double drive : {-50.0, -0.5, 0.0, 0.5, 50.0, 2.0e4}) {
         const double Pt_b = Pt_a - drive;
